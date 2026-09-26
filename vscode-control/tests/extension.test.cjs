@@ -75,6 +75,13 @@ test("status control selects the hook and reflects health, activity, tooltip, an
     assert.equal(button.color.id, "charts.blue");
     await until(() => button.color.id === "testing.iconPassed");
 
+    await fs.appendFile(path.join(directory, "events.jsonl"), JSON.stringify({
+      status: "skip", reason: "small", tool: "Bash", original_chars: 42, elapsed_ms: 0,
+    }) + "\n");
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    assert.match(button.tooltip, /replaced Bash output/);
+    assert.equal(button.color.id, "testing.iconPassed");
+
     health = { ok: false, reason: "JEV_HTTP_ERROR" };
     await commands.get("jevPilot.checkConnection")();
     await until(() => button.color.id === "testing.iconFailed");
@@ -85,6 +92,12 @@ test("status control selects the hook and reflects health, activity, tooltip, an
     await picker.accept();
     await until(() => button.color.id === "disabledForeground");
     assert.equal((await core.readConfig(directory)).enabled, false);
+
+    health = { ok: true, model: "jev-1.13.0" };
+    commands.get("jevPilot.selectHooks")();
+    picker.selectedItems = [picker.items[0]];
+    await picker.accept();
+    await until(() => button.tooltip.includes("replaced Bash output"));
   } finally {
     for (const disposable of context.subscriptions.reverse()) disposable.dispose();
     await fs.rm(directory, { recursive: true, force: true });

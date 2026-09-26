@@ -5,7 +5,7 @@ const path = require("node:path");
 const vscode = require("vscode");
 const {
   checkHealth, decisionSummary, defaultCredentialDirectory, defaultDataDirectory,
-  readConfig, readLatestEvent, writeEnabled,
+  isInformativeEvent, readConfig, readLatestEvent, writeEnabled,
 } = require("./core");
 
 function activate(context) {
@@ -91,14 +91,19 @@ function activate(context) {
       state.eventSize = size;
       const event = await readLatestEvent(dataDirectory());
       if (!event) return;
-      state.recent = event;
       if (event.status === "calling") {
+        state.recent = event;
         state.callingSeen = true;
         pulse();
       } else {
         if (!state.callingSeen &&
             ["jev_keep", "jev_replace", "observe", "mcp_observe_only"].includes(event.reason)) pulse();
-        state.callingSeen = false;
+        if (isInformativeEvent(event)) {
+          state.recent = event;
+          state.callingSeen = false;
+        } else if (!state.recent || state.recent.status === "calling") {
+          state.recent = await readLatestEvent(dataDirectory(), { informativeOnly: true });
+        }
       }
       if (event.reason === "no_evaluator" || event.reason === "evaluator_unavailable") {
         state.health = { ok: false, reason: event.reason === "no_evaluator" ? "HOOK_KEY_MISSING" : "JEV_UNAVAILABLE" };

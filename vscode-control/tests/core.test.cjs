@@ -48,10 +48,13 @@ test("recent decision is read from a bounded log tail", async () => {
   try {
     const file = path.join(directory, "events.jsonl");
     await fs.writeFile(file, "x".repeat(40000) + "\n" +
-      JSON.stringify({ tool: "Bash", status: "replace", reason: "jev_replace", original_chars: 12345, elapsed_ms: 480 }) + "\n");
+      JSON.stringify({ tool: "Bash", status: "replace", reason: "jev_replace", original_chars: 12345, elapsed_ms: 480 }) + "\n" +
+      JSON.stringify({ tool: "Bash", status: "skip", reason: "small", original_chars: 42, elapsed_ms: 0 }) + "\n");
     const event = await readLatestEvent(directory);
-    assert.equal(event.status, "replace");
-    assert.match(decisionSummary(event), /replaced Bash output.*12[,.]345 chars, 480 ms/);
+    assert.equal(event.reason, "small");
+    const decision = await readLatestEvent(directory, { informativeOnly: true });
+    assert.equal(decision.status, "replace");
+    assert.match(decisionSummary(decision), /replaced Bash output.*12[,.]345 chars, 480 ms/);
   } finally {
     await fs.rm(directory, { recursive: true, force: true });
   }

@@ -4,6 +4,7 @@ The installed companion extension shows a `jev` status-bar indicator and
 handles the composer button's private message bridge. The composer button opens
 the single `PostToolUse` hook checkbox. An empty selection turns the hook off.
 Hovering shows the selected mode and latest metadata-only decision.
+Routine small tool outputs do not displace the last useful decision in the tooltip.
 The composer control docks immediately before the model selector, reduces to
 its colored dot when the available gap narrows, and hides if even the dot
 cannot fit without covering the selector. The hook remains selectable from

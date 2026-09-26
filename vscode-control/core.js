@@ -65,7 +65,12 @@ async function writeEnabled(directory, enabled) {
   return config;
 }
 
-async function readLatestEvent(directory) {
+function isInformativeEvent(event) {
+  return event.status !== "calling" &&
+    !(event.status === "skip" && ["small", "unsupported_event", "unsupported_result"].includes(event.reason));
+}
+
+async function readLatestEvent(directory, { informativeOnly = false } = {}) {
   const filename = path.join(directory, "events.jsonl");
   let file;
   try {
@@ -86,12 +91,13 @@ async function readLatestEvent(directory) {
       try {
         const row = JSON.parse(lines[index]);
         if (row && typeof row.status === "string" && typeof row.reason === "string") {
-          return {
+          const event = {
             status: row.status.slice(0, 32), reason: row.reason.slice(0, 64),
             tool: String(row.tool || "").slice(0, 64),
             original_chars: Number(row.original_chars) || 0,
             elapsed_ms: Number(row.elapsed_ms) || 0,
           };
+          if (!informativeOnly || isInformativeEvent(event)) return event;
         }
       } catch { /* Skip a partial or malformed final line. */ }
     }
@@ -175,5 +181,5 @@ async function checkHealth(credentialDirectory, execute = runCommand) {
 
 module.exports = {
   checkHealth, decisionSummary, defaultCredentialDirectory, defaultDataDirectory,
-  parseHealthOutput, readConfig, readLatestEvent, writeEnabled,
+  isInformativeEvent, parseHealthOutput, readConfig, readLatestEvent, writeEnabled,
 };
