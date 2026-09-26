@@ -1,7 +1,9 @@
+**/__pycache__/**
+**/*.pyc
 tests/**
 scripts/**
 webview/**
-patch_codex_webview.py
 composer-preview.html
+patch_codex_webview.py
 *.vsix
 node_modules/**

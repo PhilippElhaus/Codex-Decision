@@ -15,12 +15,33 @@
   let layoutObserver;
   let observed = [];
   let positionScheduled = false;
+  let viewId = newViewId();
+  let viewLocation = window.location.href;
+  const sentViews = new Map();
   const colors = { off: "#9a9a9a", healthy: "#87cda4", failed: "#e99490", busy: "#83bcf7" };
+
+  function newViewId() {
+    return `view-${Math.random().toString(36).slice(2)}-${Date.now().toString(36)}`;
+  }
+
+  function currentViewId() {
+    if (window.location.href !== viewLocation) {
+      viewLocation = window.location.href;
+      viewId = newViewId();
+      state = { ...state, busy: false, recent: "No decision recorded yet", history: [], stats: {} };
+      render();
+    }
+    return viewId;
+  }
 
   function send(action, enabled) {
     const api = window.__jevPilotApi;
     if (!api) return;
-    api.postMessage({ type: "jev-pilot", action, enabled, id: ++pending });
+    const id = ++pending;
+    const current = currentViewId();
+    sentViews.set(id, current);
+    if (sentViews.size > 50) sentViews.delete(sentViews.keys().next().value);
+    api.postMessage({ type: "jev-pilot", action, enabled, viewId: current, id });
   }
 
   function create() {
@@ -66,7 +87,7 @@
     root.id = "codex-jev-pilot";
     root.innerHTML = `
       <button id="codex-jev-pilot-button" type="button" aria-label="Jev hooks" aria-expanded="false" aria-controls="codex-jev-pilot-menu"><span id="codex-jev-pilot-dot"></span><span id="codex-jev-pilot-label">jev</span><span id="codex-jev-pilot-observe">OBS</span></button>
-      <div id="codex-jev-pilot-tip" role="tooltip"><strong></strong><span id="codex-jev-pilot-mode"></span><h3 id="codex-jev-pilot-session-heading">Since control opened</h3><div id="codex-jev-pilot-stats"></div><h3 id="codex-jev-pilot-history-heading">Recent Jev outcomes</h3><ol id="codex-jev-pilot-history"></ol><p id="codex-jev-pilot-empty">None yet</p></div>
+      <div id="codex-jev-pilot-tip" role="tooltip"><strong></strong><span id="codex-jev-pilot-mode"></span><h3 id="codex-jev-pilot-session-heading">Since this view opened</h3><div id="codex-jev-pilot-stats"></div><h3 id="codex-jev-pilot-history-heading">Recent Jev outcomes</h3><ol id="codex-jev-pilot-history"></ol><p id="codex-jev-pilot-empty">None yet</p></div>
       <div id="codex-jev-pilot-menu" role="group" aria-label="Jev hooks" data-open="false"><h2>Jev hooks</h2><button id="codex-jev-pilot-option" type="button" role="checkbox" aria-checked="false"><span id="codex-jev-pilot-check"></span><span><strong>PostToolUse · output filter</strong><small>Check repetitive tool output with Jev</small></span></button><p>Select none to turn Jev off.</p></div>`;
     document.body.appendChild(root);
     root.querySelector("#codex-jev-pilot-button").addEventListener("click", (event) => {
@@ -125,7 +146,7 @@
       return item;
     }));
     root.querySelector("#codex-jev-pilot-empty").style.display = state.enabled && !history.length ? "block" : "none";
-    button.setAttribute("aria-label", `${status}. Since control opened: ${totals}. ${history.join(". ") || state.recent}. Select Jev hooks`);
+    button.setAttribute("aria-label", `${status}. Since this view opened: ${totals}. ${history.join(". ") || state.recent}. Select Jev hooks`);
   }
 
   function visibleRect(element) {
@@ -232,6 +253,9 @@
     window.addEventListener("scroll", schedulePosition, true);
     window.addEventListener("message", (event) => {
       if (event.data?.type !== "jev-pilot-reply") return;
+      const sentView = sentViews.get(event.data.id);
+      sentViews.delete(event.data.id);
+      if (!sentView || sentView !== currentViewId()) return;
       if (event.data.status && typeof event.data.status === "object") {
         state = event.data.status;
         render();

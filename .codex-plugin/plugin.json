@@ -1,7 +1,7 @@
 {
   "name": "codex-jev-output-pilot",
-  "version": "0.1.0+codex.20260926112023",
-  "description": "Opt-in Jev pilot for reducing repetitive Codex tool output.",
+  "version": "0.1.0+codex.20260926114801",
+  "description": "Jev checks repetitive Codex tool output and can replace it with a recoverable excerpt.",
   "author": {
     "name": "Elhaus Labs",
     "url": "https://github.com/Elhaus-Labs"
@@ -16,14 +16,17 @@
     "context"
   ],
   "interface": {
-    "displayName": "Jev Output Pilot",
-    "shortDescription": "Evaluate large tool results with Jev.",
-    "longDescription": "An opt-in PostToolUse pilot that replaces repetitive Bash output with a recoverable excerpt when Jev approves.",
+    "displayName": "Codex Jev",
+    "shortDescription": "Trim repetitive tool output with Jev.",
+    "longDescription": "Codex Jev checks eligible PostToolUse results, replacing approved repetitive output with a recoverable excerpt. A companion VS Code control shows connection health, recent decisions, and session totals.",
     "developerName": "Elhaus Labs",
     "category": "Productivity",
     "capabilities": [
       "Lifecycle hooks"
     ],
-    "defaultPrompt": "Explain the Jev Output Pilot's replacement decisions and safety gates."
+    "defaultPrompt": "Explain Codex Jev's replacement decisions and safety gates.",
+    "brandColor": "#7DD5AB",
+    "logo": "./assets/logo.png",
+    "composerIcon": "./assets/icon.png"
   }
 }

@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import random
 import stat
+import struct
 import subprocess
 import sys
 import tempfile
@@ -63,6 +64,12 @@ class ConfigTests(unittest.TestCase):
         manifest = json.loads((ROOT / ".codex-plugin" / "plugin.json").read_text())
         hooks = json.loads((ROOT / "hooks" / "hooks.json").read_text())
         self.assertEqual(manifest["name"], ROOT.name)
+        self.assertEqual(manifest["interface"]["displayName"], "Codex Jev")
+        for field, size in (("logo", 256), ("composerIcon", 64)):
+            image = ROOT / manifest["interface"][field]
+            data = image.read_bytes()
+            self.assertEqual(data[:8], b"\x89PNG\r\n\x1a\n")
+            self.assertEqual(struct.unpack(">II", data[16:24]), (size, size))
         self.assertEqual(set(hooks["hooks"]), {"PostToolUse"})
         self.assertFalse(hooks["hooks"]["PostToolUse"][0]["hooks"][0].get("async", False))
 

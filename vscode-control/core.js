@@ -149,6 +149,15 @@ async function readRecentOutcomes(directory, limit = 3) {
   }
 }
 
+async function readEventOffset(directory) {
+  try {
+    return (await fs.stat(path.join(directory, "events.jsonl"))).size;
+  } catch (error) {
+    if (error.code === "ENOENT") return 0;
+    throw error;
+  }
+}
+
 async function readEventsSince(directory, offset) {
   let file;
   try {
@@ -256,5 +265,5 @@ async function checkHealth(credentialDirectory, execute = runCommand) {
 module.exports = {
   checkHealth, decisionSummary, defaultCredentialDirectory, defaultDataDirectory,
   isInformativeEvent, isJevOutcome, outcomeLine, parseHealthOutput, readConfig,
-  readEventsSince, readLatestEvent, readRecentOutcomes, writeEnabled, writeMode,
+  readEventOffset, readEventsSince, readLatestEvent, readRecentOutcomes, writeEnabled, writeMode,
 };

@@ -263,7 +263,7 @@ def capsule(output: str, original_path: str) -> str:
     head = output[:350].strip()
     tail = output[-350:].strip()
     return (
-        f"{head}\n[... repetitive middle omitted by Jev Output Pilot ...]\n{tail}\n"
+        f"{head}\n[... repetitive middle omitted by Codex Jev ...]\n{tail}\n"
         f"Full original: {original_path}\n"
         "Read that file if exact lines are needed."
     )
@@ -338,7 +338,7 @@ def decide(
         return result("keep", "storage_unavailable", size, scores=scores)
     hook_output = {
         "continue": False,
-        "stopReason": "Repetitive tool output stored by Jev Output Pilot",
+        "stopReason": "Repetitive tool output stored by Codex Jev",
         "reason": feedback,
     }
     return result("replace", "jev_replace", size, capsule_chars=len(feedback), scores=scores, hook_output=hook_output)

@@ -4,7 +4,7 @@ const path = require("node:path");
 const vscode = require("vscode");
 const {
   checkHealth, decisionSummary, defaultCredentialDirectory, defaultDataDirectory,
-  isJevOutcome, outcomeLine, readConfig, readEventsSince, readRecentOutcomes, writeEnabled, writeMode,
+  isJevOutcome, outcomeLine, readConfig, readEventOffset, readEventsSince, writeEnabled, writeMode,
 } = require("./core");
 
 function emptyStats() {
@@ -13,12 +13,12 @@ function emptyStats() {
 
 function activate(context) {
   const button = vscode.window.createStatusBarItem("jevPilot.status", vscode.StatusBarAlignment.Left, 95);
-  button.name = "Jev output pilot";
+  button.name = "Codex Jev";
   button.command = "jevPilot.selectHooks";
   button.show();
   context.subscriptions.push(button);
 
-  const state = { enabled: false, mode: "replace", health: null, recent: null, history: [], stats: emptyStats(), busyUntil: 0, eventSize: -1, checking: false, polling: false, callingSeen: false };
+  const state = { enabled: false, mode: "replace", health: null, recent: null, history: [], stats: emptyStats(), busyUntil: 0, eventSize: -1, checking: false, polling: false, callingSeen: false, viewId: null, generation: 0 };
   let pulseTimer;
   const settings = () => vscode.workspace.getConfiguration("jevPilot");
   const dataDirectory = () => {
@@ -39,6 +39,29 @@ function activate(context) {
     stats: { ...state.stats },
   });
 
+  function clearActivity() {
+    state.stats = emptyStats();
+    state.history = [];
+    state.recent = null;
+    state.callingSeen = false;
+    state.busyUntil = 0;
+  }
+
+  async function enterView(viewId) {
+    if (typeof viewId !== "string" || !/^[\w:-]{1,96}$/.test(viewId) || state.viewId === viewId) return;
+    state.viewId = viewId;
+    const generation = ++state.generation;
+    state.eventSize = -2;
+    clearActivity();
+    render();
+    try {
+      const offset = await readEventOffset(dataDirectory());
+      if (state.generation === generation) state.eventSize = offset;
+    } catch {
+      if (state.generation === generation) state.eventSize = -1;
+    }
+  }
+
   function render() {
     const busy = state.enabled && Date.now() < state.busyUntil;
     const color = !state.enabled ? "disabledForeground" : busy ? "charts.blue" :
@@ -51,14 +74,14 @@ function activate(context) {
       state.health?.ok === false ? `Unavailable · ${state.health.reason}` : "Checking connection";
     const average = state.stats.completed ? Math.round(state.stats.elapsedMs / state.stats.completed) : 0;
     button.tooltip = [
-      `Jev output pilot · ${status}`,
+      `Codex Jev · ${status}`,
       state.enabled ? `Selected: PostToolUse output filter · ${state.mode} mode` : "Click to select a hook",
-      `Since control opened: ${state.stats.calls} calls · ${state.stats.candidates} candidates · ${state.stats.kept} kept · ${state.stats.replaced} replaced`,
+      `Since this view opened: ${state.stats.calls} calls · ${state.stats.candidates} candidates · ${state.stats.kept} kept · ${state.stats.replaced} replaced`,
       `${state.stats.checkedChars.toLocaleString()} output chars checked · ${average} ms average`,
       "Recent Jev outcomes:",
       ...(state.history.length ? state.history.map(outcomeLine) : ["None yet"]),
     ].join("\n");
-    button.accessibilityInformation = { label: `Jev output pilot. ${status}. ${decisionSummary(state.recent)}` };
+    button.accessibilityInformation = { label: `Codex Jev. ${status}. ${decisionSummary(state.recent)}` };
   }
 
   function pulse() {
@@ -82,10 +105,9 @@ function activate(context) {
       if (!state.enabled) {
         state.health = null;
         if (wasEnabled) {
+          state.generation += 1;
           state.eventSize = -1;
-          state.history = [];
-          state.stats = emptyStats();
-          state.recent = null;
+          clearActivity();
         }
       }
       render();
@@ -112,23 +134,22 @@ function activate(context) {
 
   async function pollEvent() {
     if (!state.enabled || state.polling) return;
+    if (state.eventSize === -2) return;
     state.polling = true;
+    const generation = state.generation;
     try {
       if (state.eventSize < 0) {
-        const { outcomes, offset } = await readRecentOutcomes(dataDirectory());
+        const offset = await readEventOffset(dataDirectory());
+        if (generation !== state.generation) return;
         state.eventSize = offset;
-        state.history = outcomes;
-        state.recent = outcomes[0] || null;
         render();
         return;
       }
       const batch = await readEventsSince(dataDirectory(), state.eventSize);
+      if (generation !== state.generation) return;
       state.eventSize = batch.offset;
       if (batch.reset) {
-        state.stats = emptyStats();
-        state.history = [];
-        state.recent = null;
-        state.callingSeen = false;
+        clearActivity();
       }
       for (const event of batch.events) {
         if (event.status === "calling") {
@@ -191,6 +212,7 @@ function activate(context) {
 
   context.subscriptions.push(vscode.commands.registerCommand("jevPilot.selectHooks", selectHooks));
   context.subscriptions.push(vscode.commands.registerCommand("jevPilot.bridge", async (request) => {
+    await enterView(request?.viewId);
     if (request?.action === "setSelection" && typeof request.enabled === "boolean") {
       await writeEnabled(dataDirectory(), request.enabled);
       state.eventSize = -1;
@@ -207,8 +229,9 @@ function activate(context) {
   }));
   context.subscriptions.push(vscode.workspace.onDidChangeConfiguration((event) => {
     if (event.affectsConfiguration("jevPilot")) {
+      state.generation += 1;
       state.eventSize = -1;
-      state.stats = emptyStats();
+      clearActivity();
       void sync();
     }
   }));

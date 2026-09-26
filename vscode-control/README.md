@@ -1,14 +1,18 @@
-# Jev control for VS Code
+# Codex Jev control for VS Code
 
 The installed companion extension shows a `jev` status-bar indicator and
 handles the composer button's private message bridge. The composer button opens
 the single `PostToolUse` hook checkbox. An empty selection turns the hook off.
-When selected, replacement mode is the default. Set **Jev Control Pilot: Mode**
+When selected, replacement mode is the default. Set **Codex Jev Control: Mode**
 (`jevPilot.mode`) to `observe` in VS Code settings to retain full output while
 recording decisions. `OBS` appears on the button and status bar in that mode.
-Hovering shows the selected mode, Jev call totals since the control opened,
+Hovering shows the selected mode, Jev call totals since this composer view opened,
 and the three most recent metadata-only outcomes across tools. Routine small
-tool outputs do not displace those outcomes in the tooltip.
+tool outputs do not displace those outcomes in the tooltip. A fresh view starts
+at the current end of the metadata log; reopening an old conversation or
+reloading the window begins with zero and no recent outcomes. A view URL change
+also resets totals. These are view-scoped counts, rather than persisted
+per-conversation history.
 The composer control docks immediately before the model selector, reduces to
 its colored dot when the available gap narrows, and hides if even the dot
 cannot fit without covering the selector. The hook remains selectable from
@@ -30,13 +34,35 @@ check runs after selection and every five minutes. A missing or rejected key
 triggers a refresh only when a local credential source is configured.
 
 The in-composer button uses a reversible, version-pinned patch to the installed
-Codex extension. Run `patch_codex_webview.py --help` for apply, update, and
-restore syntax. `update` verifies the installed host files and replaces only
-the Jev UI asset, retaining the original rollback files.
+Codex extension `26.917.62051`. It is not a supported Codex extension point.
+`patch_codex_webview.py` supports `apply`, `update`, and `restore`. `apply`
+checks exact unmodified hashes; `update` checks the currently installed patch
+and refreshes both the host message bridge and Jev UI asset. Both retain the
+original rollback files. `restore` checks patched hashes before writing the
+original files back. An updated Codex extension needs new validation before
+this patch can be applied to it.
 Its rollback files stay outside the repository under `%LOCALAPPDATA%`. Reload
 the VS Code window after installing or restoring the patch.
 
-Run `npm test` for unit/integration tests and `python3 scripts/browser_smoke.py`
+To install the companion extension from source, package it with
+`npx @vscode/vsce package --no-dependencies` from this directory, then run
+`code --install-extension <generated-vsix> --force`. Set the data directory
+before selecting the hook. For the composer button, run the patcher against
+your installed Codex extension and a separate off-repository rollback path:
+
+```bash
+python3 patch_codex_webview.py update \
+  --extension '/mnt/c/Users/<user>/.vscode/extensions/openai.chatgpt-26.917.62051-win32-x64' \
+  --backup '/mnt/c/Users/<user>/AppData/Local/Codex/jev-output-pilot/rollback/26.917.62051'
+```
+
+Use `apply` in place of `update` for an unmodified installation. For rollback,
+use `restore` with the same paths, then reload. An extension update may remove
+the composer button while leaving the status-bar extension installed.
+
+Run `npm test` for unit/integration tests,
+`python3 -m unittest discover -s tests -p 'test_*.py'`, and
+`python3 scripts/browser_smoke.py`
 for the headless browser test of button placement, selection, tooltip, colors,
 and the VS Code message contract. [`composer-preview.html`](composer-preview.html)
 is a standalone visual mock for design review.

@@ -12,14 +12,14 @@ from replay import generated_cases
 
 
 PLUGIN = Path.home() / '.codex/plugins/cache/personal/codex-jev-output-pilot'
+SOURCE = Path(__file__).resolve().parents[1]
 
 
 def main() -> None:
-    versions = sorted(path for path in PLUGIN.iterdir()
-                      if (path / '.codex-plugin/plugin.json').is_file())
-    if len(versions) != 1:
-        raise RuntimeError('expected one installed Jev plugin version')
-    hook = versions[0] / 'hooks/post_tool_use.py'
+    version = json.loads((SOURCE / '.codex-plugin/plugin.json').read_text())['version']
+    hook = PLUGIN / version / 'hooks/post_tool_use.py'
+    if not hook.is_file():
+        raise RuntimeError(f'installed Codex Jev hook is missing: {version}')
     event = next(generated_cases(1))['event']
     environment = dict(os.environ)
     environment.pop('TYPESAFE_API_KEY', None)

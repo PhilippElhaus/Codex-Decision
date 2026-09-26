@@ -20,13 +20,17 @@
       "kept · mcp__demo__logs · 14,000 chars · 1,310 ms",
       "candidate (observe) · Bash · 12,960 chars · 1,180 ms",
     ];
-    let calls = 0;
+    let calls = 0, activeViewId = null, freshView = false;
     window.acquireVsCodeApi = () => ({ postMessage(request) {
       calls += 1;
+      if (activeViewId && activeViewId !== request.viewId) freshView = true;
+      activeViewId = request.viewId;
       if (request.action === "setSelection") enabled = request.enabled;
       queueMicrotask(() => window.dispatchEvent(new MessageEvent("message", { data: {
         type: "jev-pilot-reply", id: request.id,
-        status: { enabled, health, busy, mode, recent: history[0], history, stats },
+        status: { enabled, health, busy, mode, recent: freshView ? "No decision recorded yet" : history[0],
+          history: freshView ? [] : history,
+          stats: freshView ? { calls: 0, candidates: 0, kept: 0, replaced: 0, checkedChars: 0, elapsedMs: 0, completed: 0 } : stats },
       } })));
     } });
   </script>
@@ -109,6 +113,9 @@
       health = { ok: false, reason: "JEV_HTTP_401" };
       await pause(150);
       check(button.style.color === "rgb(233, 148, 144)", "failure red");
+      location.hash = "#reopened-thread";
+      await until(() => freshView && tooltip.textContent.includes("0 calls") && tooltip.querySelectorAll("li").length === 0,
+        "new or reopened thread has no old outcomes");
       button.click();
       option.click();
       await pause(50);

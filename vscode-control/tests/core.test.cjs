@@ -7,7 +7,7 @@ const path = require("node:path");
 const test = require("node:test");
 const {
   checkHealth, decisionSummary, outcomeLine, parseHealthOutput, readConfig,
-  readEventsSince, readLatestEvent, readRecentOutcomes, writeEnabled, writeMode,
+  readEventOffset, readEventsSince, readLatestEvent, readRecentOutcomes, writeEnabled, writeMode,
 } = require("../core");
 
 test("hook selection writes the config atomically and preserves the pilot mode", async () => {
@@ -93,6 +93,23 @@ test("incremental event reader keeps incomplete lines for the next poll", async 
     const second = await readEventsSince(directory, first.offset);
     assert.deepEqual(second.events.map((event) => event.status), ["candidate"]);
     assert.equal(second.offset, Buffer.byteLength(calling + result));
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("new controls start after existing log entries", async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-control-test-"));
+  try {
+    assert.equal(await readEventOffset(directory), 0);
+    const file = path.join(directory, "events.jsonl");
+    const historical = JSON.stringify({ status: "keep", reason: "jev_keep", tool: "Bash", original_chars: 13006 }) + "\n";
+    await fs.writeFile(file, historical);
+    const offset = await readEventOffset(directory);
+    assert.equal(offset, Buffer.byteLength(historical));
+    assert.deepEqual(await readEventsSince(directory, offset), { events: [], offset, reset: false });
+    await fs.appendFile(file, JSON.stringify({ status: "replace", reason: "jev_replace", tool: "Bash", original_chars: 12000 }) + "\n");
+    assert.deepEqual((await readEventsSince(directory, offset)).events.map((event) => event.status), ["replace"]);
   } finally {
     await fs.rm(directory, { recursive: true, force: true });
   }

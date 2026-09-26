@@ -59,6 +59,9 @@ test("status control selects the hook and reflects health, activity, tooltip, an
     extension.activate(context);
     await until(() => button.tooltip?.includes("Off · no hooks selected"));
     assert.equal(button.color.id, "disabledForeground");
+    await fs.writeFile(path.join(directory, "events.jsonl"), JSON.stringify({
+      status: "keep", reason: "jev_keep", tool: "Bash", original_chars: 13006, elapsed_ms: 1139,
+    }) + "\n");
 
     commands.get("jevPilot.selectHooks")();
     picker.selectedItems = [picker.items[0]];
@@ -68,6 +71,9 @@ test("status control selects the hook and reflects health, activity, tooltip, an
     await until(() => button.color.id === "charts.blue");
     await until(() => button.color.id === "testing.iconPassed");
     assert.match(button.tooltip, /Connected · jev-1.13.0/);
+    assert.match(button.tooltip, /0 calls/);
+    assert.match(button.tooltip, /Recent Jev outcomes:\nNone yet/);
+    assert.doesNotMatch(button.tooltip, /13[,.]006 chars/);
 
     mode = "observe";
     configListener({ affectsConfiguration: (key) => key === "jevPilot" });
@@ -80,7 +86,7 @@ test("status control selects the hook and reflects health, activity, tooltip, an
     assert.equal((await core.readConfig(directory)).mode, "replace");
     await new Promise((resolve) => setTimeout(resolve, 300)); // Let the event reader establish its new offset.
 
-    await fs.writeFile(path.join(directory, "events.jsonl"), JSON.stringify({
+    await fs.appendFile(path.join(directory, "events.jsonl"), JSON.stringify({
       status: "calling", reason: "jev_request", tool: "Bash", original_chars: 0, elapsed_ms: 0,
     }) + "\n" + JSON.stringify({
       status: "replace", reason: "jev_replace", tool: "Bash", original_chars: 11520, elapsed_ms: 480,
@@ -113,6 +119,20 @@ test("status control selects the hook and reflects health, activity, tooltip, an
     assert.match(session.history[1], /kept · mcp__demo__logs/);
     assert.doesNotMatch(session.history.join(" "), /replaced/);
 
+    const newView = await commands.get("jevPilot.bridge")({ action: "status", viewId: "view-new-thread" });
+    assert.equal(newView.stats.calls, 0);
+    assert.deepEqual(newView.history, []);
+    assert.match(button.tooltip, /Recent Jev outcomes:\nNone yet/);
+    await fs.appendFile(path.join(directory, "events.jsonl"), JSON.stringify({
+      status: "calling", reason: "jev_request", tool: "Bash",
+    }) + "\n" + JSON.stringify({
+      status: "replace", reason: "jev_replace", tool: "Bash", original_chars: 12100, elapsed_ms: 850,
+    }) + "\n");
+    await until(() => button.tooltip.includes("1 calls · 0 candidates · 0 kept · 1 replaced"));
+    const reopened = await commands.get("jevPilot.bridge")({ action: "status", viewId: "view-old-thread-reopened" });
+    assert.equal(reopened.stats.calls, 0);
+    assert.deepEqual(reopened.history, []);
+
     health = { ok: false, reason: "JEV_HTTP_ERROR" };
     await commands.get("jevPilot.checkConnection")();
     await until(() => button.color.id === "testing.iconFailed");
@@ -128,7 +148,7 @@ test("status control selects the hook and reflects health, activity, tooltip, an
     commands.get("jevPilot.selectHooks")();
     picker.selectedItems = [picker.items[0]];
     await picker.accept();
-    await until(() => button.tooltip.includes("candidate \(observe\) · Bash"));
+    await until(() => button.tooltip.includes("Recent Jev outcomes:\nNone yet"));
   } finally {
     for (const disposable of context.subscriptions.reverse()) disposable.dispose();
     await fs.rm(directory, { recursive: true, force: true });

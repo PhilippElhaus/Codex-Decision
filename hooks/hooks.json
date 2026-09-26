@@ -1,5 +1,5 @@
 {
-  "description": "Opt-in Jev output pilot. Disabled by default in config.json.",
+  "description": "Codex Jev output filter. Disabled until its hook is selected.",
   "hooks": {
     "PostToolUse": [
       {

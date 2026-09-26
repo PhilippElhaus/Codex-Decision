@@ -22,8 +22,9 @@ BRIDGE = (
     'if(u&&u.type==="jev-pilot"){'
     'if(u.action!=="status"&&u.action!=="setSelection")return;'
     'if(u.action==="setSelection"&&typeof u.enabled!=="boolean")return;'
+    'if(u.viewId!==undefined&&(typeof u.viewId!=="string"||!/^[-\\w:]{1,96}$/.test(u.viewId)))return;'
     'Promise.resolve(qe.commands.executeCommand("jevPilot.bridge",'
-    '{action:u.action,enabled:u.enabled})).then('
+    '{action:u.action,enabled:u.enabled,viewId:u.viewId})).then('
     'v=>e.postMessage({type:"jev-pilot-reply",id:u.id,status:v}),'
     '()=>e.postMessage({type:"jev-pilot-reply",id:u.id,status:'
     '{enabled:false,health:{ok:false,reason:"BRIDGE_UNAVAILABLE"},'
@@ -135,7 +136,7 @@ def restore(root: Path, backup: Path) -> None:
 
 
 def update(root: Path, backup: Path) -> None:
-    """Replace only the injected UI asset after verifying the installed patch."""
+    """Update the bridge and UI asset after verifying the installed patch."""
     if VERSION not in root.name or backup.is_symlink():
         raise RuntimeError("Codex extension version or rollback directory changed")
     manifest_path = exact_file(backup, "manifest.json")
@@ -150,16 +151,25 @@ def update(root: Path, backup: Path) -> None:
         if digest(exact_file(backup, relative).read_bytes()) != expected:
             raise RuntimeError(f"rollback file changed: {relative}")
     source_asset = Path(__file__).with_name("webview") / "jev-control.js"
-    new_asset = exact_file(source_asset.parent, source_asset.name).read_bytes()
-    target = root / ASSET
-    previous_asset = target.read_bytes()
-    manifest["patched"][ASSET] = digest(new_asset)
+    original_js = exact_file(backup, "out/extension.js").read_bytes()
+    js = original_js.decode("utf-8")
+    if js.count(ANCHOR) != 1:
+        raise RuntimeError("Codex extension insertion point changed")
+    changed = {
+        "out/extension.js": js.replace(ANCHOR, BRIDGE).encode("utf-8"),
+        ASSET: exact_file(source_asset.parent, source_asset.name).read_bytes(),
+    }
+    previous = {relative: exact_file(root, relative).read_bytes() for relative in changed}
+    for relative, data in changed.items():
+        manifest["patched"][relative] = digest(data)
     new_manifest = json.dumps(manifest, indent=2).encode("utf-8") + b"\n"
     try:
-        write_exact(target, new_asset)
+        for relative, data in changed.items():
+            write_exact(root / relative, data)
         write_exact(manifest_path, new_manifest)
     except Exception:
-        write_exact(target, previous_asset)
+        for relative, data in previous.items():
+            write_exact(root / relative, data)
         write_exact(manifest_path, previous_manifest)
         raise
 
