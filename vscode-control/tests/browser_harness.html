@@ -102,8 +102,9 @@
       check(compactMenu.left >= 11 && compactMenu.right <= innerWidth - 11, "compact menu stays in viewport");
       button.click();
       composer.style.width = `${wideWidth - (gap - 12)}px`;
-      await until(() => root.dataset.raised === "true" && root.style.display === "block", "raise control when toolbar gap closes");
-      check(rect().bottom < anchor().top, "raised control stays clear of the access button");
+      await until(() => root.dataset.compact === "true" && root.style.display === "block", "compact control when toolbar gap closes");
+      check(Math.abs(rect().top + rect().height / 2 - anchor().top - anchor().height / 2) <= 1,
+        "compact control stays on the toolbar row when the gap closes");
       composer.style.width = "";
       await until(() => root.style.display === "block" && root.dataset.compact === "false", "restore full control after resize");
       check(getComputedStyle(label).display !== "none" && docked() >= 7 && docked() <= 10, "full control redocked");
@@ -119,10 +120,15 @@
       button.click();
       accessControl.removeAttribute("aria-label");
       await until(() => root.style.display === "block", "shield icon fallback keeps Jev visible");
+      modelControl.removeAttribute("role");
+      await until(() => root.dataset.compact === "true", "missing model control keeps compact Jev visible");
+      check(Math.abs(rect().top + rect().height / 2 - anchor().top - anchor().height / 2) <= 1,
+        "missing model control keeps Jev on the access row");
+      modelControl.setAttribute("role", "button");
       composer.style.width = "";
       accessControl.textContent = "Full access";
       modelControl.textContent = "GPT-6 Sol Extra High";
-      await until(() => root.dataset.raised === "false", "text controls restore normal position");
+      await until(() => root.dataset.compact === "false", "text controls restore normal position");
       button.click();
       check(button.getAttribute("aria-expanded") === "true", "menu opens");
       const menu = document.getElementById("codex-jev-menu");

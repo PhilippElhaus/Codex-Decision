@@ -2,7 +2,7 @@
 
 The companion extension connects the Jev button in the Codex composer to the installed plugin. The button opens three checkboxes. Clear all checkboxes to turn Jev off. The extension checks Jev health and reads recent decision metadata.
 
-The button stays visible when Codex shows icon-only controls. It moves above the toolbar if the gap beside the model control closes. Gray means off, green means connected, red means unavailable, and blue means a request is in progress. `OBS` means observe mode. The tooltip shows activity since the current composer view opened. A new view starts with empty counters.
+The button stays on the toolbar row when Codex shows icon-only controls or the gap beside the model control closes. Gray means off, green means connected, red means unavailable, and blue means a request is in progress. `OBS` means observe mode. The tooltip shows activity since the current composer view opened. A new view starts with empty counters.
 
 Set `codexJev.dataDirectory` to the installed `PLUGIN_DATA` directory. The extension has no machine-specific default. See [installation](../setup/setup_installation.md).
 

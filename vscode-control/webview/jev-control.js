@@ -268,28 +268,27 @@
     const item = create();
     const anchor = findAnchor();
     if (!anchor) { item.style.display = "none"; return; }
-    const model = findModel(anchor) || anchor;
-    observeLayout(anchor, model);
+    const model = findModel(anchor);
+    observeLayout(anchor, model || anchor);
     const leftEdge = anchor.rect.right + 7;
-    const rightEdge = model.rect.left - 8;
+    const rightEdge = model ? model.rect.left - 8 : leftEdge;
     const available = rightEdge - leftEdge;
     const button = item.querySelector("#codex-jev-button");
-    // Follow the live model control height as Codex themes and layouts change.
-    const modelHeight = model.rect.height;
-    item.style.setProperty("--codex-jev-button-height", `${Math.round(modelHeight)}px`);
+    // The access control stays on the toolbar row even when the model is an icon.
+    const modelHeight = model?.rect.height;
+    const buttonHeight = modelHeight >= 28 && modelHeight <= 44 ? modelHeight : anchor.rect.height;
+    item.style.setProperty("--codex-jev-button-height", `${Math.round(buttonHeight)}px`);
     item.style.display = "block";
     item.style.visibility = "hidden";
     item.dataset.compact = "false";
     const fullWidth = button.getBoundingClientRect().width;
-    item.dataset.compact = String(available < fullWidth);
+    item.dataset.compact = String(!model || available < fullWidth);
     const width = button.getBoundingClientRect().width;
-    const raised = available < width;
-    item.dataset.raised = String(raised);
-    const buttonLeft = raised ? Math.min(anchor.rect.right + 7, window.innerWidth - width - 12) : rightEdge - width;
+    const fits = model && available >= width;
+    const buttonLeft = fits ? rightEdge - width : Math.max(12, Math.min(leftEdge, window.innerWidth - width - 12));
     item.style.left = "auto";
     item.style.right = `${Math.round(window.innerWidth - buttonLeft - width)}px`;
-    item.style.top = `${Math.round(raised ? Math.max(12, anchor.rect.top - modelHeight - 8) :
-      model.rect.top + modelHeight / 2 - button.getBoundingClientRect().height / 2)}px`;
+    item.style.top = `${Math.round(anchor.rect.top + anchor.rect.height / 2 - button.getBoundingClientRect().height / 2)}px`;
     alignPopup(item.querySelector("#codex-jev-menu"), 296, buttonLeft, buttonLeft + width);
     alignPopup(item.querySelector("#codex-jev-tip"), 420, buttonLeft, buttonLeft + width);
     item.style.visibility = "";
