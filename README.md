@@ -12,10 +12,9 @@ Codex Jev trims large tool results before Codex reads them. It uses Jev to decid
 | Test/build logs | Failures and completion summaries without routine pass and progress lines. |
 | Search/listing | Relevant matches and representative file paths from broad results. |
 
-All integrations start off. The companion VS Code control lets you select each one and shows connection health and recent outcomes.
-The screenshots below use synthetic selections and activity.
+All integrations start off. The button in the Codex composer selects them and shows Jev health and recent outcomes. The images show synthetic activity.
 
-<img src="docs/images/jev-menu.png" width="840" alt="Jev integrations selector in the Codex composer">
+<img src="docs/images/jev-menu.png" width="620" alt="Jev integrations selector in the Codex composer">
 
 ## Measured results
 
@@ -29,7 +28,7 @@ A [live hook benchmark](docs/benchmarks/benchmark_live_2026-09-26.md) ran the th
 
 Across all 36 results, including oversized inputs that the hook deliberately skipped, the integrations saved **70,707 model-visible tokens**. These are tool-output measurements, not billed-token or full-task savings. Jev kept all six search-hit outputs when it was uncertain.
 
-<img src="docs/images/jev-tooltip.png" width="840" alt="Jev activity and savings shown in the Codex composer">
+<img src="docs/images/jev-tooltip.png" width="620" alt="Jev activity and savings shown in the Codex composer">
 
 ## Quick install
 
@@ -38,7 +37,7 @@ codex plugin marketplace add https://github.com/PhilippElhaus/Codex-Jev
 codex plugin add codex-jev@codex-jev
 ```
 
-Download the [VS Code control VSIX](https://github.com/PhilippElhaus/Codex-Jev/releases/download/v0.2.1/codex-jev-control-0.2.1.vsix), then run `code --install-extension codex-jev-control-0.2.1.vsix --force`. [Add the Jev API key](docs/setup/setup_credentials.md), set `codexJev.dataDirectory` to the plugin data directory, and start a new Codex thread. The control appears in the VS Code status bar. The in-composer button has a separate [version-pinned setup](vscode-control/README.md).
+Download the [VS Code control VSIX](https://github.com/PhilippElhaus/Codex-Jev/releases/latest). From its download directory, run `code --install-extension codex-jev-control-0.2.2.vsix --force`. [Add the Jev API key](docs/setup/setup_credentials.md), set `codexJev.dataDirectory` to the plugin data directory, and apply the [version-pinned composer patch](vscode-control/README.md). Start a new Codex thread.
 
 ## Documentation
 

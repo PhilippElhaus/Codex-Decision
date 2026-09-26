@@ -21,13 +21,17 @@ def main() -> None:
     try:
         target = windows_path(ROOT / 'tests/visual_harness.html').replace('\\', '/')
         address = 'file:///' + quote(target, safe='/:')
-        for state, name in [('composer', 'jev-composer.png'), ('menu', 'jev-menu.png'), ('tooltip', 'jev-tooltip.png'), ('pulse', 'jev-pulse.png')]:
+        captures = [
+            ('menu', 'jev-menu.png', 620, 340),
+            ('tooltip', 'jev-tooltip.png', 620, 280),
+        ]
+        for state, name, width, height in captures:
             output = IMAGES / name
             result = subprocess.run([
                 str(edge), '--headless', '--disable-gpu', '--no-first-run',
                 '--no-default-browser-check', '--disable-extensions',
                 '--hide-scrollbars', '--force-device-scale-factor=1',
-                '--virtual-time-budget=950', '--window-size=840,400',
+                '--virtual-time-budget=950', f'--window-size={width},{height}',
                 f'--user-data-dir={windows_path(profile / state)}',
                 '--dump-dom', f'--screenshot={windows_path(output)}', address + '?demo=' + state,
             ], capture_output=True, text=True, timeout=30, check=False)

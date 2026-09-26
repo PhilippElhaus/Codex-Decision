@@ -3,7 +3,7 @@
 const path = require("node:path");
 const vscode = require("vscode");
 const {
-  activitySummary, checkHealth, decisionSummary, defaultDataDirectory,
+  checkHealth, decisionSummary, defaultDataDirectory,
   isJevOutcome, outcomeLine, readConfig, readEventOffset, readEventsSince, writeMode, writeSelection,
 } = require("./core");
 
@@ -12,14 +12,7 @@ function emptyStats() {
 }
 
 function activate(context) {
-  const button = vscode.window.createStatusBarItem("codexJev.status", vscode.StatusBarAlignment.Left, 95);
-  button.name = "Codex Jev";
-  button.command = "codexJev.selectHooks";
-  button.show();
-  context.subscriptions.push(button);
-
   const state = { enabled: false, outputEnabled: false, testBuildEnabled: false, searchListingEnabled: false, mode: "replace", health: null, recent: null, history: [], stats: emptyStats(), busyUntil: 0, eventSize: -1, checking: false, polling: null, callingSeen: false, viewId: null, generation: 0, eventDirectory: null };
-  let pulseTimer;
   let selectionQueue = Promise.resolve();
   let viewBaseline = Promise.resolve();
   const settings = () => vscode.workspace.getConfiguration("codexJev");
@@ -57,7 +50,6 @@ function activate(context) {
     const generation = ++state.generation;
     state.eventSize = -2;
     clearActivity();
-    render();
     viewBaseline = (async () => {
       try {
         const offset = await readEventOffset(dataDirectory());
@@ -69,32 +61,9 @@ function activate(context) {
     await viewBaseline;
   }
 
-  function render() {
-    const busy = state.enabled && Date.now() < state.busyUntil;
-    const color = !state.enabled ? "disabledForeground" : busy ? "charts.blue" :
-      state.health?.ok === true ? "testing.iconPassed" :
-      state.health?.ok === false ? "testing.iconFailed" : "statusBar.foreground";
-    button.color = new vscode.ThemeColor(color);
-    button.text = state.enabled && state.mode === "observe" ? "$(circle-filled) jev · OBS" : "$(circle-filled) jev";
-    const status = !state.enabled ? "Off · no integrations selected" :
-      state.health?.ok === true ? `Connected · ${state.health.model}` :
-      state.health?.ok === false ? `Unavailable · ${state.health.reason}` : "Checking connection";
-    button.tooltip = [
-      `Codex Jev · ${status}`,
-      state.enabled ? `Selected: ${[state.outputEnabled && "Jev output", state.testBuildEnabled && "Jev test/build", state.searchListingEnabled && "Jev search/listing"].filter(Boolean).join(" + ")} · ${state.mode} mode` : "Click to select an integration",
-      `Since this view opened: ${activitySummary(state.stats)}`,
-      "Recent Jev outcomes:",
-      ...(state.history.length ? state.history.map(outcomeLine) : ["None yet"]),
-    ].join("\n");
-    button.accessibilityInformation = { label: `Codex Jev. ${status}. ${decisionSummary(state.recent)}` };
-  }
-
   function pulse() {
     if (!state.enabled) return;
     state.busyUntil = Date.now() + 500;
-    render();
-    clearTimeout(pulseTimer);
-    pulseTimer = setTimeout(render, 510);
   }
 
   async function sync() {
@@ -119,7 +88,6 @@ function activate(context) {
       state.enabled = state.outputEnabled || state.testBuildEnabled || state.searchListingEnabled;
       state.mode = config.mode;
       if (!state.enabled) state.health = null;
-      render();
       if (state.enabled && !wasEnabled) void probe();
     } catch {
       state.enabled = false;
@@ -127,7 +95,6 @@ function activate(context) {
       state.testBuildEnabled = false;
       state.searchListingEnabled = false;
       state.health = null;
-      render();
     }
   }
 
@@ -140,7 +107,6 @@ function activate(context) {
       if (state.enabled) state.health = result;
     } finally {
       state.checking = false;
-      render();
     }
   }
 
@@ -155,7 +121,6 @@ function activate(context) {
           const offset = await readEventOffset(dataDirectory());
           if (generation !== state.generation) return;
           state.eventSize = offset;
-          render();
           return;
         }
         const batch = await readEventsSince(dataDirectory(), state.eventSize);
@@ -185,7 +150,6 @@ function activate(context) {
             state.health = { ok: false, reason: event.reason === "no_evaluator" ? "HOOK_KEY_MISSING" : "JEV_UNAVAILABLE" };
           }
         }
-        if (batch.events.length || batch.reset) render();
       } catch (error) {
         if (error.code !== "ENOENT") state.recent = null;
       }
@@ -208,45 +172,6 @@ function activate(context) {
     return task;
   }
 
-  function selectHooks() {
-    const picker = vscode.window.createQuickPick();
-    const output = {
-      label: "Output filter",
-      description: "Jev checks large Bash and text-only MCP results",
-      detail: `Current mode: ${state.mode}. Original output is retained when replacement is enabled.`,
-    };
-    const testBuild = {
-      label: "Test/build logs",
-      description: "Jev checks routine pass and progress lines before trimming",
-      detail: "Keeps failures, warnings, summaries, and the exact original.",
-    };
-    const searchListing = {
-      label: "Search/listing",
-      description: "Jev ranks broad rg results and file listings for the current task",
-      detail: "Retains uncertain groups and saves the exact original before replacement.",
-    };
-    picker.title = "Select Jev integrations";
-    picker.placeholder = "Select integrations and press Enter; an empty selection turns Jev off";
-    picker.canSelectMany = true;
-    picker.items = [output, testBuild, searchListing];
-    picker.selectedItems = [state.outputEnabled && output, state.testBuildEnabled && testBuild, state.searchListingEnabled && searchListing].filter(Boolean);
-    picker.onDidAccept(async () => {
-      const outputEnabled = picker.selectedItems.includes(output);
-      const testBuildEnabled = picker.selectedItems.includes(testBuild);
-      const searchListingEnabled = picker.selectedItems.includes(searchListing);
-      picker.hide();
-      try {
-        await saveSelection(() => ({ enabled: outputEnabled, test_build_enabled: testBuildEnabled, search_listing_enabled: searchListingEnabled }));
-        render();
-      } catch (error) {
-        void vscode.window.showErrorMessage(`Jev hook selection could not be saved: ${error.message}`);
-      }
-    });
-    picker.onDidHide(() => picker.dispose());
-    picker.show();
-  }
-
-  context.subscriptions.push(vscode.commands.registerCommand("codexJev.selectHooks", selectHooks));
   context.subscriptions.push(vscode.commands.registerCommand("codexJev.bridge", async (request) => {
     await enterView(request?.viewId);
     if (request?.action === "setSelection" && typeof request.enabled === "boolean") {
@@ -274,8 +199,7 @@ function activate(context) {
   const eventTimer = setInterval(() => { void pollEvent(); }, 250);
   const configTimer = setInterval(() => { void sync(); }, 10_000);
   const healthTimer = setInterval(() => { void probe(); }, 5 * 60_000);
-  context.subscriptions.push({ dispose: () => { clearTimeout(pulseTimer); clearInterval(eventTimer); clearInterval(configTimer); clearInterval(healthTimer); } });
-  render();
+  context.subscriptions.push({ dispose: () => { clearInterval(eventTimer); clearInterval(configTimer); clearInterval(healthTimer); } });
   void sync();
 }
 

@@ -5,9 +5,9 @@
   <title>Jev composer illustration</title>
   <style>
     body { margin: 0; background: #191919; color: #bcbcbc; font: 17px "Segoe UI", sans-serif; }
-    .composer { position: fixed; left: 22px; right: 22px; bottom: 25px; height: 170px; border: 1px solid #353535; border-radius: 28px; background: #202020; }
+    .composer { position: fixed; left: 18px; right: 18px; bottom: 18px; height: 125px; border: 1px solid #353535; border-radius: 24px; background: #202020; }
     .prompt { margin: 27px 30px; color: #777; font-size: 20px; }
-    .toolbar { position: absolute; left: 30px; right: 30px; bottom: 19px; height: 36px; display: flex; align-items: center; gap: 16px; white-space: nowrap; }
+    .toolbar { position: absolute; left: 24px; right: 24px; bottom: 15px; height: 36px; display: flex; align-items: center; gap: 12px; white-space: nowrap; }
     .toolbar button { border: 0; background: none; color: inherit; font: inherit; padding: 0; }
     .plus { font-size: 27px; color: #c9c9c9; line-height: 1; }
     .access { color: #d6b900 !important; font-size: 16px !important; }
@@ -15,8 +15,8 @@
     .model { box-sizing: border-box; margin-left: auto; color: #bebebe !important; font-size: 16px !important; height: 36px; padding: 5px 13px !important; border-radius: 999px; background: #303030 !important; }
     .divider { height: 34px; border-left: 1px solid #303030; }
     .context { color: #989898; }
-    .mic { color: #b5b5b5; font-size: 21px; }
     .send { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 50%; background: #c5c5c5; color: #202020; font-size: 21px; margin-left: 3px; }
+    @media (max-width: 700px) { .divider, .context { display: none; } }
     /* Match the headless screenshot surface to its smaller layout viewport. */
     #codex-jev { transform: translateY(var(--screenshot-offset, 0px)); }
   </style>
@@ -47,7 +47,7 @@
       <button class="access"><span class="shield">!</span>Full access</button>
       <button class="model">GPT-6 Sol Extra High&nbsp;⌄</button>
       <span class="divider"></span><span class="context">✧&nbsp; IDE context</span>
-      <span class="mic">♩</span><span class="send">↑</span>
+      <span class="send">↑</span>
     </div>
   </div>
   <script>

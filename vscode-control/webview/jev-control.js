@@ -171,8 +171,24 @@
     return rect && rect.width > 0 && rect.height > 0 ? rect : null;
   }
 
+  function toolbarButtons() {
+    return [...document.querySelectorAll('button,[role="button"]')].filter((element) => {
+      if (root?.contains(element)) return false;
+      const rect = visibleRect(element);
+      return rect && rect.bottom > window.innerHeight / 2 && rect.bottom < window.innerHeight;
+    });
+  }
+
+  function controlName(element) {
+    return [element.textContent, element.getAttribute("aria-label"), element.getAttribute("title"),
+      element.querySelector("svg title")?.textContent].filter(Boolean).join(" ").trim();
+  }
+
   function findAnchor() {
     if (!document.body) return null;
+    const buttons = toolbarButtons();
+    const named = buttons.find((element) => /\b(Full access|Workspace write|Read-only)\b/i.test(controlName(element)));
+    if (named) return { element: named, rect: visibleRect(named) };
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
     let node;
     while ((node = walker.nextNode())) {
@@ -184,10 +200,30 @@
         return { element, rect };
       }
     }
+    // Codex may replace the permission label with a yellow shield icon.
+    const shield = buttons.find((element) => {
+      const icon = element.querySelector("svg");
+      if (!icon) return false;
+      return [element, icon, icon.querySelector("path")].filter(Boolean).some((part) => {
+        const style = getComputedStyle(part);
+        return [style.color, style.stroke, style.fill].some((value) => {
+          const channels = value.match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)/)?.slice(1).map(Number);
+          return channels && channels[0] > 140 && channels[1] > 95 && channels[2] < 100;
+        });
+      });
+    });
+    if (shield) return { element: shield, rect: visibleRect(shield) };
     return null;
   }
 
   function findModel(anchor) {
+    const buttons = toolbarButtons();
+    const rightButtons = buttons.map((element) => ({ element, rect: visibleRect(element) }))
+      .filter(({ rect }) => rect.left > anchor.rect.right &&
+        Math.min(rect.bottom, anchor.rect.bottom) - Math.max(rect.top, anchor.rect.top) >
+        Math.min(rect.height, anchor.rect.height) / 2);
+    const named = rightButtons.find(({ element }) => /\b(GPT|Codex|model)\b/i.test(controlName(element)));
+    if (named) return named;
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
     let node;
     let nearest = null;
@@ -202,7 +238,7 @@
       if (overlap < Math.min(rect.height, anchor.rect.height) / 2) continue;
       nearest = { element, rect };
     }
-    return nearest;
+    return nearest || rightButtons.sort((a, b) => a.rect.left - b.rect.left)[0] || null;
   }
 
   function commonAncestor(first, second) {
@@ -231,8 +267,8 @@
   function position() {
     const item = create();
     const anchor = findAnchor();
-    const model = anchor && findModel(anchor);
-    if (!model) { item.style.display = "none"; return; }
+    if (!anchor) { item.style.display = "none"; return; }
+    const model = findModel(anchor) || anchor;
     observeLayout(anchor, model);
     const leftEdge = anchor.rect.right + 7;
     const rightEdge = model.rect.left - 8;
@@ -247,13 +283,15 @@
     const fullWidth = button.getBoundingClientRect().width;
     item.dataset.compact = String(available < fullWidth);
     const width = button.getBoundingClientRect().width;
-    if (available < width) { item.style.display = "none"; return; }
-    const buttonLeft = rightEdge - width;
+    const raised = available < width;
+    item.dataset.raised = String(raised);
+    const buttonLeft = raised ? Math.min(anchor.rect.right + 7, window.innerWidth - width - 12) : rightEdge - width;
     item.style.left = "auto";
-    item.style.right = `${Math.round(window.innerWidth - rightEdge)}px`;
-    item.style.top = `${Math.round(model.rect.top + modelHeight / 2 - button.getBoundingClientRect().height / 2)}px`;
-    alignPopup(item.querySelector("#codex-jev-menu"), 296, buttonLeft, rightEdge);
-    alignPopup(item.querySelector("#codex-jev-tip"), 420, buttonLeft, rightEdge);
+    item.style.right = `${Math.round(window.innerWidth - buttonLeft - width)}px`;
+    item.style.top = `${Math.round(raised ? Math.max(12, anchor.rect.top - modelHeight - 8) :
+      model.rect.top + modelHeight / 2 - button.getBoundingClientRect().height / 2)}px`;
+    alignPopup(item.querySelector("#codex-jev-menu"), 296, buttonLeft, buttonLeft + width);
+    alignPopup(item.querySelector("#codex-jev-tip"), 420, buttonLeft, buttonLeft + width);
     item.style.visibility = "";
   }
 

@@ -45,7 +45,7 @@
   <pre class="results" id="results">pending</pre>
   <div class="composer">
     <div class="prompt">Ask for follow-up changes</div>
-    <div class="toolbar"><span>+</span><span class="access">Full access</span><span class="model">GPT-6 Sol Extra High</span></div>
+    <div class="toolbar"><span>+</span><span class="access" role="button">Full access</span><span class="model" role="button">GPT-6 Sol Extra High</span></div>
   </div>
   <script>
     const api = acquireVsCodeApi();
@@ -102,10 +102,27 @@
       check(compactMenu.left >= 11 && compactMenu.right <= innerWidth - 11, "compact menu stays in viewport");
       button.click();
       composer.style.width = `${wideWidth - (gap - 12)}px`;
-      await until(() => root.style.display === "none", "hide before overlapping model");
+      await until(() => root.dataset.raised === "true" && root.style.display === "block", "raise control when toolbar gap closes");
+      check(rect().bottom < anchor().top, "raised control stays clear of the access button");
       composer.style.width = "";
       await until(() => root.style.display === "block" && root.dataset.compact === "false", "restore full control after resize");
       check(getComputedStyle(label).display !== "none" && docked() >= 7 && docked() <= 10, "full control redocked");
+      const accessControl = document.querySelector(".access");
+      accessControl.setAttribute("aria-label", "Full access");
+      modelControl.setAttribute("aria-label", "GPT-6 Sol model");
+      accessControl.innerHTML = '<svg width="22" height="22" aria-hidden="true"><path d="M11 1 L20 5 L18 16 L11 21 L4 16 L2 5 Z" fill="currentColor"/></svg>';
+      modelControl.innerHTML = '<svg width="22" height="22" aria-hidden="true"><circle cx="11" cy="11" r="9" fill="currentColor"/></svg>';
+      composer.style.width = "300px";
+      await until(() => root.style.display === "block" && rect().width > 0, "icon-only controls keep Jev visible");
+      button.click();
+      check(document.getElementById("codex-jev-menu").dataset.open === "true", "icon-only Jev button opens selection");
+      button.click();
+      accessControl.removeAttribute("aria-label");
+      await until(() => root.style.display === "block", "shield icon fallback keeps Jev visible");
+      composer.style.width = "";
+      accessControl.textContent = "Full access";
+      modelControl.textContent = "GPT-6 Sol Extra High";
+      await until(() => root.dataset.raised === "false", "text controls restore normal position");
       button.click();
       check(button.getAttribute("aria-expanded") === "true", "menu opens");
       const menu = document.getElementById("codex-jev-menu");

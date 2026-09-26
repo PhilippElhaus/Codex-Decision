@@ -2,8 +2,6 @@
 **/*.pyc
 tests/**
 scripts/**
-webview/**
 composer-preview.html
-patch_codex_webview.py
 *.vsix
 node_modules/**

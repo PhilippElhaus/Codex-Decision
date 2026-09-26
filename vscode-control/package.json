@@ -1,8 +1,8 @@
 {
   "name": "codex-jev-control",
   "displayName": "Codex Jev Control",
-  "description": "Local Jev hook control and health indicator for Codex in VS Code",
-  "version": "0.2.1",
+  "description": "Jev integration controls inside the Codex composer",
+  "version": "0.2.2",
   "publisher": "elhaus-labs",
   "license": "MIT",
   "icon": "icon.png",
@@ -14,7 +14,6 @@
   "activationEvents": ["onStartupFinished", "onCommand:codexJev.bridge"],
   "contributes": {
     "commands": [
-      { "command": "codexJev.selectHooks", "title": "Jev: Select Integrations" },
       { "command": "codexJev.checkConnection", "title": "Jev: Check API and Key" }
     ],
     "configuration": {

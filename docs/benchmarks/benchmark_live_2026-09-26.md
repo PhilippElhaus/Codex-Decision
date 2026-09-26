@@ -1,77 +1,28 @@
-# Three-filter benchmark, 2026-09-26
+# Three integration benchmark, 2026-09-26
 
-This run measured Jev's three `PostToolUse` routes: repetitive output,
-test/build logs, and search/listing results. It used Python 3.12.3 and
-`tiktoken` 0.14.0 with `o200k_base` to count model-visible text. That encoding
-is a consistent context-size measure. It is not a Codex billing measurement or
-a verified tokenizer for the selected GPT-6 model.
+This benchmark counts model-visible tool text with `tiktoken` 0.14.0 and `o200k_base`. It does not measure Codex billing or a full task. The selected GPT-6 model's tokenizer was not verified.
 
-## Mocked policy matrix
-
-`python3 scripts/benchmark_all_filters.py --mode mock --per-variant 100`
-
-The deterministic matrix contained 2,104 cases across 25 route/category
-combinations. It exercised short and oversized results, diagnostics, secrets,
-missing test summaries, unique values, uncertain Jev decisions, malformed
-search rows, too many path groups, relevant and irrelevant groups, and
-successful replacements. It made 1,100 mocked Jev judgments and found zero
-policy mismatches against its synthetic labels. The benchmark checked the
-bounded Jev state and required evidence in every replacement.
-
-| Route | Cases | Mocked Jev calls | Replacements | Tokens saved | Reduction on replaced results |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| Output | 701 | 300 | 100 | 345,450 | 93.7% |
-| Test/build | 701 | 400 | 300 | 572,750 | 97.0% |
-| Search/listing | 702 | 400 | 300 | 366,500 | 47.9% |
-| **Total** | **2,104** | **1,100** | **700** | **1,284,700** | — |
-
-Across every case, including three results larger than the two-million-character
-limit, model-visible text fell 16.7%. Excluding only those deliberately oversized
-results, it fell 23.6%. These percentages describe this balanced synthetic
-corpus, not a forecast for a user's sessions. Mocked answers prove routing and
-safety policy behavior; they do not establish Jev's judgment accuracy.
-
-## Live Jev and real command output
+## Live run
 
 `python3 scripts/benchmark_all_filters.py --mode live --rounds 3`
 
-The live run captured ten command results: three progress outputs, a Python
-suite, a failing Python suite, a Node suite, a C build, a file listing, a
-search over the fixture corpus, and a repository search. Each result was
-evaluated in three rounds through the command hook and a direct HTTPS Jev
-request authenticated from a private `.env` file. The run also passed six edge results through the hook: three oversized
-outputs, two sensitive-looking outputs, and one malformed search. Each live
-result had a paired disabled-hook run. Replacements were checked against the
-exact original saved with owner-only permissions. The failing suite's
-diagnostics and exit summary remained visible.
+The run used ten real command outputs for progress, tests, builds, listings, and searches. Each ran three times through the hook with a direct HTTPS Jev request. Six edge outputs also ran through the hook: three oversized, two sensitive-looking, and one malformed result. Each output had a paired run with Jev off. Replacements were checked against saved originals. The failing test's diagnostics and exit summary stayed visible.
 
-| Route | Results | Jev calls | Replaced | Kept | Skipped | Tokens saved | Reduction on replaced results |
+| Integration | Results | Jev calls | Replaced | Kept | Skipped | Tokens saved | Reduction on replaced results |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| Output | 11 | 9 | 9 | 0 | 2 | 48,886 | 95.3% |
-| Test/build | 14 | 12 | 12 | 0 | 2 | 13,475 | 90.0% |
+| Output filter | 11 | 9 | 9 | 0 | 2 | 48,886 | 95.3% |
+| Test/build logs | 14 | 12 | 12 | 0 | 2 | 13,475 | 90.0% |
 | Search/listing | 11 | 9 | 3 | 6 | 2 | 8,346 | 71.3% |
 | **Total** | **36** | **30** | **24** | **6** | **6** | **70,707** | — |
 
-The three file listings were reduced. Jev kept all six search-hit outputs,
-including the repository search, when it did not support removing a group.
-The oversized, sensitive, and malformed cases made no Jev call. Across the
-entire corpus, token count fell 3.0%. The three oversized results dominate
-that denominator; among results within the configured size limit, token count
-fell 59.5%. This fixture mix was chosen for stress testing and is not a
-representative session workload.
+Jev kept all six search-hit outputs when it was uncertain. Local checks skipped the six edge outputs without a Jev call. The full corpus fell 3.0% by token count because the three oversized outputs dominated it. Results within the configured size limit fell 59.5%. This stress-test mix does not represent a typical session.
 
-The paired disabled hook took 162 ms at the median and 183 ms at p95. The
-enabled hook took 613 ms at the median and 695 ms at p95. The paired added
-wall time was 449 ms at the median and 535 ms at p95. These measurements
-include process startup, local filtering, direct HTTPS, and Jev. They
-exclude model processing, user rereads of saved originals, and API billing.
+The paired median hook time was 162 ms with Jev off and 613 ms with it on: 449 ms added. These times include process start, local checks, HTTPS, and Jev. They exclude model processing and any later read of a saved original.
 
-The complete metadata reports are
-[mock](2026-09-26-mock.json) and
-[direct live](2026-09-26-direct-live.json). No tool text, credentials, or saved
-originals are in those reports.
+## Mocked policy run
 
-Other controlled runs, including the five-call build-log token comparison,
-are in [additional measurements](benchmark_additional.md). The
-[earlier live report](2026-09-26-live.json) used the former Windows credential
-bridge and remains available for historical comparison.
+`python3 scripts/benchmark_all_filters.py --mode mock --per-variant 100`
+
+The run checked 2,104 synthetic cases across the three routes. It made 1,100 mock judgments and found no mismatch against its synthetic labels. It checks routing and replacement rules; it does not measure Jev's judgment accuracy.
+
+Reports: [live JSON](2026-09-26-direct-live.json) and [mock JSON](2026-09-26-mock.json). They contain metadata, without tool text or credentials.
