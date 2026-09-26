@@ -20,30 +20,36 @@ SPEC.loader.exec_module(patch)
 
 class PatchTests(unittest.TestCase):
     def test_marketplace_bridge_rewrites_only_this_wsl_marketplace(self):
-        if not shutil.which("node") or not patch.marketplace_path_bridge():
+        if not shutil.which("node") or not shutil.which("wslpath"):
             self.skipTest("Windows-to-WSL bridge is unavailable here")
-        linux_path = str(SOURCE.resolve().parents[1] / ".agents/plugins/marketplace.json")
-        for incoming, name, expected in (
-            (r"D:\Codex-Jev\.agents\plugins\marketplace.json", "codex-jev", linux_path),
-            (r"D:\Codex-Jev\.agents\plugins\marketplace.json", "codex-chime", r"D:\Codex-Jev\.agents\plugins\marketplace.json"),
-            ("./.agents/plugins/marketplace.json", "codex-jev", linux_path),
-            ("./.agents/plugins/marketplace.json", "another-plugin", "./.agents/plugins/marketplace.json"),
-            (r"C:\Elsewhere\marketplace.json", "codex-jev", r"C:\Elsewhere\marketplace.json"),
-        ):
-            message = {"type": "mcp-request", "request": {"method": "plugin/read", "params": {
-                "marketplacePath": incoming, "pluginName": name,
-            }}}
-            script = (
-                "let u=" + json.dumps(message) + ";" + patch.marketplace_path_bridge()
-                + "process.stdout.write(JSON.stringify(u.request.params));"
-            )
-            result = subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True)
-            self.assertEqual(json.loads(result.stdout)["marketplacePath"], expected)
-
-        old_marketplace = Path("/mnt/d/Codex/.agents/plugins/marketplace.json")
-        if old_marketplace.is_file():
-            with mock.patch.dict(os.environ, {"CODEX_JEV_MARKETPLACE_PATH": str(old_marketplace)}):
-                self.assertIn('"codex-chime"', patch.marketplace_path_bridge())
+        with tempfile.TemporaryDirectory(prefix="jev-marketplace-test-", dir="/tmp") as directory:
+            marketplace = Path(directory) / ".agents/plugins/marketplace.json"
+            marketplace.parent.mkdir(parents=True)
+            marketplace.write_text(json.dumps({"plugins": [{"name": "codex-jev"},
+                                                          {"name": "codex-chime"}]}))
+            linux_path = str(marketplace)
+            windows_path = subprocess.run(["wslpath", "-w", linux_path],
+                                          capture_output=True, text=True, check=True).stdout.strip()
+            with mock.patch.dict(os.environ, {"CODEX_JEV_MARKETPLACE_PATH": str(marketplace)}):
+                for incoming, name, expected in (
+                    (windows_path, "codex-jev", linux_path),
+                    (windows_path, "codex-chime", linux_path),
+                    ("./.agents/plugins/marketplace.json", "codex-jev", linux_path),
+                    ("./.agents/plugins/marketplace.json", "another-plugin", "./.agents/plugins/marketplace.json"),
+                    (r"C:\Elsewhere\marketplace.json", "codex-jev", r"C:\Elsewhere\marketplace.json"),
+                ):
+                    message = {"type": "mcp-request", "request": {"method": "plugin/read", "params": {
+                        "marketplacePath": incoming, "pluginName": name,
+                    }}}
+                    script = (
+                        "let u=" + json.dumps(message) + ";" + patch.marketplace_path_bridge()
+                        + "process.stdout.write(JSON.stringify(u.request.params));"
+                    )
+                    result = subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True)
+                    self.assertEqual(json.loads(result.stdout)["marketplacePath"], expected)
+            with mock.patch.object(Path, "home", return_value=Path(directory)):
+                with mock.patch.dict(os.environ, {"CODEX_JEV_MARKETPLACE_PATH": ""}):
+                    self.assertIn(json.dumps(linux_path), patch.marketplace_path_bridge())
 
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="jev-patch-test-", dir="/tmp")

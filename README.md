@@ -27,6 +27,11 @@ After a public GitHub repository exists, its repository URL can replace the
 local path. This checkout does not require Codex Chime or the former combined
 marketplace.
 
+Existing `codex-jev@personal` installations can keep their ID and Jev data by
+using the user-level `~/.agents/plugins/marketplace.json` to point at this
+repository. On this workstation, that marketplace also lists Codex Chime; the
+former combined repository is no longer needed for plugin discovery or updates.
+
 Review and trust the bundled hook when prompted, then start a new Codex
 thread. Upgrades from the former `codex-jev-output-pilot` ID require the
 [migration steps](#upgrade-from-the-former-pilot-id) below to preserve the
@@ -202,7 +207,8 @@ status bar remains available if the composer button cannot fit.
 On Windows with a WSL Codex app server, the plugin detail page can fail with
 `AbsolutePathBuf deserialized without a base path` if VS Code sends this
 marketplace's Windows path to the WSL server. The version-pinned host bridge
-maps only this repository's marketplace path to its WSL absolute path for
+maps the active user-level marketplace (or this repository's own marketplace
+for a standalone installation) to its WSL absolute path for
 `plugin/read`; it leaves other requests untouched. The Jev hook itself is
 independent of this page. A missing cached hook file or hook process failure
 returns the original tool result without replacement.

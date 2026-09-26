@@ -22,9 +22,11 @@ ANCHOR = 'let a=e.onDidReceiveMessage(u=>{if(s.markMessageReceived(),u.type==="c
 
 def marketplace_path_bridge() -> str:
     """Correct the selected local marketplace path at the Windows-to-WSL edge."""
+    personal = Path.home() / ".agents/plugins/marketplace.json"
     marketplace = Path(os.environ.get("CODEX_JEV_MARKETPLACE_PATH") or
-                       Path(__file__).resolve().parents[1] / ".agents/plugins/marketplace.json")
-    if not marketplace.is_file() or not str(marketplace).startswith("/mnt/"):
+                       (personal if personal.is_file() else
+                        Path(__file__).resolve().parents[1] / ".agents/plugins/marketplace.json"))
+    if not marketplace.is_absolute() or not marketplace.is_file():
         return ""
     try:
         names = [entry["name"] for entry in json.loads(marketplace.read_text())["plugins"]
@@ -40,7 +42,9 @@ def marketplace_path_bridge() -> str:
         ).stdout.strip()
     except (OSError, subprocess.SubprocessError):
         return ""
-    if not converted or not converted[0].isalpha() or len(converted) < 3 or converted[1:3] != ":\\":
+    drive_path = len(converted) >= 3 and converted[0].isalpha() and converted[1:3] == ":\\"
+    wsl_path = converted.lower().startswith(("\\\\wsl.localhost\\", "\\\\wsl$\\"))
+    if not (drive_path or wsl_path):
         return ""
     aliases = [converted.lower()]
     distro = os.environ.get("WSL_DISTRO_NAME", "")

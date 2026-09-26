@@ -58,9 +58,10 @@ triggers a refresh only when a local credential source is configured.
 
 The in-composer button uses a reversible, version-pinned patch to the installed
 Codex extension `26.917.62051`. It is not a supported Codex extension point.
-On this Windows-to-WSL setup, the same bridge also translates this repository's
-local marketplace path for `plugin/read`, so the Codex plugin detail page can
-load. The translation applies only to this marketplace and its two plugins.
+On this Windows-to-WSL setup, the same bridge also translates the active
+user-level marketplace path (or this repository's own marketplace path for a
+standalone installation) for `plugin/read`, so the Codex plugin detail page can
+load. Translation applies only to plugin names listed in that marketplace.
 `patch_codex_webview.py` supports `apply`, `update`, and `restore`. `apply`
 checks exact unmodified hashes; `update` checks the currently installed patch
 and refreshes both the host message bridge and Jev UI asset. Both retain the
