@@ -7,7 +7,7 @@ The companion extension connects the `jev` button in the Codex composer to the i
 Download the current VSIX from the [GitHub release](https://github.com/PhilippElhaus/Codex-Jev/releases/latest), then run:
 
 ```bash
-code --install-extension codex-jev-control-0.2.4.vsix --force
+code --install-extension codex-jev-control-0.2.5.vsix --force
 ```
 
 To build it from a checkout, run from `vscode-control/`:

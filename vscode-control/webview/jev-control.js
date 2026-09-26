@@ -329,8 +329,7 @@
       (compactAtWidth > 0 && paneWidth <= compactAtWidth + 16));
     const width = button.getBoundingClientRect().width;
     const fits = available >= width;
-    const idealLeft = fits && item.dataset.compact === "false" ? rightEdge - width :
-      leftEdge + (available - width) / 2;
+    const idealLeft = fits ? rightEdge - width : leftEdge + (available - width) / 2;
     const buttonLeft = Math.max(12, Math.min(idealLeft, window.innerWidth - width - 12));
     item.style.left = "auto";
     item.style.right = `${Math.round(window.innerWidth - buttonLeft - width)}px`;

@@ -99,8 +99,8 @@
       composer.style.width = `${wideWidth - (gap - fullWidth + 4)}px`;
       await until(() => root.dataset.compact === "true" && root.style.display === "block", "compact after panel resize");
       check(getComputedStyle(label).display === "none", "compact dot only");
-      check(rect().left > anchor().right + 3 && rect().right < model().left - 3,
-        "compact dot stays between the access and model controls");
+      check(rect().left > anchor().right + 3 && docked() >= 7 && docked() <= 10,
+        "compact dot docks beside the model control");
       button.click();
       const compactMenu = document.getElementById("codex-jev-menu").getBoundingClientRect();
       check(compactMenu.left >= 11 && compactMenu.right <= innerWidth - 11, "compact menu stays in viewport");
@@ -108,20 +108,22 @@
       document.documentElement.style.width = `${paneWidth - 110}px`;
       composer.style.width = `${wideWidth - (gap - fullWidth + 4) - 30}px`;
       modelControl.innerHTML = '<svg width="22" height="22" aria-hidden="true"><circle cx="11" cy="11" r="9" fill="currentColor"/></svg>';
-      await until(() => model().left - anchor().right > fullWidth + 15,
-        "model icon frees room after the pane narrows");
+      await until(() => model().left - anchor().right > fullWidth + 15 &&
+        docked() >= 7 && docked() <= 10,
+        "model icon frees room and Jev redocks after the pane narrows");
       check(root.dataset.compact === "true" && getComputedStyle(label).display === "none",
         "Jev stays compact after the model shrinks");
-      check(rect().left > anchor().right + 3 && rect().right < model().left - 3,
-        "compact dot stays clear of both controls after the model shrinks");
+      check(rect().left > anchor().right + 3 && docked() >= 7 && docked() <= 10,
+        "compact dot stays docked after the model shrinks");
       document.documentElement.style.width = `${paneWidth - 140}px`;
       composer.style.width = `${wideWidth - (gap - fullWidth + 4) - 50}px`;
       accessControl.setAttribute("aria-label", "Full access");
       accessControl.innerHTML = '<svg width="22" height="22" aria-hidden="true"><path d="M11 1 L20 5 L18 16 L11 21 L4 16 L2 5 Z" fill="currentColor"/></svg>';
-      await until(() => model().left - anchor().right > fullWidth + 15,
-        "access icon frees room at a narrower pane width");
-      check(root.dataset.compact === "true" && rect().right < model().left - 3,
-        "Jev stays compact after both Codex controls shrink");
+      await until(() => model().left - anchor().right > fullWidth + 15 &&
+        docked() >= 7 && docked() <= 10,
+        "access icon frees room and Jev redocks at a narrower pane width");
+      check(root.dataset.compact === "true" && docked() >= 7 && docked() <= 10,
+        "Jev stays compact and docked after both Codex controls shrink");
       accessControl.textContent = "Full access";
       accessControl.removeAttribute("aria-label");
       modelControl.textContent = "GPT-6 Sol Extra High";
