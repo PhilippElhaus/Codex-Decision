@@ -6,7 +6,8 @@ const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
 const {
-  checkHealth, decisionSummary, parseHealthOutput, readConfig, readLatestEvent, writeEnabled,
+  checkHealth, decisionSummary, outcomeLine, parseHealthOutput, readConfig,
+  readEventsSince, readLatestEvent, readRecentOutcomes, writeEnabled,
 } = require("../core");
 
 test("hook selection writes the config atomically and preserves the pilot mode", async () => {
@@ -55,6 +56,28 @@ test("recent decision is read from a bounded log tail", async () => {
     const decision = await readLatestEvent(directory, { informativeOnly: true });
     assert.equal(decision.status, "replace");
     assert.match(decisionSummary(decision), /replaced Bash output.*12[,.]345 chars, 480 ms/);
+    const recent = await readRecentOutcomes(directory);
+    assert.equal(recent.outcomes.length, 1);
+    assert.match(outcomeLine(recent.outcomes[0]), /replaced · Bash · 12[,.]345 chars · 480 ms/);
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("incremental event reader keeps incomplete lines for the next poll", async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-control-test-"));
+  try {
+    const file = path.join(directory, "events.jsonl");
+    const calling = JSON.stringify({ status: "calling", reason: "jev_request", tool: "Bash" }) + "\n";
+    const result = JSON.stringify({ status: "candidate", reason: "observe", tool: "Bash", original_chars: 12000, elapsed_ms: 970 }) + "\n";
+    await fs.writeFile(file, calling + result.slice(0, 20));
+    const first = await readEventsSince(directory, 0);
+    assert.deepEqual(first.events.map((event) => event.status), ["calling"]);
+    assert.equal(first.offset, Buffer.byteLength(calling));
+    await fs.appendFile(file, result.slice(20));
+    const second = await readEventsSince(directory, first.offset);
+    assert.deepEqual(second.events.map((event) => event.status), ["candidate"]);
+    assert.equal(second.offset, Buffer.byteLength(calling + result));
   } finally {
     await fs.rm(directory, { recursive: true, force: true });
   }

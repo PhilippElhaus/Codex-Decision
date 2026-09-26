@@ -2,7 +2,7 @@
   "name": "codex-jev-control-pilot",
   "displayName": "Jev Control Pilot",
   "description": "Local Jev hook control and health indicator for Codex in VS Code",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "publisher": "elhaus-labs",
   "license": "MIT",
   "repository": { "type": "git", "url": "https://github.com/Elhaus-Labs/Codex.git" },
@@ -21,8 +21,8 @@
       "properties": {
         "jevPilot.dataDirectory": {
           "type": "string",
-          "default": "\\\\wsl.localhost\\Ubuntu\\home\\elhaus\\.codex\\plugins\\data\\codex-jev-output-pilot-personal",
-          "description": "Absolute PLUGIN_DATA directory for the Jev output pilot."
+          "default": "",
+          "description": "Absolute PLUGIN_DATA directory for the Jev output pilot. Set this to the installed plugin data directory, or set CODEX_JEV_DATA_DIRECTORY."
         },
         "jevPilot.credentialDirectory": {
           "type": "string",

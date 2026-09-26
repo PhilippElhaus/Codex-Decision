@@ -14,13 +14,19 @@
   </style>
   <script>
     let enabled = false, health = { ok: true, model: "jev-1.13.0" }, busy = false;
+    const stats = { calls: 7, candidates: 5, kept: 2, replaced: 0, checkedChars: 90640, elapsedMs: 8120, completed: 7 };
+    const history = [
+      "candidate (observe) · Bash · 12,960 chars · 1,162 ms",
+      "kept · mcp__demo__logs · 14,000 chars · 1,310 ms",
+      "candidate (observe) · Bash · 12,960 chars · 1,180 ms",
+    ];
     let calls = 0;
     window.acquireVsCodeApi = () => ({ postMessage(request) {
       calls += 1;
       if (request.action === "setSelection") enabled = request.enabled;
       queueMicrotask(() => window.dispatchEvent(new MessageEvent("message", { data: {
         type: "jev-pilot-reply", id: request.id,
-        status: { enabled, health, busy, mode: "observe", recent: "kept Bash output" },
+        status: { enabled, health, busy, mode: "observe", recent: history[0], history, stats },
       } })));
     } });
   </script>
@@ -79,7 +85,10 @@
       await pause(50);
       check(option.getAttribute("aria-checked") === "true", "hook selected");
       check(button.style.color === "rgb(135, 205, 164)", "connected green");
-      check(document.getElementById("codex-jev-pilot-tip").textContent.includes("kept Bash output"), "recent outcome tooltip");
+      const tooltip = document.getElementById("codex-jev-pilot-tip");
+      check(tooltip.textContent.includes("7 calls") && /90[,.]640 chars checked/.test(tooltip.textContent), "session statistics tooltip");
+      check(tooltip.querySelectorAll("li").length === 3 && tooltip.textContent.includes("mcp__demo__logs"), "three cross-tool outcomes");
+      check(getComputedStyle(button).transitionDuration.includes("0.22s"), "blue pulse has eased color transition");
       busy = true;
       await pause(150);
       check(button.style.color === "rgb(131, 188, 247)", "busy blue");
@@ -103,7 +112,7 @@
         accessRight: document.querySelector(".access").getBoundingClientRect().right,
         modelLeft: document.querySelector(".model").getBoundingClientRect().left,
         buttonWidth: button?.getBoundingClientRect().width, compact: control?.dataset.compact,
-        display: control?.style.display,
+        display: control?.style.display, tooltip: document.getElementById("codex-jev-pilot-tip")?.textContent,
         buttonRight: button?.getBoundingClientRect().right });
       document.title = "JEV_BROWSER_FAIL";
     });

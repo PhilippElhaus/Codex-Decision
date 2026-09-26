@@ -69,18 +69,37 @@ test("status control selects the hook and reflects health, activity, tooltip, an
     assert.match(button.tooltip, /Connected · jev-1.13.0/);
 
     await fs.writeFile(path.join(directory, "events.jsonl"), JSON.stringify({
+      status: "calling", reason: "jev_request", tool: "Bash", original_chars: 0, elapsed_ms: 0,
+    }) + "\n" + JSON.stringify({
       status: "replace", reason: "jev_replace", tool: "Bash", original_chars: 11520, elapsed_ms: 480,
     }) + "\n");
-    await until(() => button.tooltip.includes("replaced Bash output"));
+    await until(() => button.tooltip.includes("replaced · Bash"));
     assert.equal(button.color.id, "charts.blue");
     await until(() => button.color.id === "testing.iconPassed");
+    assert.match(button.tooltip, /1 calls · 0 candidates · 0 kept · 1 replaced/);
 
     await fs.appendFile(path.join(directory, "events.jsonl"), JSON.stringify({
       status: "skip", reason: "small", tool: "Bash", original_chars: 42, elapsed_ms: 0,
     }) + "\n");
     await new Promise((resolve) => setTimeout(resolve, 350));
-    assert.match(button.tooltip, /replaced Bash output/);
+    assert.match(button.tooltip, /replaced · Bash/);
     assert.equal(button.color.id, "testing.iconPassed");
+
+    const later = [
+      ["candidate", "observe", "Bash", 11000, 1000],
+      ["keep", "jev_keep", "mcp__demo__logs", 14000, 1200],
+      ["candidate", "observe", "Bash", 13000, 900],
+    ];
+    await fs.appendFile(path.join(directory, "events.jsonl"), later.map(([status, reason, tool, original_chars, elapsed_ms]) =>
+      JSON.stringify({ status: "calling", reason: "jev_request", tool }) + "\n" +
+      JSON.stringify({ status, reason, tool, original_chars, elapsed_ms }) + "\n").join(""));
+    await until(() => button.tooltip.includes("4 calls · 2 candidates · 1 kept · 1 replaced"));
+    const session = await commands.get("jevPilot.bridge")({ action: "status" });
+    assert.equal(session.stats.checkedChars, 49520);
+    assert.equal(session.history.length, 3);
+    assert.match(session.history[0], /candidate \(observe\) · Bash · 13[,.]000 chars/);
+    assert.match(session.history[1], /kept · mcp__demo__logs/);
+    assert.doesNotMatch(session.history.join(" "), /replaced/);
 
     health = { ok: false, reason: "JEV_HTTP_ERROR" };
     await commands.get("jevPilot.checkConnection")();
@@ -97,7 +116,7 @@ test("status control selects the hook and reflects health, activity, tooltip, an
     commands.get("jevPilot.selectHooks")();
     picker.selectedItems = [picker.items[0]];
     await picker.accept();
-    await until(() => button.tooltip.includes("replaced Bash output"));
+    await until(() => button.tooltip.includes("candidate \(observe\) · Bash"));
   } finally {
     for (const disposable of context.subscriptions.reverse()) disposable.dispose();
     await fs.rm(directory, { recursive: true, force: true });

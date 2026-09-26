@@ -13,10 +13,18 @@ try {
     if ($encoded.Length -eq 0 -or $encoded.Length -gt 90000) { throw 'Invalid request size.' }
     $requestBytes = [System.Convert]::FromBase64String($encoded)
     if ($requestBytes.Length -gt 65536) { throw 'Invalid request size.' }
-    $keyPath = Join-Path ([System.IO.Path]::GetFullPath($StateDirectory)) 'key.dpapi'
+    $stateRoot = [System.IO.Path]::GetFullPath($StateDirectory)
+    $keyPath = Join-Path $stateRoot 'key.dpapi'
     if (-not (Test-Path -LiteralPath $keyPath -PathType Leaf)) {
         $failure = 'JEV_KEY_CACHE_MISSING'
         throw 'Jev key cache is missing.'
+    }
+    foreach ($candidate in @($stateRoot, $keyPath)) {
+        $item = Get-Item -LiteralPath $candidate -Force
+        if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+            $failure = 'JEV_KEY_CACHE_UNSAFE'
+            throw 'Jev key cache contains a link.'
+        }
     }
     $encrypted = [System.IO.File]::ReadAllBytes($keyPath)
     $keyBytes = [System.Security.Cryptography.ProtectedData]::Unprotect(

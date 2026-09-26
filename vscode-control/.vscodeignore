@@ -1,6 +1,7 @@
 tests/**
-webview/**
 scripts/**
+webview/**
 patch_codex_webview.py
+composer-preview.html
 *.vsix
 node_modules/**

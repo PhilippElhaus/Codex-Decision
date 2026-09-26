@@ -10,7 +10,7 @@ const CONFIG_KEYS = new Set([
 ]);
 
 function defaultDataDirectory() {
-  return path.resolve(__dirname, "..", ".local");
+  return process.env.CODEX_JEV_DATA_DIRECTORY || "";
 }
 
 function defaultCredentialDirectory() {
@@ -65,9 +65,26 @@ async function writeEnabled(directory, enabled) {
   return config;
 }
 
+function isJevOutcome(event) {
+  return ["candidate", "keep", "replace"].includes(event.status);
+}
+
 function isInformativeEvent(event) {
   return event.status !== "calling" &&
     !(event.status === "skip" && ["small", "unsupported_event", "unsupported_result"].includes(event.reason));
+}
+
+function parseLogLine(line) {
+  try {
+    const row = JSON.parse(line);
+    if (!row || typeof row.status !== "string" || typeof row.reason !== "string") return null;
+    return {
+      status: row.status.slice(0, 32), reason: row.reason.slice(0, 64),
+      tool: String(row.tool || "").slice(0, 64),
+      original_chars: Number(row.original_chars) || 0,
+      elapsed_ms: Number(row.elapsed_ms) || 0,
+    };
+  } catch { return null; }
 }
 
 async function readLatestEvent(directory, { informativeOnly = false } = {}) {
@@ -88,23 +105,71 @@ async function readLatestEvent(directory, { informativeOnly = false } = {}) {
     const lines = buffer.toString("utf8").split("\n");
     for (let index = lines.length - 1; index >= (size > length ? 1 : 0); index -= 1) {
       if (!lines[index].trim()) continue;
-      try {
-        const row = JSON.parse(lines[index]);
-        if (row && typeof row.status === "string" && typeof row.reason === "string") {
-          const event = {
-            status: row.status.slice(0, 32), reason: row.reason.slice(0, 64),
-            tool: String(row.tool || "").slice(0, 64),
-            original_chars: Number(row.original_chars) || 0,
-            elapsed_ms: Number(row.elapsed_ms) || 0,
-          };
-          if (!informativeOnly || isInformativeEvent(event)) return event;
-        }
-      } catch { /* Skip a partial or malformed final line. */ }
+      const event = parseLogLine(lines[index]);
+      if (event && (!informativeOnly || isInformativeEvent(event))) return event;
     }
     return null;
   } finally {
     await file.close();
   }
+}
+
+async function readRecentOutcomes(directory, limit = 3) {
+  let file;
+  try {
+    file = await fs.open(path.join(directory, "events.jsonl"), "r");
+  } catch (error) {
+    if (error.code === "ENOENT") return { outcomes: [], offset: 0 };
+    throw error;
+  }
+  try {
+    const { size } = await file.stat();
+    const length = Math.min(size, 1_048_576);
+    if (!length) return { outcomes: [], offset: size };
+    const buffer = Buffer.alloc(length);
+    await file.read(buffer, 0, length, size - length);
+    const lines = buffer.toString("utf8").split("\n");
+    const outcomes = [];
+    for (let index = lines.length - 1; index >= (size > length ? 1 : 0) && outcomes.length < limit; index -= 1) {
+      const event = parseLogLine(lines[index]);
+      if (event && isJevOutcome(event)) outcomes.push(event);
+    }
+    return { outcomes, offset: size };
+  } finally {
+    await file.close();
+  }
+}
+
+async function readEventsSince(directory, offset) {
+  let file;
+  try {
+    file = await fs.open(path.join(directory, "events.jsonl"), "r");
+  } catch (error) {
+    if (error.code === "ENOENT") return { events: [], offset: 0, reset: offset > 0 };
+    throw error;
+  }
+  try {
+    const { size } = await file.stat();
+    if (offset < 0 || offset > size) return { events: [], offset: size, reset: true };
+    const length = Math.min(size - offset, 262_144);
+    if (!length) return { events: [], offset, reset: false };
+    const buffer = Buffer.alloc(length);
+    const { bytesRead } = await file.read(buffer, 0, length, offset);
+    const end = buffer.subarray(0, bytesRead).lastIndexOf(10);
+    if (end < 0) return { events: [], offset, reset: false };
+    const complete = buffer.subarray(0, end + 1);
+    const events = complete.toString("utf8").split("\n").map(parseLogLine).filter(Boolean);
+    return { events, offset: offset + complete.length, reset: false };
+  } finally {
+    await file.close();
+  }
+}
+
+function outcomeLine(event) {
+  const action = event.status === "replace" ? "replaced" :
+    event.status === "candidate" ? "candidate" : "kept";
+  const mode = event.reason === "observe" ? " (observe)" : "";
+  return `${action}${mode} · ${event.tool || "tool"} · ${event.original_chars.toLocaleString()} chars · ${event.elapsed_ms} ms`;
 }
 
 function decisionSummary(event) {
@@ -181,5 +246,6 @@ async function checkHealth(credentialDirectory, execute = runCommand) {
 
 module.exports = {
   checkHealth, decisionSummary, defaultCredentialDirectory, defaultDataDirectory,
-  isInformativeEvent, parseHealthOutput, readConfig, readLatestEvent, writeEnabled,
+  isInformativeEvent, isJevOutcome, outcomeLine, parseHealthOutput, readConfig,
+  readEventsSince, readLatestEvent, readRecentOutcomes, writeEnabled,
 };
