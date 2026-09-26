@@ -17,7 +17,7 @@ from uuid import uuid4
 
 
 PLUGIN = Path(__file__).resolve().parents[1]
-REPO = PLUGIN.parents[1]
+REPO = PLUGIN
 ORIGINAL_PATH = re.compile(r"full original: ([^\]\r\n]+\.txt)", re.IGNORECASE)
 
 
@@ -95,7 +95,8 @@ def main() -> None:
                                 capture_output=True, text=True, check=True).stdout
         results.append(invoke(hook, data, run_id, "output", command, output))
 
-        test_command = [sys.executable, "-m", "unittest", "discover", "-s", "plugins/codex-jev/tests", "-v"]
+        test_command = [sys.executable, "-m", "unittest", "discover", "-s", "tests",
+                        "-p", "test_jev.py", "-v"]
         test_run = subprocess.run(test_command, cwd=REPO, stdout=subprocess.PIPE,
                                   stderr=subprocess.STDOUT, text=True, timeout=90, check=True)
         results.append(invoke(hook, data, run_id, "test_build", shlex.join(test_command), test_run.stdout))

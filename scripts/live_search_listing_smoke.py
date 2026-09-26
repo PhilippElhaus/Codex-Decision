@@ -10,7 +10,7 @@ import sys
 import tempfile
 
 PLUGIN = Path(__file__).resolve().parents[1]
-REPO = PLUGIN.parents[1]
+REPO = PLUGIN
 
 
 def invoke(hook: Path, data: Path, command: str, output: str, call: str, task: str) -> tuple[dict, list[dict]]:
@@ -49,9 +49,9 @@ def main() -> None:
         root = Path(temporary)
         data = root / "plugin-data"
         data.mkdir()
-        command = ["rg", "-n", "return ", "plugins/codex-jev/hooks", "plugins/codex-jev/vscode-control"]
+        command = ["rg", "-n", "return ", "hooks", "vscode-control"]
         output = subprocess.run(command, cwd=REPO, capture_output=True, text=True, check=True).stdout
-        response, rows = invoke(hook, data, "rg -n 'return ' plugins/codex-jev/hooks plugins/codex-jev/vscode-control",
+        response, rows = invoke(hook, data, "rg -n 'return ' hooks vscode-control",
                                 output, "repo-rg", "Inspect Python hook return paths; JavaScript UI return paths are irrelevant to this immediate task.")
         assert rows[1]["status"] in {"keep", "candidate", "replace"}, rows
         if rows[1]["status"] != "replace":

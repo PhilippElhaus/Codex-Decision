@@ -18,9 +18,14 @@ or drop. Uncertain groups remain exact. All three use cases share one
 ## Install
 
 ```bash
-codex plugin marketplace add Elhaus-Labs/Codex --ref main
-codex plugin add codex-jev@personal
+codex plugin marketplace add /mnt/d/Codex-Jev
+codex plugin add codex-jev@codex-jev
 ```
+
+Use `D:\Codex-Jev` in place of `/mnt/d/Codex-Jev` from Windows PowerShell.
+After a public GitHub repository exists, its repository URL can replace the
+local path. This checkout does not require Codex Chime or the former combined
+marketplace.
 
 Review and trust the bundled hook when prompted, then start a new Codex
 thread. Upgrades from the former `codex-jev-output-pilot` ID require the
@@ -209,8 +214,8 @@ and Windows credential directory do not move automatically. From this repo,
 run these once before removing the old installation:
 
 ```bash
-python3 plugins/codex-jev/scripts/migrate_legacy_data.py
-pwsh.exe -NoProfile -NonInteractive -File plugins/codex-jev/scripts/migrate_legacy_key.ps1
+python3 scripts/migrate_legacy_data.py
+pwsh.exe -NoProfile -NonInteractive -File scripts/migrate_legacy_key.ps1
 codex plugin add codex-jev@personal
 ```
 
@@ -236,20 +241,25 @@ little or no model token savings.
 Run from the repository root:
 
 ```bash
-python3 -m unittest discover -s plugins/codex-jev/tests -v
-python3 plugins/codex-jev/scripts/replay.py --per-category 100
-python3 plugins/codex-jev/scripts/benchmark_context.py
-npm --prefix plugins/codex-jev/vscode-control test
-python3 -m unittest discover -s plugins/codex-jev/vscode-control/tests -p 'test_*.py' -v
-python3 plugins/codex-jev/vscode-control/scripts/browser_smoke.py
-pwsh -File plugins/codex-jev/scripts/test_key_cache.ps1
-python3 plugins/codex-jev/scripts/live_test_build_smoke.py
-python3 plugins/codex-jev/scripts/live_search_listing_smoke.py
-python3 plugins/codex-jev/scripts/live_three_filter_samples.py
-python3 plugins/codex-jev/scripts/live_bridge_smoke.py
-python3 plugins/codex-jev/scripts/measure_live.py --repetitions 5
-python3 plugins/codex-jev/scripts/replay.py --live --bridge --per-category 3 --live-max-calls 30
+python3 -m unittest discover -s tests -v
+python3 scripts/replay.py --per-category 100
+python3 scripts/benchmark_context.py
+python3 scripts/benchmark_all_filters.py --mode mock --per-variant 100
+npm --prefix vscode-control test
+python3 -m unittest discover -s vscode-control/tests -p 'test_*.py' -v
+python3 vscode-control/scripts/browser_smoke.py
+pwsh -File scripts/test_key_cache.ps1
+python3 scripts/live_test_build_smoke.py
+python3 scripts/live_search_listing_smoke.py
+python3 scripts/live_three_filter_samples.py
+python3 scripts/live_bridge_smoke.py
+python3 scripts/measure_live.py --repetitions 5
+python3 scripts/replay.py --live --bridge --per-category 3 --live-max-calls 30
+python3 scripts/benchmark_all_filters.py --mode live --rounds 3
 ```
+
+The [three-filter benchmark report](docs/benchmark-2026-09-26.md) includes
+2,104 mocked policy cases and 30 live Jev calls over real command results.
 
 The live test/build smoke runs real local test/build commands and makes Jev
 requests through the protected credential bridge. The first seven commands

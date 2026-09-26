@@ -1,13 +1,13 @@
 {
   "name": "codex-jev",
-  "version": "0.1.0+codex.20260926160420",
+  "version": "0.1.0+codex.20260926163134",
   "description": "Jev-gated filtering for repetitive output, test/build logs, and broad search/listing results.",
   "author": {
     "name": "Elhaus Labs",
     "url": "https://github.com/Elhaus-Labs"
   },
-  "homepage": "https://github.com/Elhaus-Labs/Codex",
-  "repository": "https://github.com/Elhaus-Labs/Codex",
+  "homepage": "https://github.com/Elhaus-Labs/Codex-Jev",
+  "repository": "https://github.com/Elhaus-Labs/Codex-Jev",
   "license": "MIT",
   "keywords": [
     "codex",

@@ -5,7 +5,7 @@
   "version": "0.1.0",
   "publisher": "elhaus-labs",
   "license": "MIT",
-  "repository": { "type": "git", "url": "https://github.com/Elhaus-Labs/Codex.git" },
+  "repository": { "type": "git", "url": "https://github.com/Elhaus-Labs/Codex-Jev.git" },
   "private": true,
   "main": "./extension.js",
   "engines": { "vscode": "^1.96.2" },

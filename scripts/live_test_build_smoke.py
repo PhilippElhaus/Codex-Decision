@@ -15,7 +15,7 @@ import tempfile
 
 
 PLUGIN = Path(__file__).resolve().parents[1]
-REPO = PLUGIN.parents[1]
+REPO = PLUGIN
 DEFAULT_HOOK = PLUGIN / "hooks" / "post_tool_use.py"
 
 
@@ -81,7 +81,8 @@ def main() -> None:
         data.mkdir()
         rows = []
 
-        command = [sys.executable, "-m", "unittest", "discover", "-s", str(PLUGIN / "tests"), "-v"]
+        command = [sys.executable, "-m", "unittest", "discover", "-s", str(PLUGIN / "tests"),
+                   "-p", "test_jev.py", "-v"]
         output, code = run(command, REPO)
         assert code == 0 and "Ran " in output, output[-1000:]
         python_output = output

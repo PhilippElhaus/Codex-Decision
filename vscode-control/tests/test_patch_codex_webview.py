@@ -3,6 +3,7 @@
 import hashlib
 import importlib.util
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -21,10 +22,10 @@ class PatchTests(unittest.TestCase):
     def test_marketplace_bridge_rewrites_only_this_wsl_marketplace(self):
         if not shutil.which("node") or not patch.marketplace_path_bridge():
             self.skipTest("Windows-to-WSL bridge is unavailable here")
-        linux_path = str(SOURCE.resolve().parents[3] / ".agents/plugins/marketplace.json")
+        linux_path = str(SOURCE.resolve().parents[1] / ".agents/plugins/marketplace.json")
         for incoming, name, expected in (
-            (r"D:\Codex\.agents\plugins\marketplace.json", "codex-jev", linux_path),
-            (r"D:\Codex\.agents\plugins\marketplace.json", "codex-chime", linux_path),
+            (r"D:\Codex-Jev\.agents\plugins\marketplace.json", "codex-jev", linux_path),
+            (r"D:\Codex-Jev\.agents\plugins\marketplace.json", "codex-chime", r"D:\Codex-Jev\.agents\plugins\marketplace.json"),
             ("./.agents/plugins/marketplace.json", "codex-jev", linux_path),
             ("./.agents/plugins/marketplace.json", "another-plugin", "./.agents/plugins/marketplace.json"),
             (r"C:\Elsewhere\marketplace.json", "codex-jev", r"C:\Elsewhere\marketplace.json"),
@@ -38,6 +39,11 @@ class PatchTests(unittest.TestCase):
             )
             result = subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True)
             self.assertEqual(json.loads(result.stdout)["marketplacePath"], expected)
+
+        old_marketplace = Path("/mnt/d/Codex/.agents/plugins/marketplace.json")
+        if old_marketplace.is_file():
+            with mock.patch.dict(os.environ, {"CODEX_JEV_MARKETPLACE_PATH": str(old_marketplace)}):
+                self.assertIn('"codex-chime"', patch.marketplace_path_bridge())
 
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="jev-patch-test-", dir="/tmp")

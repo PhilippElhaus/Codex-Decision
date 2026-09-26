@@ -90,7 +90,7 @@ class ConfigTests(unittest.TestCase):
     def test_manifest_has_three_inactive_by_default_hooks(self):
         manifest = json.loads((ROOT / ".codex-plugin" / "plugin.json").read_text())
         hooks = json.loads((ROOT / "hooks" / "hooks.json").read_text())
-        self.assertEqual(manifest["name"], ROOT.name)
+        self.assertEqual(manifest["name"], ROOT.name.lower())
         self.assertEqual(manifest["interface"]["displayName"], "Codex Jev")
         for field, size in (("logo", 256), ("composerIcon", 64)):
             image = ROOT / manifest["interface"][field]

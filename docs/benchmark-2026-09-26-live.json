@@ -1,0 +1,190 @@
+{
+  "tokenizer": "o200k_base",
+  "cases": 36,
+  "jev_calls": 30,
+  "original_tokens": 2365366,
+  "visible_tokens": 2294569,
+  "tokens_saved": 70797,
+  "all_result_reduction_percent": 3.0,
+  "within_limit_reduction_percent": 59.3,
+  "by_route": {
+    "output": {
+      "cases": 11,
+      "jev_calls": 9,
+      "replaced": 9,
+      "kept": 0,
+      "skipped": 2,
+      "original_tokens": 639906,
+      "visible_tokens": 591002,
+      "tokens_saved": 48904,
+      "all_result_reduction_percent": 7.6,
+      "within_limit_reduction_percent": 89.1,
+      "replaced_result_reduction_percent": 95.3,
+      "local_latency_ms": {
+        "p50": 1668.0,
+        "p95": 1810.4,
+        "max": 1810.4
+      }
+    },
+    "search_listing": {
+      "cases": 11,
+      "jev_calls": 9,
+      "replaced": 3,
+      "kept": 6,
+      "skipped": 2,
+      "original_tokens": 943727,
+      "visible_tokens": 935375,
+      "tokens_saved": 8352,
+      "all_result_reduction_percent": 0.9,
+      "within_limit_reduction_percent": 17.5,
+      "replaced_result_reduction_percent": 71.4,
+      "local_latency_ms": {
+        "p50": 1735.2,
+        "p95": 1968.8,
+        "max": 1968.8
+      }
+    },
+    "test_build": {
+      "cases": 14,
+      "jev_calls": 12,
+      "replaced": 12,
+      "kept": 0,
+      "skipped": 2,
+      "original_tokens": 781733,
+      "visible_tokens": 768192,
+      "tokens_saved": 13541,
+      "all_result_reduction_percent": 1.7,
+      "within_limit_reduction_percent": 81.0,
+      "replaced_result_reduction_percent": 90.3,
+      "local_latency_ms": {
+        "p50": 1582.3,
+        "p95": 1919.4,
+        "max": 2007.6
+      }
+    }
+  },
+  "kind": "LIVE JEV THREE-FILTER COMMAND-HOOK BENCHMARK",
+  "rounds": 3,
+  "real_command_fixtures": 10,
+  "paired_off_latency_ms": {
+    "p50": 397.5,
+    "p95": 714.2,
+    "max": 721.4
+  },
+  "paired_enabled_latency_ms": {
+    "p50": 1722.4,
+    "p95": 1968.8,
+    "max": 2007.6
+  },
+  "added_wall_latency_ms": {
+    "p50": 1223.6,
+    "p95": 1464.9,
+    "max": 1496.4
+  },
+  "by_fixture": {
+    "malformed": {
+      "runs": 1,
+      "replaced": 0,
+      "kept": 0,
+      "skipped": 1,
+      "jev_calls": 0,
+      "mean_token_reduction_percent": 0.0
+    },
+    "oversize": {
+      "runs": 3,
+      "replaced": 0,
+      "kept": 0,
+      "skipped": 3,
+      "jev_calls": 0,
+      "mean_token_reduction_percent": 0.0
+    },
+    "real_c_build": {
+      "runs": 3,
+      "replaced": 3,
+      "kept": 0,
+      "skipped": 0,
+      "jev_calls": 3,
+      "mean_token_reduction_percent": 89.9
+    },
+    "real_failing_suite": {
+      "runs": 3,
+      "replaced": 3,
+      "kept": 0,
+      "skipped": 0,
+      "jev_calls": 3,
+      "mean_token_reduction_percent": 86.2
+    },
+    "real_file_listing": {
+      "runs": 3,
+      "replaced": 3,
+      "kept": 0,
+      "skipped": 0,
+      "jev_calls": 3,
+      "mean_token_reduction_percent": 71.4
+    },
+    "real_node_suite": {
+      "runs": 3,
+      "replaced": 3,
+      "kept": 0,
+      "skipped": 0,
+      "jev_calls": 3,
+      "mean_token_reduction_percent": 93.4
+    },
+    "real_progress_400": {
+      "runs": 3,
+      "replaced": 3,
+      "kept": 0,
+      "skipped": 0,
+      "jev_calls": 3,
+      "mean_token_reduction_percent": 92.6
+    },
+    "real_progress_600": {
+      "runs": 3,
+      "replaced": 3,
+      "kept": 0,
+      "skipped": 0,
+      "jev_calls": 3,
+      "mean_token_reduction_percent": 95.1
+    },
+    "real_progress_900": {
+      "runs": 3,
+      "replaced": 3,
+      "kept": 0,
+      "skipped": 0,
+      "jev_calls": 3,
+      "mean_token_reduction_percent": 96.7
+    },
+    "real_python_suite": {
+      "runs": 3,
+      "replaced": 3,
+      "kept": 0,
+      "skipped": 0,
+      "jev_calls": 3,
+      "mean_token_reduction_percent": 90.9
+    },
+    "real_repository_search": {
+      "runs": 3,
+      "replaced": 0,
+      "kept": 3,
+      "skipped": 0,
+      "jev_calls": 3,
+      "mean_token_reduction_percent": 0.0
+    },
+    "real_search_hits": {
+      "runs": 3,
+      "replaced": 0,
+      "kept": 3,
+      "skipped": 0,
+      "jev_calls": 3,
+      "mean_token_reduction_percent": 0.0
+    },
+    "secret": {
+      "runs": 2,
+      "replaced": 0,
+      "kept": 0,
+      "skipped": 2,
+      "jev_calls": 0,
+      "mean_token_reduction_percent": 0.0
+    }
+  }
+}

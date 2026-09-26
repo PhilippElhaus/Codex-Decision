@@ -1,7 +1,8 @@
-"""Exercise the installed hook with a real Jev request and no key in WSL."""
+"""Exercise a Jev hook with a real request and no key in WSL."""
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 from pathlib import Path
@@ -11,15 +12,14 @@ import tempfile
 from replay import generated_cases
 
 
-PLUGIN = Path.home() / '.codex/plugins/cache/personal/codex-jev'
 SOURCE = Path(__file__).resolve().parents[1]
 
 
 def main() -> None:
-    version = json.loads((SOURCE / '.codex-plugin/plugin.json').read_text())['version']
-    hook = PLUGIN / version / 'hooks/post_tool_use.py'
-    if not hook.is_file():
-        raise RuntimeError(f'installed Codex Jev hook is missing: {version}')
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--hook-script', type=Path, default=SOURCE / 'hooks/post_tool_use.py')
+    args = parser.parse_args()
+    hook = args.hook_script.resolve(strict=True)
     event = next(generated_cases(1))['event']
     environment = dict(os.environ)
     environment.pop('TYPESAFE_API_KEY', None)

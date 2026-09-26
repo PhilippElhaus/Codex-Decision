@@ -53,7 +53,7 @@ class CommandTests(unittest.TestCase):
             "python -m pytest -v": "test",
             "pytest tests -v": "test",
             "node --test tests/*.test.cjs": "test",
-            "npm --prefix plugins/codex-jev/vscode-control test": "test",
+            "npm --prefix vscode-control test": "test",
             "pnpm run build": "build",
             "cargo test --workspace": "test",
             "cargo build --release": "build",

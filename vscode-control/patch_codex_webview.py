@@ -21,9 +21,17 @@ ANCHOR = 'let a=e.onDidReceiveMessage(u=>{if(s.markMessageReceived(),u.type==="c
 
 
 def marketplace_path_bridge() -> str:
-    """Correct this repo's local marketplace path at the Windows-to-WSL edge."""
-    marketplace = Path(__file__).resolve().parents[3] / ".agents/plugins/marketplace.json"
+    """Correct the selected local marketplace path at the Windows-to-WSL edge."""
+    marketplace = Path(os.environ.get("CODEX_JEV_MARKETPLACE_PATH") or
+                       Path(__file__).resolve().parents[1] / ".agents/plugins/marketplace.json")
     if not marketplace.is_file() or not str(marketplace).startswith("/mnt/"):
+        return ""
+    try:
+        names = [entry["name"] for entry in json.loads(marketplace.read_text())["plugins"]
+                 if entry.get("name") in {"codex-jev", "codex-chime"}]
+    except (OSError, ValueError, KeyError, TypeError):
+        return ""
+    if not names:
         return ""
     try:
         converted = subprocess.run(
@@ -44,10 +52,10 @@ def marketplace_path_bridge() -> str:
         'if(u&&u.type==="mcp-request"&&u.request&&u.request.method==="plugin/read"&&'
         'u.request.params&&typeof u.request.params.marketplacePath==="string"){'
         'let p=u.request.params.marketplacePath.toLowerCase().replaceAll("/","\\\\");'
-        f'if({aliases_json}.includes(p)||'
+        f'if(({aliases_json}.includes(p)||'
         '(p===".agents\\\\plugins\\\\marketplace.json"||'
-        'p===".\\\\.agents\\\\plugins\\\\marketplace.json")&&'
-        '["codex-jev","codex-chime"].includes(u.request.params.pluginName))'
+        'p===".\\\\.agents\\\\plugins\\\\marketplace.json"))&&'
+        f'{json.dumps(names, separators=(",", ":"))}.includes(u.request.params.pluginName))'
         f'u.request.params.marketplacePath={local_json};'
         '}'
     )

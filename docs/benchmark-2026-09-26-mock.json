@@ -1,0 +1,96 @@
+{
+  "tokenizer": "o200k_base",
+  "cases": 2104,
+  "jev_calls": 1100,
+  "original_tokens": 7679566,
+  "visible_tokens": 6394866,
+  "tokens_saved": 1284700,
+  "all_result_reduction_percent": 16.7,
+  "within_limit_reduction_percent": 23.6,
+  "by_route": {
+    "output": {
+      "cases": 701,
+      "jev_calls": 300,
+      "replaced": 100,
+      "kept": 200,
+      "skipped": 401,
+      "original_tokens": 2861650,
+      "visible_tokens": 2516200,
+      "tokens_saved": 345450,
+      "all_result_reduction_percent": 12.1,
+      "within_limit_reduction_percent": 15.2,
+      "replaced_result_reduction_percent": 93.7,
+      "local_latency_ms": {
+        "p50": 3.8,
+        "p95": 4.5,
+        "max": 6.1
+      }
+    },
+    "search_listing": {
+      "cases": 702,
+      "jev_calls": 400,
+      "replaced": 300,
+      "kept": 100,
+      "skipped": 302,
+      "original_tokens": 2909402,
+      "visible_tokens": 2542902,
+      "tokens_saved": 366500,
+      "all_result_reduction_percent": 12.6,
+      "within_limit_reduction_percent": 18.2,
+      "replaced_result_reduction_percent": 47.9,
+      "local_latency_ms": {
+        "p50": 2.2,
+        "p95": 3.1,
+        "max": 8.4
+      }
+    },
+    "test_build": {
+      "cases": 701,
+      "jev_calls": 400,
+      "replaced": 300,
+      "kept": 100,
+      "skipped": 301,
+      "original_tokens": 1908514,
+      "visible_tokens": 1335764,
+      "tokens_saved": 572750,
+      "all_result_reduction_percent": 30.0,
+      "within_limit_reduction_percent": 50.1,
+      "replaced_result_reduction_percent": 97.0,
+      "local_latency_ms": {
+        "p50": 2.6,
+        "p95": 3.3,
+        "max": 6.0
+      }
+    }
+  },
+  "kind": "MOCKED THREE-FILTER POLICY BENCHMARK",
+  "per_variant": 100,
+  "synthetic_label_mismatches": 0,
+  "categories": {
+    "output/diagnostic": 100,
+    "output/distinct": 100,
+    "output/one_off": 100,
+    "output/oversize": 1,
+    "output/progress": 100,
+    "output/secret": 100,
+    "output/short": 100,
+    "output/uncertain": 100,
+    "search_listing/all_retain": 100,
+    "search_listing/listing_drop": 100,
+    "search_listing/listing_summarize": 100,
+    "search_listing/malformed": 100,
+    "search_listing/missing_task": 100,
+    "search_listing/oversize": 1,
+    "search_listing/search_drop": 100,
+    "search_listing/secret": 100,
+    "search_listing/too_many_groups": 1,
+    "test_build/build": 100,
+    "test_build/failing_tests": 100,
+    "test_build/missing_summary": 100,
+    "test_build/oversize": 1,
+    "test_build/passing_tests": 100,
+    "test_build/secret": 100,
+    "test_build/short": 100,
+    "test_build/uncertain": 100
+  }
+}
