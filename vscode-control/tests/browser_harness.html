@@ -184,6 +184,8 @@
       option.click();
       await pause(50);
       check(option.getAttribute("aria-checked") === "true", "hook selected");
+      check(menu.dataset.open === "true" && button.getAttribute("aria-expanded") === "true",
+        "menu stays open after selecting a checkbox");
       check(getComputedStyle(option.querySelector(".codex-jev-check")).backgroundColor === "rgb(58, 131, 247)",
         "selected check uses Codex blue");
       check(button.style.color === "rgb(135, 205, 164)", "connected green");
@@ -221,39 +223,40 @@
       location.hash = "#reopened-thread";
       await until(() => freshView && tooltip.textContent.includes("0 checked") && tooltip.querySelectorAll("li").length === 0,
         "new or reopened thread has no old outcomes");
-      button.click();
       option.click();
       await pause(50);
       check(button.style.color === "rgb(154, 154, 154)", "off returns gray");
-      button.click();
       localOption.click();
       await pause(50);
       check(localOption.getAttribute("aria-checked") === "true" && option.getAttribute("aria-checked") === "false", "local filter selected independently");
+      check(menu.dataset.open === "true", "menu stays open for a second selection");
       check(button.style.color === "rgb(233, 148, 144)", "test/build filter reflects failed Jev health");
       health = { ok: true, model: "jev-1.13.0" };
       await pause(150);
       check(button.style.color === "rgb(135, 205, 164)" && tooltip.textContent.includes("Jev connected"), "test/build filter requires Jev health");
-      button.click();
       option.click();
       await pause(50);
       check(localOption.getAttribute("aria-checked") === "true" && option.getAttribute("aria-checked") === "true", "both filters selected");
-      button.click();
       localOption.click();
       await pause(50);
       check(localOption.getAttribute("aria-checked") === "false" && option.getAttribute("aria-checked") === "true", "local filter deselected independently");
-      button.click();
       compactOption.click();
       await pause(50);
       check(compactOption.getAttribute("aria-checked") === "true" && option.getAttribute("aria-checked") === "true", "search/listing selected independently");
+      check(menu.dataset.open === "true", "menu stays open for a third selection");
       check(tooltip.textContent.includes("search/listing"), "search/listing appears in selected mode");
-      button.click();
       option.click();
       await pause(50);
       check(compactOption.getAttribute("aria-checked") === "true" && option.getAttribute("aria-checked") === "false", "search/listing remains selected alone");
-      button.click();
       compactOption.click();
       await pause(50);
       check(compactOption.getAttribute("aria-checked") === "false" && button.style.color === "rgb(154, 154, 154)", "search/listing can turn off independently");
+      document.querySelector(".prompt").click();
+      check(menu.dataset.open === "false" && button.getAttribute("aria-expanded") === "false",
+        "outside click closes the menu");
+      button.click();
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      check(menu.dataset.open === "false", "Escape closes the menu");
       check(calls >= 5, "host bridge used");
       document.getElementById("results").textContent = JSON.stringify({ ok: true, calls });
       document.title = "JEV_BROWSER_PASS";

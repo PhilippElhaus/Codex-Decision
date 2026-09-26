@@ -107,19 +107,16 @@
     root.querySelector("#codex-jev-option").addEventListener("click", (event) => {
       event.stopPropagation();
       send("setSelection", !state.outputEnabled, "output");
-      menuOpen = false;
       render();
     });
     root.querySelector("#codex-jev-test-build").addEventListener("click", (event) => {
       event.stopPropagation();
       send("setSelection", !state.testBuildEnabled, "test_build");
-      menuOpen = false;
       render();
     });
     root.querySelector("#codex-jev-search-listing").addEventListener("click", (event) => {
       event.stopPropagation();
       send("setSelection", !state.searchListingEnabled, "search_listing");
-      menuOpen = false;
       render();
     });
     document.addEventListener("click", (event) => {
