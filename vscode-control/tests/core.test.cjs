@@ -6,17 +6,21 @@ const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
 const {
-  checkHealth, decisionSummary, outcomeLine, parseHealthOutput, readConfig,
-  readEventOffset, readEventsSince, readLatestEvent, readRecentOutcomes, writeEnabled, writeMode,
+  activitySummary, checkHealth, decisionSummary, formatDuration, outcomeLine, parseHealthOutput, readConfig,
+  readEventOffset, readEventsSince, readLatestEvent, readRecentOutcomes, writeEnabled, writeMode, writeSelection,
 } = require("../core");
 
 test("hook selection writes the config atomically and preserves the Jev mode", async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-control-test-"));
   try {
-    assert.deepEqual(await readConfig(directory), { enabled: false, mode: "replace" });
+    assert.deepEqual(await readConfig(directory), { enabled: false, test_build_enabled: false, search_listing_enabled: false, mode: "replace" });
     await fs.writeFile(path.join(directory, "config.json"), JSON.stringify({ mode: "replace", min_chars: 10000 }));
-    assert.deepEqual(await writeEnabled(directory, true), { enabled: true, mode: "replace", min_chars: 10000 });
-    assert.deepEqual(await readConfig(directory), { enabled: true, mode: "replace", min_chars: 10000 });
+    assert.deepEqual(await writeEnabled(directory, true), { enabled: true, test_build_enabled: false, search_listing_enabled: false, mode: "replace", min_chars: 10000 });
+    assert.deepEqual(await readConfig(directory), { enabled: true, test_build_enabled: false, search_listing_enabled: false, mode: "replace", min_chars: 10000 });
+    assert.deepEqual(await writeSelection(directory, false, true), { enabled: false, test_build_enabled: true, search_listing_enabled: false, mode: "replace", min_chars: 10000 });
+    assert.deepEqual(await writeSelection(directory, true, true, true), { enabled: true, test_build_enabled: true, search_listing_enabled: true, mode: "replace", min_chars: 10000 });
+    assert.equal((await writeSelection(directory, false, false)).search_listing_enabled, true);
+    await assert.rejects(writeSelection(directory, true, "yes"), /booleans/);
     await writeEnabled(directory, false);
     assert.equal((await readConfig(directory)).enabled, false);
     assert.deepEqual((await fs.readdir(directory)).sort(), ["config.json"]);
@@ -30,11 +34,26 @@ test("mode setting changes only the mode and rejects invalid values", async () =
   try {
     await writeEnabled(directory, true);
     const observed = await writeMode(directory, "observe");
-    assert.deepEqual(observed, { enabled: true, mode: "observe" });
+    assert.deepEqual(observed, { enabled: true, test_build_enabled: false, search_listing_enabled: false, mode: "observe" });
     assert.deepEqual(await readConfig(directory), observed);
     await assert.rejects(writeMode(directory, "unknown"), /invalid Jev mode/);
     assert.deepEqual(await readConfig(directory), observed);
-    assert.deepEqual(await writeMode(directory, "replace"), { enabled: true, mode: "replace" });
+    assert.deepEqual(await writeMode(directory, "replace"), { enabled: true, test_build_enabled: false, search_listing_enabled: false, mode: "replace" });
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("legacy PreCompact selection is retired without enabling search/listing", async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-control-test-"));
+  try {
+    await fs.writeFile(path.join(directory, "config.json"), JSON.stringify({ enabled: true, precompact_enabled: true }));
+    const config = await readConfig(directory);
+    assert.equal(config.enabled, true);
+    assert.equal(config.search_listing_enabled, false);
+    assert.equal(Object.hasOwn(config, "precompact_enabled"), false);
+    await writeSelection(directory, true, true, true);
+    assert.equal((await fs.readFile(path.join(directory, "config.json"), "utf8")).includes("precompact"), false);
   } finally {
     await fs.rm(directory, { recursive: true, force: true });
   }
@@ -45,6 +64,10 @@ test("invalid config and linked target fail without changing a hook selection", 
   try {
     await fs.writeFile(path.join(directory, "config.json"), JSON.stringify({ enabled: "yes" }));
     await assert.rejects(writeEnabled(directory, true), /Invalid Jev config/);
+    await fs.writeFile(path.join(directory, "config.json"), JSON.stringify({ test_build_enabled: "yes" }));
+    await assert.rejects(writeSelection(directory, false, true), /Invalid Jev config/);
+    await fs.writeFile(path.join(directory, "config.json"), JSON.stringify({ search_listing_enabled: "yes" }));
+    await assert.rejects(writeSelection(directory, false, false, true), /Invalid Jev config/);
     await fs.writeFile(path.join(directory, "config.json"), JSON.stringify({ min_chars: 1 }));
     await assert.rejects(writeEnabled(directory, true), /Invalid Jev config/);
     await fs.rm(path.join(directory, "config.json"));
@@ -64,7 +87,7 @@ test("recent decision is read from a bounded log tail", async () => {
   try {
     const file = path.join(directory, "events.jsonl");
     await fs.writeFile(file, "x".repeat(40000) + "\n" +
-      JSON.stringify({ tool: "Bash", status: "replace", reason: "jev_replace", original_chars: 12345, elapsed_ms: 480 }) + "\n" +
+      JSON.stringify({ tool: "Bash", status: "replace", reason: "jev_replace", original_chars: 12345, capsule_chars: 1000, elapsed_ms: 480 }) + "\n" +
       JSON.stringify({ tool: "Bash", status: "skip", reason: "small", original_chars: 42, elapsed_ms: 0 }) + "\n");
     const event = await readLatestEvent(directory);
     assert.equal(event.reason, "small");
@@ -73,10 +96,30 @@ test("recent decision is read from a bounded log tail", async () => {
     assert.match(decisionSummary(decision), /replaced Bash output.*12[,.]345 chars, 480 ms/);
     const recent = await readRecentOutcomes(directory);
     assert.equal(recent.outcomes.length, 1);
-    assert.match(outcomeLine(recent.outcomes[0]), /replaced · Bash · 12[,.]345 chars · 480 ms/);
+    assert.match(outcomeLine(recent.outcomes[0]), /replaced · Bash · 12[,.]345 chars · 480 ms · 92%/);
   } finally {
     await fs.rm(directory, { recursive: true, force: true });
   }
+});
+
+test("summary keeps three signals and missing capsule sizes do not imply savings", () => {
+  assert.equal(activitySummary({ calls: 1, replaced: 1, completed: 1, elapsedMs: 1328 }),
+    "1 checked · 1 replaced · 1,3s avg");
+  assert.equal(activitySummary({ calls: 0, replaced: 0, completed: 0, elapsedMs: 0 }),
+    "0 checked · 0 replaced · — avg");
+  assert.equal(outcomeLine({ status: "replace", tool: "Bash", original_chars: 10000, capsule_chars: null, elapsed_ms: 100 }),
+    "replaced · Bash · 10,000 chars · 100 ms");
+  assert.equal(outcomeLine({ filter: "test_build", status: "replace", tool: "Bash", original_chars: 10000, capsule_chars: 1000, elapsed_ms: 4 }),
+    "replaced · test/build · 10,000 chars · 4 ms · 90%");
+  assert.equal(outcomeLine({ filter: "test_build", status: "replace", tool: "Bash", original_chars: 6367, capsule_chars: 309, elapsed_ms: 1263 }),
+    "replaced · test/build · 6,367 chars · 1,2s · 95%");
+  assert.equal(activitySummary({ completed: 1, replaced: 1, elapsedMs: 1263 }),
+    "1 checked · 1 replaced · 1,2s avg");
+  assert.equal(formatDuration(999), "999 ms");
+  assert.equal(formatDuration(1000), "1,0s");
+  assert.equal(outcomeLine({ filter: "search_listing", status: "replace", tool: "Bash", original_chars: 5000, capsule_chars: 1200, elapsed_ms: 1263 }),
+    "replaced · search/listing · 5,000 chars · 1,2s · 76%");
+  assert.match(decisionSummary({ filter: "search_listing", status: "replace", tool: "Bash", original_chars: 5000, elapsed_ms: 1263 }), /replaced search\/listing Bash output/);
 });
 
 test("incremental event reader keeps incomplete lines for the next poll", async () => {

@@ -38,6 +38,8 @@ SAFE_KEY = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 @dataclass(frozen=True)
 class Config:
     enabled: bool = False
+    test_build_enabled: bool = False
+    search_listing_enabled: bool = False
     mode: str = "replace"
     min_chars: int = 8192
     max_chars: int = 2_000_000
@@ -51,11 +53,20 @@ class Config:
         if not path.is_file():
             return cls()
         raw = json.loads(path.read_text(encoding="utf-8"))
-        if not isinstance(raw, dict) or set(raw) - set(cls.__dataclass_fields__):
+        if not isinstance(raw, dict):
+            raise ValueError("invalid config fields")
+        raw = dict(raw)
+        # An installed earlier release can leave this inert key behind.
+        if "precompact_enabled" in raw:
+            if type(raw.pop("precompact_enabled")) is not bool:
+                raise ValueError("invalid legacy config")
+        if set(raw) - set(cls.__dataclass_fields__):
             raise ValueError("invalid config fields")
         config = cls(**raw)
         if (
             type(config.enabled) is not bool
+            or type(config.test_build_enabled) is not bool
+            or type(config.search_listing_enabled) is not bool
             or config.mode not in ("observe", "replace")
             or type(config.min_chars) is not int
             or type(config.max_chars) is not int
@@ -82,9 +93,10 @@ class Result:
     scores: dict[str, float] | None = None
     hook_output: dict | None = None
 
-    def to_log(self, tool_name: str) -> dict:
+    def to_log(self, tool_name: str, filter_name: str = "output") -> dict:
         return {
             "tool": tool_name,
+            "filter": filter_name,
             "status": self.status,
             "reason": self.reason,
             "original_chars": self.original_chars,
@@ -167,6 +179,73 @@ def jev_request(state: dict, config: Config, api_key: str) -> dict[str, float]:
             },
         },
     }
+    return _request_nouls(state, config, api_key, questions)
+
+
+def jev_test_build_request(state: dict, config: Config, api_key: str) -> dict[str, float]:
+    """Ask Jev whether known pass/progress lines are safe to omit for this run."""
+    questions = {
+        "routine_noise": {
+            "type": "noul",
+            "instructions": "Are the lines in `omitted_sample` routine passing-test or build-progress entries whose omission leaves the run outcome clear in `retained_sample`?",
+            "criteria": {
+                "true": "They are routine passes or progress; the retained summary and diagnostics communicate the outcome.",
+                "false": "They contain substantive results, diagnostics, or facts needed to understand this run.",
+            },
+        },
+        "needs_exact_text": {
+            "type": "noul",
+            "instructions": "Would a coding agent likely need the exact omitted test names, progress lines, or values in `omitted_sample` for its next step, given `retained_sample`?",
+            "criteria": {
+                "true": "The omitted lines identify important cases, files, values, or diagnostics for the next step.",
+                "false": "The retained text is enough for the next step; the exact omitted lines are unlikely to matter.",
+            },
+        },
+        "one_off_value": {
+            "type": "noul",
+            "instructions": "Does `omitted_sample` contain a unique result or nonrepeatable value that should remain visible, beyond ordinary passing-test names or routine build progress?",
+            "criteria": {
+                "true": "A unique result, identifier, measurement, or diagnostic is present in the omitted lines.",
+                "false": "The omitted lines contain only ordinary pass/progress entries; their exact text remains recoverable from the saved original.",
+            },
+        },
+    }
+    return _request_nouls(state, config, api_key, questions)
+
+
+def _request_nouls(state: dict, config: Config, api_key: str, questions: dict) -> dict[str, float]:
+    answers = _request_answers(state, config, api_key, questions)
+    scores = {}
+    for name in SCORE_NAMES:
+        answer = answers.get(name)
+        value = answer.get("noul") if isinstance(answer, dict) and answer.get("type") == "noul" else None
+        if type(value) not in (int, float) or not 0 <= value <= 1:
+            raise ValueError("invalid noul answer")
+        scores[name] = float(value)
+    return scores
+
+
+def jev_choice_request(state: dict, questions: dict, config: Config, api_key: str = "") -> dict[str, dict]:
+    """Evaluate bounded independent Choice questions in one Jev request."""
+    answers = _request_answers(state, config, api_key, questions)
+    if set(answers) != set(questions):
+        raise ValueError("missing choice answers")
+    for name, question in questions.items():
+        answer = answers[name]
+        options = set(question["criteria"])
+        probabilities = answer.get("probabilities") if isinstance(answer, dict) else None
+        confidence = answer.get("confidence") if isinstance(answer, dict) else None
+        if (not isinstance(answer, dict) or answer.get("type") != "choice" or answer.get("choice") not in options
+                or not isinstance(probabilities, dict) or set(probabilities) != options
+                or any(type(value) not in (int, float) or not 0 <= value <= 1 for value in probabilities.values())
+                or not 0.97 <= sum(probabilities.values()) <= 1.03
+                or probabilities[answer["choice"]] < max(probabilities.values()) - 0.01
+                or type(confidence) not in (int, float) or not 0 <= confidence <= 1):
+            raise ValueError("invalid choice answer")
+    return answers
+
+
+def _request_answers(state: dict, config: Config, api_key: str, questions: dict) -> dict:
     payload = json.dumps({"state": state, "model": config.model, "questions": questions}).encode()
     if api_key:
         req = request.Request(
@@ -182,14 +261,7 @@ def jev_request(state: dict, config: Config, api_key: str) -> dict[str, float]:
     answers = body.get("answers")
     if not isinstance(answers, dict):
         raise ValueError("missing answers")
-    scores = {}
-    for name in SCORE_NAMES:
-        answer = answers.get(name)
-        value = answer.get("noul") if isinstance(answer, dict) and answer.get("type") == "noul" else None
-        if type(value) not in (int, float) or not 0 <= value <= 1:
-            raise ValueError("invalid noul answer")
-        scores[name] = float(value)
-    return scores
+    return answers
 
 
 def _bridge_request(payload: bytes, timeout_seconds: float) -> dict:
@@ -344,7 +416,7 @@ def decide(
     return result("replace", "jev_replace", size, capsule_chars=len(feedback), scores=scores, hook_output=hook_output)
 
 
-def append_log(storage: Path, result: Result, tool_name: str) -> None:
+def append_log(storage: Path, result: Result, tool_name: str, filter_name: str = "output") -> None:
     storage.mkdir(mode=0o700, parents=True, exist_ok=True)
     path = storage / "events.jsonl"
     flags = os.O_WRONLY | os.O_APPEND | os.O_CREAT
@@ -352,4 +424,4 @@ def append_log(storage: Path, result: Result, tool_name: str) -> None:
         flags |= os.O_NOFOLLOW
     fd = os.open(path, flags, 0o600)
     with os.fdopen(fd, "a", encoding="utf-8") as file:
-        file.write(json.dumps(result.to_log(tool_name), separators=(",", ":")) + "\n")
+        file.write(json.dumps(result.to_log(tool_name, filter_name), separators=(",", ":")) + "\n")

@@ -12,7 +12,7 @@
     .plus { font-size: 34px; color: #c9c9c9; line-height: 1; }
     .access { color: #d6b900 !important; font-size: 17px !important; }
     .shield { display: inline-block; margin-right: 10px; border: 2px solid #d6b900; border-radius: 9px 9px 12px 12px; width: 22px; height: 24px; line-height: 21px; font-size: 17px; text-align: center; }
-    .model { margin-left: auto; color: #bebebe !important; font-size: 17px !important; }
+    .model { box-sizing: border-box; margin-left: auto; color: #bebebe !important; font-size: 17px !important; height: 36px; padding: 5px 14px !important; border-radius: 999px; background: #303030 !important; }
     .divider { height: 34px; border-left: 1px solid #303030; }
     .context { color: #989898; }
     .mic { color: #b5b5b5; font-size: 26px; }
@@ -24,17 +24,15 @@
     document.documentElement.style.setProperty("--screenshot-offset", `${Math.max(0, outerHeight - innerHeight)}px`);
     const demo = new URLSearchParams(location.search).get("demo") || "tooltip";
     const history = [
-      "replaced · Bash · 12,960 chars · 1,162 ms",
-      "kept · mcp__demo__logs · 14,000 chars · 1,310 ms",
-      "replaced · Bash · 12,960 chars · 1,180 ms",
+      "replaced · test/build · 6,367 chars · 1,2s · 95%",
     ];
     window.acquireVsCodeApi = () => ({ postMessage(request) {
       queueMicrotask(() => window.dispatchEvent(new MessageEvent("message", { data: {
         type: "codex-jev-reply", id: request.id,
         status: {
-          enabled: true, health: { ok: true, model: "jev-1.13.0" },
+          enabled: true, outputEnabled: true, testBuildEnabled: true, searchListingEnabled: true, health: { ok: true, model: "jev-1.13.0" },
           busy: demo === "pulse", mode: "replace", recent: history[0], history,
-          stats: { calls: 9, candidates: 0, kept: 2, replaced: 7, checkedChars: 115640, elapsedMs: 10440, completed: 9 },
+          stats: { calls: 1, candidates: 0, kept: 0, replaced: 1, checkedChars: 6367, elapsedMs: 1263, completed: 1 },
         },
       } })));
     } });
@@ -56,7 +54,8 @@
     const api = acquireVsCodeApi();
     setTimeout(() => {
       document.documentElement.style.setProperty("--screenshot-offset", `${Math.max(0, outerHeight - innerHeight)}px`);
-      if (demo !== "composer") document.getElementById("codex-jev-tip").style.display = "block";
+      if (demo === "menu") document.getElementById("codex-jev-button").click();
+      else if (demo !== "composer") document.getElementById("codex-jev-tip").style.display = "block";
       const anchor = document.querySelector(".access").getBoundingClientRect();
       const button = document.getElementById("codex-jev-button").getBoundingClientRect();
       document.body.dataset.layout = JSON.stringify({ anchorTop: anchor.top, buttonTop: button.top, screenshotOffset: Math.max(0, outerHeight - innerHeight) });

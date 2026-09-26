@@ -21,7 +21,7 @@ def main() -> None:
     try:
         target = windows_path(ROOT / 'tests/visual_harness.html').replace('\\', '/')
         address = 'file:///' + quote(target, safe='/:')
-        for state, name in [('composer', 'jev-composer.png'), ('tooltip', 'jev-tooltip.png'), ('pulse', 'jev-pulse.png')]:
+        for state, name in [('composer', 'jev-composer.png'), ('menu', 'jev-menu.png'), ('tooltip', 'jev-tooltip.png'), ('pulse', 'jev-pulse.png')]:
             output = IMAGES / name
             result = subprocess.run([
                 str(edge), '--headless', '--disable-gpu', '--no-first-run',

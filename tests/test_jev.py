@@ -68,22 +68,26 @@ class ConfigTests(unittest.TestCase):
 
     def test_default_is_disabled_with_replacement_mode(self):
         self.assertFalse(jev.Config().enabled)
+        self.assertFalse(jev.Config().test_build_enabled)
+        self.assertFalse(jev.Config().search_listing_enabled)
         self.assertEqual(jev.Config().mode, "replace")
 
     def test_config_example_is_valid_and_disabled(self):
         config = jev.Config.from_file(ROOT / "config.example.json")
         self.assertFalse(config.enabled)
+        self.assertFalse(config.test_build_enabled)
+        self.assertFalse(config.search_listing_enabled)
         self.assertEqual(config.mode, "replace")
 
     def test_invalid_configs_fail_closed(self):
-        for invalid in ({"enabled": "true"}, {"mode": "destroy"}, {"min_chars": 10}, {"unknown": 1}, {"timeout_seconds": 10}):
+        for invalid in ({"enabled": "true"}, {"test_build_enabled": "true"}, {"search_listing_enabled": "true"}, {"mode": "destroy"}, {"min_chars": 10}, {"unknown": 1}, {"timeout_seconds": 10}):
             with self.subTest(invalid=invalid), tempfile.TemporaryDirectory() as directory:
                 path = Path(directory) / "config.json"
                 path.write_text(json.dumps(invalid), encoding="utf-8")
                 with self.assertRaises(ValueError):
                     jev.Config.from_file(path)
 
-    def test_manifest_has_only_one_inactive_by_default_hook(self):
+    def test_manifest_has_three_inactive_by_default_hooks(self):
         manifest = json.loads((ROOT / ".codex-plugin" / "plugin.json").read_text())
         hooks = json.loads((ROOT / "hooks" / "hooks.json").read_text())
         self.assertEqual(manifest["name"], ROOT.name)
@@ -94,7 +98,8 @@ class ConfigTests(unittest.TestCase):
             self.assertEqual(data[:8], b"\x89PNG\r\n\x1a\n")
             self.assertEqual(struct.unpack(">II", data[16:24]), (size, size))
         self.assertEqual(set(hooks["hooks"]), {"PostToolUse"})
-        self.assertFalse(hooks["hooks"]["PostToolUse"][0]["hooks"][0].get("async", False))
+        for event in hooks["hooks"]:
+            self.assertFalse(hooks["hooks"][event][0]["hooks"][0].get("async", False))
 
     def test_hook_launcher_fails_open_when_cache_disappears_or_script_fails(self):
         hooks = json.loads((ROOT / "hooks" / "hooks.json").read_text())

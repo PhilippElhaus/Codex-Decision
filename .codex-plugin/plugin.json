@@ -1,7 +1,7 @@
 {
   "name": "codex-jev",
-  "version": "0.1.0+codex.20260926122917",
-  "description": "Jev checks repetitive Codex tool output and can replace it with a recoverable excerpt.",
+  "version": "0.1.0+codex.20260926160420",
+  "description": "Jev-gated filtering for repetitive output, test/build logs, and broad search/listing results.",
   "author": {
     "name": "Elhaus Labs",
     "url": "https://github.com/Elhaus-Labs"
@@ -17,8 +17,8 @@
   ],
   "interface": {
     "displayName": "Codex Jev",
-    "shortDescription": "Trim repetitive tool output with Jev.",
-    "longDescription": "Codex Jev checks eligible PostToolUse results, replacing approved repetitive output with a recoverable excerpt. A companion VS Code control shows connection health, recent decisions, and session totals.",
+    "shortDescription": "Filter large tool results before they enter context.",
+    "longDescription": "Codex Jev offers three selectable PostToolUse filters for repetitive output, routine test/build logs, and broad search or file listings. Eligible results get one bounded Jev judgment; replacement preserves a recoverable exact original. A companion VS Code control shows connection health and recent outcomes.",
     "developerName": "Elhaus Labs",
     "category": "Productivity",
     "capabilities": [

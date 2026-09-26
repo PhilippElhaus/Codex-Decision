@@ -5,7 +5,7 @@ const fs = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
 const CONFIG_KEYS = new Set([
-  "enabled", "mode", "min_chars", "max_chars", "sample_chars",
+  "enabled", "test_build_enabled", "search_listing_enabled", "precompact_enabled", "mode", "min_chars", "max_chars", "sample_chars",
   "timeout_seconds", "model", "allow_mcp_replacement",
 ]);
 
@@ -21,13 +21,15 @@ async function readConfig(directory) {
   try {
     const raw = JSON.parse(await fs.readFile(path.join(directory, "config.json"), "utf8"));
     const merged = {
-      enabled: false, mode: "replace", min_chars: 8192, max_chars: 2_000_000,
+      enabled: false, test_build_enabled: false, search_listing_enabled: false, mode: "replace", min_chars: 8192, max_chars: 2_000_000,
       sample_chars: 12_000, timeout_seconds: 3, model: "jev-1.13.0",
       allow_mcp_replacement: false, ...raw,
     };
     if (!raw || typeof raw !== "object" || Array.isArray(raw) ||
         Object.keys(raw).some((key) => !CONFIG_KEYS.has(key)) ||
-        typeof merged.enabled !== "boolean" ||
+        typeof merged.enabled !== "boolean" || typeof merged.test_build_enabled !== "boolean" ||
+        typeof merged.search_listing_enabled !== "boolean" ||
+        (raw.precompact_enabled !== undefined && typeof raw.precompact_enabled !== "boolean") ||
         !["observe", "replace"].includes(merged.mode) ||
         !Number.isInteger(merged.min_chars) || !Number.isInteger(merged.max_chars) ||
         merged.min_chars < 1024 || merged.min_chars > merged.max_chars || merged.max_chars > 2_000_000 ||
@@ -37,9 +39,10 @@ async function readConfig(directory) {
         typeof merged.allow_mcp_replacement !== "boolean") {
       throw new Error("Invalid Jev config");
     }
-    return { enabled: false, mode: "replace", ...raw };
+    const { precompact_enabled: _legacy, ...current } = raw;
+    return { enabled: false, test_build_enabled: false, search_listing_enabled: false, mode: "replace", ...current };
   } catch (error) {
-    if (error.code === "ENOENT") return { enabled: false, mode: "replace" };
+    if (error.code === "ENOENT") return { enabled: false, test_build_enabled: false, search_listing_enabled: false, mode: "replace" };
     throw error;
   }
 }
@@ -69,6 +72,17 @@ async function writeEnabled(directory, enabled) {
   return writeConfig(directory, { enabled });
 }
 
+async function writeSelection(directory, outputEnabled, testBuildEnabled, searchListingEnabled) {
+  if (typeof outputEnabled !== "boolean" || typeof testBuildEnabled !== "boolean" ||
+      (searchListingEnabled !== undefined && typeof searchListingEnabled !== "boolean")) {
+    throw new TypeError("selection must contain booleans");
+  }
+  return writeConfig(directory, {
+    enabled: outputEnabled, test_build_enabled: testBuildEnabled,
+    ...(searchListingEnabled === undefined ? {} : { search_listing_enabled: searchListingEnabled }),
+  });
+}
+
 async function writeMode(directory, mode) {
   if (!["replace", "observe"].includes(mode)) throw new TypeError("invalid Jev mode");
   return writeConfig(directory, { mode });
@@ -89,8 +103,11 @@ function parseLogLine(line) {
     if (!row || typeof row.status !== "string" || typeof row.reason !== "string") return null;
     return {
       status: row.status.slice(0, 32), reason: row.reason.slice(0, 64),
+      filter: ["test_build", "search_listing"].includes(row.filter) ? row.filter : "output",
       tool: String(row.tool || "").slice(0, 64),
       original_chars: Number(row.original_chars) || 0,
+      capsule_chars: typeof row.capsule_chars === "number" && Number.isFinite(row.capsule_chars)
+        ? row.capsule_chars : null,
       elapsed_ms: Number(row.elapsed_ms) || 0,
     };
   } catch { return null; }
@@ -187,7 +204,28 @@ function outcomeLine(event) {
   const action = event.status === "replace" ? "replaced" :
     event.status === "candidate" ? "candidate" : "kept";
   const mode = event.reason === "observe" ? " (observe)" : "";
-  return `${action}${mode} · ${event.tool || "tool"} · ${event.original_chars.toLocaleString()} chars · ${event.elapsed_ms} ms`;
+  const saved = event.status === "replace" && Number.isFinite(event.original_chars) &&
+    Number.isFinite(event.capsule_chars) && event.original_chars > 0 &&
+    event.capsule_chars >= 0 && event.capsule_chars <= event.original_chars
+    ? ` · ${Math.round(100 * (event.original_chars - event.capsule_chars) / event.original_chars)}%`
+    : "";
+  const source = event.filter === "test_build" ? "test/build" :
+    event.filter === "search_listing" ? "search/listing" : (event.tool || "tool");
+  return `${action}${mode} · ${source} · ${event.original_chars.toLocaleString()} chars · ${formatDuration(event.elapsed_ms)}${saved}`;
+}
+
+function formatDuration(elapsedMs) {
+  const milliseconds = Math.max(0, Number(elapsedMs) || 0);
+  return milliseconds >= 1000
+    ? `${(Math.floor(milliseconds / 100) / 10).toFixed(1).replace(".", ",")}s`
+    : `${Math.round(milliseconds)} ms`;
+}
+
+function activitySummary(stats) {
+  const replaced = Number(stats.replaced) || 0;
+  const completed = Number(stats.completed) || 0;
+  const average = completed ? formatDuration((Number(stats.elapsedMs) || 0) / completed) : "—";
+  return `${completed} checked · ${replaced} replaced · ${average} avg`;
 }
 
 function decisionSummary(event) {
@@ -196,7 +234,9 @@ function decisionSummary(event) {
   const action = event.status === "replace" ? "replaced" :
     event.status === "candidate" ? "candidate" :
     event.status === "keep" ? "kept" : "skipped";
-  return `Last decision: ${action} ${event.tool || "tool"} output (${event.reason}); ${event.original_chars.toLocaleString()} chars, ${event.elapsed_ms} ms`;
+  const source = event.filter === "test_build" ? "test/build " :
+    event.filter === "search_listing" ? "search/listing " : "";
+  return `Last decision: ${action} ${source}${event.tool || "tool"} output (${event.reason}); ${event.original_chars.toLocaleString()} chars, ${formatDuration(event.elapsed_ms)}`;
 }
 
 function parseHealthOutput(stdout) {
@@ -263,7 +303,7 @@ async function checkHealth(credentialDirectory, execute = runCommand) {
 }
 
 module.exports = {
-  checkHealth, decisionSummary, defaultCredentialDirectory, defaultDataDirectory,
+  activitySummary, checkHealth, decisionSummary, defaultCredentialDirectory, defaultDataDirectory, formatDuration,
   isInformativeEvent, isJevOutcome, outcomeLine, parseHealthOutput, readConfig,
-  readEventOffset, readEventsSince, readLatestEvent, readRecentOutcomes, writeEnabled, writeMode,
+  readEventOffset, readEventsSince, readLatestEvent, readRecentOutcomes, writeEnabled, writeMode, writeSelection,
 };

@@ -1,5 +1,5 @@
 {
-  "description": "Codex Jev output filter. Disabled until its hook is selected.",
+  "description": "Three selectable Codex Jev PostToolUse filters. Disabled until selected.",
   "hooks": {
     "PostToolUse": [
       {

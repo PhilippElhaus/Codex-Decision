@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1100" height="335" viewBox="0 0 1100 335" role="img" aria-labelledby="title desc">
   <title id="title">Codex Jev output flow</title>
-  <desc id="desc">Codex tool output passes local safety gates, a bounded sample reaches Jev through a Windows helper, and metadata-only results reach the VS Code control. The API key stays in a user-local DPAPI cache.</desc>
+  <desc id="desc">One PostToolUse hook routes repetitive output, test and build logs, and broad search or file listings through local safety gates. Bounded samples or path-group descriptors reach Jev through a Windows helper for typed judgments. Metadata-only results reach the VS Code control. The API key stays in a user-local DPAPI cache.</desc>
   <defs>
     <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 Z" fill="#7a8e82"/></marker>
     <style>
@@ -15,10 +15,10 @@
   <text class="heading" x="53" y="105">Codex tool result</text><text class="body" x="53" y="132">PostToolUse output</text><text class="body" x="53" y="153">Bash or text MCP</text>
   <path class="line" d="M224 126 H256"/>
   <rect class="card" x="262" y="70" width="195" height="112" rx="13"/>
-  <text class="heading" x="281" y="105">Local gates</text><text class="body" x="281" y="132">Size · repetition</text><text class="body" x="281" y="153">Sensitive · diagnostic</text>
+  <text class="heading" x="281" y="105">Route + gates</text><text class="body" x="281" y="132">Test · search · output</text><text class="body" x="281" y="153">Size · format · sensitive</text>
   <path class="line" d="M457 126 H489"/>
   <rect class="card" x="495" y="70" width="170" height="112" rx="13"/>
-  <text class="heading" x="514" y="105">TypeSafe Jev</text><text class="body" x="514" y="132">Bounded sample</text><text class="body" x="514" y="153">Typed judgments</text>
+  <text class="heading" x="514" y="105">TypeSafe Jev</text><text class="body" x="514" y="132">One bounded call</text><text class="body" x="514" y="153">Typed judgments</text>
   <path class="line" d="M665 126 H697"/>
   <rect class="card" x="703" y="70" width="165" height="112" rx="13"/>
   <text class="heading" x="722" y="105">Decision log</text><text class="body" x="722" y="132">Metadata only</text><text class="body" x="722" y="153">Counts · latency</text>

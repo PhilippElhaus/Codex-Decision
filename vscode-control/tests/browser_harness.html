@@ -9,26 +9,31 @@
     .prompt { margin: 30px 22px; color: #666; font-size: 25px; }
     .toolbar { position: absolute; left: 25px; right: 25px; bottom: 16px; height: 36px; display: flex; align-items: center; gap: 14px; white-space: nowrap; }
     .access { color: #dcb900; flex: none; }
-    .model { margin-left: auto; flex: none; }
+    .model { box-sizing: border-box; margin-left: auto; flex: none; height: 34px; padding: 6px 12px; border: 0; border-radius: 999px; background: #303030; }
+    button { min-height: 44px; }
     .results { position: absolute; top: 16px; left: 16px; font: 12px monospace; }
   </style>
   <script>
-    let enabled = false, health = { ok: true, model: "jev-1.13.0" }, busy = false, mode = "replace";
-    const stats = { calls: 7, candidates: 5, kept: 2, replaced: 0, checkedChars: 90640, elapsedMs: 8120, completed: 7 };
+    let outputEnabled = false, testBuildEnabled = false, searchListingEnabled = false, health = { ok: true, model: "jev-1.13.0" }, busy = false, mode = "replace";
+    const stats = { calls: 7, candidates: 4, kept: 2, replaced: 1, checkedChars: 90640, elapsedMs: 8120, completed: 7 };
     const history = [
-      "candidate (observe) · Bash · 12,960 chars · 1,162 ms",
-      "kept · mcp__demo__logs · 14,000 chars · 1,310 ms",
-      "candidate (observe) · Bash · 12,960 chars · 1,180 ms",
+      "replaced · test/build · 6,367 chars · 1,2s · 95%",
+      "kept · mcp__demo__logs · 14,000 chars · 1,3s",
+      "replaced · Bash · 12,960 chars · 1,1s · 92%",
     ];
     let calls = 0, activeViewId = null, freshView = false;
     window.acquireVsCodeApi = () => ({ postMessage(request) {
       calls += 1;
       if (activeViewId && activeViewId !== request.viewId) freshView = true;
       activeViewId = request.viewId;
-      if (request.action === "setSelection") enabled = request.enabled;
+      if (request.action === "setSelection") {
+        if (request.feature === "test_build") testBuildEnabled = request.enabled;
+        else if (request.feature === "search_listing") searchListingEnabled = request.enabled;
+        else outputEnabled = request.enabled;
+      }
       queueMicrotask(() => window.dispatchEvent(new MessageEvent("message", { data: {
         type: "codex-jev-reply", id: request.id,
-        status: { enabled, health, busy, mode, recent: freshView ? "No decision recorded yet" : history[0],
+        status: { enabled: outputEnabled || testBuildEnabled || searchListingEnabled, outputEnabled, testBuildEnabled, searchListingEnabled, health, busy, mode, recent: freshView ? "No decision recorded yet" : history[0],
           history: freshView ? [] : history,
           stats: freshView ? { calls: 0, candidates: 0, kept: 0, replaced: 0, checkedChars: 0, elapsedMs: 0, completed: 0 } : stats },
       } })));
@@ -59,9 +64,27 @@
       const root = document.getElementById("codex-jev");
       const button = document.getElementById("codex-jev-button");
       const option = document.getElementById("codex-jev-option");
+      const localOption = document.getElementById("codex-jev-test-build");
+      const compactOption = document.getElementById("codex-jev-search-listing");
       const label = document.getElementById("codex-jev-label");
-      check(root && button && option && root.style.display === "block", "control visible");
+      check(root && button && option && localOption && compactOption && root.style.display === "block", "control visible");
       check(button.style.color === "rgb(154, 154, 154)", "disabled gray");
+      check([option, localOption, compactOption].map((item) => item.querySelector("strong").textContent).join("|") ===
+        "Output filter|Test/build logs|Search/listing", "three concise use-case labels");
+      check(!document.getElementById("codex-jev-menu").textContent.includes("PostToolUse"), "no repeated hook name");
+      const buttonStyle = getComputedStyle(button);
+      const modelStyle = getComputedStyle(document.querySelector(".model"));
+      check(buttonStyle.borderTopWidth === "0px" && buttonStyle.borderRadius === modelStyle.borderRadius &&
+        buttonStyle.backgroundColor === modelStyle.backgroundColor &&
+        Math.abs(button.getBoundingClientRect().height - document.querySelector(".model").getBoundingClientRect().height) <= 1,
+        "Jev button matches the model pill without a border");
+      const modelControl = document.querySelector(".model");
+      for (const height of [30, 38, 34]) {
+        modelControl.style.height = `${height}px`;
+        await until(() => Math.abs(button.getBoundingClientRect().height - height) <= 1 &&
+          Math.abs(button.getBoundingClientRect().top - modelControl.getBoundingClientRect().top) <= 1,
+          `Jev button tracks ${height}px model height and vertical alignment`);
+      }
       const anchor = () => document.querySelector(".access").getBoundingClientRect();
       const model = () => document.querySelector(".model").getBoundingClientRect();
       const rect = () => button.getBoundingClientRect();
@@ -85,6 +108,9 @@
       check(getComputedStyle(label).display !== "none" && docked() >= 7 && docked() <= 10, "full control redocked");
       button.click();
       check(button.getAttribute("aria-expanded") === "true", "menu opens");
+      check(getComputedStyle(button).borderTopWidth === "0px" &&
+        getComputedStyle(button).borderTopStyle === "none",
+        "expanded Jev pill remains borderless");
       option.click();
       await pause(50);
       check(option.getAttribute("aria-checked") === "true", "hook selected");
@@ -103,8 +129,12 @@
       mode = "replace";
       await until(() => root.dataset.observe === "false", "replacement mode restored");
       const tooltip = document.getElementById("codex-jev-tip");
-      check(tooltip.textContent.includes("7 calls") && /90[,.]640 chars checked/.test(tooltip.textContent), "session statistics tooltip");
+      check(tooltip.textContent.includes("7 checked · 1 replaced · 1,1s avg") &&
+        !tooltip.textContent.includes("chars checked") && tooltip.textContent.includes("· 95%"), "three-signal tooltip and compact savings");
       check(tooltip.querySelectorAll("li").length === 3 && tooltip.textContent.includes("mcp__demo__logs"), "three cross-tool outcomes");
+      const firstOutcome = tooltip.querySelector("li");
+      check(firstOutcome.getBoundingClientRect().height <= parseFloat(getComputedStyle(firstOutcome).lineHeight) + 1,
+        "test/build outcome fits on one line");
       check(getComputedStyle(button).transitionDuration.includes("0.22s"), "blue pulse has eased color transition");
       busy = true;
       await pause(150);
@@ -114,12 +144,41 @@
       await pause(150);
       check(button.style.color === "rgb(233, 148, 144)", "failure red");
       location.hash = "#reopened-thread";
-      await until(() => freshView && tooltip.textContent.includes("0 calls") && tooltip.querySelectorAll("li").length === 0,
+      await until(() => freshView && tooltip.textContent.includes("0 checked") && tooltip.querySelectorAll("li").length === 0,
         "new or reopened thread has no old outcomes");
       button.click();
       option.click();
       await pause(50);
       check(button.style.color === "rgb(154, 154, 154)", "off returns gray");
+      button.click();
+      localOption.click();
+      await pause(50);
+      check(localOption.getAttribute("aria-checked") === "true" && option.getAttribute("aria-checked") === "false", "local filter selected independently");
+      check(button.style.color === "rgb(233, 148, 144)", "test/build filter reflects failed Jev health");
+      health = { ok: true, model: "jev-1.13.0" };
+      await pause(150);
+      check(button.style.color === "rgb(135, 205, 164)" && tooltip.textContent.includes("Jev connected"), "test/build filter requires Jev health");
+      button.click();
+      option.click();
+      await pause(50);
+      check(localOption.getAttribute("aria-checked") === "true" && option.getAttribute("aria-checked") === "true", "both filters selected");
+      button.click();
+      localOption.click();
+      await pause(50);
+      check(localOption.getAttribute("aria-checked") === "false" && option.getAttribute("aria-checked") === "true", "local filter deselected independently");
+      button.click();
+      compactOption.click();
+      await pause(50);
+      check(compactOption.getAttribute("aria-checked") === "true" && option.getAttribute("aria-checked") === "true", "search/listing selected independently");
+      check(tooltip.textContent.includes("search/listing"), "search/listing appears in selected mode");
+      button.click();
+      option.click();
+      await pause(50);
+      check(compactOption.getAttribute("aria-checked") === "true" && option.getAttribute("aria-checked") === "false", "search/listing remains selected alone");
+      button.click();
+      compactOption.click();
+      await pause(50);
+      check(compactOption.getAttribute("aria-checked") === "false" && button.style.color === "rgb(154, 154, 154)", "search/listing can turn off independently");
       check(calls >= 5, "host bridge used");
       document.getElementById("results").textContent = JSON.stringify({ ok: true, calls });
       document.title = "JEV_BROWSER_PASS";

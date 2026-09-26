@@ -22,7 +22,7 @@ from benchmark_context import token_counter
 HOOK = Path(__file__).resolve().parents[1] / "hooks/post_tool_use.py"
 
 
-def measure(repetitions: int) -> dict:
+def measure(repetitions: int, hook_script: Path = HOOK) -> dict:
     tokenizer, tokens = token_counter()
     rows = []
     cases = [case["event"] for case in generated_cases(repetitions) if case["category"] == "progress"]
@@ -40,7 +40,7 @@ def measure(repetitions: int) -> dict:
                 before = log.stat().st_size if log.exists() else 0
                 started = time.perf_counter()
                 result = subprocess.run(
-                    ["python3", str(HOOK)], input=json.dumps(event), text=True,
+                    ["python3", str(hook_script)], input=json.dumps(event), text=True,
                     capture_output=True, env=environment, timeout=7, check=True,
                 )
                 wall_ms = round((time.perf_counter() - started) * 1000)
@@ -98,10 +98,12 @@ def measure(repetitions: int) -> dict:
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repetitions", type=int, default=3)
+    parser.add_argument("--hook-script", type=Path, default=HOOK,
+                        help="hook adapter to measure, including an installed plugin copy")
     args = parser.parse_args()
     if not 1 <= args.repetitions <= 10:
         parser.error("--repetitions must be 1..10")
-    print(json.dumps(measure(args.repetitions), indent=2))
+    print(json.dumps(measure(args.repetitions, args.hook_script.resolve(strict=True)), indent=2))
 
 
 if __name__ == "__main__":
