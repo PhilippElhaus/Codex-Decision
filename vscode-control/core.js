@@ -1,9 +1,8 @@
 "use strict";
 
-const { spawn } = require("node:child_process");
 const fs = require("node:fs/promises");
-const os = require("node:os");
 const path = require("node:path");
+const JEV_ENDPOINT = "https://api.typesafe.ai/v1/systemone";
 const CONFIG_KEYS = new Set([
   "enabled", "test_build_enabled", "search_listing_enabled", "precompact_enabled", "mode", "min_chars", "max_chars", "sample_chars",
   "timeout_seconds", "model", "allow_mcp_replacement",
@@ -11,10 +10,6 @@ const CONFIG_KEYS = new Set([
 
 function defaultDataDirectory() {
   return process.env.CODEX_JEV_DATA_DIRECTORY || "";
-}
-
-function defaultCredentialDirectory() {
-  return path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local"), "Codex", "codex-jev");
 }
 
 async function readConfig(directory) {
@@ -249,61 +244,51 @@ function parseHealthOutput(stdout) {
   return { ok: true, model: result.model };
 }
 
-function runCommand(command, args, input, timeoutMs) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { windowsHide: true, stdio: ["pipe", "pipe", "pipe"] });
-    const chunks = { stdout: [], stderr: [] };
-    let size = 0;
-    const timer = setTimeout(() => child.kill(), timeoutMs);
-    child.on("error", reject);
-    for (const stream of ["stdout", "stderr"]) {
-      child[stream].on("data", (chunk) => {
-        size += chunk.length;
-        if (size > 262144) child.kill();
-        else chunks[stream].push(chunk);
-      });
-    }
-    child.on("close", (exitCode) => {
-      clearTimeout(timer);
-      resolve({
-        exitCode,
-        stdout: Buffer.concat(chunks.stdout).toString("utf8"),
-        stderr: Buffer.concat(chunks.stderr).toString("utf8"),
-      });
-    });
-    child.stdin.on("error", () => {});
-    child.stdin.end(input);
+async function readApiKey(directory) {
+  const filename = path.join(directory, ".env");
+  const details = await fs.lstat(filename);
+  if (!details.isFile() || details.isSymbolicLink() || details.size > 8192 ||
+      (process.platform !== "win32" && (details.mode & 0o077))) throw new Error("Unsafe Jev credential file");
+  const lines = (await fs.readFile(filename, "utf8")).replace(/^\uFEFF/, "").split(/\r?\n/);
+  const values = lines.filter((line) => /^\s*JEV_API_KEY\s*=/.test(line)).map((line) => {
+    let value = line.slice(line.indexOf("=") + 1).trim();
+    if (value.length >= 2 && ["'", '"'].includes(value[0]) && value.at(-1) === value[0]) value = value.slice(1, -1);
+    return value;
   });
+  if (values.length !== 1 || values[0].length < 8 || values[0].length > 4096 || /\s|\0/.test(values[0])) {
+    throw new Error("Jev API key is missing or invalid");
+  }
+  return values[0];
 }
 
-async function checkHealth(credentialDirectory, execute = runCommand) {
-  const script = path.join(credentialDirectory, "invoke_jev.ps1");
-  const refresh = path.join(credentialDirectory, "refresh_key_cache.ps1");
-  const request = Buffer.from(JSON.stringify({
+async function checkHealth(dataDirectory, send = globalThis.fetch) {
+  let key;
+  try {
+    key = await readApiKey(dataDirectory);
+  } catch {
+    return { ok: false, reason: "JEV_KEY_MISSING" };
+  }
+  const body = JSON.stringify({
     state: { output_sample: "Compiling module 1 done\nCompiling module 2 done" },
     model: "jev-1.13.0",
     questions: { ready: { type: "noul", instructions: "Is output_sample routine build progress?" } },
-  })).toString("base64") + "\n";
-  async function probe() {
-    return execute("pwsh.exe", ["-NoProfile", "-NonInteractive", "-File", script], request, 6000);
-  }
+  });
   try {
-    let result = await probe();
-    const reason = result.stderr.match(/\bJEV_[A-Z0-9_]+\b/)?.[0];
-    if (result.exitCode !== 0 && ["JEV_HTTP_401", "JEV_HTTP_403", "JEV_KEY_CACHE_MISSING", "JEV_API_KEY_INVALID"].includes(reason)) {
-      const update = await execute("pwsh.exe", ["-NoProfile", "-NonInteractive", "-File", refresh], "", 75_000);
-      if (update.exitCode === 0) result = await probe();
-    }
-    if (result.exitCode !== 0) return { ok: false, reason: result.stderr.match(/\bJEV_[A-Z0-9_]+\b/)?.[0] || "JEV_UNAVAILABLE" };
-    const { stdout } = result;
-    return parseHealthOutput(stdout);
+    const response = await send(JEV_ENDPOINT, {
+      method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body, signal: AbortSignal.timeout(6000),
+    });
+    if (!response.ok) return { ok: false, reason: `JEV_HTTP_${response.status}` };
+    const output = await response.text();
+    if (output.length > 262144) throw new Error("Jev health response is too large");
+    return parseHealthOutput(output);
   } catch {
     return { ok: false, reason: "JEV_UNAVAILABLE" };
   }
 }
 
 module.exports = {
-  activitySummary, checkHealth, decisionSummary, defaultCredentialDirectory, defaultDataDirectory, formatDuration,
+  activitySummary, checkHealth, decisionSummary, defaultDataDirectory, formatDuration,
   isInformativeEvent, isJevOutcome, outcomeLine, parseHealthOutput, readConfig,
-  readEventOffset, readEventsSince, readLatestEvent, readRecentOutcomes, writeEnabled, writeMode, writeSelection,
+  readApiKey, readEventOffset, readEventsSince, readLatestEvent, readRecentOutcomes, writeEnabled, writeMode, writeSelection,
 };

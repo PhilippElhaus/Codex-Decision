@@ -3,7 +3,7 @@
 const path = require("node:path");
 const vscode = require("vscode");
 const {
-  activitySummary, checkHealth, decisionSummary, defaultCredentialDirectory, defaultDataDirectory,
+  activitySummary, checkHealth, decisionSummary, defaultDataDirectory,
   isJevOutcome, outcomeLine, readConfig, readEventOffset, readEventsSince, writeMode, writeSelection,
 } = require("./core");
 
@@ -30,7 +30,6 @@ function activate(context) {
     }
     return directory;
   };
-  const credentialDirectory = () => settings().get("credentialDirectory") || defaultCredentialDirectory();
   const snapshot = () => ({
     enabled: state.enabled,
     outputEnabled: state.outputEnabled,
@@ -77,12 +76,12 @@ function activate(context) {
       state.health?.ok === false ? "testing.iconFailed" : "statusBar.foreground";
     button.color = new vscode.ThemeColor(color);
     button.text = state.enabled && state.mode === "observe" ? "$(circle-filled) jev · OBS" : "$(circle-filled) jev";
-    const status = !state.enabled ? "Off · no hooks selected" :
+    const status = !state.enabled ? "Off · no integrations selected" :
       state.health?.ok === true ? `Connected · ${state.health.model}` :
       state.health?.ok === false ? `Unavailable · ${state.health.reason}` : "Checking connection";
     button.tooltip = [
       `Codex Jev · ${status}`,
-      state.enabled ? `Selected: ${[state.outputEnabled && "Jev output", state.testBuildEnabled && "Jev test/build", state.searchListingEnabled && "Jev search/listing"].filter(Boolean).join(" + ")} · ${state.mode} mode` : "Click to select a use case",
+      state.enabled ? `Selected: ${[state.outputEnabled && "Jev output", state.testBuildEnabled && "Jev test/build", state.searchListingEnabled && "Jev search/listing"].filter(Boolean).join(" + ")} · ${state.mode} mode` : "Click to select an integration",
       `Since this view opened: ${activitySummary(state.stats)}`,
       "Recent Jev outcomes:",
       ...(state.history.length ? state.history.map(outcomeLine) : ["None yet"]),
@@ -137,7 +136,7 @@ function activate(context) {
     state.checking = true;
     pulse();
     try {
-      const result = await checkHealth(credentialDirectory());
+      const result = await checkHealth(dataDirectory());
       if (state.enabled) state.health = result;
     } finally {
       state.checking = false;
@@ -226,8 +225,8 @@ function activate(context) {
       description: "Jev ranks broad rg results and file listings for the current task",
       detail: "Retains uncertain groups and saves the exact original before replacement.",
     };
-    picker.title = "Select Jev use cases";
-    picker.placeholder = "Select use cases and press Enter; an empty selection turns Jev off";
+    picker.title = "Select Jev integrations";
+    picker.placeholder = "Select integrations and press Enter; an empty selection turns Jev off";
     picker.canSelectMany = true;
     picker.items = [output, testBuild, searchListing];
     picker.selectedItems = [state.outputEnabled && output, state.testBuildEnabled && testBuild, state.searchListingEnabled && searchListing].filter(Boolean);
@@ -261,7 +260,7 @@ function activate(context) {
   }));
   context.subscriptions.push(vscode.commands.registerCommand("codexJev.checkConnection", async () => {
     if (!state.enabled) {
-      void vscode.window.showInformationMessage("Select a Jev filter to check the Jev connection.");
+      void vscode.window.showInformationMessage("Select a Jev integration to check the Jev connection.");
       return;
     }
     await probe();

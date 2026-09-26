@@ -2,10 +2,10 @@
   "name": "codex-jev-control",
   "displayName": "Codex Jev Control",
   "description": "Local Jev hook control and health indicator for Codex in VS Code",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "elhaus-labs",
   "license": "MIT",
-  "repository": { "type": "git", "url": "https://github.com/Elhaus-Labs/Codex-Jev.git" },
+  "repository": { "type": "git", "url": "https://github.com/PhilippElhaus/Codex-Jev.git" },
   "private": true,
   "main": "./extension.js",
   "engines": { "vscode": "^1.96.2" },
@@ -13,7 +13,7 @@
   "activationEvents": ["onStartupFinished", "onCommand:codexJev.bridge"],
   "contributes": {
     "commands": [
-      { "command": "codexJev.selectHooks", "title": "Jev: Select Hooks" },
+      { "command": "codexJev.selectHooks", "title": "Jev: Select Integrations" },
       { "command": "codexJev.checkConnection", "title": "Jev: Check API and Key" }
     ],
     "configuration": {
@@ -23,11 +23,6 @@
           "type": "string",
           "default": "",
           "description": "Absolute PLUGIN_DATA directory for Codex Jev. Set this to the installed plugin data directory, or set CODEX_JEV_DATA_DIRECTORY."
-        },
-        "codexJev.credentialDirectory": {
-          "type": "string",
-          "default": "",
-          "description": "Windows user-local directory containing the DPAPI-protected Jev credential and request helper."
         },
         "codexJev.mode": {
           "type": "string",

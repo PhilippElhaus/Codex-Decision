@@ -57,7 +57,7 @@ test("status control selects the hook and reflects health, activity, tooltip, an
   const context = { subscriptions: [] };
   try {
     extension.activate(context);
-    await until(() => button.tooltip?.includes("Off · no hooks selected"));
+    await until(() => button.tooltip?.includes("Off · no integrations selected"));
     assert.equal(button.color.id, "disabledForeground");
     await fs.writeFile(path.join(directory, "events.jsonl"), JSON.stringify({
       status: "keep", reason: "jev_keep", tool: "Bash", original_chars: 13006, elapsed_ms: 1139,

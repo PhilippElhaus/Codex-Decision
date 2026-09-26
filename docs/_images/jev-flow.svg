@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1100" height="335" viewBox="0 0 1100 335" role="img" aria-labelledby="title desc">
   <title id="title">Codex Jev output flow</title>
-  <desc id="desc">One PostToolUse hook routes repetitive output, test and build logs, and broad search or file listings through local safety gates. Bounded samples or path-group descriptors reach Jev through a Windows helper for typed judgments. Metadata-only results reach the VS Code control. The API key stays in a user-local DPAPI cache.</desc>
+  <desc id="desc">One PostToolUse hook routes repetitive output, test and build logs, and broad search or file listings through local safety gates. Bounded samples or path-group descriptors reach Jev by HTTPS for typed judgments. Metadata-only results reach the VS Code control. The API key stays in a private plugin data .env file.</desc>
   <defs>
     <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 Z" fill="#7a8e82"/></marker>
     <style>
@@ -27,12 +27,12 @@
   <text class="heading" x="925" y="105">VS Code</text><text class="body" x="925" y="132">Pulse · tooltip</text><text class="body" x="925" y="153">Last 3 outcomes</text>
   <text x="34" y="225" fill="#95d4ad" font-family="Segoe UI,Arial,sans-serif" font-size="16" font-weight="600">CREDENTIAL PATH</text>
   <rect class="key" x="34" y="244" width="254" height="61" rx="12"/>
-  <text class="heading" x="52" y="271">Key setup</text><text class="small" x="52" y="291">Prompt or optional Vaultwarden</text>
+  <text class="heading" x="52" y="271">Key setup</text><text class="small" x="52" y="291">Prompt into plugin data</text>
   <path class="line" d="M288 275 H335"/>
   <rect class="key" x="341" y="244" width="253" height="61" rx="12"/>
-  <text class="heading" x="359" y="271">Windows DPAPI cache</text><text class="small" x="359" y="291">User-local, outside Git and WSL</text>
+  <text class="heading" x="359" y="271">Private .env file</text><text class="small" x="359" y="291">User-local, outside Git</text>
   <path class="line" d="M594 275 H641"/>
   <rect class="key" x="647" y="244" width="419" height="61" rx="12"/>
-  <text class="heading" x="665" y="271">Windows request helper</text><text class="small" x="665" y="291">Adds the key only when sending the Jev request</text>
+  <text class="heading" x="665" y="271">Direct HTTPS request</text><text class="small" x="665" y="291">Key goes in the Authorization header</text>
   <path d="M852 244 V208 Q852 201 845 201 H580 V182" fill="none" stroke="#7a8e82" stroke-width="2" marker-end="url(#arrow)"/>
 </svg>

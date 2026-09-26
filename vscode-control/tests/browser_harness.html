@@ -70,7 +70,7 @@
       check(root && button && option && localOption && compactOption && root.style.display === "block", "control visible");
       check(button.style.color === "rgb(154, 154, 154)", "disabled gray");
       check([option, localOption, compactOption].map((item) => item.querySelector("strong").textContent).join("|") ===
-        "Output filter|Test/build logs|Search/listing", "three concise use-case labels");
+        "Output filter|Test/build logs|Search/listing", "three concise integration labels");
       check(!document.getElementById("codex-jev-menu").textContent.includes("PostToolUse"), "no repeated hook name");
       const buttonStyle = getComputedStyle(button);
       const modelStyle = getComputedStyle(document.querySelector(".model"));
@@ -108,12 +108,21 @@
       check(getComputedStyle(label).display !== "none" && docked() >= 7 && docked() <= 10, "full control redocked");
       button.click();
       check(button.getAttribute("aria-expanded") === "true", "menu opens");
+      const menu = document.getElementById("codex-jev-menu");
+      check(menu.getAttribute("aria-label") === "Jev integrations", "integration menu label");
+      check(getComputedStyle(menu).backgroundColor === "rgb(33, 33, 33)" &&
+        getComputedStyle(menu).paddingLeft === "6px", "Codex-sized menu surface and gutter");
+      document.documentElement.style.setProperty("--vscode-menu-background", "#252525");
+      check(getComputedStyle(menu).backgroundColor === "rgb(37, 37, 37)", "menu follows VS Code theme");
+      document.documentElement.style.removeProperty("--vscode-menu-background");
       check(getComputedStyle(button).borderTopWidth === "0px" &&
         getComputedStyle(button).borderTopStyle === "none",
         "expanded Jev pill remains borderless");
       option.click();
       await pause(50);
       check(option.getAttribute("aria-checked") === "true", "hook selected");
+      check(getComputedStyle(option.querySelector(".codex-jev-check")).backgroundColor === "rgb(58, 131, 247)",
+        "selected check uses Codex blue");
       check(button.style.color === "rgb(135, 205, 164)", "connected green");
       const observeBadge = document.getElementById("codex-jev-observe");
       check(getComputedStyle(observeBadge).display === "none", "replacement mode has no observe badge");

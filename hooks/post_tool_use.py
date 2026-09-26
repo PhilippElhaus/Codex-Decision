@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 import sys
 
-from jev import Config, Result, append_log, decide, jev_choice_request, jev_request, jev_test_build_request
+from jev import Config, Result, append_log, decide, jev_choice_request, jev_request, jev_test_build_request, load_api_key
 from search_listing import command_kind as search_kind, decide_search_listing
 from test_build import command_kind, decide_test_build
 
@@ -29,7 +29,7 @@ def main() -> None:
                     append_log(data_dir, Result("calling", "jev_request"), "Bash", "test_build")
                 except OSError:
                     pass
-                return jev_test_build_request(state, settings, "")
+                return jev_test_build_request(state, settings, load_api_key(data_dir))
 
             outcome = decide_test_build(event, config, evaluator=evaluate_test_build, storage=data_dir)
             try:
@@ -45,7 +45,7 @@ def main() -> None:
                     append_log(data_dir, Result("calling", "jev_request"), "Bash", "search_listing")
                 except OSError:
                     pass
-                return jev_choice_request(state, questions, settings)
+                return jev_choice_request(state, questions, settings, load_api_key(data_dir))
 
             outcome = decide_search_listing(event, config, evaluator=evaluate_search, storage=data_dir)
             try:
@@ -63,7 +63,7 @@ def main() -> None:
                 append_log(data_dir, Result("calling", "jev_request"), str(event.get("tool_name", "")))
             except OSError:
                 pass
-            return jev_request(state, settings, "")
+            return jev_request(state, settings, load_api_key(data_dir))
 
         outcome = decide(event, config, evaluator=evaluate, storage=data_dir)
         try:

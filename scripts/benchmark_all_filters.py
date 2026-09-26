@@ -2,7 +2,7 @@
 """Reproducible three-filter policy replay and paired live command-hook benchmark.
 
 The mock run measures policy and model-visible text, not Jev accuracy. The live
-run uses the protected credential bridge and real command output. Neither run
+run uses a private .env copy and real command output. Neither run
 measures Codex billing or end-to-end task completion.
 """
 
@@ -29,6 +29,7 @@ from jev import Config, decide  # noqa: E402
 from search_listing import decide_search_listing  # noqa: E402
 from test_build import decide_test_build  # noqa: E402
 from benchmark_context import token_counter  # noqa: E402
+from live_key import copy_key  # noqa: E402
 
 HOOK = ROOT / "hooks" / "post_tool_use.py"
 GOOD = {"routine_noise": 0.98, "needs_exact_text": 0.01, "one_off_value": 0.01}
@@ -327,6 +328,7 @@ def run_live(rounds: int = 3, hook: Path = HOOK) -> dict:
         root = Path(directory)
         data = root / "plugin-data"
         data.mkdir(mode=0o700)
+        copy_key(data)
         transcript = root / "thread.jsonl"
         transcript.write_text(json.dumps({"type": "response_item", "payload": {"role": "user", "content": [
             {"type": "input_text", "text": "Locate current authentication token validation code; archived marketing documents are unrelated."}]}}) + "\n")

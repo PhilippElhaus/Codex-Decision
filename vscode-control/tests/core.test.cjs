@@ -6,7 +6,7 @@ const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
 const {
-  activitySummary, checkHealth, decisionSummary, formatDuration, outcomeLine, parseHealthOutput, readConfig,
+  activitySummary, checkHealth, decisionSummary, formatDuration, outcomeLine, parseHealthOutput, readApiKey, readConfig,
   readEventOffset, readEventsSince, readLatestEvent, readRecentOutcomes, writeEnabled, writeMode, writeSelection,
 } = require("../core");
 
@@ -210,27 +210,31 @@ test("incremental reader handles log truncation and a burst larger than one read
   }
 });
 
-test("health check calls the protected helper and refreshes an invalid key", async () => {
-  const invocations = [];
+test("health check reads the private .env and keeps the key out of status", async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-health-test-"));
   const response = JSON.stringify({ model: "jev-1.13.0", answers: { ready: { type: "noul", noul: 0.93 } } });
-  const healthy = await checkHealth("/state", async (...args) => {
-    invocations.push(args);
-    return { exitCode: 0, stdout: response, stderr: "" };
-  });
-  assert.deepEqual(healthy, { ok: true, model: "jev-1.13.0" });
-  assert.equal(invocations[0][0], "pwsh.exe");
-  assert.deepEqual(invocations[0][1], ["-NoProfile", "-NonInteractive", "-File", path.join("/state", "invoke_jev.ps1")]);
-  assert.equal(typeof invocations[0][2], "string");
-  assert.throws(() => parseHealthOutput('{"state":"unavailable"}'));
-  let calls = 0;
-  const recovered = await checkHealth("/state", async () => {
-    calls += 1;
-    if (calls === 1) return { exitCode: 1, stdout: "", stderr: "JEV_HTTP_401" };
-    if (calls === 2) return { exitCode: 0, stdout: '{"state":"ready"}', stderr: "" };
-    return { exitCode: 0, stdout: response, stderr: "" };
-  });
-  assert.deepEqual(recovered, { ok: true, model: "jev-1.13.0" });
-  assert.equal(calls, 3);
-  const failed = await checkHealth("/state", async () => ({ exitCode: 1, stdout: "", stderr: "JEV_UNAVAILABLE" }));
-  assert.deepEqual(failed, { ok: false, reason: "JEV_UNAVAILABLE" });
+  try {
+    assert.deepEqual(await checkHealth(directory, async () => { throw new Error("must not call"); }),
+      { ok: false, reason: "JEV_KEY_MISSING" });
+    await fs.writeFile(path.join(directory, ".env"), "JEV_API_KEY=test-key-only\n", { mode: 0o600 });
+    assert.equal(await readApiKey(directory), "test-key-only");
+    const healthy = await checkHealth(directory, async (url, options) => {
+      assert.equal(url, "https://api.typesafe.ai/v1/systemone");
+      assert.equal(options.headers.Authorization, "Bearer test-key-only");
+      assert.equal(JSON.parse(options.body).questions.ready.type, "noul");
+      return { ok: true, text: async () => response };
+    });
+    assert.deepEqual(healthy, { ok: true, model: "jev-1.13.0" });
+    assert.equal(JSON.stringify(healthy).includes("test-key-only"), false);
+    assert.throws(() => parseHealthOutput('{"state":"unavailable"}'));
+    assert.deepEqual(await checkHealth(directory, async () => ({ ok: false, status: 401 })),
+      { ok: false, reason: "JEV_HTTP_401" });
+    assert.deepEqual(await checkHealth(directory, async () => { throw new Error("network"); }),
+      { ok: false, reason: "JEV_UNAVAILABLE" });
+    await fs.writeFile(path.join(directory, ".env"), "JEV_API_KEY=short\n");
+    assert.deepEqual(await checkHealth(directory, async () => { throw new Error("must not call"); }),
+      { ok: false, reason: "JEV_KEY_MISSING" });
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
 });

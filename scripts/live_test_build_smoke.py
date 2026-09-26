@@ -13,6 +13,8 @@ import subprocess
 import sys
 import tempfile
 
+from live_key import copy_key
+
 
 PLUGIN = Path(__file__).resolve().parents[1]
 REPO = PLUGIN
@@ -78,7 +80,8 @@ def main() -> None:
     with tempfile.TemporaryDirectory(prefix="jev-live-test-build-", dir="/tmp") as temporary:
         root = Path(temporary)
         data = root / "plugin-data"
-        data.mkdir()
+        data.mkdir(mode=0o700)
+        copy_key(data)
         rows = []
 
         command = [sys.executable, "-m", "unittest", "discover", "-s", str(PLUGIN / "tests"),

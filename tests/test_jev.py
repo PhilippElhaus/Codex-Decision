@@ -21,6 +21,7 @@ import post_tool_use  # noqa: E402
 import replay  # noqa: E402
 import benchmark_context  # noqa: E402
 import migrate_legacy_data  # noqa: E402
+import configure_key  # noqa: E402
 
 
 GOOD = {"routine_noise": 0.99, "needs_exact_text": 0.01, "one_off_value": 0.01}
@@ -241,9 +242,10 @@ class ContractTests(unittest.TestCase):
     def test_hook_adapter_replace_contract_with_mock_jev(self):
         with tempfile.TemporaryDirectory() as directory:
             Path(directory, "config.json").write_text(json.dumps({"enabled": True, "mode": "replace"}))
+            configure_key.save_key(Path(directory), "synthetic-test-key")
             printed = io.StringIO()
             with (
-                mock.patch.dict(os.environ, {"PLUGIN_DATA": directory, "TYPESAFE_API_KEY": "test-key"}),
+                mock.patch.dict(os.environ, {"PLUGIN_DATA": directory}),
                 mock.patch.object(sys, "stdin", io.StringIO(json.dumps(event()))),
                 mock.patch.object(post_tool_use, "jev_request", return_value=GOOD) as jev,
                 contextlib.redirect_stdout(printed),
@@ -257,7 +259,7 @@ class ContractTests(unittest.TestCase):
             self.assertEqual([record["status"] for record in records], ["calling", "replace"])
             self.assertNotIn("Compiling module", json.dumps(records))
             jev.assert_called_once()
-            self.assertEqual(jev.call_args.args[2], "")
+            self.assertEqual(jev.call_args.args[2], "synthetic-test-key")
 
     def test_type_safe_request_uses_three_nouls_and_checks_response(self):
         response = {"model": "jev-1.13.0", "answers": {key: {"type": "noul", "noul": value} for key, value in GOOD.items()}}
@@ -273,17 +275,21 @@ class ContractTests(unittest.TestCase):
         self.assertTrue(all(question["type"] == "noul" for question in sent["questions"].values()))
         self.assertEqual(scores, GOOD)
 
-    def test_windows_bridge_sends_only_encoded_request_and_parses_scores(self):
-        answer = {"model": "jev-1.13.0", "answers": {name: {"type": "noul", "noul": value} for name, value in GOOD.items()}}
-        completed = subprocess.CompletedProcess([], 0, stdout=json.dumps(answer).encode(), stderr=b"")
-        with mock.patch.object(jev.subprocess, "run", return_value=completed) as run:
-            scores = jev.jev_request({"tool": "Bash", "output_sample": "text"}, settings(), "")
-        self.assertEqual(scores, GOOD)
-        command = run.call_args.args[0]
-        self.assertEqual(command[0], "pwsh.exe")
-        self.assertNotIn("test-key", " ".join(command))
-        encoded = run.call_args.kwargs["input"]
-        self.assertEqual(set(json.loads(__import__("base64").b64decode(encoded))["questions"]), set(jev.SCORE_NAMES))
+    def test_private_env_file_is_read_without_shell_expansion(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = configure_key.save_key(root, "synthetic-test-key")
+            self.assertEqual(jev.load_api_key(root), "synthetic-test-key")
+            self.assertEqual(stat.S_IMODE(target.stat().st_mode), 0o600)
+            target.write_text("JEV_API_KEY='another-test-key'\nIGNORED=$(whoami)\n")
+            self.assertEqual(jev.load_api_key(root), "another-test-key")
+            target.write_text("JEV_API_KEY=too-short\nJEV_API_KEY=duplicate-value\n")
+            with self.assertRaises(ValueError):
+                jev.load_api_key(root)
+            target.unlink()
+            target.symlink_to(root / "other")
+            with self.assertRaises(OSError):
+                jev.load_api_key(root)
 
     def test_command_hook_disabled_without_plugin_data(self):
         hook = ROOT / "hooks" / "post_tool_use.py"
@@ -293,14 +299,13 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(run.stdout.strip(), "{}")
         self.assertEqual(run.stderr, "")
 
-    def test_command_hook_bridge_failure_keeps_output_and_logs_metadata_only(self):
+    def test_command_hook_missing_key_keeps_output_and_logs_metadata_only(self):
         with tempfile.TemporaryDirectory() as directory:
             Path(directory, "config.json").write_text(json.dumps({"enabled": True, "mode": "observe"}))
             output = io.StringIO()
             with (
                 mock.patch.dict(os.environ, {"PLUGIN_DATA": directory}, clear=False),
                 mock.patch.object(sys, "stdin", io.StringIO(json.dumps(event()))),
-                mock.patch.object(post_tool_use, "jev_request", side_effect=RuntimeError("bridge unavailable")),
                 contextlib.redirect_stdout(output),
             ):
                 post_tool_use.main()
@@ -326,6 +331,7 @@ class ContractTests(unittest.TestCase):
     def test_command_hook_records_keep_when_jev_rejects_replacement(self):
         with tempfile.TemporaryDirectory() as directory:
             Path(directory, "config.json").write_text(json.dumps({"enabled": True, "mode": "replace"}))
+            configure_key.save_key(Path(directory), "synthetic-test-key")
             output = io.StringIO()
             with (
                 mock.patch.dict(os.environ, {"PLUGIN_DATA": directory}, clear=False),
@@ -342,12 +348,12 @@ class ContractTests(unittest.TestCase):
 
 
 class ReplayTests(unittest.TestCase):
-    def test_live_replay_can_use_protected_bridge_without_a_key_in_process(self):
+    def test_live_replay_uses_supplied_key(self):
         case = next(replay.generated_cases(1))
         with mock.patch.object(replay, "jev_request", return_value=GOOD) as request:
-            report = replay.run([case], live=True, bridge=True, mode="replace", config=jev.Config())
+            report = replay.run([case], live=True, key="synthetic-test-key", mode="replace", config=jev.Config())
         self.assertEqual(report["simulated_replacements"], 1)
-        self.assertEqual(request.call_args.args[2], "")
+        self.assertEqual(request.call_args.args[2], "synthetic-test-key")
 
     def test_mock_benchmark_counts_context_only_for_replacements(self):
         with mock.patch.object(benchmark_context, "token_counter", return_value=("chars", len)):

@@ -1,7 +1,7 @@
 # Codex Jev: possible next hooks
 
 Research checked on 2026-09-26. Priority 1 is now implemented as an independent
-use case within Jev's existing `PostToolUse` hook. Savings from other projects are not a forecast
+integration within Jev's existing `PostToolUse` hook. Savings from other projects are not a forecast
 for this plugin or for billed Codex tokens.
 
 | Priority | Hook | Opportunity | Boundary and test before enabling |
@@ -17,7 +17,7 @@ Jev output replacement already preserves the complete original.
 
 The former `PreCompact` handoff was removed. Codex currently allows that hook
 to stop compaction, but its documented output cannot rewrite the compaction
-input or summary. The third live use case instead filters broad search and
+input or summary. The third live integration instead filters broad search and
 file-listing results at `PostToolUse`, before they enter the conversation.
 
 Sources:

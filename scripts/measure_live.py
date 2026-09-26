@@ -1,7 +1,7 @@
 """Measure installed-hook latency and output reduction with synthetic Bash logs.
 
-Runs real Jev requests through the Windows credential bridge. Prints metadata
-only; uses a disposable PLUGIN_DATA directory and never reads the API key.
+Runs real Jev requests with a private .env copy. Prints metadata only and
+uses a disposable PLUGIN_DATA directory.
 """
 
 from __future__ import annotations
@@ -17,6 +17,7 @@ import time
 
 from replay import generated_cases
 from benchmark_context import token_counter
+from live_key import copy_key
 
 
 HOOK = Path(__file__).resolve().parents[1] / "hooks/post_tool_use.py"
@@ -28,8 +29,8 @@ def measure(repetitions: int, hook_script: Path = HOOK) -> dict:
     cases = [case["event"] for case in generated_cases(repetitions) if case["category"] == "progress"]
     with tempfile.TemporaryDirectory(prefix="codex-jev-measure-", dir="/tmp") as directory:
         data = Path(directory)
+        copy_key(data)
         environment = {**os.environ, "PLUGIN_DATA": directory}
-        environment.pop("TYPESAFE_API_KEY", None)
         for mode in ("off", "observe", "replace"):
             (data / "config.json").write_text(json.dumps({
                 "enabled": mode != "off", "mode": "replace" if mode == "off" else mode,

@@ -3,14 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import base64
 import hashlib
 import json
 import os
 from pathlib import Path
 import re
 import stat
-import subprocess
 import tempfile
 import time
 from typing import Callable
@@ -33,6 +31,39 @@ FAILURE = re.compile(
     re.IGNORECASE | re.MULTILINE,
 )
 SAFE_KEY = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
+
+
+def load_api_key(data_dir: Path) -> str:
+    """Read the installed plugin's private .env without evaluating shell syntax."""
+    path = data_dir / ".env"
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(path, flags)
+    try:
+        details = os.fstat(fd)
+        if not stat.S_ISREG(details.st_mode):
+            raise ValueError("Jev credential is not a regular file")
+        if os.name != "nt" and stat.S_IMODE(details.st_mode) & 0o077:
+            raise ValueError("Jev credential must be owner-only")
+        with os.fdopen(fd, "rb", closefd=False) as file:
+            contents = file.read(8193)
+        if len(contents) > 8192:
+            raise ValueError("Jev credential file is too large")
+    finally:
+        os.close(fd)
+    values = []
+    for line in contents.decode("utf-8-sig").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        name, separator, value = line.partition("=")
+        if separator and name.strip() == "JEV_API_KEY":
+            value = value.strip()
+            if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+                value = value[1:-1]
+            values.append(value)
+    if len(values) != 1 or not 8 <= len(values[0]) <= 4096 or re.search(r"\s|\x00", values[0]):
+        raise ValueError("Jev API key is missing or invalid")
+    return values[0]
 
 
 @dataclass(frozen=True)
@@ -225,7 +256,7 @@ def _request_nouls(state: dict, config: Config, api_key: str, questions: dict) -
     return scores
 
 
-def jev_choice_request(state: dict, questions: dict, config: Config, api_key: str = "") -> dict[str, dict]:
+def jev_choice_request(state: dict, questions: dict, config: Config, api_key: str) -> dict[str, dict]:
     """Evaluate bounded independent Choice questions in one Jev request."""
     answers = _request_answers(state, config, api_key, questions)
     if set(answers) != set(questions):
@@ -246,44 +277,21 @@ def jev_choice_request(state: dict, questions: dict, config: Config, api_key: st
 
 
 def _request_answers(state: dict, config: Config, api_key: str, questions: dict) -> dict:
+    if not api_key:
+        raise ValueError("Jev API key is missing")
     payload = json.dumps({"state": state, "model": config.model, "questions": questions}).encode()
-    if api_key:
-        req = request.Request(
-            ENDPOINT,
-            data=payload,
-            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-            method="POST",
-        )
-        with request.urlopen(req, timeout=config.timeout_seconds) as response:
-            body = json.load(response)
-    else:
-        body = _bridge_request(payload, config.timeout_seconds)
+    req = request.Request(
+        ENDPOINT,
+        data=payload,
+        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+        method="POST",
+    )
+    with request.urlopen(req, timeout=config.timeout_seconds) as response:
+        body = json.load(response)
     answers = body.get("answers")
     if not isinstance(answers, dict):
         raise ValueError("missing answers")
     return answers
-
-
-def _bridge_request(payload: bytes, timeout_seconds: float) -> dict:
-    command = [
-        "pwsh.exe", "-NoLogo", "-NoProfile", "-NonInteractive",
-        "-ExecutionPolicy", "Bypass", "-Command",
-        r"& (Join-Path $env:LOCALAPPDATA 'Codex\codex-jev\invoke_jev.ps1')",
-    ]
-    completed = subprocess.run(
-        command,
-        input=base64.b64encode(payload) + b"\n",
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        timeout=min(timeout_seconds + 1, 4.5),
-        check=False,
-    )
-    if completed.returncode != 0 or len(completed.stdout) > 262_144:
-        raise RuntimeError("Jev bridge unavailable")
-    body = json.loads(completed.stdout.decode("utf-8-sig"))
-    if not isinstance(body, dict):
-        raise ValueError("Jev bridge returned invalid JSON")
-    return body
 
 
 def candidate(scores: dict[str, float]) -> bool:

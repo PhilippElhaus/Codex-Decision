@@ -10,7 +10,7 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 import benchmark_all_filters as bench  # noqa: E402
-from test_filter_e2e import MOCK_BRIDGE  # noqa: E402
+from tests.test_filter_e2e import MOCK_HTTP  # noqa: E402
 
 
 class BenchmarkTests(unittest.TestCase):
@@ -51,15 +51,17 @@ class BenchmarkTests(unittest.TestCase):
         self.assertEqual(len(by_name["real_search_hits"]["output"].splitlines()), 350)
 
     def test_real_command_hook_with_process_mock_and_oversized_edges(self):
-        with tempfile.TemporaryDirectory(prefix="jev-benchmark-bridge-", dir="/tmp") as directory:
-            binary = Path(directory) / "bin"
-            binary.mkdir()
-            bridge = binary / "pwsh.exe"
-            bridge.write_text(MOCK_BRIDGE)
-            bridge.chmod(0o700)
+        with tempfile.TemporaryDirectory(prefix="jev-benchmark-http-", dir="/tmp") as directory:
+            root = Path(directory)
+            source = root / "installed-data"
+            source.mkdir(mode=0o700)
+            (source / ".env").write_text("JEV_API_KEY=synthetic-test-key\n")
+            (source / ".env").chmod(0o600)
+            (root / "sitecustomize.py").write_text(MOCK_HTTP)
             calls = Path(directory) / "calls.jsonl"
             with (mock.patch.dict(os.environ, {
-                    "PATH": str(binary) + os.pathsep + os.environ["PATH"],
+                    "CODEX_JEV_DATA_DIRECTORY": str(source),
+                    "PYTHONPATH": str(root) + os.pathsep + os.environ.get("PYTHONPATH", ""),
                     "JEV_MOCK_CALLS": str(calls),
                 }), mock.patch.object(bench, "token_counter", return_value=("characters", len))):
                 report = bench.run_live(rounds=1)

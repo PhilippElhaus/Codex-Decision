@@ -15,6 +15,8 @@ import sys
 import tempfile
 from uuid import uuid4
 
+from live_key import copy_key
+
 
 PLUGIN = Path(__file__).resolve().parents[1]
 REPO = PLUGIN
@@ -75,6 +77,7 @@ def main() -> None:
         data = args.data_dir.resolve(strict=True) if args.data_dir else root / "plugin-data"
         if not args.data_dir:
             data.mkdir(mode=0o700)
+            copy_key(data)
             (data / "config.json").write_text(json.dumps({
                 "enabled": True, "test_build_enabled": True,
                 "search_listing_enabled": True, "mode": "replace",

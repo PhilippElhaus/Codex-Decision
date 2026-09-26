@@ -9,6 +9,8 @@ import subprocess
 import sys
 import tempfile
 
+from live_key import copy_key
+
 PLUGIN = Path(__file__).resolve().parents[1]
 REPO = PLUGIN
 
@@ -48,7 +50,8 @@ def main() -> None:
     with tempfile.TemporaryDirectory(prefix="jev-live-search-", dir="/tmp") as temporary:
         root = Path(temporary)
         data = root / "plugin-data"
-        data.mkdir()
+        data.mkdir(mode=0o700)
+        copy_key(data)
         command = ["rg", "-n", "return ", "hooks", "vscode-control"]
         output = subprocess.run(command, cwd=REPO, capture_output=True, text=True, check=True).stdout
         response, rows = invoke(hook, data, "rg -n 'return ' hooks vscode-control",

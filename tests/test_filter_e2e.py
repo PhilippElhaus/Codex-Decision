@@ -19,27 +19,28 @@ import test_build  # noqa: E402
 
 HOOK = ROOT / "hooks" / "post_tool_use.py"
 SCORES = {"routine_noise": 0.98, "needs_exact_text": 0.01, "one_off_value": 0.01}
-MOCK_BRIDGE = '''#!/usr/bin/env python3
-import base64, json, os, pathlib, sys
-payload = json.loads(base64.b64decode(sys.stdin.buffer.readline()))
-with open(os.environ["JEV_MOCK_CALLS"], "a", encoding="utf-8") as log:
-    log.write(json.dumps({"state": payload["state"], "questions": list(payload["questions"])}) + "\\n")
-if os.environ.get("JEV_MOCK_FAILURE") == "exit":
-    sys.exit(2)
-if os.environ.get("JEV_MOCK_FAILURE") == "malformed":
-    print("not json")
-    sys.exit(0)
-answers = {}
-for name, question in payload["questions"].items():
-    if question["type"] == "noul":
-        answers[name] = {"type": "noul", "noul": 0.98 if name == "routine_noise" else 0.01}
-    else:
-        index = int(name.split("_")[1])
-        choice = "drop" if "archive" in payload["state"]["groups"][index]["path"] else "retain"
-        answers[name] = {"type": "choice", "choice": choice, "confidence": 0.97,
-                         "probabilities": {key: 0.96 if key == choice else 0.02
-                                           for key in ("retain", "summarize", "drop")}}
-print(json.dumps({"answers": answers}))
+MOCK_HTTP = '''import io, json, os, urllib.request
+def mock_urlopen(request, timeout=None):
+    payload = json.loads(request.data)
+    with open(os.environ["JEV_MOCK_CALLS"], "a", encoding="utf-8") as log:
+        log.write(json.dumps({"state": payload["state"], "questions": list(payload["questions"]),
+                              "auth_ok": request.get_header("Authorization") == "Bearer synthetic-test-key"}) + "\\n")
+    if os.environ.get("JEV_MOCK_FAILURE") == "exit":
+        raise OSError("Synthetic Jev outage")
+    if os.environ.get("JEV_MOCK_FAILURE") == "malformed":
+        return io.BytesIO(b"not json")
+    answers = {}
+    for name, question in payload["questions"].items():
+        if question["type"] == "noul":
+            answers[name] = {"type": "noul", "noul": 0.98 if name == "routine_noise" else 0.01}
+        else:
+            index = int(name.split("_")[1])
+            choice = "drop" if "archive" in payload["state"]["groups"][index]["path"] else "retain"
+            answers[name] = {"type": "choice", "choice": choice, "confidence": 0.97,
+                             "probabilities": {key: 0.96 if key == choice else 0.02
+                                               for key in ("retain", "summarize", "drop")}}
+    return io.BytesIO(json.dumps({"answers": answers}).encode())
+urllib.request.urlopen = mock_urlopen
 '''
 
 
@@ -123,14 +124,13 @@ class CommandHookEndToEndTests(unittest.TestCase):
             "enabled": True, "test_build_enabled": True,
             "search_listing_enabled": True, "mode": "replace",
         }))
-        binary = self.root / "bin"
-        binary.mkdir()
-        bridge = binary / "pwsh.exe"
-        bridge.write_text(MOCK_BRIDGE)
-        bridge.chmod(0o700)
+        (self.data / ".env").write_text("JEV_API_KEY=synthetic-test-key\n")
+        (self.data / ".env").chmod(0o600)
+        (self.root / "sitecustomize.py").write_text(MOCK_HTTP)
         self.calls = self.root / "calls.jsonl"
         self.env = {**os.environ, "PLUGIN_DATA": str(self.data),
-                    "JEV_MOCK_CALLS": str(self.calls), "PATH": str(binary) + os.pathsep + os.environ["PATH"]}
+                    "JEV_MOCK_CALLS": str(self.calls),
+                    "PYTHONPATH": str(self.root) + os.pathsep + os.environ.get("PYTHONPATH", "")}
 
     def invoke(self, item, failure=None):
         environment = {**self.env}
@@ -141,7 +141,7 @@ class CommandHookEndToEndTests(unittest.TestCase):
         self.assertEqual(completed.stderr, "")
         return json.loads(completed.stdout)
 
-    def bridge_calls(self):
+    def jev_calls(self):
         return [json.loads(row) for row in self.calls.read_text().splitlines()] if self.calls.exists() else []
 
     def records(self):
@@ -168,8 +168,9 @@ class CommandHookEndToEndTests(unittest.TestCase):
                 self.assertTrue(path.is_relative_to(self.data))
                 self.assertEqual(path.read_text(), item["tool_response"])
                 self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
-        calls = self.bridge_calls()
+        calls = self.jev_calls()
         self.assertEqual(len(calls), 3)
+        self.assertTrue(all(call["auth_ok"] for call in calls))
         self.assertEqual([len(call["questions"]) for call in calls], [3, 3, 2])
         self.assertTrue(all(len(json.dumps(call["state"])) < 20_000 for call in calls))
         rows = self.records()
@@ -177,7 +178,7 @@ class CommandHookEndToEndTests(unittest.TestCase):
             (name, status) for name in ("output", "test_build", "search_listing")
             for status in ("calling", "replace")])
 
-    def test_oversize_sensitive_and_unsupported_do_not_call_bridge(self):
+    def test_oversize_sensitive_and_unsupported_do_not_call_jev(self):
         fixtures = [
             event("echo progress", output_fixture() * 170, "large-output"),
             event("python3 -m unittest discover -v", test_fixture() * 410, "large-test"),
@@ -188,11 +189,11 @@ class CommandHookEndToEndTests(unittest.TestCase):
         for item in fixtures:
             with self.subTest(call=item["tool_use_id"]):
                 self.assertEqual(self.invoke(item), {})
-        self.assertEqual(self.bridge_calls(), [])
+        self.assertEqual(self.jev_calls(), [])
         self.assertFalse((self.data / "outputs").exists())
         self.assertTrue(all(row["status"] == "skip" for row in self.records()))
 
-    def test_bridge_error_or_invalid_json_fails_open_on_each_route(self):
+    def test_jev_error_or_invalid_json_fails_open_on_each_route(self):
         fixtures = [
             event("echo progress", output_fixture(), "output-failure"),
             event("python3 -m unittest discover -v", test_fixture(), "test-failure"),
@@ -202,7 +203,7 @@ class CommandHookEndToEndTests(unittest.TestCase):
             for item in fixtures:
                 with self.subTest(failure=failure, call=item["tool_use_id"]):
                     self.assertEqual(self.invoke(item, failure), {})
-        self.assertEqual(len(self.bridge_calls()), 6)
+        self.assertEqual(len(self.jev_calls()), 6)
         self.assertFalse((self.data / "outputs").exists())
         self.assertEqual([row["status"] for row in self.records() if row["status"] != "calling"],
                          ["keep"] * 6)

@@ -66,19 +66,19 @@
       #codex-jev-button:hover, #codex-jev-button[aria-expanded="true"] { background: #3a3a3a; }
       #codex-jev-button:focus-visible, .codex-jev-option:focus-visible { outline: 2px solid #83bcf7; outline-offset: 2px; }
       #codex-jev-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 15%, transparent); transition: box-shadow 220ms ease-in-out; }
-      #codex-jev-menu, #codex-jev-tip { position: absolute; bottom: calc(100% + 9px); right: 0; border: 1px solid #454545; border-radius: 11px; background: #292929; color: #dedede; box-shadow: 0 12px 30px #0009; }
-      #codex-jev-menu { display: none; width: min(310px, calc(100vw - 24px)); padding: 10px; }
+      #codex-jev-menu, #codex-jev-tip { position: absolute; bottom: calc(100% + 9px); right: 0; box-shadow: 0 12px 30px #0009; }
+      #codex-jev-menu { display: none; width: min(296px, calc(100vw - 24px)); padding: 6px; border: 1px solid var(--vscode-menu-border, #ffffff26); border-radius: 12px; background: var(--vscode-menu-background, #212121); color: var(--vscode-menu-foreground, #e8e8e8); }
       #codex-jev-menu[data-open="true"] { display: block; }
-      #codex-jev-menu h2 { margin: 3px 8px 8px; color: #aaa; font-size: 11px; font-weight: 650; text-transform: uppercase; letter-spacing: .08em; }
-      .codex-jev-option { display: flex; align-items: center; gap: 9px; width: 100%; padding: 9px 8px; border: 0; border-radius: 7px; background: transparent; color: #e5e5e5; text-align: left; font: inherit; cursor: pointer; }
-      .codex-jev-option:hover { background: #ffffff12; }
-      .codex-jev-check { display: grid; place-items: center; width: 16px; height: 16px; border: 1px solid #777; border-radius: 4px; flex: none; font-size: 12px; }
-      .codex-jev-option[aria-checked="true"] .codex-jev-check { background: #87cda4; border-color: #87cda4; color: #1b281e; }
-      .codex-jev-option[aria-checked="true"] .codex-jev-check::after { content: "✓"; }
-      .codex-jev-option strong { display: block; font-size: 13px; font-weight: 600; }
-      .codex-jev-option small { display: block; color: #aaa; font-size: 11px; margin-top: 2px; }
-      #codex-jev-menu p { color: #999; font-size: 11px; margin: 8px 8px 2px; }
-      #codex-jev-tip { display: none; width: min(420px, calc(100vw - 24px)); padding: 11px 13px; pointer-events: none; font-size: 12px; line-height: 1.45; white-space: normal; }
+      #codex-jev-menu h2 { margin: 5px 10px 6px; color: var(--vscode-descriptionForeground, #a8a8a8); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+      .codex-jev-option { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; border: 0; border-radius: 6px; background: transparent; color: inherit; text-align: left; font: inherit; cursor: pointer; }
+      .codex-jev-option:hover { background: var(--vscode-list-hoverBackground, #ffffff12); }
+      .codex-jev-check { display: grid; place-items: center; width: 16px; height: 16px; border: 1px solid var(--vscode-checkbox-border, #858585); border-radius: 4px; flex: none; background: transparent; }
+      .codex-jev-option[aria-checked="true"] .codex-jev-check { background: var(--vscode-checkbox-selectBackground, #3a83f7); border-color: var(--vscode-checkbox-selectBorder, #3a83f7); color: var(--vscode-checkbox-foreground, #fff); }
+      .codex-jev-option[aria-checked="true"] .codex-jev-check::after { content: ""; width: 8px; height: 5px; border: solid currentColor; border-width: 0 0 2px 2px; transform: translateY(-1px) rotate(-45deg); }
+      .codex-jev-option strong { display: block; font-size: 13px; font-weight: 600; line-height: 18px; }
+      .codex-jev-option small { display: block; color: var(--vscode-descriptionForeground, #aaa); font-size: 11px; line-height: 15px; margin-top: 1px; }
+      #codex-jev-menu p { margin: 5px 0 0; padding: 9px 10px 4px; border-top: 1px solid var(--vscode-menu-separatorBackground, #ffffff1a); color: var(--vscode-descriptionForeground, #999); font-size: 11px; }
+      #codex-jev-tip { display: none; width: min(420px, calc(100vw - 24px)); padding: 11px 13px; border: 1px solid #454545; border-radius: 11px; background: #292929; color: #dedede; pointer-events: none; font-size: 12px; line-height: 1.45; white-space: normal; }
       #codex-jev:hover #codex-jev-tip { display: block; }
       #codex-jev[data-menu="true"] #codex-jev-tip { display: none; }
       #codex-jev-tip strong { color: #fff; }
@@ -93,9 +93,9 @@
     root = document.createElement("div");
     root.id = "codex-jev";
     root.innerHTML = `
-      <button id="codex-jev-button" type="button" aria-label="Jev hooks" aria-expanded="false" aria-controls="codex-jev-menu"><span id="codex-jev-dot"></span><span id="codex-jev-label">jev</span><span id="codex-jev-observe">OBS</span></button>
+      <button id="codex-jev-button" type="button" aria-label="Jev integrations" aria-expanded="false" aria-controls="codex-jev-menu"><span id="codex-jev-dot"></span><span id="codex-jev-label">jev</span><span id="codex-jev-observe">OBS</span></button>
       <div id="codex-jev-tip" role="tooltip"><strong></strong><span id="codex-jev-mode"></span><h3 id="codex-jev-session-heading">Since this view opened</h3><div id="codex-jev-stats"></div><h3 id="codex-jev-history-heading">Recent Jev outcomes</h3><ol id="codex-jev-history"></ol><p id="codex-jev-empty">None yet</p></div>
-      <div id="codex-jev-menu" role="group" aria-label="Jev use cases" data-open="false"><h2>Jev use cases</h2><button id="codex-jev-option" class="codex-jev-option" type="button" role="checkbox" aria-checked="false"><span class="codex-jev-check"></span><span><strong>Output filter</strong><small>Check repetitive tool output with Jev</small></span></button><button id="codex-jev-test-build" class="codex-jev-option" type="button" role="checkbox" aria-checked="false"><span class="codex-jev-check"></span><span><strong>Test/build logs</strong><small>Jev checks routine lines before trimming</small></span></button><button id="codex-jev-search-listing" class="codex-jev-option" type="button" role="checkbox" aria-checked="false"><span class="codex-jev-check"></span><span><strong>Search/listing</strong><small>Jev trims broad search and file lists</small></span></button><p>Select none to turn Jev off.</p></div>`;
+      <div id="codex-jev-menu" role="group" aria-label="Jev integrations" data-open="false"><h2>Jev integrations</h2><button id="codex-jev-option" class="codex-jev-option" type="button" role="checkbox" aria-checked="false"><span class="codex-jev-check"></span><span><strong>Output filter</strong><small>Check repetitive tool output with Jev</small></span></button><button id="codex-jev-test-build" class="codex-jev-option" type="button" role="checkbox" aria-checked="false"><span class="codex-jev-check"></span><span><strong>Test/build logs</strong><small>Jev checks routine lines before trimming</small></span></button><button id="codex-jev-search-listing" class="codex-jev-option" type="button" role="checkbox" aria-checked="false"><span class="codex-jev-check"></span><span><strong>Search/listing</strong><small>Jev trims broad search and file lists</small></span></button><p>Select none to turn Jev off.</p></div>`;
     document.body.appendChild(root);
     root.querySelector("#codex-jev-button").addEventListener("click", (event) => {
       event.stopPropagation();
@@ -147,7 +147,7 @@
       state.health?.ok === false ? "Jev unavailable" : "Checking Jev connection";
     root.querySelector("#codex-jev-tip strong").textContent = status;
     root.querySelector("#codex-jev-mode").textContent = state.enabled ?
-      `${[state.outputEnabled && "output", state.testBuildEnabled && "test/build", state.searchListingEnabled && "search/listing"].filter(Boolean).join(" + ")} · ${state.mode}` : "No use cases selected. Click to choose.";
+      `${[state.outputEnabled && "output", state.testBuildEnabled && "test/build", state.searchListingEnabled && "search/listing"].filter(Boolean).join(" + ")} · ${state.mode}` : "No integrations selected. Click to choose.";
     const stats = state.stats || {};
     const completed = Number(stats.completed) || 0;
     const average = completed ? formatDuration((Number(stats.elapsedMs) || 0) / completed) : "—";
@@ -163,7 +163,7 @@
       return item;
     }));
     root.querySelector("#codex-jev-empty").style.display = state.enabled && !history.length ? "block" : "none";
-    button.setAttribute("aria-label", `${status}. Since this view opened: ${totals}. ${history.join(". ") || state.recent}. Select Jev hooks`);
+    button.setAttribute("aria-label", `${status}. Since this view opened: ${totals}. ${history.join(". ") || state.recent}. Select Jev integrations`);
   }
 
   function visibleRect(element) {
@@ -252,7 +252,7 @@
     item.style.left = "auto";
     item.style.right = `${Math.round(window.innerWidth - rightEdge)}px`;
     item.style.top = `${Math.round(model.rect.top + modelHeight / 2 - button.getBoundingClientRect().height / 2)}px`;
-    alignPopup(item.querySelector("#codex-jev-menu"), 310, buttonLeft, rightEdge);
+    alignPopup(item.querySelector("#codex-jev-menu"), 296, buttonLeft, rightEdge);
     alignPopup(item.querySelector("#codex-jev-tip"), 420, buttonLeft, rightEdge);
     item.style.visibility = "";
   }

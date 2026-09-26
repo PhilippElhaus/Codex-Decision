@@ -1,13 +1,13 @@
 {
   "name": "codex-jev",
-  "version": "0.1.0+codex.20260926165003",
+  "version": "0.2.0",
   "description": "Jev-gated filtering for repetitive output, test/build logs, and broad search/listing results.",
   "author": {
-    "name": "Elhaus Labs",
-    "url": "https://github.com/Elhaus-Labs"
+    "name": "Philipp Elhaus",
+    "url": "https://github.com/PhilippElhaus"
   },
-  "homepage": "https://github.com/Elhaus-Labs/Codex-Jev",
-  "repository": "https://github.com/Elhaus-Labs/Codex-Jev",
+  "homepage": "https://github.com/PhilippElhaus/Codex-Jev",
+  "repository": "https://github.com/PhilippElhaus/Codex-Jev",
   "license": "MIT",
   "keywords": [
     "codex",
@@ -19,7 +19,7 @@
     "displayName": "Codex Jev",
     "shortDescription": "Filter large tool results before they enter context.",
     "longDescription": "Codex Jev offers three selectable PostToolUse filters for repetitive output, routine test/build logs, and broad search or file listings. Eligible results get one bounded Jev judgment; replacement preserves a recoverable exact original. A companion VS Code control shows connection health and recent outcomes.",
-    "developerName": "Elhaus Labs",
+    "developerName": "Philipp Elhaus",
     "category": "Productivity",
     "capabilities": [
       "Lifecycle hooks"

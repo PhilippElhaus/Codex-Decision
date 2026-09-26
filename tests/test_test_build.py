@@ -199,6 +199,8 @@ class AdapterTests(unittest.TestCase):
         progress = "\n".join(f"Compiling module {number:03d} done" for number in range(400))
         with tempfile.TemporaryDirectory(prefix="jev-live-toggle-", dir="/tmp") as directory:
             root = Path(directory)
+            (root / ".env").write_text("JEV_API_KEY=synthetic-test-key\n")
+            (root / ".env").chmod(0o600)
             config_path = root / "config.json"
             requests = []
 
@@ -254,6 +256,8 @@ class AdapterTests(unittest.TestCase):
     def test_test_build_filter_calls_jev_and_logs_scores(self):
         with tempfile.TemporaryDirectory(prefix="jev-test-build-", dir="/tmp") as directory:
             root = Path(directory)
+            (root / ".env").write_text("JEV_API_KEY=synthetic-test-key\n")
+            (root / ".env").chmod(0o600)
             (root / "config.json").write_text('{"enabled":true,"test_build_enabled":true,"search_listing_enabled":true,"mode":"replace"}')
             payload = hook_event("python3 -m unittest discover -v", unittest_log())
             printed = io.StringIO()
@@ -278,6 +282,8 @@ class AdapterTests(unittest.TestCase):
     def test_test_build_jev_outage_keeps_full_result(self):
         with tempfile.TemporaryDirectory(prefix="jev-test-build-", dir="/tmp") as directory:
             root = Path(directory)
+            (root / ".env").write_text("JEV_API_KEY=synthetic-test-key\n")
+            (root / ".env").chmod(0o600)
             (root / "config.json").write_text('{"enabled":false,"test_build_enabled":true}')
             printed = io.StringIO()
             with (
@@ -310,6 +316,8 @@ class AdapterTests(unittest.TestCase):
     def test_unrecognized_command_still_uses_jev_when_both_selected(self):
         with tempfile.TemporaryDirectory(prefix="jev-test-build-", dir="/tmp") as directory:
             root = Path(directory)
+            (root / ".env").write_text("JEV_API_KEY=synthetic-test-key\n")
+            (root / ".env").chmod(0o600)
             (root / "config.json").write_text('{"enabled":true,"test_build_enabled":true}')
             payload = hook_event("git status", "Compiling module 1\n" * 900)
             printed = io.StringIO()

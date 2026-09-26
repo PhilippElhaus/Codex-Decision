@@ -162,13 +162,15 @@ class SearchListingTests(unittest.TestCase):
         output = hits()
         with tempfile.TemporaryDirectory(prefix="jev-search-", dir="/tmp") as directory:
             root = Path(directory)
+            (root / ".env").write_text("JEV_API_KEY=synthetic-test-key\n")
+            (root / ".env").chmod(0o600)
             path = root / "config.json"
             calls = []
             def call(call_id):
                 printed = io.StringIO()
                 with (mock.patch.dict(os.environ, {"PLUGIN_DATA": directory}),
                       mock.patch.object(sys, "stdin", io.StringIO(json.dumps(event("rg -n function .", output, call_id)))),
-                      mock.patch.object(post_tool_use, "jev_choice_request", side_effect=lambda state, questions, config: calls.append("search") or choices(state, questions, config, {"docs/archive": "drop"})),
+                      mock.patch.object(post_tool_use, "jev_choice_request", side_effect=lambda state, questions, config, key: calls.append("search") or choices(state, questions, config, {"docs/archive": "drop"})),
                       mock.patch.object(post_tool_use, "jev_request", side_effect=lambda *_: calls.append("output")),
                       mock.patch.object(post_tool_use, "jev_test_build_request", side_effect=lambda *_: calls.append("test")),
                       contextlib.redirect_stdout(printed)):
