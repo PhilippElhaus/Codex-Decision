@@ -27,4 +27,4 @@ python3 scripts/benchmark_all_filters.py --mode live --rounds 3
 
 The three-filter sample can instead use an existing `--data-dir` to record outcomes in that installed plugin's history; saved originals then remain there. Both benchmark scripts use exact `o200k_base` counts when `tiktoken` is installed, otherwise a labeled four-characters-per-token proxy. These are context-size comparisons, not Codex billing or complete task measurements.
 
-The [2026-09-26 benchmark report](../_benchmarks/2026-09-26.md) records a direct HTTPS run with the private `.env`. It links the earlier bridge report for historical comparison.
+The [2026-09-26 benchmark report](../benchmarks/benchmark_live_2026-09-26.md) records a direct HTTPS run with the private `.env`. It links the earlier bridge report for historical comparison.

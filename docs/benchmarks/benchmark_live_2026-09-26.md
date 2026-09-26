@@ -72,6 +72,6 @@ The complete metadata reports are
 originals are in those reports.
 
 Other controlled runs, including the five-call build-log token comparison,
-are in [additional measurements](additional-measurements.md). The
+are in [additional measurements](benchmark_additional.md). The
 [earlier live report](2026-09-26-live.json) used the former Windows credential
 bridge and remains available for historical comparison.

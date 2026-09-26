@@ -1,4 +1,4 @@
-"""Generate Codex Jev's icons (development only; requires Pillow)."""
+"""Generate the Codex Jev mark (development only; requires Pillow)."""
 
 from pathlib import Path
 
@@ -18,17 +18,21 @@ def box(values):
     return tuple(p(value) for value in values)
 
 
-def icon(background):
+def icon():
     image = Image.new("RGBA", (p(SIZE), p(SIZE)), (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
-    if background:
-        draw.rounded_rectangle(box((12, 12, 244, 244)), radius=p(55), fill="#192126")
+    draw.rounded_rectangle(
+        box((12, 12, 244, 244)), radius=p(52),
+        fill="#1f2328", outline="#343b43", width=p(2),
+    )
 
-    mint, cyan = "#81d5b4", "#8acdf3"
-    draw.rounded_rectangle(box((62, 72, 194, 86)), radius=p(7), fill=cyan)
-    draw.line([(p(72), p(104)), (p(119), p(153)), (p(119), p(181))], fill=mint, width=p(13), joint="curve")
-    draw.line([(p(184), p(104)), (p(137), p(153)), (p(137), p(181))], fill=mint, width=p(13), joint="curve")
-    draw.rounded_rectangle(box((118, 177, 138, 191)), radius=p(7), fill=mint)
+    # Three lines become one short result. Keep the shape legible at 16 px.
+    for left, top, right, bottom, color in (
+        (63, 75, 193, 91, "#e5e9ed"),
+        (63, 119, 158, 135, "#93a0aa"),
+        (63, 163, 118, 179, "#69aff3"),
+    ):
+        draw.rounded_rectangle(box((left, top, right, bottom)), radius=p(8), fill=color)
 
     return image.resize((SIZE, SIZE), Image.Resampling.LANCZOS)
 
@@ -36,8 +40,10 @@ def icon(background):
 def main():
     target = ROOT / "assets"
     target.mkdir(exist_ok=True)
-    icon(True).save(target / "logo.png", optimize=True)
-    icon(False).resize((64, 64), Image.Resampling.LANCZOS).save(target / "icon.png", optimize=True)
+    mark = icon()
+    mark.save(target / "logo.png", optimize=True)
+    mark.resize((64, 64), Image.Resampling.LANCZOS).save(target / "icon.png", optimize=True)
+    mark.resize((128, 128), Image.Resampling.LANCZOS).save(ROOT / "vscode-control" / "icon.png", optimize=True)
 
 
 if __name__ == "__main__":

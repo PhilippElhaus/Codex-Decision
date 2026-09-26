@@ -1,17 +1,23 @@
 # Codex Jev control for VS Code
 
-The companion extension adds a status-bar selector and connects the `jev` composer button to the installed plugin. The selector has three independent **Jev integrations**: output filter, test/build logs, and search/listing. See [UI behavior and status colors](../docs/_reference/vscode-ui.md).
+The companion extension adds a status-bar selector and connects the `jev` composer button to the installed plugin. The selector has three independent **Jev integrations**: output filter, test/build logs, and search/listing. See [UI behavior and status colors](../docs/architecture/design_vscode.md).
 
 ## Install the companion extension
 
-From `vscode-control/`:
+Download the current VSIX from the [GitHub release](https://github.com/PhilippElhaus/Codex-Jev/releases/latest), then run:
+
+```bash
+code --install-extension codex-jev-control-0.2.1.vsix --force
+```
+
+To build it from a checkout, run from `vscode-control/`:
 
 ```bash
 npx @vscode/vsce package --no-dependencies
 code --install-extension <generated-vsix> --force
 ```
 
-Set `codexJev.dataDirectory` to the installed plugin's absolute `PLUGIN_DATA` path (on Windows, a `\\wsl.localhost\<distro>\...` path for a WSL installation). `CODEX_JEV_DATA_DIRECTORY` is an alternative. The extension has no machine-specific default. It reads `PLUGIN_DATA/.env` to probe API health; the key never enters the webview or status text. See [key setup](../docs/_setup/install.md#jev-api-key).
+Set `codexJev.dataDirectory` to the installed plugin's absolute `PLUGIN_DATA` path (on Windows, a `\\wsl.localhost\<distro>\...` path for a WSL installation). `CODEX_JEV_DATA_DIRECTORY` is an alternative. The extension has no machine-specific default. It reads `PLUGIN_DATA/.env` to probe API health; the key never enters the webview or status text. See [key setup](../docs/setup/setup_credentials.md).
 
 The status-bar selector works on its own. To add the in-composer button, apply the reversible patch for Codex extension `26.917.62051`. The patch checks exact host hashes; validate it again after a Codex extension update. Keep rollback files outside this repository:
 

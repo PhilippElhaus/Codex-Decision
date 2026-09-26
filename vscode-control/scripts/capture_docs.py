@@ -11,7 +11,7 @@ from urllib.parse import quote
 from windows_browser import browser_environment, remove_profile, windows_path
 
 ROOT = Path(__file__).resolve().parents[1]
-IMAGES = ROOT.parent / 'docs' / '_images'
+IMAGES = ROOT.parent / 'docs' / 'images'
 
 
 def main() -> None:
@@ -27,7 +27,7 @@ def main() -> None:
                 str(edge), '--headless', '--disable-gpu', '--no-first-run',
                 '--no-default-browser-check', '--disable-extensions',
                 '--hide-scrollbars', '--force-device-scale-factor=1',
-                '--virtual-time-budget=950', '--window-size=1200,400',
+                '--virtual-time-budget=950', '--window-size=840,400',
                 f'--user-data-dir={windows_path(profile / state)}',
                 '--dump-dom', f'--screenshot={windows_path(output)}', address + '?demo=' + state,
             ], capture_output=True, text=True, timeout=30, check=False)

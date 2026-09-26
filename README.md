@@ -1,6 +1,6 @@
 # Codex Jev
 
-<img src="assets/logo.png" width="64" alt="Codex Jev logo">
+<img src="assets/logo.png" width="56" alt="Codex Jev logo">
 
 Codex Jev trims large tool results before Codex reads them. It uses Jev to decide which repetitive lines can be omitted, keeps the exact original for recovery, and leaves uncertain results intact.
 
@@ -15,11 +15,11 @@ Codex Jev trims large tool results before Codex reads them. It uses Jev to decid
 All integrations start off. The companion VS Code control lets you select each one and shows connection health and recent outcomes.
 The screenshots below use synthetic selections and activity.
 
-<img src="docs/_images/jev-menu.png" width="760" alt="Jev integrations selector in the Codex composer">
+<img src="docs/images/jev-menu.png" width="840" alt="Jev integrations selector in the Codex composer">
 
 ## Measured results
 
-A [live hook benchmark](docs/_benchmarks/2026-09-26.md) ran the three integrations over real command output with 30 Jev calls. Token counts use `o200k_base`.
+A [live hook benchmark](docs/benchmarks/benchmark_live_2026-09-26.md) ran the three integrations over real command output with 30 Jev calls. Token counts use `o200k_base`.
 
 | Integration | Replaced results | Model-visible tokens saved | Reduction on replaced results |
 | --- | ---: | ---: | ---: |
@@ -29,21 +29,20 @@ A [live hook benchmark](docs/_benchmarks/2026-09-26.md) ran the three integratio
 
 Across all 36 results, including oversized inputs that the hook deliberately skipped, the integrations saved **70,707 model-visible tokens**. These are tool-output measurements, not billed-token or full-task savings. Jev kept all six search-hit outputs when it was uncertain.
 
-<img src="docs/_images/jev-tooltip.png" width="760" alt="Jev activity and savings shown in the Codex composer">
+<img src="docs/images/jev-tooltip.png" width="840" alt="Jev activity and savings shown in the Codex composer">
 
-## Get started
+## Quick install
 
 ```bash
 codex plugin marketplace add https://github.com/PhilippElhaus/Codex-Jev
 codex plugin add codex-jev@codex-jev
 ```
 
-[Save the Jev API key in the installed plugin's private `.env`](docs/_setup/install.md#jev-api-key), then start a new Codex thread and select an integration. For the composer control, follow the [VS Code setup](vscode-control/README.md).
+Download the [VS Code control VSIX](https://github.com/PhilippElhaus/Codex-Jev/releases/download/v0.2.1/codex-jev-control-0.2.1.vsix), then run `code --install-extension codex-jev-control-0.2.1.vsix --force`. [Add the Jev API key](docs/setup/setup_credentials.md), set `codexJev.dataDirectory` to the plugin data directory, and start a new Codex thread. The control appears in the VS Code status bar. The in-composer button has a separate [version-pinned setup](vscode-control/README.md).
 
 ## Documentation
 
-- [Installation, credentials, and migration](docs/_setup/install.md)
-- [Integration behavior and data handling](docs/_reference/behavior-and-data.md)
-- [VS Code control details](docs/_reference/vscode-ui.md)
-- [Benchmarks and measurement notes](docs/_benchmarks/2026-09-26.md)
-- [Verification](docs/_development/verification.md)
+- [Installation](docs/setup/setup_installation.md), [credentials](docs/setup/setup_credentials.md), and [migration](docs/setup/setup_migration.md)
+- [Integration design](docs/architecture/design_integrations.md) and [data handling](docs/architecture/design_data.md)
+- [VS Code control](docs/architecture/design_vscode.md)
+- [Benchmarks](docs/benchmarks/benchmark_live_2026-09-26.md) and [verification](docs/development/development_verification.md)
