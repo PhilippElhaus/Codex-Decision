@@ -1,0 +1,218 @@
+/* Local Codex composer control. The host bridge returns metadata only. */
+(() => {
+  const acquire = window.acquireVsCodeApi;
+  if (typeof acquire !== "function") return;
+  window.acquireVsCodeApi = function (...args) {
+    const api = acquire.apply(this, args);
+    window.__jevPilotApi = api;
+    return api;
+  };
+
+  let state = { enabled: false, health: null, busy: false, mode: "observe", recent: "No decision recorded yet" };
+  let root;
+  let pending = 0;
+  let menuOpen = false;
+  let layoutObserver;
+  let observed = [];
+  let positionScheduled = false;
+  const colors = { off: "#9a9a9a", healthy: "#87cda4", failed: "#e99490", busy: "#83bcf7" };
+
+  function send(action, enabled) {
+    const api = window.__jevPilotApi;
+    if (!api) return;
+    api.postMessage({ type: "jev-pilot", action, enabled, id: ++pending });
+  }
+
+  function create() {
+    if (root) return root;
+    const style = document.createElement("style");
+    style.textContent = `
+      #codex-jev-pilot { position: fixed; z-index: 2147483600; display: none; font-family: inherit; }
+      #codex-jev-pilot * { box-sizing: border-box; }
+      #codex-jev-pilot-button { display: inline-flex; align-items: center; gap: 7px; padding: 5px 8px; border: 1px solid transparent; border-radius: 9px; background: transparent; color: #9a9a9a; font-family: inherit; font-size: 14px; font-weight: 600; line-height: 18px; cursor: pointer; }
+      #codex-jev-pilot[data-compact="true"] #codex-jev-pilot-button { gap: 0; padding: 6px; }
+      #codex-jev-pilot[data-compact="true"] #codex-jev-pilot-label { display: none; }
+      #codex-jev-pilot-button:hover, #codex-jev-pilot-button[aria-expanded="true"] { background: #ffffff12; border-color: #ffffff26; }
+      #codex-jev-pilot-button:focus-visible, #codex-jev-pilot-option:focus-visible { outline: 2px solid #83bcf7; outline-offset: 2px; }
+      #codex-jev-pilot-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 15%, transparent); }
+      #codex-jev-pilot-menu, #codex-jev-pilot-tip { position: absolute; bottom: calc(100% + 9px); right: 0; border: 1px solid #454545; border-radius: 11px; background: #292929; color: #dedede; box-shadow: 0 12px 30px #0009; }
+      #codex-jev-pilot-menu { display: none; width: min(285px, calc(100vw - 24px)); padding: 10px; }
+      #codex-jev-pilot-menu[data-open="true"] { display: block; }
+      #codex-jev-pilot-menu h2 { margin: 3px 8px 8px; color: #aaa; font-size: 11px; font-weight: 650; text-transform: uppercase; letter-spacing: .08em; }
+      #codex-jev-pilot-option { display: flex; align-items: center; gap: 9px; width: 100%; padding: 9px 8px; border: 0; border-radius: 7px; background: transparent; color: #e5e5e5; text-align: left; font: inherit; cursor: pointer; }
+      #codex-jev-pilot-option:hover { background: #ffffff12; }
+      #codex-jev-pilot-check { display: grid; place-items: center; width: 16px; height: 16px; border: 1px solid #777; border-radius: 4px; flex: none; font-size: 12px; }
+      #codex-jev-pilot-option[aria-checked="true"] #codex-jev-pilot-check { background: #87cda4; border-color: #87cda4; color: #1b281e; }
+      #codex-jev-pilot-option[aria-checked="true"] #codex-jev-pilot-check::after { content: "✓"; }
+      #codex-jev-pilot-option strong { display: block; font-size: 13px; font-weight: 600; }
+      #codex-jev-pilot-option small { display: block; color: #aaa; font-size: 11px; margin-top: 2px; }
+      #codex-jev-pilot-menu p { color: #999; font-size: 11px; margin: 8px 8px 2px; }
+      #codex-jev-pilot-tip { display: none; width: min(260px, calc(100vw - 24px)); padding: 10px 12px; pointer-events: none; font-size: 12px; line-height: 1.45; white-space: normal; }
+      #codex-jev-pilot:hover #codex-jev-pilot-tip { display: block; }
+      #codex-jev-pilot[data-menu="true"] #codex-jev-pilot-tip { display: none; }
+      #codex-jev-pilot-tip strong { color: #fff; }
+      #codex-jev-pilot-tip span { display: block; color: #aaa; margin-top: 4px; }
+    `;
+    document.head.appendChild(style);
+    root = document.createElement("div");
+    root.id = "codex-jev-pilot";
+    root.innerHTML = `
+      <button id="codex-jev-pilot-button" type="button" aria-label="Jev hooks" aria-expanded="false" aria-controls="codex-jev-pilot-menu"><span id="codex-jev-pilot-dot"></span><span id="codex-jev-pilot-label">jev</span></button>
+      <div id="codex-jev-pilot-tip" role="tooltip"><strong></strong><span></span></div>
+      <div id="codex-jev-pilot-menu" role="group" aria-label="Jev hooks" data-open="false"><h2>Jev hooks</h2><button id="codex-jev-pilot-option" type="button" role="checkbox" aria-checked="false"><span id="codex-jev-pilot-check"></span><span><strong>PostToolUse · output filter</strong><small>Check repetitive tool output with Jev</small></span></button><p>Select none to turn Jev off.</p></div>`;
+    document.body.appendChild(root);
+    root.querySelector("#codex-jev-pilot-button").addEventListener("click", (event) => {
+      event.stopPropagation();
+      menuOpen = !menuOpen;
+      render();
+    });
+    root.querySelector("#codex-jev-pilot-option").addEventListener("click", (event) => {
+      event.stopPropagation();
+      send("setSelection", !state.enabled);
+      menuOpen = false;
+      render();
+    });
+    document.addEventListener("click", (event) => {
+      if (menuOpen && !root.contains(event.target)) { menuOpen = false; render(); }
+    });
+    document.addEventListener("keydown", (event) => {
+      if (menuOpen && event.key === "Escape") { menuOpen = false; render(); }
+    });
+    render();
+    return root;
+  }
+
+  function render() {
+    if (!root) return;
+    const button = root.querySelector("#codex-jev-pilot-button");
+    const visual = !state.enabled ? "off" : state.busy ? "busy" :
+      state.health?.ok === true ? "healthy" : state.health?.ok === false ? "failed" : "off";
+    button.style.color = colors[visual];
+    button.setAttribute("aria-expanded", String(menuOpen));
+    root.dataset.menu = String(menuOpen);
+    root.querySelector("#codex-jev-pilot-menu").dataset.open = String(menuOpen);
+    root.querySelector("#codex-jev-pilot-option").setAttribute("aria-checked", String(state.enabled));
+    const status = !state.enabled ? "Jev off" : state.health?.ok === true ? "Jev connected" :
+      state.health?.ok === false ? "Jev unavailable" : "Checking Jev connection";
+    root.querySelector("#codex-jev-pilot-tip strong").textContent = status;
+    root.querySelector("#codex-jev-pilot-tip span").textContent = state.enabled ?
+      `PostToolUse · ${state.mode} · ${state.recent}` : "No hooks selected. Click to choose.";
+    button.setAttribute("aria-label", `${status}. ${state.recent}. Select Jev hooks`);
+  }
+
+  function visibleRect(element) {
+    const rect = element?.getBoundingClientRect();
+    return rect && rect.width > 0 && rect.height > 0 ? rect : null;
+  }
+
+  function findAnchor() {
+    if (!document.body) return null;
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    let node;
+    while ((node = walker.nextNode())) {
+      if (!/^(Full access|Workspace write|Read-only)$/i.test(node.textContent.trim())) continue;
+      if (root?.contains(node)) continue;
+      const element = node.parentElement?.closest('button,[role="button"]') || node.parentElement;
+      const rect = visibleRect(element);
+      if (rect && rect.bottom > window.innerHeight / 2 && rect.bottom < window.innerHeight) {
+        return { element, rect };
+      }
+    }
+    return null;
+  }
+
+  function findModel(anchor) {
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    let node;
+    let nearest = null;
+    while ((node = walker.nextNode())) {
+      const label = node.textContent.trim();
+      if (!label || /^(Full access|Workspace write|Read-only)$/i.test(label) ||
+          /^(IDE context|Context)$/i.test(label) || root?.contains(node)) continue;
+      const element = node.parentElement?.closest('button,[role="button"]') || node.parentElement;
+      const rect = visibleRect(element);
+      if (!rect || rect.left <= anchor.rect.right || rect.left >= (nearest?.rect.left ?? window.innerWidth)) continue;
+      const overlap = Math.min(rect.bottom, anchor.rect.bottom) - Math.max(rect.top, anchor.rect.top);
+      if (overlap < Math.min(rect.height, anchor.rect.height) / 2) continue;
+      nearest = { element, rect };
+    }
+    return nearest;
+  }
+
+  function commonAncestor(first, second) {
+    for (let element = first; element; element = element.parentElement) {
+      if (element.contains(second)) return element;
+    }
+    return document.body;
+  }
+
+  function observeLayout(anchor, model) {
+    if (!layoutObserver) return;
+    const elements = [anchor.element, model.element, commonAncestor(anchor.element, model.element)];
+    if (observed.length === elements.length && observed.every((element, index) => element === elements[index])) return;
+    layoutObserver.disconnect();
+    observed = elements;
+    for (const element of new Set(elements)) layoutObserver.observe(element);
+  }
+
+  function alignPopup(element, width, buttonLeft, rightEdge) {
+    const actualWidth = Math.min(width, window.innerWidth - 24);
+    const left = Math.max(12, Math.min(rightEdge - actualWidth, window.innerWidth - actualWidth - 12));
+    element.style.left = `${Math.round(left - buttonLeft)}px`;
+    element.style.right = "auto";
+  }
+
+  function position() {
+    const item = create();
+    const anchor = findAnchor();
+    const model = anchor && findModel(anchor);
+    if (!model) { item.style.display = "none"; return; }
+    observeLayout(anchor, model);
+    const leftEdge = anchor.rect.right + 7;
+    const rightEdge = model.rect.left - 8;
+    const available = rightEdge - leftEdge;
+    const button = item.querySelector("#codex-jev-pilot-button");
+    item.style.display = "block";
+    item.style.visibility = "hidden";
+    item.dataset.compact = "false";
+    const fullWidth = button.getBoundingClientRect().width;
+    item.dataset.compact = String(available < fullWidth);
+    const width = button.getBoundingClientRect().width;
+    if (available < width) { item.style.display = "none"; return; }
+    const buttonLeft = rightEdge - width;
+    item.style.left = "auto";
+    item.style.right = `${Math.round(window.innerWidth - rightEdge)}px`;
+    item.style.top = `${Math.round(anchor.rect.top + anchor.rect.height / 2 - button.getBoundingClientRect().height / 2)}px`;
+    alignPopup(item.querySelector("#codex-jev-pilot-menu"), 285, buttonLeft, rightEdge);
+    alignPopup(item.querySelector("#codex-jev-pilot-tip"), 260, buttonLeft, rightEdge);
+    item.style.visibility = "";
+  }
+
+  function schedulePosition() {
+    if (positionScheduled) return;
+    positionScheduled = true;
+    setTimeout(() => { positionScheduled = false; position(); }, 0);
+  }
+
+  function start() {
+    create();
+    position();
+    if (typeof ResizeObserver === "function") layoutObserver = new ResizeObserver(schedulePosition);
+    const observer = new MutationObserver(schedulePosition);
+    observer.observe(document.body, { subtree: true, childList: true, characterData: true });
+    window.addEventListener("resize", schedulePosition);
+    window.addEventListener("scroll", schedulePosition, true);
+    window.addEventListener("message", (event) => {
+      if (event.data?.type !== "jev-pilot-reply") return;
+      if (event.data.status && typeof event.data.status === "object") {
+        state = event.data.status;
+        render();
+      }
+    });
+    setInterval(() => send("status"), 120);
+    setInterval(schedulePosition, 300);
+    send("status");
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start, { once: true });
+  else start();
+})();

@@ -1,0 +1,6 @@
+tests/**
+webview/**
+scripts/**
+patch_codex_webview.py
+*.vsix
+node_modules/**

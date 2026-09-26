@@ -1,0 +1,10 @@
+{
+  "enabled": false,
+  "mode": "observe",
+  "min_chars": 8192,
+  "max_chars": 2000000,
+  "sample_chars": 12000,
+  "timeout_seconds": 3.0,
+  "model": "jev-1.13.0",
+  "allow_mcp_replacement": false
+}

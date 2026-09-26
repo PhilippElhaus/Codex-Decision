@@ -1,0 +1,36 @@
+{
+  "name": "codex-jev-control-pilot",
+  "displayName": "Jev Control Pilot",
+  "description": "Local Jev hook control and health indicator for Codex in VS Code",
+  "version": "0.0.3",
+  "publisher": "elhaus-labs",
+  "license": "MIT",
+  "repository": { "type": "git", "url": "https://github.com/Elhaus-Labs/Codex.git" },
+  "private": true,
+  "main": "./extension.js",
+  "engines": { "vscode": "^1.96.2" },
+  "extensionKind": ["ui"],
+  "activationEvents": ["onStartupFinished", "onCommand:jevPilot.bridge"],
+  "contributes": {
+    "commands": [
+      { "command": "jevPilot.selectHooks", "title": "Jev: Select Hooks" },
+      { "command": "jevPilot.checkConnection", "title": "Jev: Check API and Key" }
+    ],
+    "configuration": {
+      "title": "Jev Control Pilot",
+      "properties": {
+        "jevPilot.dataDirectory": {
+          "type": "string",
+          "default": "\\\\wsl.localhost\\Ubuntu\\home\\elhaus\\.codex\\plugins\\data\\codex-jev-output-pilot-personal",
+          "description": "Absolute PLUGIN_DATA directory for the Jev output pilot."
+        },
+        "jevPilot.credentialDirectory": {
+          "type": "string",
+          "default": "",
+          "description": "Windows user-local directory containing the DPAPI-protected Jev credential and request helper."
+        }
+      }
+    }
+  },
+  "scripts": { "test": "node --test tests/*.test.cjs" }
+}

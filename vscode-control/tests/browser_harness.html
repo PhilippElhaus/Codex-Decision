@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Jev browser harness</title>
+  <style>
+    body { margin: 0; background: #181818; color: #ccc; font: 16px "Segoe UI", sans-serif; }
+    .composer { position: absolute; left: 16px; width: calc(100% - 32px); bottom: 20px; height: 180px; border: 1px solid #333; border-radius: 30px; background: #202020; }
+    .prompt { margin: 30px 22px; color: #666; font-size: 25px; }
+    .toolbar { position: absolute; left: 25px; right: 25px; bottom: 16px; height: 36px; display: flex; align-items: center; gap: 14px; white-space: nowrap; }
+    .access { color: #dcb900; flex: none; }
+    .model { margin-left: auto; flex: none; }
+    .results { position: absolute; top: 16px; left: 16px; font: 12px monospace; }
+  </style>
+  <script>
+    let enabled = false, health = { ok: true, model: "jev-1.13.0" }, busy = false;
+    let calls = 0;
+    window.acquireVsCodeApi = () => ({ postMessage(request) {
+      calls += 1;
+      if (request.action === "setSelection") enabled = request.enabled;
+      queueMicrotask(() => window.dispatchEvent(new MessageEvent("message", { data: {
+        type: "jev-pilot-reply", id: request.id,
+        status: { enabled, health, busy, mode: "observe", recent: "kept Bash output" },
+      } })));
+    } });
+  </script>
+  <script src="../webview/jev-control.js"></script>
+</head>
+<body>
+  <pre class="results" id="results">pending</pre>
+  <div class="composer">
+    <div class="prompt">Ask for follow-up changes</div>
+    <div class="toolbar"><span>+</span><span class="access">Full access</span><span class="model">GPT-6 Sol Extra High</span></div>
+  </div>
+  <script>
+    const api = acquireVsCodeApi();
+    const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const check = (condition, label) => { if (!condition) throw new Error(label); };
+    async function until(predicate, label) {
+      for (let attempt = 0; attempt < 25; attempt += 1) {
+        if (predicate()) return;
+        await pause(20);
+      }
+      throw new Error(label);
+    }
+    async function run() {
+      await pause(100);
+      const composer = document.querySelector(".composer");
+      const root = document.getElementById("codex-jev-pilot");
+      const button = document.getElementById("codex-jev-pilot-button");
+      const option = document.getElementById("codex-jev-pilot-option");
+      const label = document.getElementById("codex-jev-pilot-label");
+      check(root && button && option && root.style.display === "block", "control visible");
+      check(button.style.color === "rgb(154, 154, 154)", "disabled gray");
+      const anchor = () => document.querySelector(".access").getBoundingClientRect();
+      const model = () => document.querySelector(".model").getBoundingClientRect();
+      const rect = () => button.getBoundingClientRect();
+      const docked = () => model().left - rect().right;
+      check(rect().left > anchor().right && docked() >= 7 && docked() <= 10, "right-docked placement");
+      const wideWidth = composer.getBoundingClientRect().width;
+      const gap = model().left - anchor().right - 15;
+      const fullWidth = rect().width;
+      composer.style.width = `${wideWidth - (gap - fullWidth + 4)}px`;
+      await until(() => root.dataset.compact === "true" && root.style.display === "block", "compact after panel resize");
+      check(getComputedStyle(label).display === "none", "compact dot only");
+      check(docked() >= 7 && docked() <= 10, "compact state stays right docked");
+      button.click();
+      const compactMenu = document.getElementById("codex-jev-pilot-menu").getBoundingClientRect();
+      check(compactMenu.left >= 11 && compactMenu.right <= innerWidth - 11, "compact menu stays in viewport");
+      button.click();
+      composer.style.width = `${wideWidth - (gap - 12)}px`;
+      await until(() => root.style.display === "none", "hide before overlapping model");
+      composer.style.width = "";
+      await until(() => root.style.display === "block" && root.dataset.compact === "false", "restore full control after resize");
+      check(getComputedStyle(label).display !== "none" && docked() >= 7 && docked() <= 10, "full control redocked");
+      button.click();
+      check(button.getAttribute("aria-expanded") === "true", "menu opens");
+      option.click();
+      await pause(50);
+      check(option.getAttribute("aria-checked") === "true", "hook selected");
+      check(button.style.color === "rgb(135, 205, 164)", "connected green");
+      check(document.getElementById("codex-jev-pilot-tip").textContent.includes("kept Bash output"), "recent outcome tooltip");
+      busy = true;
+      await pause(150);
+      check(button.style.color === "rgb(131, 188, 247)", "busy blue");
+      busy = false;
+      health = { ok: false, reason: "JEV_HTTP_401" };
+      await pause(150);
+      check(button.style.color === "rgb(233, 148, 144)", "failure red");
+      button.click();
+      option.click();
+      await pause(50);
+      check(button.style.color === "rgb(154, 154, 154)", "off returns gray");
+      check(calls >= 5, "host bridge used");
+      document.getElementById("results").textContent = JSON.stringify({ ok: true, calls });
+      document.title = "JEV_BROWSER_PASS";
+    }
+    run().catch((error) => {
+      const control = document.getElementById("codex-jev-pilot");
+      const button = document.getElementById("codex-jev-pilot-button");
+      document.getElementById("results").textContent = JSON.stringify({ ok: false, error: error.message,
+        composer: document.querySelector(".composer").getBoundingClientRect().width,
+        accessRight: document.querySelector(".access").getBoundingClientRect().right,
+        modelLeft: document.querySelector(".model").getBoundingClientRect().left,
+        buttonWidth: button?.getBoundingClientRect().width, compact: control?.dataset.compact,
+        display: control?.style.display,
+        buttonRight: button?.getBoundingClientRect().right });
+      document.title = "JEV_BROWSER_FAIL";
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,29 @@
+{
+  "name": "codex-jev-output-pilot",
+  "version": "0.1.0+codex.20260926094906",
+  "description": "Opt-in Jev pilot for reducing repetitive Codex tool output.",
+  "author": {
+    "name": "Elhaus Labs",
+    "url": "https://github.com/Elhaus-Labs"
+  },
+  "homepage": "https://github.com/Elhaus-Labs/Codex",
+  "repository": "https://github.com/Elhaus-Labs/Codex",
+  "license": "MIT",
+  "keywords": [
+    "codex",
+    "jev",
+    "hooks",
+    "context"
+  ],
+  "interface": {
+    "displayName": "Jev Output Pilot",
+    "shortDescription": "Evaluate large tool results with Jev.",
+    "longDescription": "An opt-in PostToolUse pilot that measures whether repetitive text output could be replaced with a recoverable excerpt.",
+    "developerName": "Elhaus Labs",
+    "category": "Productivity",
+    "capabilities": [
+      "Lifecycle hooks"
+    ],
+    "defaultPrompt": "Explain the Jev Output Pilot's observation results and safety gates."
+  }
+}
