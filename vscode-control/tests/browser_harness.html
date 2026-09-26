@@ -79,6 +79,7 @@
         Math.abs(button.getBoundingClientRect().height - document.querySelector(".model").getBoundingClientRect().height) <= 1,
         "Jev button matches the model pill without a border");
       const modelControl = document.querySelector(".model");
+      const accessControl = document.querySelector(".access");
       for (const height of [30, 38, 34]) {
         modelControl.style.height = `${height}px`;
         await until(() => Math.abs(button.getBoundingClientRect().height - height) <= 1 &&
@@ -91,28 +92,52 @@
       const docked = () => model().left - rect().right;
       check(rect().left > anchor().right && docked() >= 7 && docked() <= 10, "right-docked placement");
       const wideWidth = composer.getBoundingClientRect().width;
+      const paneWidth = document.documentElement.getBoundingClientRect().width;
       const gap = model().left - anchor().right - 15;
       const fullWidth = rect().width;
+      document.documentElement.style.width = `${paneWidth - 80}px`;
       composer.style.width = `${wideWidth - (gap - fullWidth + 4)}px`;
       await until(() => root.dataset.compact === "true" && root.style.display === "block", "compact after panel resize");
       check(getComputedStyle(label).display === "none", "compact dot only");
-      check(docked() >= 7 && docked() <= 10, "compact state stays right docked");
+      check(rect().left > anchor().right + 3 && rect().right < model().left - 3,
+        "compact dot stays between the access and model controls");
       button.click();
       const compactMenu = document.getElementById("codex-jev-menu").getBoundingClientRect();
       check(compactMenu.left >= 11 && compactMenu.right <= innerWidth - 11, "compact menu stays in viewport");
       button.click();
+      document.documentElement.style.width = `${paneWidth - 110}px`;
+      composer.style.width = `${wideWidth - (gap - fullWidth + 4) - 30}px`;
+      modelControl.innerHTML = '<svg width="22" height="22" aria-hidden="true"><circle cx="11" cy="11" r="9" fill="currentColor"/></svg>';
+      await until(() => model().left - anchor().right > fullWidth + 15,
+        "model icon frees room after the pane narrows");
+      check(root.dataset.compact === "true" && getComputedStyle(label).display === "none",
+        "Jev stays compact after the model shrinks");
+      check(rect().left > anchor().right + 3 && rect().right < model().left - 3,
+        "compact dot stays clear of both controls after the model shrinks");
+      document.documentElement.style.width = `${paneWidth - 140}px`;
+      composer.style.width = `${wideWidth - (gap - fullWidth + 4) - 50}px`;
+      accessControl.setAttribute("aria-label", "Full access");
+      accessControl.innerHTML = '<svg width="22" height="22" aria-hidden="true"><path d="M11 1 L20 5 L18 16 L11 21 L4 16 L2 5 Z" fill="currentColor"/></svg>';
+      await until(() => model().left - anchor().right > fullWidth + 15,
+        "access icon frees room at a narrower pane width");
+      check(root.dataset.compact === "true" && rect().right < model().left - 3,
+        "Jev stays compact after both Codex controls shrink");
+      accessControl.textContent = "Full access";
+      accessControl.removeAttribute("aria-label");
+      modelControl.textContent = "GPT-6 Sol Extra High";
       composer.style.width = `${wideWidth - (gap - 12)}px`;
       await until(() => root.dataset.compact === "true" && root.style.display === "block", "compact control when toolbar gap closes");
       check(Math.abs(rect().top + rect().height / 2 - anchor().top - anchor().height / 2) <= 1,
         "compact control stays on the toolbar row when the gap closes");
+      document.documentElement.style.width = "";
       composer.style.width = "";
       await until(() => root.style.display === "block" && root.dataset.compact === "false", "restore full control after resize");
       check(getComputedStyle(label).display !== "none" && docked() >= 7 && docked() <= 10, "full control redocked");
-      const accessControl = document.querySelector(".access");
       accessControl.setAttribute("aria-label", "Full access");
       modelControl.setAttribute("aria-label", "GPT-6 Sol model");
       accessControl.innerHTML = '<svg width="22" height="22" aria-hidden="true"><path d="M11 1 L20 5 L18 16 L11 21 L4 16 L2 5 Z" fill="currentColor"/></svg>';
       modelControl.innerHTML = '<svg width="22" height="22" aria-hidden="true"><circle cx="11" cy="11" r="9" fill="currentColor"/></svg>';
+      document.documentElement.style.width = `${paneWidth - 100}px`;
       composer.style.width = "300px";
       await until(() => root.style.display === "block" && rect().width > 0, "icon-only controls keep Jev visible");
       button.click();
@@ -125,10 +150,23 @@
       check(Math.abs(rect().top + rect().height / 2 - anchor().top - anchor().height / 2) <= 1,
         "missing model control keeps Jev on the access row");
       modelControl.setAttribute("role", "button");
+      document.documentElement.style.width = "";
       composer.style.width = "";
       accessControl.textContent = "Full access";
       modelControl.textContent = "GPT-6 Sol Extra High";
       await until(() => root.dataset.compact === "false", "text controls restore normal position");
+      document.documentElement.style.width = `${paneWidth - 80}px`;
+      modelControl.removeAttribute("role");
+      modelControl.innerHTML = '<svg width="22" height="22" aria-hidden="true"><circle cx="11" cy="11" r="9" fill="currentColor"/></svg>';
+      await until(() => root.dataset.compact === "true", "missing model compacts Jev after initial layout");
+      document.documentElement.style.width = `${paneWidth - 110}px`;
+      modelControl.setAttribute("role", "button");
+      await pause(40);
+      check(root.dataset.compact === "true" && getComputedStyle(label).display === "none",
+        "Jev stays compact when the model icon returns at a narrower width");
+      document.documentElement.style.width = "";
+      modelControl.textContent = "GPT-6 Sol Extra High";
+      await until(() => root.dataset.compact === "false", "wider pane restores full Jev label");
       button.click();
       check(button.getAttribute("aria-expanded") === "true", "menu opens");
       const menu = document.getElementById("codex-jev-menu");
@@ -153,9 +191,12 @@
       await until(() => root.dataset.observe === "true", "observe mode arrives from settings");
       check(getComputedStyle(observeBadge).display !== "none" && observeBadge.textContent === "OBS", "observe badge visible");
       check(button.style.color === "rgb(135, 205, 164)", "observe mode preserves health color");
+      document.documentElement.style.width = `${paneWidth - 80}px`;
       composer.style.width = `${wideWidth - (gap - fullWidth + 4)}px`;
-      await until(() => root.dataset.compact === "true" && root.style.display === "block", "observe badge fits compact control");
-      check(getComputedStyle(observeBadge).display !== "none" && docked() >= 7 && docked() <= 10, "compact observe badge stays right docked");
+      await until(() => root.dataset.compact === "true" && root.style.display === "block", "observe mode fits compact control");
+      check(getComputedStyle(observeBadge).display === "none" && rect().right < model().left - 3,
+        "compact observe mode shows only the dot and stays clear of the model");
+      document.documentElement.style.width = "";
       composer.style.width = "";
       await until(() => root.dataset.compact === "false", "observe control restores after resize");
       mode = "replace";

@@ -15,6 +15,8 @@
   let layoutObserver;
   let observed = [];
   let positionScheduled = false;
+  let compactAtWidth = 0;
+  let seenModel = false;
   let viewId = newViewId();
   let viewLocation = window.location.href;
   const sentViews = new Map();
@@ -58,11 +60,11 @@
       #codex-jev { position: fixed; z-index: 2147483600; display: none; font-family: inherit; }
       #codex-jev * { box-sizing: border-box; }
       #codex-jev-button { display: inline-flex; align-items: center; gap: 7px; height: var(--codex-jev-button-height, 34px); min-height: 0; max-height: var(--codex-jev-button-height, 34px); padding: 0 12px; border: 0; border-radius: 999px; background: #303030; color: #9a9a9a; font-family: inherit; font-size: 14px; font-weight: 600; line-height: 18px; cursor: pointer; transition: color 220ms ease-in-out, background-color 220ms ease-in-out; }
-      #codex-jev[data-compact="true"] #codex-jev-button { gap: 0; padding: 0 6px; }
+      #codex-jev[data-compact="true"] #codex-jev-button { gap: 0; padding: 0 4px; }
       #codex-jev[data-compact="true"] #codex-jev-label { display: none; }
       #codex-jev-observe { display: none; margin-left: 2px; padding: 1px 3px; border: 1px solid #9a9a9a77; border-radius: 3px; color: #bdbdbd; font-size: 9px; font-weight: 700; line-height: 12px; letter-spacing: .04em; }
       #codex-jev[data-observe="true"] #codex-jev-observe { display: inline-block; }
-      #codex-jev[data-compact="true"] #codex-jev-observe { margin-left: 2px; padding: 0 2px; }
+      #codex-jev[data-compact="true"] #codex-jev-observe { display: none; }
       #codex-jev-button:hover, #codex-jev-button[aria-expanded="true"] { background: #3a3a3a; }
       #codex-jev-button:focus-visible, .codex-jev-option:focus-visible { outline: 2px solid #83bcf7; outline-offset: 2px; }
       #codex-jev-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 15%, transparent); transition: box-shadow 220ms ease-in-out; }
@@ -264,14 +266,52 @@
     element.style.right = "auto";
   }
 
+  function toolbarScope(anchor, model) {
+    if (model) {
+      const shared = commonAncestor(anchor.element, model.element);
+      if (shared !== document.body) return shared;
+    }
+    for (let element = anchor.element.parentElement; element && element !== document.body;
+      element = element.parentElement) {
+      const rect = visibleRect(element);
+      if (rect && rect.width >= window.innerWidth * 0.7 && rect.height <= 250) return element;
+    }
+    return document.body;
+  }
+
+  function nextToolbarEdge(anchor, scope) {
+    const rowCenter = anchor.rect.top + anchor.rect.height / 2;
+    let edge = Infinity;
+    const consider = (rect) => {
+      if (rect && rect.left > anchor.rect.right + 2 && rect.top <= rowCenter + 4 &&
+          rect.bottom >= rowCenter - 4) edge = Math.min(edge, rect.left);
+    };
+    for (const element of scope.querySelectorAll('button,[role="button"],svg')) {
+      if (root.contains(element) || anchor.element.contains(element)) continue;
+      consider(visibleRect(element));
+    }
+    const walker = document.createTreeWalker(scope, NodeFilter.SHOW_TEXT);
+    let node;
+    while ((node = walker.nextNode())) {
+      if (!node.textContent.trim() || root.contains(node) || anchor.element.contains(node)) continue;
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      consider(range.getBoundingClientRect());
+    }
+    return edge;
+  }
+
   function position() {
     const item = create();
     const anchor = findAnchor();
     if (!anchor) { item.style.display = "none"; return; }
     const model = findModel(anchor);
+    if (model) seenModel = true;
     observeLayout(anchor, model || anchor);
     const leftEdge = anchor.rect.right + 7;
-    const rightEdge = model ? model.rect.left - 8 : leftEdge;
+    const modelEdge = model && model.rect.left > anchor.rect.right ? model.rect.left : Infinity;
+    const nextEdge = Math.min(modelEdge, nextToolbarEdge(anchor, toolbarScope(anchor, model)));
+    const rightEdge = Number.isFinite(nextEdge) ? nextEdge - 8 : leftEdge;
     const available = rightEdge - leftEdge;
     const button = item.querySelector("#codex-jev-button");
     // The access control stays on the toolbar row even when the model is an icon.
@@ -282,10 +322,16 @@
     item.style.visibility = "hidden";
     item.dataset.compact = "false";
     const fullWidth = button.getBoundingClientRect().width;
-    item.dataset.compact = String(!model || available < fullWidth);
+    const paneWidth = document.documentElement.getBoundingClientRect().width;
+    if (seenModel && (!model || available < fullWidth)) compactAtWidth = Math.max(compactAtWidth, paneWidth);
+    if (paneWidth > compactAtWidth + 16) compactAtWidth = 0;
+    item.dataset.compact = String(!model || available < fullWidth ||
+      (compactAtWidth > 0 && paneWidth <= compactAtWidth + 16));
     const width = button.getBoundingClientRect().width;
-    const fits = model && available >= width;
-    const buttonLeft = fits ? rightEdge - width : Math.max(12, Math.min(leftEdge, window.innerWidth - width - 12));
+    const fits = available >= width;
+    const idealLeft = fits && item.dataset.compact === "false" ? rightEdge - width :
+      leftEdge + (available - width) / 2;
+    const buttonLeft = Math.max(12, Math.min(idealLeft, window.innerWidth - width - 12));
     item.style.left = "auto";
     item.style.right = `${Math.round(window.innerWidth - buttonLeft - width)}px`;
     item.style.top = `${Math.round(anchor.rect.top + anchor.rect.height / 2 - button.getBoundingClientRect().height / 2)}px`;
