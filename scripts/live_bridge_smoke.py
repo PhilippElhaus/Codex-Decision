@@ -15,7 +15,8 @@ PLUGIN = Path.home() / '.codex/plugins/cache/personal/codex-jev-output-pilot'
 
 
 def main() -> None:
-    versions = sorted(PLUGIN.iterdir())
+    versions = sorted(path for path in PLUGIN.iterdir()
+                      if (path / '.codex-plugin/plugin.json').is_file())
     if len(versions) != 1:
         raise RuntimeError('expected one installed Jev plugin version')
     hook = versions[0] / 'hooks/post_tool_use.py'

@@ -1,6 +1,6 @@
 {
   "name": "codex-jev-output-pilot",
-  "version": "0.1.0+codex.20260926094906",
+  "version": "0.1.0+codex.20260926095233",
   "description": "Opt-in Jev pilot for reducing repetitive Codex tool output.",
   "author": {
     "name": "Elhaus Labs",
