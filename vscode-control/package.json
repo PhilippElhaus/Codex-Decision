@@ -2,7 +2,7 @@
   "name": "codex-jev-control-pilot",
   "displayName": "Jev Control Pilot",
   "description": "Local Jev hook control and health indicator for Codex in VS Code",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "publisher": "elhaus-labs",
   "license": "MIT",
   "repository": { "type": "git", "url": "https://github.com/Elhaus-Labs/Codex.git" },
@@ -28,6 +28,13 @@
           "type": "string",
           "default": "",
           "description": "Windows user-local directory containing the DPAPI-protected Jev credential and request helper."
+        },
+        "jevPilot.mode": {
+          "type": "string",
+          "enum": ["replace", "observe"],
+          "default": "replace",
+          "scope": "application",
+          "description": "Jev output mode. Replacement is active when the hook is selected; observe only records decisions and keeps full output."
         }
       }
     }

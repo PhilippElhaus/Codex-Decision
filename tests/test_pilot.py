@@ -42,14 +42,14 @@ def settings(**kwargs):
 
 
 class ConfigTests(unittest.TestCase):
-    def test_default_is_disabled_and_observe_only(self):
+    def test_default_is_disabled_with_replacement_mode(self):
         self.assertFalse(pilot.Config().enabled)
-        self.assertEqual(pilot.Config().mode, "observe")
+        self.assertEqual(pilot.Config().mode, "replace")
 
     def test_config_example_is_valid_and_disabled(self):
         config = pilot.Config.from_file(ROOT / "config.example.json")
         self.assertFalse(config.enabled)
-        self.assertEqual(config.mode, "observe")
+        self.assertEqual(config.mode, "replace")
 
     def test_invalid_configs_fail_closed(self):
         for invalid in ({"enabled": "true"}, {"mode": "destroy"}, {"min_chars": 10}, {"unknown": 1}, {"timeout_seconds": 10}):

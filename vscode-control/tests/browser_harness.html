@@ -13,7 +13,7 @@
     .results { position: absolute; top: 16px; left: 16px; font: 12px monospace; }
   </style>
   <script>
-    let enabled = false, health = { ok: true, model: "jev-1.13.0" }, busy = false;
+    let enabled = false, health = { ok: true, model: "jev-1.13.0" }, busy = false, mode = "replace";
     const stats = { calls: 7, candidates: 5, kept: 2, replaced: 0, checkedChars: 90640, elapsedMs: 8120, completed: 7 };
     const history = [
       "candidate (observe) · Bash · 12,960 chars · 1,162 ms",
@@ -26,7 +26,7 @@
       if (request.action === "setSelection") enabled = request.enabled;
       queueMicrotask(() => window.dispatchEvent(new MessageEvent("message", { data: {
         type: "jev-pilot-reply", id: request.id,
-        status: { enabled, health, busy, mode: "observe", recent: history[0], history, stats },
+        status: { enabled, health, busy, mode, recent: history[0], history, stats },
       } })));
     } });
   </script>
@@ -85,6 +85,19 @@
       await pause(50);
       check(option.getAttribute("aria-checked") === "true", "hook selected");
       check(button.style.color === "rgb(135, 205, 164)", "connected green");
+      const observeBadge = document.getElementById("codex-jev-pilot-observe");
+      check(getComputedStyle(observeBadge).display === "none", "replacement mode has no observe badge");
+      mode = "observe";
+      await until(() => root.dataset.observe === "true", "observe mode arrives from settings");
+      check(getComputedStyle(observeBadge).display !== "none" && observeBadge.textContent === "OBS", "observe badge visible");
+      check(button.style.color === "rgb(135, 205, 164)", "observe mode preserves health color");
+      composer.style.width = `${wideWidth - (gap - fullWidth + 4)}px`;
+      await until(() => root.dataset.compact === "true" && root.style.display === "block", "observe badge fits compact control");
+      check(getComputedStyle(observeBadge).display !== "none" && docked() >= 7 && docked() <= 10, "compact observe badge stays right docked");
+      composer.style.width = "";
+      await until(() => root.dataset.compact === "false", "observe control restores after resize");
+      mode = "replace";
+      await until(() => root.dataset.observe === "false", "replacement mode restored");
       const tooltip = document.getElementById("codex-jev-pilot-tip");
       check(tooltip.textContent.includes("7 calls") && /90[,.]640 chars checked/.test(tooltip.textContent), "session statistics tooltip");
       check(tooltip.querySelectorAll("li").length === 3 && tooltip.textContent.includes("mcp__demo__logs"), "three cross-tool outcomes");

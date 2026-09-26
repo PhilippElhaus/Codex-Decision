@@ -1,10 +1,10 @@
 # Jev Output Pilot
 
 An installed, opt-in Codex plugin with one synchronous `PostToolUse` hook. Its
-default config is `enabled: false`, `mode: "observe"`. The hook considers only
-large, repetitive Bash output and text-only MCP output. Observe mode records a
+default config is `enabled: false`, `mode: "replace"`. Selecting the hook enables
+replacement for large, repetitive Bash output. Observe mode records a
 metadata-only decision without changing the result Codex sees. Replacement
-requires a separate `mode: "replace"` config change; it saves the exact Bash
+saves the exact Bash
 output privately before returning an excerpt and recovery path. MCP replacement
 has its own additional opt-in.
 
@@ -76,7 +76,11 @@ repository. A personal marketplace installation can use
 Set `jevPilot.dataDirectory` in VS Code to that installed plugin data directory
 (using its `\\wsl.localhost\<distro>\...` path on Windows), or set the
 `CODEX_JEV_DATA_DIRECTORY` environment variable. The public extension package
-does not contain a workstation-specific default path.
+does not contain a workstation-specific default path. To keep all output while
+recording decisions, change the VS Code **Jev Control Pilot: Mode** setting
+(`jevPilot.mode`) to `observe`. Its default is `replace`; the hook selection
+button changes only whether Jev is on. While observe mode is selected, the
+composer button and status bar show `OBS`, and the hover panel names the mode.
 
 Codex has no supported third-party composer control slot. The composer button
 is a **version-pinned local patch** for OpenAI Codex VS Code extension
@@ -90,6 +94,10 @@ window where the button should appear. The status-bar control remains a fallback
 
 The hook timeout is five seconds; the Jev request has a three-second API
 deadline. Hosted tools such as web search do not pass through this hook.
+For nested JavaScript tool calls, Codex still returns the original result to
+the running script. Replacement reduces model-visible tool text when that text
+would otherwise be sent directly; scripts that already summarize their results
+do not gain token savings from this hook.
 
 ## Verification
 

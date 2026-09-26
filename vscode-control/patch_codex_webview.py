@@ -27,7 +27,7 @@ BRIDGE = (
     'v=>e.postMessage({type:"jev-pilot-reply",id:u.id,status:v}),'
     '()=>e.postMessage({type:"jev-pilot-reply",id:u.id,status:'
     '{enabled:false,health:{ok:false,reason:"BRIDGE_UNAVAILABLE"},'
-    'busy:false,mode:"observe",recent:"Control unavailable"}}));return}'
+    'busy:false,mode:"replace",recent:"Control unavailable"}}));return}'
     'if(s.markMessageReceived(),u.type==="chunked-message-ack")'
 )
 SCRIPT = '<script src="./assets/jev-control.js"></script>\n'

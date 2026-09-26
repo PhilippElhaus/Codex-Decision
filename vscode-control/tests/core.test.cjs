@@ -7,19 +7,34 @@ const path = require("node:path");
 const test = require("node:test");
 const {
   checkHealth, decisionSummary, outcomeLine, parseHealthOutput, readConfig,
-  readEventsSince, readLatestEvent, readRecentOutcomes, writeEnabled,
+  readEventsSince, readLatestEvent, readRecentOutcomes, writeEnabled, writeMode,
 } = require("../core");
 
 test("hook selection writes the config atomically and preserves the pilot mode", async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-control-test-"));
   try {
-    assert.deepEqual(await readConfig(directory), { enabled: false, mode: "observe" });
+    assert.deepEqual(await readConfig(directory), { enabled: false, mode: "replace" });
     await fs.writeFile(path.join(directory, "config.json"), JSON.stringify({ mode: "replace", min_chars: 10000 }));
     assert.deepEqual(await writeEnabled(directory, true), { enabled: true, mode: "replace", min_chars: 10000 });
     assert.deepEqual(await readConfig(directory), { enabled: true, mode: "replace", min_chars: 10000 });
     await writeEnabled(directory, false);
     assert.equal((await readConfig(directory)).enabled, false);
     assert.deepEqual((await fs.readdir(directory)).sort(), ["config.json"]);
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("mode setting changes only the mode and rejects invalid values", async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-control-test-"));
+  try {
+    await writeEnabled(directory, true);
+    const observed = await writeMode(directory, "observe");
+    assert.deepEqual(observed, { enabled: true, mode: "observe" });
+    assert.deepEqual(await readConfig(directory), observed);
+    await assert.rejects(writeMode(directory, "unknown"), /invalid Jev mode/);
+    assert.deepEqual(await readConfig(directory), observed);
+    assert.deepEqual(await writeMode(directory, "replace"), { enabled: true, mode: "replace" });
   } finally {
     await fs.rm(directory, { recursive: true, force: true });
   }

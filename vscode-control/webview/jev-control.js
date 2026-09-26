@@ -8,7 +8,7 @@
     return api;
   };
 
-  let state = { enabled: false, health: null, busy: false, mode: "observe", recent: "No decision recorded yet", history: [], stats: {} };
+  let state = { enabled: false, health: null, busy: false, mode: "replace", recent: "No decision recorded yet", history: [], stats: {} };
   let root;
   let pending = 0;
   let menuOpen = false;
@@ -32,6 +32,9 @@
       #codex-jev-pilot-button { display: inline-flex; align-items: center; gap: 7px; padding: 5px 8px; border: 1px solid transparent; border-radius: 9px; background: transparent; color: #9a9a9a; font-family: inherit; font-size: 14px; font-weight: 600; line-height: 18px; cursor: pointer; transition: color 220ms ease-in-out; }
       #codex-jev-pilot[data-compact="true"] #codex-jev-pilot-button { gap: 0; padding: 6px; }
       #codex-jev-pilot[data-compact="true"] #codex-jev-pilot-label { display: none; }
+      #codex-jev-pilot-observe { display: none; margin-left: 2px; padding: 1px 3px; border: 1px solid #9a9a9a77; border-radius: 3px; color: #bdbdbd; font-size: 9px; font-weight: 700; line-height: 12px; letter-spacing: .04em; }
+      #codex-jev-pilot[data-observe="true"] #codex-jev-pilot-observe { display: inline-block; }
+      #codex-jev-pilot[data-compact="true"] #codex-jev-pilot-observe { margin-left: 2px; padding: 0 2px; }
       #codex-jev-pilot-button:hover, #codex-jev-pilot-button[aria-expanded="true"] { background: #ffffff12; border-color: #ffffff26; }
       #codex-jev-pilot-button:focus-visible, #codex-jev-pilot-option:focus-visible { outline: 2px solid #83bcf7; outline-offset: 2px; }
       #codex-jev-pilot-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 15%, transparent); transition: box-shadow 220ms ease-in-out; }
@@ -62,7 +65,7 @@
     root = document.createElement("div");
     root.id = "codex-jev-pilot";
     root.innerHTML = `
-      <button id="codex-jev-pilot-button" type="button" aria-label="Jev hooks" aria-expanded="false" aria-controls="codex-jev-pilot-menu"><span id="codex-jev-pilot-dot"></span><span id="codex-jev-pilot-label">jev</span></button>
+      <button id="codex-jev-pilot-button" type="button" aria-label="Jev hooks" aria-expanded="false" aria-controls="codex-jev-pilot-menu"><span id="codex-jev-pilot-dot"></span><span id="codex-jev-pilot-label">jev</span><span id="codex-jev-pilot-observe">OBS</span></button>
       <div id="codex-jev-pilot-tip" role="tooltip"><strong></strong><span id="codex-jev-pilot-mode"></span><h3 id="codex-jev-pilot-session-heading">Since control opened</h3><div id="codex-jev-pilot-stats"></div><h3 id="codex-jev-pilot-history-heading">Recent Jev outcomes</h3><ol id="codex-jev-pilot-history"></ol><p id="codex-jev-pilot-empty">None yet</p></div>
       <div id="codex-jev-pilot-menu" role="group" aria-label="Jev hooks" data-open="false"><h2>Jev hooks</h2><button id="codex-jev-pilot-option" type="button" role="checkbox" aria-checked="false"><span id="codex-jev-pilot-check"></span><span><strong>PostToolUse · output filter</strong><small>Check repetitive tool output with Jev</small></span></button><p>Select none to turn Jev off.</p></div>`;
     document.body.appendChild(root);
@@ -93,6 +96,7 @@
     const visual = !state.enabled ? "off" : state.busy ? "busy" :
       state.health?.ok === true ? "healthy" : state.health?.ok === false ? "failed" : "off";
     button.style.color = colors[visual];
+    root.dataset.observe = String(state.enabled && state.mode === "observe");
     button.setAttribute("aria-expanded", String(menuOpen));
     root.dataset.menu = String(menuOpen);
     root.querySelector("#codex-jev-pilot-menu").dataset.open = String(menuOpen);

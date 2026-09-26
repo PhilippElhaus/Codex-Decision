@@ -20,7 +20,7 @@ async function until(predicate, timeoutMs = 1500) {
 test("status control selects the hook and reflects health, activity, tooltip, and off state", async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-control-test-"));
   const commands = new Map();
-  let button, picker, health = { ok: true, model: "jev-1.13.0" };
+  let button, picker, configListener, mode = "replace", health = { ok: true, model: "jev-1.13.0" };
   const fake = {
     StatusBarAlignment: { Left: 1 },
     ThemeColor: class { constructor(id) { this.id = id; } },
@@ -35,8 +35,8 @@ test("status control selects the hook and reflects health, activity, tooltip, an
     },
     commands: { registerCommand(name, callback) { commands.set(name, callback); return { dispose() {} }; } },
     workspace: {
-      getConfiguration: () => ({ get: (key) => key === "dataDirectory" ? directory : "/lan" }),
-      onDidChangeConfiguration: () => ({ dispose() {} }),
+      getConfiguration: () => ({ get: (key) => key === "dataDirectory" ? directory : key === "mode" ? mode : "/lan" }),
+      onDidChangeConfiguration: (callback) => { configListener = callback; return { dispose() {} }; },
     },
   };
   const originalLoad = Module._load;
@@ -64,9 +64,21 @@ test("status control selects the hook and reflects health, activity, tooltip, an
     picker.selectedItems = [picker.items[0]];
     await picker.accept();
     assert.equal((await core.readConfig(directory)).enabled, true);
+    assert.equal((await core.readConfig(directory)).mode, "replace");
     await until(() => button.color.id === "charts.blue");
     await until(() => button.color.id === "testing.iconPassed");
     assert.match(button.tooltip, /Connected · jev-1.13.0/);
+
+    mode = "observe";
+    configListener({ affectsConfiguration: (key) => key === "jevPilot" });
+    await until(() => button.text.includes("OBS"));
+    assert.equal((await core.readConfig(directory)).mode, "observe");
+    assert.match(button.tooltip, /observe mode/);
+    mode = "replace";
+    configListener({ affectsConfiguration: (key) => key === "jevPilot" });
+    await until(() => !button.text.includes("OBS") && button.tooltip.includes("replace mode"));
+    assert.equal((await core.readConfig(directory)).mode, "replace");
+    await new Promise((resolve) => setTimeout(resolve, 300)); // Let the event reader establish its new offset.
 
     await fs.writeFile(path.join(directory, "events.jsonl"), JSON.stringify({
       status: "calling", reason: "jev_request", tool: "Bash", original_chars: 0, elapsed_ms: 0,

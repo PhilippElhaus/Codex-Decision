@@ -38,7 +38,7 @@ SAFE_KEY = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 @dataclass(frozen=True)
 class Config:
     enabled: bool = False
-    mode: str = "observe"
+    mode: str = "replace"
     min_chars: int = 8192
     max_chars: int = 2_000_000
     sample_chars: int = 12_000

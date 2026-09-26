@@ -4,7 +4,7 @@ const path = require("node:path");
 const vscode = require("vscode");
 const {
   checkHealth, decisionSummary, defaultCredentialDirectory, defaultDataDirectory,
-  isJevOutcome, outcomeLine, readConfig, readEventsSince, readRecentOutcomes, writeEnabled,
+  isJevOutcome, outcomeLine, readConfig, readEventsSince, readRecentOutcomes, writeEnabled, writeMode,
 } = require("./core");
 
 function emptyStats() {
@@ -18,7 +18,7 @@ function activate(context) {
   button.show();
   context.subscriptions.push(button);
 
-  const state = { enabled: false, mode: "observe", health: null, recent: null, history: [], stats: emptyStats(), busyUntil: 0, eventSize: -1, checking: false, polling: false, callingSeen: false };
+  const state = { enabled: false, mode: "replace", health: null, recent: null, history: [], stats: emptyStats(), busyUntil: 0, eventSize: -1, checking: false, polling: false, callingSeen: false };
   let pulseTimer;
   const settings = () => vscode.workspace.getConfiguration("jevPilot");
   const dataDirectory = () => {
@@ -45,7 +45,7 @@ function activate(context) {
       state.health?.ok === true ? "testing.iconPassed" :
       state.health?.ok === false ? "testing.iconFailed" : "statusBar.foreground";
     button.color = new vscode.ThemeColor(color);
-    button.text = "$(circle-filled) jev";
+    button.text = state.enabled && state.mode === "observe" ? "$(circle-filled) jev · OBS" : "$(circle-filled) jev";
     const status = !state.enabled ? "Off · no hooks selected" :
       state.health?.ok === true ? `Connected · ${state.health.model}` :
       state.health?.ok === false ? `Unavailable · ${state.health.reason}` : "Checking connection";
@@ -71,7 +71,11 @@ function activate(context) {
 
   async function sync() {
     try {
-      const config = await readConfig(dataDirectory());
+      const directory = dataDirectory();
+      const selectedMode = settings().get("mode") || "replace";
+      if (!["replace", "observe"].includes(selectedMode)) throw new Error("Invalid jevPilot.mode setting");
+      let config = await readConfig(directory);
+      if (config.mode !== selectedMode) config = await writeMode(directory, selectedMode);
       const wasEnabled = state.enabled;
       state.enabled = config.enabled;
       state.mode = config.mode;

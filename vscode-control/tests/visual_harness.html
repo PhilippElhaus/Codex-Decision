@@ -24,17 +24,17 @@
     document.documentElement.style.setProperty("--screenshot-offset", `${Math.max(0, outerHeight - innerHeight)}px`);
     const demo = new URLSearchParams(location.search).get("demo") || "tooltip";
     const history = [
-      "candidate (observe) · Bash · 12,960 chars · 1,162 ms",
+      "replaced · Bash · 12,960 chars · 1,162 ms",
       "kept · mcp__demo__logs · 14,000 chars · 1,310 ms",
-      "candidate (observe) · Bash · 12,960 chars · 1,180 ms",
+      "replaced · Bash · 12,960 chars · 1,180 ms",
     ];
     window.acquireVsCodeApi = () => ({ postMessage(request) {
       queueMicrotask(() => window.dispatchEvent(new MessageEvent("message", { data: {
         type: "jev-pilot-reply", id: request.id,
         status: {
           enabled: true, health: { ok: true, model: "jev-1.13.0" },
-          busy: demo === "pulse", mode: "observe", recent: history[0], history,
-          stats: { calls: 9, candidates: 7, kept: 2, replaced: 0, checkedChars: 115640, elapsedMs: 10440, completed: 9 },
+          busy: demo === "pulse", mode: "replace", recent: history[0], history,
+          stats: { calls: 9, candidates: 0, kept: 2, replaced: 7, checkedChars: 115640, elapsedMs: 10440, completed: 9 },
         },
       } })));
     } });

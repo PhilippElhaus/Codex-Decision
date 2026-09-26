@@ -21,7 +21,7 @@ async function readConfig(directory) {
   try {
     const raw = JSON.parse(await fs.readFile(path.join(directory, "config.json"), "utf8"));
     const merged = {
-      enabled: false, mode: "observe", min_chars: 8192, max_chars: 2_000_000,
+      enabled: false, mode: "replace", min_chars: 8192, max_chars: 2_000_000,
       sample_chars: 12_000, timeout_seconds: 3, model: "jev-1.13.0",
       allow_mcp_replacement: false, ...raw,
     };
@@ -37,16 +37,15 @@ async function readConfig(directory) {
         typeof merged.allow_mcp_replacement !== "boolean") {
       throw new Error("Invalid pilot config");
     }
-    return { enabled: false, mode: "observe", ...raw };
+    return { enabled: false, mode: "replace", ...raw };
   } catch (error) {
-    if (error.code === "ENOENT") return { enabled: false, mode: "observe" };
+    if (error.code === "ENOENT") return { enabled: false, mode: "replace" };
     throw error;
   }
 }
 
-async function writeEnabled(directory, enabled) {
-  if (typeof enabled !== "boolean") throw new TypeError("enabled must be boolean");
-  const config = { ...await readConfig(directory), enabled };
+async function writeConfig(directory, updates) {
+  const config = { ...await readConfig(directory), ...updates };
   await fs.mkdir(directory, { recursive: true, mode: 0o700 });
   if ((await fs.lstat(directory)).isSymbolicLink()) throw new Error("Plugin data directory is a link");
   const target = path.join(directory, "config.json");
@@ -63,6 +62,16 @@ async function writeEnabled(directory, enabled) {
     await fs.rm(temporary, { force: true });
   }
   return config;
+}
+
+async function writeEnabled(directory, enabled) {
+  if (typeof enabled !== "boolean") throw new TypeError("enabled must be boolean");
+  return writeConfig(directory, { enabled });
+}
+
+async function writeMode(directory, mode) {
+  if (!["replace", "observe"].includes(mode)) throw new TypeError("invalid Jev mode");
+  return writeConfig(directory, { mode });
 }
 
 function isJevOutcome(event) {
@@ -247,5 +256,5 @@ async function checkHealth(credentialDirectory, execute = runCommand) {
 module.exports = {
   checkHealth, decisionSummary, defaultCredentialDirectory, defaultDataDirectory,
   isInformativeEvent, isJevOutcome, outcomeLine, parseHealthOutput, readConfig,
-  readEventsSince, readLatestEvent, readRecentOutcomes, writeEnabled,
+  readEventsSince, readLatestEvent, readRecentOutcomes, writeEnabled, writeMode,
 };

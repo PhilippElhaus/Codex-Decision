@@ -3,6 +3,9 @@
 The installed companion extension shows a `jev` status-bar indicator and
 handles the composer button's private message bridge. The composer button opens
 the single `PostToolUse` hook checkbox. An empty selection turns the hook off.
+When selected, replacement mode is the default. Set **Jev Control Pilot: Mode**
+(`jevPilot.mode`) to `observe` in VS Code settings to retain full output while
+recording decisions. `OBS` appears on the button and status bar in that mode.
 Hovering shows the selected mode, Jev call totals since the control opened,
 and the three most recent metadata-only outcomes across tools. Routine small
 tool outputs do not displace those outcomes in the tooltip.
