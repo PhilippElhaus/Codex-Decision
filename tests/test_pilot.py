@@ -260,6 +260,36 @@ class ContractTests(unittest.TestCase):
             self.assertIn('"status":"calling"', log)
             self.assertNotIn("Compiling module", log)
 
+    def test_command_hook_malformed_input_fails_open_without_log(self):
+        with tempfile.TemporaryDirectory() as directory:
+            Path(directory, "config.json").write_text(json.dumps({"enabled": True}))
+            output = io.StringIO()
+            with (
+                mock.patch.dict(os.environ, {"PLUGIN_DATA": directory}, clear=False),
+                mock.patch.object(sys, "stdin", io.StringIO("{not json")),
+                contextlib.redirect_stdout(output),
+            ):
+                post_tool_use.main()
+            self.assertEqual(output.getvalue().strip(), "{}")
+            self.assertFalse(Path(directory, "events.jsonl").exists())
+
+    def test_command_hook_records_keep_when_jev_rejects_replacement(self):
+        with tempfile.TemporaryDirectory() as directory:
+            Path(directory, "config.json").write_text(json.dumps({"enabled": True, "mode": "replace"}))
+            output = io.StringIO()
+            with (
+                mock.patch.dict(os.environ, {"PLUGIN_DATA": directory}, clear=False),
+                mock.patch.object(sys, "stdin", io.StringIO(json.dumps(event()))),
+                mock.patch.object(post_tool_use, "jev_request", return_value=BAD),
+                contextlib.redirect_stdout(output),
+            ):
+                post_tool_use.main()
+            self.assertEqual(output.getvalue().strip(), "{}")
+            records = [json.loads(line) for line in Path(directory, "events.jsonl").read_text().splitlines()]
+            self.assertEqual([row["status"] for row in records], ["calling", "keep"])
+            self.assertEqual(records[-1]["reason"], "jev_keep")
+            self.assertFalse(list(Path(directory).rglob("*.txt")))
+
 
 class ReplayTests(unittest.TestCase):
     def test_1000_case_offline_corpus_has_no_policy_false_replacements(self):

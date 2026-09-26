@@ -83,6 +83,58 @@ test("incremental event reader keeps incomplete lines for the next poll", async 
   }
 });
 
+test("recent outcomes span tools and ignore calls, skips, and malformed rows", async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-control-test-"));
+  try {
+    const rows = [
+      { status: "candidate", reason: "observe", tool: "Bash", original_chars: 9000 },
+      { status: "calling", reason: "jev_request", tool: "Bash" },
+      { status: "keep", reason: "jev_keep", tool: "mcp__demo__logs", original_chars: 10000 },
+      { status: "skip", reason: "small", tool: "Bash", original_chars: 30 },
+      { status: "replace", reason: "jev_replace", tool: "Bash", original_chars: 11000 },
+      { status: "candidate", reason: "observe", tool: "mcp__demo__search", original_chars: 12000 },
+    ];
+    const content = rows.slice(0, 4).map((row) => JSON.stringify(row) + "\n").join("") +
+      "not-json\n" + rows.slice(4).map((row) => JSON.stringify(row) + "\n").join("");
+    await fs.writeFile(path.join(directory, "events.jsonl"), content);
+    const recent = await readRecentOutcomes(directory);
+    assert.equal(recent.offset, Buffer.byteLength(content));
+    assert.deepEqual(recent.outcomes.map((row) => [row.status, row.tool]), [
+      ["candidate", "mcp__demo__search"], ["replace", "Bash"], ["keep", "mcp__demo__logs"],
+    ]);
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("incremental reader handles log truncation and a burst larger than one read", async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-control-test-"));
+  try {
+    const file = path.join(directory, "events.jsonl");
+    const line = JSON.stringify({ status: "candidate", reason: "observe", tool: "Bash", original_chars: 12000, elapsed_ms: 1000 }) + "\n";
+    const count = 3200;
+    await fs.writeFile(file, line.repeat(count));
+    let offset = 0;
+    let seen = 0;
+    while (offset < Buffer.byteLength(line) * count) {
+      const batch = await readEventsSince(directory, offset);
+      assert.equal(batch.reset, false);
+      assert.ok(batch.offset > offset);
+      seen += batch.events.length;
+      offset = batch.offset;
+    }
+    assert.equal(seen, count);
+    await fs.writeFile(file, line);
+    const reset = await readEventsSince(directory, offset);
+    assert.deepEqual(reset, { events: [], offset: Buffer.byteLength(line), reset: true });
+    await fs.appendFile(file, "invalid-json\n" + line);
+    const recovered = await readEventsSince(directory, reset.offset);
+    assert.deepEqual(recovered.events.map((row) => row.status), ["candidate"]);
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("health check calls the protected helper and refreshes an invalid key", async () => {
   const invocations = [];
   const response = JSON.stringify({ model: "jev-1.13.0", answers: { ready: { type: "noul", noul: 0.93 } } });
