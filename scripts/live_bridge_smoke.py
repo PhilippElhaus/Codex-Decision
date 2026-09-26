@@ -11,7 +11,7 @@ import tempfile
 from replay import generated_cases
 
 
-PLUGIN = Path.home() / '.codex/plugins/cache/personal/codex-jev-output-pilot'
+PLUGIN = Path.home() / '.codex/plugins/cache/personal/codex-jev'
 SOURCE = Path(__file__).resolve().parents[1]
 
 

@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"${PLUGIN_ROOT}/hooks/post_tool_use.py\"",
+            "command": "sh -c 'p=\"$PLUGIN_ROOT/hooks/post_tool_use.py\"; if [ -f \"$p\" ]; then python3 \"$p\" || true; fi'",
             "timeout": 5,
             "statusMessage": "Evaluating large tool output"
           }

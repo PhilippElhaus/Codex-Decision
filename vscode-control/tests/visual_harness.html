@@ -18,7 +18,7 @@
     .mic { color: #b5b5b5; font-size: 26px; }
     .send { display: grid; place-items: center; width: 57px; height: 57px; border-radius: 50%; background: #c5c5c5; color: #202020; font-size: 25px; margin-left: 4px; }
     /* Match the headless screenshot surface to its smaller layout viewport. */
-    #codex-jev-pilot { transform: translateY(var(--screenshot-offset, 0px)); }
+    #codex-jev { transform: translateY(var(--screenshot-offset, 0px)); }
   </style>
   <script>
     document.documentElement.style.setProperty("--screenshot-offset", `${Math.max(0, outerHeight - innerHeight)}px`);
@@ -30,7 +30,7 @@
     ];
     window.acquireVsCodeApi = () => ({ postMessage(request) {
       queueMicrotask(() => window.dispatchEvent(new MessageEvent("message", { data: {
-        type: "jev-pilot-reply", id: request.id,
+        type: "codex-jev-reply", id: request.id,
         status: {
           enabled: true, health: { ok: true, model: "jev-1.13.0" },
           busy: demo === "pulse", mode: "replace", recent: history[0], history,
@@ -56,9 +56,9 @@
     const api = acquireVsCodeApi();
     setTimeout(() => {
       document.documentElement.style.setProperty("--screenshot-offset", `${Math.max(0, outerHeight - innerHeight)}px`);
-      if (demo !== "composer") document.getElementById("codex-jev-pilot-tip").style.display = "block";
+      if (demo !== "composer") document.getElementById("codex-jev-tip").style.display = "block";
       const anchor = document.querySelector(".access").getBoundingClientRect();
-      const button = document.getElementById("codex-jev-pilot-button").getBoundingClientRect();
+      const button = document.getElementById("codex-jev-button").getBoundingClientRect();
       document.body.dataset.layout = JSON.stringify({ anchorTop: anchor.top, buttonTop: button.top, screenshotOffset: Math.max(0, outerHeight - innerHeight) });
       document.title = "JEV_VISUAL_READY";
     }, 350);

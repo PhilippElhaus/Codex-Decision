@@ -12,7 +12,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "hooks"))
-from pilot import Config, decide, jev_request  # noqa: E402
+from jev import Config, decide, jev_request  # noqa: E402
 
 
 REPLACE = {"routine_noise": 0.99, "needs_exact_text": 0.01, "one_off_value": 0.01}
@@ -59,14 +59,14 @@ def load_cases(path: Path):
             yield item
 
 
-def run(cases, *, live: bool, mode: str, config: Config, key: str = "") -> dict:
-    if live and not key:
-        raise ValueError("TYPESAFE_API_KEY is required for --live")
+def run(cases, *, live: bool, mode: str, config: Config, key: str = "", bridge: bool = False) -> dict:
+    if live and not key and not bridge:
+        raise ValueError("--live requires a key or --bridge")
     active = replace(config, enabled=True, mode=mode)
     rows = []
     for case in cases:
         if live:
-            evaluator = lambda state, settings: jev_request(state, settings, key)
+            evaluator = lambda state, settings: jev_request(state, settings, "" if bridge else key)
         else:
             mock_scores = case.get("mock_scores")
             evaluator = lambda _state, _settings: mock_scores
@@ -126,6 +126,7 @@ def main() -> None:
     parser.add_argument("--per-category", type=int, default=100, help="generated cases per category")
     parser.add_argument("--live", action="store_true", help="call TypeSafe; requires an API key and incurs charges")
     parser.add_argument("--key-stdin", action="store_true", help="read the live API key from stdin instead of the environment")
+    parser.add_argument("--bridge", action="store_true", help="use the protected Windows credential bridge for live calls")
     parser.add_argument("--live-max-calls", type=int, default=50, help="explicit cap on live Jev requests (default: 50)")
     parser.add_argument("--mode", choices=("observe", "replace"), default="replace")
     parser.add_argument("--details", action="store_true", help="include per-case rows")
@@ -141,16 +142,18 @@ def main() -> None:
         parser.error(f"{len(cases)} cases exceed --live-max-calls={args.live_max_calls}; choose a smaller corpus or raise the cap explicitly")
     if args.key_stdin and not args.live:
         parser.error("--key-stdin requires --live")
+    if args.bridge and (not args.live or args.key_stdin):
+        parser.error("--bridge requires --live and excludes --key-stdin")
     key = sys.stdin.readline().strip() if args.key_stdin else os.environ.get("TYPESAFE_API_KEY", "")
-    if args.live and not key:
-        parser.error("--live requires an API key from stdin or TYPESAFE_API_KEY")
+    if args.live and not key and not args.bridge:
+        parser.error("--live requires --bridge, an API key from stdin, or TYPESAFE_API_KEY")
     if args.write_corpus:
         if args.input:
             parser.error("--write-corpus only applies to generated cases")
         with args.write_corpus.open("w", encoding="utf-8") as file:
             for item in cases:
                 file.write(json.dumps(item, ensure_ascii=False) + "\n")
-    report = run(cases, live=args.live, mode=args.mode, config=Config(), key=key)
+    report = run(cases, live=args.live, mode=args.mode, config=Config(), key=key, bridge=args.bridge)
     if not args.details:
         report.pop("rows")
     print(json.dumps(report, indent=2))

@@ -63,7 +63,7 @@ test("status control selects the hook and reflects health, activity, tooltip, an
       status: "keep", reason: "jev_keep", tool: "Bash", original_chars: 13006, elapsed_ms: 1139,
     }) + "\n");
 
-    commands.get("jevPilot.selectHooks")();
+    commands.get("codexJev.selectHooks")();
     picker.selectedItems = [picker.items[0]];
     await picker.accept();
     assert.equal((await core.readConfig(directory)).enabled, true);
@@ -76,12 +76,12 @@ test("status control selects the hook and reflects health, activity, tooltip, an
     assert.doesNotMatch(button.tooltip, /13[,.]006 chars/);
 
     mode = "observe";
-    configListener({ affectsConfiguration: (key) => key === "jevPilot" });
+    configListener({ affectsConfiguration: (key) => key === "codexJev" });
     await until(() => button.text.includes("OBS"));
     assert.equal((await core.readConfig(directory)).mode, "observe");
     assert.match(button.tooltip, /observe mode/);
     mode = "replace";
-    configListener({ affectsConfiguration: (key) => key === "jevPilot" });
+    configListener({ affectsConfiguration: (key) => key === "codexJev" });
     await until(() => !button.text.includes("OBS") && button.tooltip.includes("replace mode"));
     assert.equal((await core.readConfig(directory)).mode, "replace");
     await new Promise((resolve) => setTimeout(resolve, 300)); // Let the event reader establish its new offset.
@@ -112,14 +112,14 @@ test("status control selects the hook and reflects health, activity, tooltip, an
       JSON.stringify({ status: "calling", reason: "jev_request", tool }) + "\n" +
       JSON.stringify({ status, reason, tool, original_chars, elapsed_ms }) + "\n").join(""));
     await until(() => button.tooltip.includes("4 calls · 2 candidates · 1 kept · 1 replaced"));
-    const session = await commands.get("jevPilot.bridge")({ action: "status" });
+    const session = await commands.get("codexJev.bridge")({ action: "status" });
     assert.equal(session.stats.checkedChars, 49520);
     assert.equal(session.history.length, 3);
     assert.match(session.history[0], /candidate \(observe\) · Bash · 13[,.]000 chars/);
     assert.match(session.history[1], /kept · mcp__demo__logs/);
     assert.doesNotMatch(session.history.join(" "), /replaced/);
 
-    const newView = await commands.get("jevPilot.bridge")({ action: "status", viewId: "view-new-thread" });
+    const newView = await commands.get("codexJev.bridge")({ action: "status", viewId: "view-new-thread" });
     assert.equal(newView.stats.calls, 0);
     assert.deepEqual(newView.history, []);
     assert.match(button.tooltip, /Recent Jev outcomes:\nNone yet/);
@@ -129,23 +129,23 @@ test("status control selects the hook and reflects health, activity, tooltip, an
       status: "replace", reason: "jev_replace", tool: "Bash", original_chars: 12100, elapsed_ms: 850,
     }) + "\n");
     await until(() => button.tooltip.includes("1 calls · 0 candidates · 0 kept · 1 replaced"));
-    const reopened = await commands.get("jevPilot.bridge")({ action: "status", viewId: "view-old-thread-reopened" });
+    const reopened = await commands.get("codexJev.bridge")({ action: "status", viewId: "view-old-thread-reopened" });
     assert.equal(reopened.stats.calls, 0);
     assert.deepEqual(reopened.history, []);
 
     health = { ok: false, reason: "JEV_HTTP_ERROR" };
-    await commands.get("jevPilot.checkConnection")();
+    await commands.get("codexJev.checkConnection")();
     await until(() => button.color.id === "testing.iconFailed");
     assert.match(button.tooltip, /Unavailable · JEV_HTTP_ERROR/);
 
-    commands.get("jevPilot.selectHooks")();
+    commands.get("codexJev.selectHooks")();
     picker.selectedItems = [];
     await picker.accept();
     await until(() => button.color.id === "disabledForeground");
     assert.equal((await core.readConfig(directory)).enabled, false);
 
     health = { ok: true, model: "jev-1.13.0" };
-    commands.get("jevPilot.selectHooks")();
+    commands.get("codexJev.selectHooks")();
     picker.selectedItems = [picker.items[0]];
     await picker.accept();
     await until(() => button.tooltip.includes("Recent Jev outcomes:\nNone yet"));

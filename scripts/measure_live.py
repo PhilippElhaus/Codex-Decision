@@ -16,12 +16,14 @@ import tempfile
 import time
 
 from replay import generated_cases
+from benchmark_context import token_counter
 
 
 HOOK = Path(__file__).resolve().parents[1] / "hooks/post_tool_use.py"
 
 
 def measure(repetitions: int) -> dict:
+    tokenizer, tokens = token_counter()
     rows = []
     cases = [case["event"] for case in generated_cases(repetitions) if case["category"] == "progress"]
     with tempfile.TemporaryDirectory(prefix="codex-jev-measure-", dir="/tmp") as directory:
@@ -60,21 +62,37 @@ def measure(repetitions: int) -> dict:
                     "hook_ms": outcome["elapsed_ms"] if outcome else 0,
                     "original_chars": original_chars,
                     "visible_chars": outcome["capsule_chars"] if mode == "replace" else original_chars,
+                    "original_tokens": tokens(event["tool_response"]),
+                    "visible_tokens": tokens(feedback["reason"]) if mode == "replace" else tokens(event["tool_response"]),
                 })
     summary = {}
     for mode in ("off", "observe", "replace"):
         sample = [row for row in rows if row["mode"] == mode]
         summary[mode] = {
             "runs": len(sample), "median_wall_ms": round(statistics.median(row["wall_ms"] for row in sample)),
+            "p95_wall_ms": sorted(row["wall_ms"] for row in sample)[int(0.95 * (len(sample) - 1))],
             "wall_ms": [row["wall_ms"] for row in sample],
             "statuses": [row["status"] for row in sample],
             "original_chars": sum(row["original_chars"] for row in sample),
             "visible_chars": sum(row["visible_chars"] for row in sample),
+            "original_tokens": sum(row["original_tokens"] for row in sample),
+            "visible_tokens": sum(row["visible_tokens"] for row in sample),
         }
     summary["replace"]["character_reduction_percent"] = round(
         100 * (1 - summary["replace"]["visible_chars"] / summary["replace"]["original_chars"]), 1,
     )
-    return {"kind": "LIVE HOOK MEASUREMENT", "summary": summary, "rows": rows}
+    summary["replace"]["token_reduction_percent"] = round(
+        100 * (1 - summary["replace"]["visible_tokens"] / summary["replace"]["original_tokens"]), 1,
+    )
+    summary["replace"]["median_added_wall_vs_off_ms"] = (
+        summary["replace"]["median_wall_ms"] - summary["off"]["median_wall_ms"]
+    )
+    saved_tokens = summary["replace"]["original_tokens"] - summary["replace"]["visible_tokens"]
+    per_call_saved = saved_tokens / len([row for row in rows if row["mode"] == "replace"])
+    summary["replace"]["break_even_input_tokens_per_second"] = round(
+        per_call_saved * 1000 / max(1, summary["replace"]["median_added_wall_vs_off_ms"])
+    )
+    return {"kind": "LIVE HOOK MEASUREMENT", "tokenizer": tokenizer, "summary": summary, "rows": rows}
 
 
 def main():

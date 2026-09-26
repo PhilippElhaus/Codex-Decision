@@ -1,6 +1,6 @@
 {
-  "name": "codex-jev-output-pilot",
-  "version": "0.1.0+codex.20260926114801",
+  "name": "codex-jev",
+  "version": "0.1.0+codex.20260926122917",
   "description": "Jev checks repetitive Codex tool output and can replace it with a recoverable excerpt.",
   "author": {
     "name": "Elhaus Labs",

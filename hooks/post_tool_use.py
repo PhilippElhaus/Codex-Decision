@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 import sys
 
-from pilot import Config, Result, append_log, decide, jev_request
+from jev import Config, Result, append_log, decide, jev_request
 
 
 def main() -> None:

@@ -1,5 +1,5 @@
 param(
-    [string]$StateDirectory = (Join-Path $env:LOCALAPPDATA 'Codex\jev-output-pilot')
+    [string]$StateDirectory = (Join-Path $env:LOCALAPPDATA 'Codex\codex-jev')
 )
 
 $ErrorActionPreference = 'Stop'

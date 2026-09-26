@@ -10,7 +10,7 @@ const {
   readEventOffset, readEventsSince, readLatestEvent, readRecentOutcomes, writeEnabled, writeMode,
 } = require("../core");
 
-test("hook selection writes the config atomically and preserves the pilot mode", async () => {
+test("hook selection writes the config atomically and preserves the Jev mode", async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-control-test-"));
   try {
     assert.deepEqual(await readConfig(directory), { enabled: false, mode: "replace" });
@@ -44,9 +44,9 @@ test("invalid config and linked target fail without changing a hook selection", 
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-control-test-"));
   try {
     await fs.writeFile(path.join(directory, "config.json"), JSON.stringify({ enabled: "yes" }));
-    await assert.rejects(writeEnabled(directory, true), /Invalid pilot config/);
+    await assert.rejects(writeEnabled(directory, true), /Invalid Jev config/);
     await fs.writeFile(path.join(directory, "config.json"), JSON.stringify({ min_chars: 1 }));
-    await assert.rejects(writeEnabled(directory, true), /Invalid pilot config/);
+    await assert.rejects(writeEnabled(directory, true), /Invalid Jev config/);
     await fs.rm(path.join(directory, "config.json"));
     try {
       await fs.symlink(path.join(directory, "missing.json"), path.join(directory, "config.json"));

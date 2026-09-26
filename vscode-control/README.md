@@ -4,7 +4,7 @@ The installed companion extension shows a `jev` status-bar indicator and
 handles the composer button's private message bridge. The composer button opens
 the single `PostToolUse` hook checkbox. An empty selection turns the hook off.
 When selected, replacement mode is the default. Set **Codex Jev Control: Mode**
-(`jevPilot.mode`) to `observe` in VS Code settings to retain full output while
+(`codexJev.mode`) to `observe` in VS Code settings to retain full output while
 recording decisions. `OBS` appears on the button and status bar in that mode.
 Hovering shows the selected mode, Jev call totals since this composer view opened,
 and the three most recent metadata-only outcomes across tools. Routine small
@@ -25,16 +25,19 @@ the VS Code status bar in that case.
 | Blue, about 500 ms | Jev request or health probe in progress; composer color eases in and out |
 | Red | API/key health failed |
 
-Set `jevPilot.dataDirectory` to the installed plugin's absolute `PLUGIN_DATA`
+Set `codexJev.dataDirectory` to the installed plugin's absolute `PLUGIN_DATA`
 folder, for example through `\\wsl.localhost\<distro>\...` on Windows. The
 package has no machine-specific default. `CODEX_JEV_DATA_DIRECTORY` is an
-alternative. `jevPilot.credentialDirectory` defaults to the Windows user-local
+alternative. `codexJev.credentialDirectory` defaults to the Windows user-local
 DPAPI cache. The key never enters the extension process or webview. The health
 check runs after selection and every five minutes. A missing or rejected key
 triggers a refresh only when a local credential source is configured.
 
 The in-composer button uses a reversible, version-pinned patch to the installed
 Codex extension `26.917.62051`. It is not a supported Codex extension point.
+On this Windows-to-WSL setup, the same bridge also translates this repository's
+local marketplace path for `plugin/read`, so the Codex plugin detail page can
+load. The translation applies only to this marketplace and its two plugins.
 `patch_codex_webview.py` supports `apply`, `update`, and `restore`. `apply`
 checks exact unmodified hashes; `update` checks the currently installed patch
 and refreshes both the host message bridge and Jev UI asset. Both retain the
@@ -53,7 +56,7 @@ your installed Codex extension and a separate off-repository rollback path:
 ```bash
 python3 patch_codex_webview.py update \
   --extension '/mnt/c/Users/<user>/.vscode/extensions/openai.chatgpt-26.917.62051-win32-x64' \
-  --backup '/mnt/c/Users/<user>/AppData/Local/Codex/jev-output-pilot/rollback/26.917.62051'
+  --backup '/mnt/c/Users/<user>/AppData/Local/Codex/codex-jev/rollback/26.917.62051'
 ```
 
 Use `apply` in place of `update` for an unmodified installation. For rollback,

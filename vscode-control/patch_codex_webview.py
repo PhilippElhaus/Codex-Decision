@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import subprocess
 import sys
 
 
@@ -17,20 +18,54 @@ ORIGINAL = {
 }
 ASSET = "webview/assets/jev-control.js"
 ANCHOR = 'let a=e.onDidReceiveMessage(u=>{if(s.markMessageReceived(),u.type==="chunked-message-ack")'
+
+
+def marketplace_path_bridge() -> str:
+    """Correct this repo's local marketplace path at the Windows-to-WSL edge."""
+    marketplace = Path(__file__).resolve().parents[3] / ".agents/plugins/marketplace.json"
+    if not marketplace.is_file() or not str(marketplace).startswith("/mnt/"):
+        return ""
+    try:
+        converted = subprocess.run(
+            ["wslpath", "-w", str(marketplace)], capture_output=True,
+            text=True, timeout=3, check=True,
+        ).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    if not converted or not converted[0].isalpha() or len(converted) < 3 or converted[1:3] != ":\\":
+        return ""
+    aliases = [converted.lower()]
+    distro = os.environ.get("WSL_DISTRO_NAME", "")
+    if distro and all(char.isalnum() or char in "_-" for char in distro):
+        aliases.append(("\\\\wsl.localhost\\" + distro + str(marketplace).replace("/", "\\")).lower())
+    aliases_json = json.dumps(aliases, separators=(",", ":"))
+    local_json = json.dumps(str(marketplace))
+    return (
+        'if(u&&u.type==="mcp-request"&&u.request&&u.request.method==="plugin/read"&&'
+        'u.request.params&&typeof u.request.params.marketplacePath==="string"){'
+        'let p=u.request.params.marketplacePath.toLowerCase().replaceAll("/","\\\\");'
+        f'if({aliases_json}.includes(p)||'
+        '(p===".agents\\\\plugins\\\\marketplace.json"||'
+        'p===".\\\\.agents\\\\plugins\\\\marketplace.json")&&'
+        '["codex-jev","codex-chime"].includes(u.request.params.pluginName))'
+        f'u.request.params.marketplacePath={local_json};'
+        '}'
+    )
+
+
 BRIDGE = (
     'let a=e.onDidReceiveMessage(u=>{'
-    'if(u&&u.type==="jev-pilot"){'
+    'if(u&&u.type==="codex-jev"){'
     'if(u.action!=="status"&&u.action!=="setSelection")return;'
     'if(u.action==="setSelection"&&typeof u.enabled!=="boolean")return;'
     'if(u.viewId!==undefined&&(typeof u.viewId!=="string"||!/^[-\\w:]{1,96}$/.test(u.viewId)))return;'
-    'Promise.resolve(qe.commands.executeCommand("jevPilot.bridge",'
+    'Promise.resolve(qe.commands.executeCommand("codexJev.bridge",'
     '{action:u.action,enabled:u.enabled,viewId:u.viewId})).then('
-    'v=>e.postMessage({type:"jev-pilot-reply",id:u.id,status:v}),'
-    '()=>e.postMessage({type:"jev-pilot-reply",id:u.id,status:'
+    'v=>e.postMessage({type:"codex-jev-reply",id:u.id,status:v}),'
+    '()=>e.postMessage({type:"codex-jev-reply",id:u.id,status:'
     '{enabled:false,health:{ok:false,reason:"BRIDGE_UNAVAILABLE"},'
     'busy:false,mode:"replace",recent:"Control unavailable"}}));return}'
-    'if(s.markMessageReceived(),u.type==="chunked-message-ack")'
-)
+) + marketplace_path_bridge() + 'if(s.markMessageReceived(),u.type==="chunked-message-ack")'
 SCRIPT = '<script src="./assets/jev-control.js"></script>\n'
 MODULE = '<script type="module" crossorigin src="./assets/index-78f8e71b3851.js"></script>'
 

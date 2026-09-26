@@ -33,6 +33,18 @@ if ($Action -ne 'materialize' -or $CollectionName -ne 'demo' -or $Name -ne 'jev'
     if (-not (Test-Path -LiteralPath (Join-Path $state 'key.dpapi') -PathType Leaf)) {
         throw 'Credential refresh removed the protected cache.'
     }
+    $migrated = Join-Path $trial 'migrated'
+    & (Join-Path $PSScriptRoot 'migrate_legacy_key.ps1') -LegacyDirectory $state -StateDirectory $migrated | Out-Null
+    $copied = [System.IO.File]::ReadAllBytes((Join-Path $migrated 'key.dpapi'))
+    $revealed = [System.Security.Cryptography.ProtectedData]::Unprotect(
+        $copied, $null, [System.Security.Cryptography.DataProtectionScope]::CurrentUser)
+    try {
+        if ([System.Text.Encoding]::UTF8.GetString($revealed) -ne $expected) {
+            throw 'Legacy credential migration did not preserve the key.'
+        }
+    } finally {
+        [System.Array]::Clear($revealed, 0, $revealed.Length)
+    }
     $unconfigured = Join-Path $trial 'unconfigured'
     try {
         & $installer -StateDirectory $unconfigured | Out-Null

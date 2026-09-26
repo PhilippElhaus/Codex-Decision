@@ -27,7 +27,7 @@
       activeViewId = request.viewId;
       if (request.action === "setSelection") enabled = request.enabled;
       queueMicrotask(() => window.dispatchEvent(new MessageEvent("message", { data: {
-        type: "jev-pilot-reply", id: request.id,
+        type: "codex-jev-reply", id: request.id,
         status: { enabled, health, busy, mode, recent: freshView ? "No decision recorded yet" : history[0],
           history: freshView ? [] : history,
           stats: freshView ? { calls: 0, candidates: 0, kept: 0, replaced: 0, checkedChars: 0, elapsedMs: 0, completed: 0 } : stats },
@@ -56,10 +56,10 @@
     async function run() {
       await pause(100);
       const composer = document.querySelector(".composer");
-      const root = document.getElementById("codex-jev-pilot");
-      const button = document.getElementById("codex-jev-pilot-button");
-      const option = document.getElementById("codex-jev-pilot-option");
-      const label = document.getElementById("codex-jev-pilot-label");
+      const root = document.getElementById("codex-jev");
+      const button = document.getElementById("codex-jev-button");
+      const option = document.getElementById("codex-jev-option");
+      const label = document.getElementById("codex-jev-label");
       check(root && button && option && root.style.display === "block", "control visible");
       check(button.style.color === "rgb(154, 154, 154)", "disabled gray");
       const anchor = () => document.querySelector(".access").getBoundingClientRect();
@@ -75,7 +75,7 @@
       check(getComputedStyle(label).display === "none", "compact dot only");
       check(docked() >= 7 && docked() <= 10, "compact state stays right docked");
       button.click();
-      const compactMenu = document.getElementById("codex-jev-pilot-menu").getBoundingClientRect();
+      const compactMenu = document.getElementById("codex-jev-menu").getBoundingClientRect();
       check(compactMenu.left >= 11 && compactMenu.right <= innerWidth - 11, "compact menu stays in viewport");
       button.click();
       composer.style.width = `${wideWidth - (gap - 12)}px`;
@@ -89,7 +89,7 @@
       await pause(50);
       check(option.getAttribute("aria-checked") === "true", "hook selected");
       check(button.style.color === "rgb(135, 205, 164)", "connected green");
-      const observeBadge = document.getElementById("codex-jev-pilot-observe");
+      const observeBadge = document.getElementById("codex-jev-observe");
       check(getComputedStyle(observeBadge).display === "none", "replacement mode has no observe badge");
       mode = "observe";
       await until(() => root.dataset.observe === "true", "observe mode arrives from settings");
@@ -102,7 +102,7 @@
       await until(() => root.dataset.compact === "false", "observe control restores after resize");
       mode = "replace";
       await until(() => root.dataset.observe === "false", "replacement mode restored");
-      const tooltip = document.getElementById("codex-jev-pilot-tip");
+      const tooltip = document.getElementById("codex-jev-tip");
       check(tooltip.textContent.includes("7 calls") && /90[,.]640 chars checked/.test(tooltip.textContent), "session statistics tooltip");
       check(tooltip.querySelectorAll("li").length === 3 && tooltip.textContent.includes("mcp__demo__logs"), "three cross-tool outcomes");
       check(getComputedStyle(button).transitionDuration.includes("0.22s"), "blue pulse has eased color transition");
@@ -125,14 +125,14 @@
       document.title = "JEV_BROWSER_PASS";
     }
     run().catch((error) => {
-      const control = document.getElementById("codex-jev-pilot");
-      const button = document.getElementById("codex-jev-pilot-button");
+      const control = document.getElementById("codex-jev");
+      const button = document.getElementById("codex-jev-button");
       document.getElementById("results").textContent = JSON.stringify({ ok: false, error: error.message,
         composer: document.querySelector(".composer").getBoundingClientRect().width,
         accessRight: document.querySelector(".access").getBoundingClientRect().right,
         modelLeft: document.querySelector(".model").getBoundingClientRect().left,
         buttonWidth: button?.getBoundingClientRect().width, compact: control?.dataset.compact,
-        display: control?.style.display, tooltip: document.getElementById("codex-jev-pilot-tip")?.textContent,
+        display: control?.style.display, tooltip: document.getElementById("codex-jev-tip")?.textContent,
         buttonRight: button?.getBoundingClientRect().right });
       document.title = "JEV_BROWSER_FAIL";
     });

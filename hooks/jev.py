@@ -1,4 +1,4 @@
-"""Conservative, opt-in PostToolUse output experiment. No third-party dependencies."""
+"""Codex Jev's conservative PostToolUse output filter. No third-party dependencies."""
 
 from __future__ import annotations
 
@@ -196,7 +196,7 @@ def _bridge_request(payload: bytes, timeout_seconds: float) -> dict:
     command = [
         "pwsh.exe", "-NoLogo", "-NoProfile", "-NonInteractive",
         "-ExecutionPolicy", "Bypass", "-Command",
-        r"& (Join-Path $env:LOCALAPPDATA 'Codex\jev-output-pilot\invoke_jev.ps1')",
+        r"& (Join-Path $env:LOCALAPPDATA 'Codex\codex-jev\invoke_jev.ps1')",
     ]
     completed = subprocess.run(
         command,
@@ -245,7 +245,7 @@ def save_original(storage: Path, event: dict, output: str) -> Path:
         raise ValueError("unsafe output directory")
     if path.exists() or path.is_symlink():
         raise FileExistsError("output already recorded")
-    fd, temporary = tempfile.mkstemp(prefix=".pilot-", dir=path.parent)
+    fd, temporary = tempfile.mkstemp(prefix=".jev-", dir=path.parent)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as file:
             file.write(output)

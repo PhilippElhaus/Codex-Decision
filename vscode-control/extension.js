@@ -12,19 +12,19 @@ function emptyStats() {
 }
 
 function activate(context) {
-  const button = vscode.window.createStatusBarItem("jevPilot.status", vscode.StatusBarAlignment.Left, 95);
+  const button = vscode.window.createStatusBarItem("codexJev.status", vscode.StatusBarAlignment.Left, 95);
   button.name = "Codex Jev";
-  button.command = "jevPilot.selectHooks";
+  button.command = "codexJev.selectHooks";
   button.show();
   context.subscriptions.push(button);
 
   const state = { enabled: false, mode: "replace", health: null, recent: null, history: [], stats: emptyStats(), busyUntil: 0, eventSize: -1, checking: false, polling: false, callingSeen: false, viewId: null, generation: 0 };
   let pulseTimer;
-  const settings = () => vscode.workspace.getConfiguration("jevPilot");
+  const settings = () => vscode.workspace.getConfiguration("codexJev");
   const dataDirectory = () => {
     const directory = settings().get("dataDirectory") || defaultDataDirectory();
     if (typeof directory !== "string" || !path.isAbsolute(directory)) {
-      throw new Error("Set jevPilot.dataDirectory to the installed plugin's absolute PLUGIN_DATA path.");
+      throw new Error("Set codexJev.dataDirectory to the installed plugin's absolute PLUGIN_DATA path.");
     }
     return directory;
   };
@@ -96,7 +96,7 @@ function activate(context) {
     try {
       const directory = dataDirectory();
       const selectedMode = settings().get("mode") || "replace";
-      if (!["replace", "observe"].includes(selectedMode)) throw new Error("Invalid jevPilot.mode setting");
+      if (!["replace", "observe"].includes(selectedMode)) throw new Error("Invalid codexJev.mode setting");
       let config = await readConfig(directory);
       if (config.mode !== selectedMode) config = await writeMode(directory, selectedMode);
       const wasEnabled = state.enabled;
@@ -210,8 +210,8 @@ function activate(context) {
     picker.show();
   }
 
-  context.subscriptions.push(vscode.commands.registerCommand("jevPilot.selectHooks", selectHooks));
-  context.subscriptions.push(vscode.commands.registerCommand("jevPilot.bridge", async (request) => {
+  context.subscriptions.push(vscode.commands.registerCommand("codexJev.selectHooks", selectHooks));
+  context.subscriptions.push(vscode.commands.registerCommand("codexJev.bridge", async (request) => {
     await enterView(request?.viewId);
     if (request?.action === "setSelection" && typeof request.enabled === "boolean") {
       await writeEnabled(dataDirectory(), request.enabled);
@@ -220,7 +220,7 @@ function activate(context) {
     }
     return snapshot();
   }));
-  context.subscriptions.push(vscode.commands.registerCommand("jevPilot.checkConnection", async () => {
+  context.subscriptions.push(vscode.commands.registerCommand("codexJev.checkConnection", async () => {
     if (!state.enabled) {
       void vscode.window.showInformationMessage("Select the Jev PostToolUse hook first.");
       return;
@@ -228,7 +228,7 @@ function activate(context) {
     await probe();
   }));
   context.subscriptions.push(vscode.workspace.onDidChangeConfiguration((event) => {
-    if (event.affectsConfiguration("jevPilot")) {
+    if (event.affectsConfiguration("codexJev")) {
       state.generation += 1;
       state.eventSize = -1;
       clearActivity();

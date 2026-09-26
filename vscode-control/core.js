@@ -14,7 +14,7 @@ function defaultDataDirectory() {
 }
 
 function defaultCredentialDirectory() {
-  return path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local"), "Codex", "jev-output-pilot");
+  return path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local"), "Codex", "codex-jev");
 }
 
 async function readConfig(directory) {
@@ -35,7 +35,7 @@ async function readConfig(directory) {
         typeof merged.timeout_seconds !== "number" || merged.timeout_seconds < 0.1 || merged.timeout_seconds > 4 ||
         typeof merged.model !== "string" || !/^jev-[\w.-]{1,40}$/.test(merged.model) ||
         typeof merged.allow_mcp_replacement !== "boolean") {
-      throw new Error("Invalid pilot config");
+      throw new Error("Invalid Jev config");
     }
     return { enabled: false, mode: "replace", ...raw };
   } catch (error) {
@@ -50,7 +50,7 @@ async function writeConfig(directory, updates) {
   if ((await fs.lstat(directory)).isSymbolicLink()) throw new Error("Plugin data directory is a link");
   const target = path.join(directory, "config.json");
   try {
-    if ((await fs.lstat(target)).isSymbolicLink()) throw new Error("Pilot config is a link");
+    if ((await fs.lstat(target)).isSymbolicLink()) throw new Error("Jev config is a link");
   } catch (error) {
     if (error.code !== "ENOENT") throw error;
   }
