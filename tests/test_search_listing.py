@@ -54,6 +54,13 @@ class SearchListingTests(unittest.TestCase):
     def config(self, **changes):
         return jev.Config(search_listing_enabled=True, **changes)
 
+    def test_threshold_controls_group_omission(self):
+        answer = {"type": "choice", "choice": "drop", "probabilities":
+                  {"retain": .02, "summarize": .02, "drop": .96}, "confidence": .90}
+        self.assertEqual(search_listing._decision(answer), "drop")
+        strict = self.config(thresholds={"search_listing": {"drop_confidence_min": 95}})
+        self.assertEqual(search_listing._decision(answer, strict), "summarize")
+
     def test_command_gate_accepts_simple_searches_and_listings_only(self):
         accepted = {
             "rg -n function app": "search", "rg --line-number -F 'status' app": "search",

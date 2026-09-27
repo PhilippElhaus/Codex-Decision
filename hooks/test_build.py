@@ -8,7 +8,7 @@ import shlex
 import time
 from typing import Callable
 
-from jev import Config, FAILURE, Result, SCORE_NAMES, SENSITIVE, _output_path, sample, save_original
+from jev import Config, FAILURE, Result, SCORE_NAMES, SENSITIVE, _output_path, sample, save_original, threshold
 
 
 MIN_CHARS = 2048
@@ -106,12 +106,13 @@ def _has_completion(lines: list[str]) -> bool:
     return any(pattern.search(_clean(line)) for line in lines for pattern in COMPLETION)
 
 
-def jev_approves_omission(scores: dict[str, float]) -> bool:
+def jev_approves_omission(scores: dict[str, float], config: Config | None = None) -> bool:
     # Candidate lines have already matched pass/progress formats; Jev judges
     # whether this run gives those otherwise routine lines special value.
-    return (scores["routine_noise"] >= 0.90
-            and scores["needs_exact_text"] <= 0.20
-            and scores["one_off_value"] <= 0.20)
+    config = config or Config()
+    return (scores["routine_noise"] >= threshold(config, "test_build", "routine_min")
+            and scores["needs_exact_text"] <= threshold(config, "test_build", "exact_max")
+            and scores["one_off_value"] <= threshold(config, "test_build", "unique_max"))
 
 
 def decide_test_build(
@@ -180,7 +181,7 @@ def decide_test_build(
             raise ValueError("invalid Jev scores")
     except Exception:
         return result("keep", "evaluator_unavailable", size)
-    if not jev_approves_omission(scores):
+    if not jev_approves_omission(scores, config):
         return result("keep", "jev_keep", size, scores=scores)
     if config.mode == "observe":
         return result("candidate", "observe", size, scores=scores)

@@ -80,6 +80,19 @@ class ConfigTests(unittest.TestCase):
         self.assertFalse(config.search_listing_enabled)
         self.assertEqual(config.mode, "replace")
 
+    def test_output_threshold_changes_decision_and_invalid_values_fail(self):
+        scores = {"routine_noise": .94, "needs_exact_text": .08, "one_off_value": .05}
+        self.assertTrue(jev.candidate(scores))
+        stricter = jev.Config(thresholds={"output": {"routine_min": 96}})
+        self.assertFalse(jev.candidate(scores, stricter))
+        with tempfile.TemporaryDirectory(prefix="jev-thresholds-", dir="/tmp") as directory:
+            path = Path(directory) / "config.json"
+            path.write_text(json.dumps({"thresholds": {"output": {"routine_min": 96}}}))
+            self.assertFalse(jev.candidate(scores, jev.Config.from_file(path)))
+            path.write_text(json.dumps({"thresholds": {"output": {"routine_min": 101}}}))
+            with self.assertRaises(ValueError):
+                jev.Config.from_file(path)
+
     def test_invalid_configs_fail_closed(self):
         for invalid in ({"enabled": "true"}, {"test_build_enabled": "true"}, {"search_listing_enabled": "true"}, {"mode": "destroy"}, {"min_chars": 10}, {"unknown": 1}, {"timeout_seconds": 10}):
             with self.subTest(invalid=invalid), tempfile.TemporaryDirectory() as directory:

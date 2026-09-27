@@ -37,7 +37,7 @@ codex plugin marketplace add https://github.com/PhilippElhaus/Codex-Jev
 codex plugin add codex-jev@codex-jev
 ```
 
-Download the [VS Code control VSIX](https://github.com/PhilippElhaus/Codex-Jev/releases/latest). From its download directory, run `code --install-extension codex-jev-control-0.2.7.vsix --force`. [Add the Jev API key](docs/setup/setup_credentials.md), set `codexJev.dataDirectory` to the plugin data directory, and apply the [version-pinned composer patch](vscode-control/README.md). Start a new Codex thread.
+Build the [VS Code control VSIX](vscode-control/README.md) and install `codex-jev-control-0.2.8.vsix`. Set `codexJev.dataDirectory` to the plugin data directory, and apply the version-pinned composer patch. Open **Codex settings → Jev settings** to save or test the API key and adjust hook cutoffs. Start a new Codex thread.
 
 ## Documentation
 

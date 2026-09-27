@@ -17,6 +17,9 @@ ORIGINAL = {
     "webview/index.html": "d91ea97a8bd9e9d67dd048f5496614af4e9eeb33a0dd4b412a6293e06bb3fc02",
 }
 ASSET = "webview/assets/jev-control.js"
+IMAGE_ASSET = "webview/assets/app-initial-de4359f78ed1.js"
+IMAGE_ORIGINAL = "ffdf480c63b5c99009ae0b618cad846ac5f33af42af4cec900f633586370a9dc"
+IMAGE_ANCHOR = 'let i=SS(e);if(i==null)return null;try{let e={path:i,hostId:t}'
 ANCHOR = 'let a=e.onDidReceiveMessage(u=>{if(s.markMessageReceived(),u.type==="chunked-message-ack")'
 
 
@@ -65,10 +68,35 @@ def marketplace_path_bridge() -> str:
     )
 
 
+def image_path_bridge() -> str:
+    """Let Windows VS Code read the two WSL-installed plugin image files."""
+    try:
+        root = subprocess.run(["wslpath", "-w", "/"], capture_output=True,
+                              text=True, timeout=3, check=True).stdout.strip().rstrip("\\")
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    if not root.lower().startswith(("\\\\wsl.localhost\\", "\\\\wsl$\\")):
+        return ""
+    cache = str(Path.home() / ".codex/plugins/cache/personal")
+    return (f'if(i.startsWith({json.dumps(cache + "/codex-jev/")})||'
+            f'i.startsWith({json.dumps(cache + "/codex-chime/")}))'
+            f'i={json.dumps(root)}+i.replaceAll("/","\\\\");')
+
+
+def patched_image_asset(original: bytes) -> bytes:
+    source = original.decode("utf-8")
+    if digest(original) != IMAGE_ORIGINAL or source.count(IMAGE_ANCHOR) != 1:
+        raise RuntimeError("Codex image loader changed")
+    bridge = image_path_bridge()
+    if not bridge:
+        raise RuntimeError("WSL image path is unavailable")
+    return source.replace(IMAGE_ANCHOR, IMAGE_ANCHOR.replace("try{", bridge + "try{"), 1).encode("utf-8")
+
+
 BRIDGE = (
     'let a=e.onDidReceiveMessage(u=>{'
     'if(u&&u.type==="codex-jev"){'
-    'if(u.action!=="status"&&u.action!=="setSelection"&&u.action!=="retryConnection")return;'
+    'if(u.action!=="status"&&u.action!=="setSelection"&&u.action!=="retryConnection"&&u.action!=="openSettings")return;'
     'if(u.action==="setSelection"&&typeof u.enabled!=="boolean")return;'
     'if(u.action==="setSelection"&&!(["output","test_build","search_listing"].includes(u.feature)))return;'
     'if(u.viewId!==undefined&&(typeof u.viewId!=="string"||!/^[-\\w:]{1,96}$/.test(u.viewId)))return;'
@@ -129,6 +157,8 @@ def apply(root: Path, backup: Path) -> None:
         if digest(data) != expected:
             raise RuntimeError(f"Codex extension file changed: {relative}")
         source[relative] = data
+    image_original = exact_file(root, IMAGE_ASSET).read_bytes()
+    image_patched = patched_image_asset(image_original)
     js = source["out/extension.js"].decode("utf-8")
     html = source["webview/index.html"].decode("utf-8")
     if js.count(ANCHOR) != 1 or html.count(MODULE) != 1:
@@ -137,6 +167,7 @@ def apply(root: Path, backup: Path) -> None:
         "out/extension.js": js.replace(ANCHOR, BRIDGE).encode("utf-8"),
         "webview/index.html": html.replace(MODULE, SCRIPT + MODULE).encode("utf-8"),
         ASSET: source_asset.read_bytes(),
+        IMAGE_ASSET: image_patched,
     }
     if not existing_backup:
         backup.mkdir(parents=True)
@@ -144,8 +175,14 @@ def apply(root: Path, backup: Path) -> None:
             target = backup / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(data)
+        image_backup = backup / IMAGE_ASSET
+        image_backup.parent.mkdir(parents=True, exist_ok=True)
+        image_backup.write_bytes(image_original)
+    elif not (backup / IMAGE_ASSET).is_file():
+        raise RuntimeError("missing image rollback file")
     manifest_data = json.dumps({
         "version": VERSION, "original": ORIGINAL,
+        "originalImage": IMAGE_ORIGINAL,
         "patched": {key: digest(value) for key, value in changed.items()},
     }, indent=2).encode("utf-8") + b"\n"
     try:
@@ -163,6 +200,7 @@ def apply(root: Path, backup: Path) -> None:
         for relative, data in source.items():
             write_exact(root / relative, data)
         (root / ASSET).unlink(missing_ok=True)
+        write_exact(root / IMAGE_ASSET, image_original)
         raise
 
 
@@ -180,6 +218,11 @@ def restore(root: Path, backup: Path) -> None:
         if digest(original) != expected:
             raise RuntimeError(f"rollback file changed: {relative}")
         write_exact(root / relative, original)
+    if IMAGE_ASSET in manifest["patched"]:
+        original_image = exact_file(backup, IMAGE_ASSET).read_bytes()
+        if digest(original_image) != IMAGE_ORIGINAL:
+            raise RuntimeError("image rollback file changed")
+        write_exact(root / IMAGE_ASSET, original_image)
     (root / ASSET).unlink()
 
 
@@ -199,6 +242,12 @@ def update(root: Path, backup: Path) -> None:
         if digest(exact_file(backup, relative).read_bytes()) != expected:
             raise RuntimeError(f"rollback file changed: {relative}")
     source_asset = Path(__file__).with_name("webview") / "jev-control.js"
+    image_backup = backup / IMAGE_ASSET
+    if image_backup.is_file():
+        image_original = exact_file(backup, IMAGE_ASSET).read_bytes()
+    else:
+        image_original = exact_file(root, IMAGE_ASSET).read_bytes()
+    image_patched = patched_image_asset(image_original)
     original_js = exact_file(backup, "out/extension.js").read_bytes()
     js = original_js.decode("utf-8")
     if js.count(ANCHOR) != 1:
@@ -206,12 +255,17 @@ def update(root: Path, backup: Path) -> None:
     changed = {
         "out/extension.js": js.replace(ANCHOR, BRIDGE).encode("utf-8"),
         ASSET: exact_file(source_asset.parent, source_asset.name).read_bytes(),
+        IMAGE_ASSET: image_patched,
     }
     previous = {relative: exact_file(root, relative).read_bytes() for relative in changed}
     for relative, data in changed.items():
         manifest["patched"][relative] = digest(data)
+    manifest["originalImage"] = IMAGE_ORIGINAL
     new_manifest = json.dumps(manifest, indent=2).encode("utf-8") + b"\n"
     try:
+        if not image_backup.is_file():
+            image_backup.parent.mkdir(parents=True, exist_ok=True)
+            image_backup.write_bytes(image_original)
         for relative, data in changed.items():
             write_exact(root / relative, data)
         write_exact(manifest_path, new_manifest)

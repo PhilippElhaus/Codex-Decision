@@ -197,7 +197,7 @@
     const average = completed ? formatDuration((Number(stats.elapsedMs) || 0) / completed) : "—";
     const totals = `${completed} checked · ${Number(stats.replaced) || 0} replaced · ${average} avg`;
     root.querySelector("#codex-jev-stats").textContent = state.enabled ? totals : "";
-    const tokens = `Total Tokens saved: ~${(Number(stats.estimatedTokensSaved) || 0).toLocaleString("en-US")}`;
+    const tokens = `Tokens saved: ~${(Number(stats.estimatedTokensSaved) || 0).toLocaleString("en-US")}`;
     root.querySelector("#codex-jev-tokens").textContent = state.enabled ? tokens : "";
     root.querySelector("#codex-jev-session-heading").style.display = state.enabled ? "block" : "none";
     root.querySelector("#codex-jev-history-heading").style.display = state.enabled ? "block" : "none";
@@ -394,7 +394,32 @@
   function schedulePosition() {
     if (positionScheduled) return;
     positionScheduled = true;
-    setTimeout(() => { positionScheduled = false; position(); }, 0);
+    setTimeout(() => { positionScheduled = false; position(); injectSettingsItem(); }, 0);
+  }
+
+  function injectSettingsItem() {
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    let node;
+    while ((node = walker.nextNode())) {
+      if (node.textContent.trim() !== "Codex settings" || root?.contains(node)) continue;
+      const existing = node.parentElement?.closest('button,[role="menuitem"],a');
+      if (!existing || !visibleRect(existing) || !existing.parentElement ||
+          existing.parentElement.querySelector('[data-codex-jev-settings="true"]')) continue;
+      const item = existing.cloneNode(true);
+      item.removeAttribute("id");
+      item.setAttribute("data-codex-jev-settings", "true");
+      item.setAttribute("aria-label", "Jev settings");
+      const label = [...item.querySelectorAll("*")].find((element) => element.textContent.trim() === "Codex settings" &&
+        ![...element.children].some((child) => child.textContent.trim() === "Codex settings"));
+      if (label) label.textContent = "Jev settings";
+      else item.textContent = "Jev settings";
+      item.addEventListener("click", (event) => {
+        event.preventDefault(); event.stopPropagation();
+        send("openSettings");
+      });
+      existing.insertAdjacentElement("afterend", item);
+      return;
+    }
   }
 
   function start() {

@@ -23,14 +23,25 @@ test("composer bridge selects integrations and reports view-scoped activity with
   let health = { ok: true, model: "jev-1.13.0" };
   let probes = 0;
   let configListener;
+  let settingsPanel;
   const fake = {
     window: {
       createStatusBarItem: () => { throw new Error("Status bar item must not be created"); },
       showInformationMessage: () => {},
+      createWebviewPanel: () => {
+        const messages = [];
+        const webview = { cspSource: "vscode-resource:", asWebviewUri: () => "vscode-resource:/settings.js",
+          postMessage: async (value) => { messages.push(value); },
+          onDidReceiveMessage: (handler) => { webview.receive = handler; } };
+        settingsPanel = { webview, messages };
+        return settingsPanel;
+      },
     },
+    Uri: { joinPath: () => ({}) }, ViewColumn: { Active: 1 }, ConfigurationTarget: { Global: 1 },
     commands: { registerCommand(name, callback) { commands.set(name, callback); return { dispose() {} }; } },
     workspace: {
-      getConfiguration: () => ({ get: (key) => key === "dataDirectory" ? directory : key === "mode" ? mode : "" }),
+      getConfiguration: () => ({ get: (key) => key === "dataDirectory" ? directory : key === "mode" ? mode : "",
+        update: async (key, value) => { if (key === "mode") mode = value; } }),
       onDidChangeConfiguration: (callback) => { configListener = callback; return { dispose() {} }; },
     },
   };
@@ -49,7 +60,7 @@ test("composer bridge selects integrations and reports view-scoped activity with
     Module._load = originalLoad;
     core.checkHealth = originalHealth;
   }
-  const context = { subscriptions: [] };
+  const context = { subscriptions: [], extensionUri: {} };
   try {
     extension.activate(context);
     assert.equal(commands.has("codexJev.selectHooks"), false);
@@ -107,6 +118,22 @@ test("composer bridge selects integrations and reports view-scoped activity with
     assert.equal((await bridge({ action: "status", viewId: "view-two" })).health.reason, "JEV_HTTP_ERROR");
     health = { ok: true, model: "jev-1.13.0" };
     assert.equal((await bridge({ action: "retryConnection", viewId: "view-two" })).health.ok, true);
+
+    await bridge({ action: "openSettings", viewId: "view-two" });
+    assert.match(settingsPanel.webview.html, /Jev settings/);
+    await settingsPanel.webview.receive({ action: "ready" });
+    const ready = settingsPanel.messages.at(-1);
+    assert.equal(ready.action, "ready");
+    assert.equal(ready.hasKey, false);
+    assert.equal(ready.config.thresholds.output.routine_min, 90);
+    assert.equal(JSON.stringify(ready).includes("JEV_API_KEY"), false);
+    await settingsPanel.webview.receive({ action: "save", mode: "observe", key: "new-test-key-123",
+      thresholds: { output: { routine_min: 97 } } });
+    assert.equal(settingsPanel.messages.at(-1).action, "saved");
+    assert.equal(await core.readApiKey(directory), "new-test-key-123");
+    assert.equal((await core.readConfig(directory)).thresholds.output.routine_min, 97);
+    assert.equal((await core.readConfig(directory)).mode, "observe");
+    assert.equal(JSON.stringify(settingsPanel.messages).includes("new-test-key-123"), false);
   } finally {
     for (const disposable of context.subscriptions.reverse()) disposable.dispose();
     await fs.rm(directory, { recursive: true, force: true });

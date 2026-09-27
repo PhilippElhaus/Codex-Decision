@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import hashlib
 import json
 import os
@@ -38,6 +38,12 @@ MAX_JEV_REQUEST_BYTES = 28_000
 CHUNK_JSON_BYTES = 20_000
 MAX_CHUNKS = 128
 CHUNK_WORKERS = 12
+DEFAULT_THRESHOLDS = {
+    "output": {"routine_min": 90, "exact_max": 12, "unique_max": 10},
+    "test_build": {"routine_min": 90, "exact_max": 20, "unique_max": 20},
+    "search_listing": {"summarize_probability_min": 78, "summarize_confidence_min": 70,
+                       "drop_probability_min": 92, "drop_confidence_min": 85},
+}
 
 
 def load_api_key(data_dir: Path) -> str:
@@ -85,6 +91,8 @@ class Config:
     timeout_seconds: float = 3.0
     model: str = "jev-1.13.0"
     allow_mcp_replacement: bool = False
+    thresholds: dict[str, dict[str, int]] = field(default_factory=lambda: {
+        hook: dict(values) for hook, values in DEFAULT_THRESHOLDS.items()})
 
     @classmethod
     def from_file(cls, path: Path) -> Config:
@@ -116,9 +124,18 @@ class Config:
             or not isinstance(config.model, str)
             or not re.fullmatch(r"jev-[\w.-]{1,40}", config.model)
             or type(config.allow_mcp_replacement) is not bool
+            or not isinstance(config.thresholds, dict)
+            or set(config.thresholds) - set(DEFAULT_THRESHOLDS)
+            or any(not isinstance(values, dict) or set(values) - set(DEFAULT_THRESHOLDS[hook])
+                   or any(type(value) is not int or not 0 <= value <= 100 for value in values.values())
+                   for hook, values in config.thresholds.items())
         ):
             raise ValueError("invalid config values")
         return config
+
+
+def threshold(config: Config, hook: str, name: str) -> float:
+    return config.thresholds.get(hook, {}).get(name, DEFAULT_THRESHOLDS[hook][name]) / 100
 
 
 @dataclass(frozen=True)
@@ -303,11 +320,12 @@ def _request_answers(state: dict, config: Config, api_key: str, questions: dict)
     return answers
 
 
-def candidate(scores: dict[str, float]) -> bool:
+def candidate(scores: dict[str, float], config: Config | None = None) -> bool:
+    config = config or Config()
     return (
-        scores["routine_noise"] >= 0.90
-        and scores["needs_exact_text"] <= 0.12
-        and scores["one_off_value"] <= 0.10
+        scores["routine_noise"] >= threshold(config, "output", "routine_min")
+        and scores["needs_exact_text"] <= threshold(config, "output", "exact_max")
+        and scores["one_off_value"] <= threshold(config, "output", "unique_max")
     )
 
 
@@ -468,7 +486,7 @@ def decide(
         return result("keep", "evaluator_unavailable", size)
     if scores is None:
         return result("skip", "too_many_chunks", size)
-    if not candidate(scores):
+    if not candidate(scores, config):
         return result("keep", "jev_keep", size, scores=scores)
     if config.mode == "observe":
         return result("candidate", "observe", size, scores=scores)

@@ -2,11 +2,36 @@
 
 const fs = require("node:fs/promises");
 const path = require("node:path");
+const { execFile } = require("node:child_process");
+const { promisify } = require("node:util");
+const runFile = promisify(execFile);
 const JEV_ENDPOINT = "https://api.typesafe.ai/v1/systemone";
+const DEFAULT_THRESHOLDS = Object.freeze({
+  output: { routine_min: 90, exact_max: 12, unique_max: 10 },
+  test_build: { routine_min: 90, exact_max: 20, unique_max: 20 },
+  search_listing: { summarize_probability_min: 78, summarize_confidence_min: 70,
+    drop_probability_min: 92, drop_confidence_min: 85 },
+});
 const CONFIG_KEYS = new Set([
   "enabled", "test_build_enabled", "search_listing_enabled", "precompact_enabled", "mode", "min_chars", "max_chars", "sample_chars",
-  "timeout_seconds", "model", "allow_mcp_replacement",
+  "timeout_seconds", "model", "allow_mcp_replacement", "thresholds",
 ]);
+
+function completeThresholds(value = {}) {
+  if (!value || typeof value !== "object" || Array.isArray(value) ||
+      Object.keys(value).some((hook) => !Object.hasOwn(DEFAULT_THRESHOLDS, hook))) throw new Error("Invalid Jev thresholds");
+  const result = {};
+  for (const [hook, defaults] of Object.entries(DEFAULT_THRESHOLDS)) {
+    const entered = value[hook] === undefined ? {} : value[hook];
+    if (typeof entered !== "object" || Array.isArray(entered) ||
+        Object.keys(entered).some((name) => !Object.hasOwn(defaults, name))) throw new Error("Invalid Jev thresholds");
+    result[hook] = { ...defaults, ...entered };
+    if (Object.values(result[hook]).some((number) => !Number.isInteger(number) || number < 0 || number > 100)) {
+      throw new Error("Jev thresholds must be whole percentages from 0 to 100");
+    }
+  }
+  return result;
+}
 
 function defaultDataDirectory() {
   return process.env.CODEX_JEV_DATA_DIRECTORY || "";
@@ -34,6 +59,7 @@ async function readConfig(directory) {
         typeof merged.allow_mcp_replacement !== "boolean") {
       throw new Error("Invalid Jev config");
     }
+    completeThresholds(merged.thresholds);
     const { precompact_enabled: _legacy, ...current } = raw;
     return { enabled: false, test_build_enabled: false, search_listing_enabled: false, mode: "replace", ...current };
   } catch (error) {
@@ -44,6 +70,7 @@ async function readConfig(directory) {
 
 async function writeConfig(directory, updates) {
   const config = { ...await readConfig(directory), ...updates };
+  completeThresholds(config.thresholds);
   await fs.mkdir(directory, { recursive: true, mode: 0o700 });
   if ((await fs.lstat(directory)).isSymbolicLink()) throw new Error("Plugin data directory is a link");
   const target = path.join(directory, "config.json");
@@ -81,6 +108,10 @@ async function writeSelection(directory, outputEnabled, testBuildEnabled, search
 async function writeMode(directory, mode) {
   if (!["replace", "observe"].includes(mode)) throw new TypeError("invalid Jev mode");
   return writeConfig(directory, { mode });
+}
+
+async function writeThresholds(directory, thresholds) {
+  return writeConfig(directory, { thresholds: completeThresholds(thresholds) });
 }
 
 function isJevOutcome(event) {
@@ -272,10 +303,10 @@ async function readApiKey(directory) {
   return values[0];
 }
 
-async function checkHealth(dataDirectory, send = globalThis.fetch) {
+async function checkHealth(dataDirectory, send = globalThis.fetch, suppliedKey = null) {
   let key;
   try {
-    key = await readApiKey(dataDirectory);
+    key = suppliedKey === null ? await readApiKey(dataDirectory) : validateApiKey(suppliedKey);
   } catch {
     return { ok: false, reason: "JEV_KEY_MISSING" };
   }
@@ -307,9 +338,49 @@ async function checkHealth(dataDirectory, send = globalThis.fetch) {
   }
 }
 
+function validateApiKey(key) {
+  if (typeof key !== "string" || key.length < 8 || key.length > 4096 || /\s|\0/.test(key)) {
+    throw new Error("Jev API key is missing or invalid");
+  }
+  return key;
+}
+
+async function writeApiKey(directory, key) {
+  validateApiKey(key);
+  await fs.mkdir(directory, { recursive: true, mode: 0o700 });
+  if (!(await fs.lstat(directory)).isDirectory() || (await fs.lstat(directory)).isSymbolicLink()) {
+    throw new Error("Unsafe plugin data directory");
+  }
+  const target = path.join(directory, ".env");
+  let lines = [];
+  try {
+    const details = await fs.lstat(target);
+    if (!details.isFile() || details.isSymbolicLink() || details.size > 8192 ||
+        (process.platform !== "win32" && (details.mode & 0o077))) throw new Error("Unsafe Jev credential file");
+    lines = (await fs.readFile(target, "utf8")).split(/\r?\n/)
+      .filter((line) => !/^\s*JEV_API_KEY\s*=/.test(line));
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
+  const content = [...lines.filter(Boolean), `JEV_API_KEY=${key}`].join("\n") + "\n";
+  if (Buffer.byteLength(content) > 8192) throw new Error("Jev credential file is too large");
+  const temporary = path.join(directory, `.env-${process.pid}-${Date.now()}.tmp`);
+  try {
+    await fs.writeFile(temporary, content, { flag: "wx", mode: 0o600 });
+    await fs.chmod(temporary, 0o600);
+    if (process.platform === "win32") {
+      const match = /^\\\\(?:wsl\.localhost|wsl\$)\\([A-Za-z0-9_-]+)\\(.+)$/i.exec(temporary);
+      if (match) await runFile("wsl.exe", ["-d", match[1], "-e", "chmod", "600", `/${match[2].replaceAll("\\", "/")}`]);
+    }
+    await fs.rename(temporary, target);
+  } finally {
+    await fs.rm(temporary, { force: true });
+  }
+}
+
 module.exports = {
-  activitySummary, checkHealth, decisionSummary, defaultDataDirectory, estimateTokensSaved, formatDuration,
+  activitySummary, checkHealth, completeThresholds, DEFAULT_THRESHOLDS, decisionSummary, defaultDataDirectory, estimateTokensSaved, formatDuration,
   isInformativeEvent, isJevOutcome, outcomeLine, parseHealthOutput, readConfig,
   readApiKey, readEventOffset, readEventsSince, readLatestEvent, readRecentOutcomes,
-  savedCharacters, writeEnabled, writeMode, writeSelection,
+  savedCharacters, writeApiKey, writeEnabled, writeMode, writeSelection, writeThresholds,
 };

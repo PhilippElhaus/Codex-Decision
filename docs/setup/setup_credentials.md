@@ -18,4 +18,6 @@ The parser treats the value as text. It does not execute shell code. The hook se
 
 Set `codexJev.dataDirectory` in VS Code to the same absolute directory. For a WSL installation used by Windows VS Code, use a `\\wsl.localhost\<distro>\...` path. `CODEX_JEV_DATA_DIRECTORY` is an alternative setting for the control and the live benchmark scripts.
 
+In **Codex settings → Jev settings**, you can enter or change the key and test it before saving. The page never displays a saved key; leave the field blank to keep it. Changes to hook cutoffs also live there.
+
 See [data handling](../architecture/design_data.md) for the text sent to Jev and the saved originals.

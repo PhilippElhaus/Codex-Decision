@@ -12,7 +12,7 @@ import stat
 import time
 from typing import Callable
 
-from jev import Config, Result, SENSITIVE, _output_path, save_original
+from jev import Config, Result, SENSITIVE, _output_path, save_original, threshold
 
 
 MIN_CHARS = 4096
@@ -170,7 +170,8 @@ def _choice_questions(groups: OrderedDict[str, list[str]]) -> dict:
     }
 
 
-def _decision(answer: dict) -> str:
+def _decision(answer: dict, config: Config | None = None) -> str:
+    config = config or Config()
     options = {"retain", "summarize", "drop"}
     if not isinstance(answer, dict) or answer.get("type") != "choice" or answer.get("choice") not in options:
         raise ValueError("invalid Jev choice")
@@ -185,9 +186,11 @@ def _decision(answer: dict) -> str:
     probability = probabilities[choice]
     if probability < max(probabilities.values()) - 0.01:
         raise ValueError("choice disagrees with probabilities")
-    if choice == "drop" and probability >= 0.92 and confidence >= 0.85:
+    if (choice == "drop" and probability >= threshold(config, "search_listing", "drop_probability_min")
+            and confidence >= threshold(config, "search_listing", "drop_confidence_min")):
         return "drop"
-    if choice in {"summarize", "drop"} and probability >= 0.78 and confidence >= 0.70:
+    if (choice in {"summarize", "drop"} and probability >= threshold(config, "search_listing", "summarize_probability_min")
+            and confidence >= threshold(config, "search_listing", "summarize_confidence_min")):
         return "summarize"
     return "retain"
 
@@ -236,7 +239,7 @@ def decide_search_listing(
         answers = evaluator(state, questions, config)
         if set(answers) != {f"group_{index}" for index in range(len(groups))}:
             raise ValueError("missing choices")
-        decisions = [_decision(answers[f"group_{index}"]) for index in range(len(groups))]
+        decisions = [_decision(answers[f"group_{index}"], config) for index in range(len(groups))]
     except (Exception,):
         return result("keep", "evaluator_unavailable", size)
     if all(choice == "retain" for choice in decisions):

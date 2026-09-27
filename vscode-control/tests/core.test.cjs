@@ -6,9 +6,39 @@ const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
 const {
-  activitySummary, checkHealth, decisionSummary, estimateTokensSaved, formatDuration, outcomeLine, parseHealthOutput, readApiKey, readConfig,
-  readEventOffset, readEventsSince, readLatestEvent, readRecentOutcomes, writeEnabled, writeMode, writeSelection,
+  activitySummary, checkHealth, completeThresholds, decisionSummary, estimateTokensSaved, formatDuration, outcomeLine, parseHealthOutput, readApiKey, readConfig,
+  readEventOffset, readEventsSince, readLatestEvent, readRecentOutcomes, writeApiKey, writeEnabled, writeMode, writeSelection, writeThresholds,
 } = require("../core");
+
+test("settings thresholds round trip and reject invalid percentages", async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-settings-test-"));
+  try {
+    const next = completeThresholds({ output: { routine_min: 96 }, search_listing: { drop_confidence_min: 94 } });
+    await writeThresholds(directory, next);
+    assert.deepEqual((await readConfig(directory)).thresholds, next);
+    await assert.rejects(writeThresholds(directory, { output: { routine_min: 101 } }), /percentages/);
+    await assert.rejects(writeThresholds(directory, { output: { typo: 80 } }), /Invalid Jev thresholds/);
+    assert.deepEqual((await readConfig(directory)).thresholds, next);
+  } finally { await fs.rm(directory, { recursive: true, force: true }); }
+});
+
+test("settings save private key and test an unsaved key without exposing it", async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-settings-test-"));
+  try {
+    await writeApiKey(directory, "saved-key-123");
+    assert.equal(await readApiKey(directory), "saved-key-123");
+    const result = await checkHealth(directory, async (_url, options) => {
+      assert.equal(options.headers.Authorization, "Bearer draft-key-456");
+      return { ok: true, text: async () => JSON.stringify({ model: "jev-1.13.0", answers: { ready: { type: "noul", noul: 0.9 } } }) };
+    }, "draft-key-456");
+    assert.equal(result.ok, true);
+    assert.equal(JSON.stringify(result).includes("draft-key-456"), false);
+    assert.equal(await readApiKey(directory), "saved-key-123");
+    await writeApiKey(directory, "updated-key-789");
+    assert.equal(await readApiKey(directory), "updated-key-789");
+    await assert.rejects(writeApiKey(directory, "bad key"), /invalid/);
+  } finally { await fs.rm(directory, { recursive: true, force: true }); }
+});
 
 test("hook selection writes the config atomically and preserves the Jev mode", async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-control-test-"));

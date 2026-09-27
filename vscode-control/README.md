@@ -4,22 +4,16 @@ The companion extension connects the `jev` button in the Codex composer to the i
 
 ## Install the companion extension
 
-Download the current VSIX from the [GitHub release](https://github.com/PhilippElhaus/Codex-Jev/releases/latest), then run:
-
-```bash
-code --install-extension codex-jev-control-0.2.7.vsix --force
-```
-
-To build it from a checkout, run from `vscode-control/`:
+Build the VSIX from this checkout, then run:
 
 ```bash
 npx @vscode/vsce package --no-dependencies
-code --install-extension <generated-vsix> --force
+code --install-extension codex-jev-control-0.2.8.vsix --force
 ```
 
 Set `codexJev.dataDirectory` to the installed plugin's absolute `PLUGIN_DATA` path (on Windows, a `\\wsl.localhost\<distro>\...` path for a WSL installation). `CODEX_JEV_DATA_DIRECTORY` is an alternative. The extension has no machine-specific default. It reads `PLUGIN_DATA/.env` to probe API health; the key never enters the webview. See [key setup](../docs/setup/setup_credentials.md).
 
-The VSIX includes `patch_codex_webview.py` and `webview/jev-control.js`. Run the patch from this checkout or the installed VSIX directory. It supports Codex extension `26.917.62051` and checks exact host hashes. Keep rollback files outside this repository:
+The VSIX includes `patch_codex_webview.py` and `webview/jev-control.js`. Run the patch from this checkout or the installed VSIX directory. It supports Codex extension `26.917.62051` and checks exact host hashes. The patch also maps WSL plugin image paths so Windows VS Code can show the Codex Jev and Codex Chime icons. Keep rollback files outside this repository:
 
 ```bash
 python3 patch_codex_webview.py apply \
@@ -31,7 +25,7 @@ Use `update` to refresh an already patched installation, or `restore` with the s
 
 ## Use it
 
-Select integrations in the composer menu. An empty selection turns Jev off. The default mode is `replace`; choose `observe` in **Codex Jev Control: Mode** to record decisions while keeping full tool output. A selection change applies when the next tool result completes. A new plugin installation or hook-code change requires a new Codex thread.
+Select integrations in the composer menu. An empty selection turns Jev off. Open **Codex settings → Jev settings** to save or test an API key, change the mode, and adjust each hook's Jev cutoffs. The default mode is `replace`; `observe` records decisions while keeping full tool output. A selection or cutoff change applies when the next tool result completes. A new plugin installation or hook-code change requires a new Codex thread.
 
 ## Verify
 

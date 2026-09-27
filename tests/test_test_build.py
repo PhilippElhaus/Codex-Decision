@@ -79,6 +79,12 @@ class ReductionTests(unittest.TestCase):
     def settings(self, **changes):
         return jev.Config(test_build_enabled=True, **changes)
 
+    def test_threshold_can_keep_ambiguous_routine_lines(self):
+        scores = {"routine_noise": .93, "needs_exact_text": .12, "one_off_value": .09}
+        self.assertTrue(test_build.jev_approves_omission(scores))
+        strict = self.settings(thresholds={"test_build": {"routine_min": 96}})
+        self.assertFalse(test_build.jev_approves_omission(scores, strict))
+
     def decide(self, event, config, storage=None, evaluator=lambda *_: GOOD):
         return test_build.decide_test_build(event, config, evaluator=evaluator, storage=storage)
 

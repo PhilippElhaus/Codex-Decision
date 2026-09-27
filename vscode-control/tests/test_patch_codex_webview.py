@@ -19,6 +19,20 @@ SPEC.loader.exec_module(patch)
 
 
 class PatchTests(unittest.TestCase):
+    def test_image_bridge_converts_only_our_wsl_plugin_images(self):
+        if not shutil.which("wslpath") or not shutil.which("node"):
+            self.skipTest("Windows-to-WSL bridge is unavailable here")
+        prefix = str(Path.home() / ".codex/plugins/cache/personal")
+        for incoming in (f"{prefix}/codex-jev/1/assets/icon.png",
+                         f"{prefix}/codex-chime/1/assets/logo.png", "/tmp/other.png"):
+            script = "let i=" + json.dumps(incoming) + ";" + patch.image_path_bridge() + "process.stdout.write(i);"
+            output = subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True).stdout
+            if incoming.startswith(prefix):
+                self.assertTrue(output.startswith("\\\\wsl.localhost\\"))
+                self.assertTrue(output.endswith("\\assets\\" + incoming.split("/")[-1]))
+            else:
+                self.assertEqual(output, incoming)
+
     def test_marketplace_bridge_rewrites_only_this_wsl_marketplace(self):
         if not shutil.which("node") or not shutil.which("wslpath"):
             self.skipTest("Windows-to-WSL bridge is unavailable here")
@@ -59,17 +73,22 @@ class PatchTests(unittest.TestCase):
         original = {
             "out/extension.js": ("prefix " + patch.ANCHOR + " suffix").encode(),
             "webview/index.html": ("<html>" + patch.MODULE + "</html>").encode(),
+            patch.IMAGE_ASSET: ("prefix " + patch.IMAGE_ANCHOR + " suffix").encode(),
         }
         for relative, content in original.items():
             destination = self.extension / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
             destination.write_bytes(content)
-        (self.extension / "webview/assets").mkdir()
+        (self.extension / "webview/assets").mkdir(exist_ok=True)
         self.original = original
         self.digests = {name: hashlib.sha256(value).hexdigest() for name, value in original.items()}
-        self.original_patch = mock.patch.object(patch, "ORIGINAL", self.digests)
+        self.original_patch = mock.patch.object(patch, "ORIGINAL", {
+            name: value for name, value in self.digests.items() if name != patch.IMAGE_ASSET})
         self.original_patch.start()
         self.addCleanup(self.original_patch.stop)
+        self.image_patch = mock.patch.object(patch, "IMAGE_ORIGINAL", self.digests[patch.IMAGE_ASSET])
+        self.image_patch.start()
+        self.addCleanup(self.image_patch.stop)
 
     def test_apply_update_restore_and_tamper_rejection(self):
         patch.apply(self.extension, self.backup)
@@ -81,6 +100,7 @@ class PatchTests(unittest.TestCase):
         self.assertIn("viewId", (self.extension / "out/extension.js").read_text())
         self.assertEqual((self.extension / patch.ASSET).read_bytes(),
                          (SOURCE.parent / "webview/jev-control.js").read_bytes())
+        self.assertIn(b"wsl.localhost", (self.extension / patch.IMAGE_ASSET).read_bytes())
 
         patch.update(self.extension, self.backup)
         second = json.loads(manifest_path.read_text())
