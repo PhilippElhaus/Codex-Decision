@@ -160,7 +160,7 @@
       #codex-jev-history li { margin-top: 3px; }
       #codex-jev-history strong { font-weight: 700; color: #fff; }
       #codex-jev-empty { margin: 0; color: #888; }
-      #codex-jev-connect { position: fixed; inset: 0; z-index: 2147483640; display: none; align-items: center; justify-content: center; box-sizing: border-box; overflow: auto; padding: 20px; background: #000b; color: var(--vscode-foreground, #d0d0d0); font-family: inherit; isolation: isolate; }
+      #codex-jev-connect { position: fixed; inset: 0; z-index: 2147483640; display: none; align-items: center; justify-content: center; box-sizing: border-box; overflow: auto; padding: 20px; background: var(--vscode-editor-background, #111); color: var(--vscode-foreground, #d0d0d0); font-family: inherit; isolation: isolate; }
       #codex-jev-connect * { box-sizing: border-box; }
       #codex-jev-connect-art { position: absolute; inset: 0; overflow: hidden; pointer-events: none; mask-image: radial-gradient(ellipse at center, #000 20%, #0009 48%, transparent 80%); }
       #codex-jev-connect-art pre { position: absolute; top: 50%; left: 50%; margin: 0; color: #bdc9d3; opacity: .18; font: 12px/18px monospace; letter-spacing: 2px; white-space: pre; animation: codex-jev-art-drift 14s ease-in-out infinite alternate; }
@@ -181,6 +181,10 @@
       #codex-jev-connect button:disabled { opacity: .55; cursor: default; }
       #codex-jev-connect-footer { display: flex; align-items: center; gap: 10px; margin-top: 18px; }
       #codex-jev-connect-footer button { white-space: nowrap; }
+      #codex-jev-connect-link { margin: 18px 0 0 !important; text-align: center; font-size: 12px !important; }
+      #codex-jev-connect-link a { color: var(--vscode-textLink-foreground, #83bcf7); text-decoration: none; }
+      #codex-jev-connect-link a:hover { text-decoration: underline; }
+      #codex-jev-connect-link a:focus-visible { outline: 2px solid var(--vscode-focusBorder, #83bcf7); outline-offset: 2px; }
       #codex-jev-connect #codex-jev-save-key { border-color: transparent; background: var(--vscode-button-background, #0e639c); color: var(--vscode-button-foreground, #fff); }
       #codex-jev-connect #codex-jev-save-key:hover { background: var(--vscode-button-hoverBackground, #1177bb); }
       @media (max-width: 350px) { #codex-jev-connect-card { padding: 18px; } #codex-jev-connect-footer { gap: 6px; } #codex-jev-connect-footer button { padding-inline: 8px; font-size: 12px; } }
@@ -201,7 +205,7 @@
     setup.setAttribute("role", "dialog");
     setup.setAttribute("aria-modal", "true");
     setup.setAttribute("aria-labelledby", "codex-jev-connect-title");
-    setup.innerHTML = `<div id="codex-jev-connect-art" aria-hidden="true"><pre></pre></div><div id="codex-jev-connect-card"><div id="codex-jev-connect-heading"><h1 id="codex-jev-connect-title">Connect Jev</h1><img id="codex-jev-connect-icon" src="./assets/jev-icon.png" alt=""></div><p>Enter a typesafe.ai API key to use the selected integrations.</p><label for="codex-jev-key">API key</label><input id="codex-jev-key" type="password" autocomplete="off" spellcheck="false" maxlength="4096"><div id="codex-jev-connect-actions"><button id="codex-jev-test-key" type="button">Test API key</button><span id="codex-jev-key-status" role="status" aria-live="polite"></span></div><div id="codex-jev-connect-footer"><button id="codex-jev-save-key" type="button">Save API key</button><button id="codex-jev-skip-key" type="button">Skip for now</button></div></div>`;
+    setup.innerHTML = `<div id="codex-jev-connect-art" aria-hidden="true"><pre></pre></div><div id="codex-jev-connect-card"><div id="codex-jev-connect-heading"><h1 id="codex-jev-connect-title">Connect Jev</h1><img id="codex-jev-connect-icon" src="./assets/jev-icon.png" alt=""></div><p>Enter a typesafe.ai API key to use the selected integrations.</p><label for="codex-jev-key">API key</label><input id="codex-jev-key" type="password" autocomplete="off" spellcheck="false" maxlength="4096"><div id="codex-jev-connect-actions"><button id="codex-jev-test-key" type="button">Test API key</button><span id="codex-jev-key-status" role="status" aria-live="polite"></span></div><div id="codex-jev-connect-footer"><button id="codex-jev-save-key" type="button">Save API key</button><button id="codex-jev-skip-key" type="button">Skip for now</button></div><p id="codex-jev-connect-link">Need a key? <a href="https://console.typesafe.ai/keys" target="_blank" rel="noopener noreferrer">Get an API key at typesafe.ai</a></p></div>`;
     document.body.appendChild(setup);
     setup.querySelector("#codex-jev-connect-art pre").textContent = Array.from({ length: 48 }, (_, row) =>
       Array.from({ length: 76 }, (_, column) => {
@@ -502,32 +506,7 @@
   function schedulePosition() {
     if (positionScheduled) return;
     positionScheduled = true;
-    setTimeout(() => { positionScheduled = false; position(); injectSettingsItem(); }, 0);
-  }
-
-  function injectSettingsItem() {
-    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-    let node;
-    while ((node = walker.nextNode())) {
-      if (node.textContent.trim() !== "Codex settings" || root?.contains(node)) continue;
-      const existing = node.parentElement?.closest('button,[role="menuitem"],a');
-      if (!existing || !visibleRect(existing) || !existing.parentElement ||
-          existing.parentElement.querySelector('[data-codex-jev-settings="true"]')) continue;
-      const item = existing.cloneNode(true);
-      item.removeAttribute("id");
-      item.setAttribute("data-codex-jev-settings", "true");
-      item.setAttribute("aria-label", "Jev settings");
-      const label = [...item.querySelectorAll("*")].find((element) => element.textContent.trim() === "Codex settings" &&
-        ![...element.children].some((child) => child.textContent.trim() === "Codex settings"));
-      if (label) label.textContent = "Jev settings";
-      else item.textContent = "Jev settings";
-      item.addEventListener("click", (event) => {
-        event.preventDefault(); event.stopPropagation();
-        send("openSettings");
-      });
-      existing.insertAdjacentElement("afterend", item);
-      return;
-    }
+    setTimeout(() => { positionScheduled = false; position(); }, 0);
   }
 
   function start() {

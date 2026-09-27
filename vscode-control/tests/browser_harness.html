@@ -12,6 +12,12 @@
     .model { box-sizing: border-box; margin-left: auto; flex: none; height: 34px; padding: 6px 12px; border: 0; border-radius: 999px; background: #303030; }
     button { min-height: 44px; }
     .results { position: absolute; top: 16px; left: 16px; font: 12px monospace; }
+    .settings-screen { display: none; position: fixed; inset: 0; z-index: 10; background: #181818; }
+    .settings-nav { box-sizing: border-box; width: 190px; height: 100%; padding: 22px 12px; border-right: 1px solid #333; }
+    .settings-nav button { display: block; width: 100%; margin: 6px 0; padding: 8px 12px; border: 0; border-radius: 6px; background: transparent; color: #ccc; text-align: left; }
+    .settings-nav button svg, .settings-nav button img { display: inline-block; width: 16px; height: 16px; margin-right: 10px; vertical-align: middle; }
+    .settings-nav [aria-current=page] { background: #303030; }
+    .settings-content { position: absolute; inset: 0 0 0 190px; overflow: auto; padding: 30px; }
   </style>
   <script>
     let outputEnabled = false, testBuildEnabled = false, searchListingEnabled = false, needsKey = false, health = { ok: true, model: "jev-1.13.0" }, busy = false, mode = "replace";
@@ -23,9 +29,11 @@
     ];
     let calls = 0, activeViewId = null, freshView = false;
     window.__jevHarnessLastAction = "";
+    window.__jevHarnessSettingsRead = 0;
     window.acquireVsCodeApi = () => ({ postMessage(request) {
       calls += 1;
       window.__jevHarnessLastAction = request.action;
+      if (request.action === "settingsRead") window.__jevHarnessSettingsRead += 1;
       if (activeViewId && activeViewId !== request.viewId) freshView = true;
       activeViewId = request.viewId;
       if (request.action === "setSelection") {
@@ -40,15 +48,22 @@
             { ok: true, model: "jev-1.13.0" }) : undefined;
       const keySaved = request.action === "saveApiKey";
       if (keySaved) { needsKey = false; health = { ok: true, model: "jev-1.13.0" }; }
+      const settings = request.action === "settingsRead" ? { action: "ready", hasKey: true,
+        config: { mode: "replace", thresholds: { output: { routine_min: 90, exact_max: 20, unique_max: 30 },
+          test_build: { routine_min: 85, exact_max: 25, unique_max: 35 }, search_listing: {
+            summarize_probability_min: 78, summarize_confidence_min: 70, drop_probability_min: 92, drop_confidence_min: 85 } } } } :
+        request.action === "settingsSave" ? { action: "saved", hasKey: true } :
+          request.action === "settingsTest" ? { action: "tested", result: { ok: true, model: "jev-1.13.0" } } : undefined;
       queueMicrotask(() => window.dispatchEvent(new MessageEvent("message", { data: {
         type: "codex-jev-reply", id: request.id,
-        status: { enabled: outputEnabled || testBuildEnabled || searchListingEnabled, outputEnabled, testBuildEnabled, searchListingEnabled, needsKey, keyTest, keySaved, health, busy, mode, recent: freshView ? "No decision recorded yet" : history[0],
+        status: { enabled: outputEnabled || testBuildEnabled || searchListingEnabled, outputEnabled, testBuildEnabled, searchListingEnabled, needsKey, keyTest, keySaved, settings, health, busy, mode, recent: freshView ? "No decision recorded yet" : history[0],
           history: freshView ? [] : history,
           stats: freshView ? { calls: 0, candidates: 0, kept: 0, replaced: 0, checkedChars: 0, elapsedMs: 0, completed: 0 } : stats },
       } })));
     } });
   </script>
   <script src="../webview/jev-control.js"></script>
+  <script src="../webview/jev-settings.js"></script>
 </head>
 <body>
   <pre class="results" id="results">pending</pre>
@@ -56,6 +71,7 @@
     <div class="prompt">Ask for follow-up changes</div>
     <div class="toolbar"><span>+</span><span class="access" role="button">Full access</span><span class="model" role="button">GPT-6 Sol Extra High</span></div>
   </div>
+  <div class="settings-screen" id="settings-screen"><nav class="settings-nav" aria-label="Settings"><div class="settings-items"><div class="settings-item"><button aria-label="General">General</button></div><div class="settings-item"><button aria-label="Voice" aria-current="page"><svg aria-hidden="true" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5" fill="currentColor"/></svg><span>Voice</span></button></div><div class="settings-item"><button aria-label="Configuration">Configuration</button></div></div></nav><div class="settings-content"><main><h1>Voice</h1><p>Voice settings</p></main></div></div>
   <script>
     const api = acquireVsCodeApi();
     const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -280,15 +296,32 @@
       document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
       check(menu.dataset.open === "false", "Escape closes the menu");
       const codexMenu = document.createElement("div");
-      codexMenu.style.cssText = "position:fixed;top:30px;left:30px;width:260px;background:#222";
       codexMenu.innerHTML = '<button role="menuitem"><span>Codex settings</span></button>';
       document.body.append(codexMenu);
-      await until(() => codexMenu.querySelector('[data-codex-jev-settings="true"]'), "Jev settings appears in Codex menu");
-      const jevSettings = codexMenu.querySelector('[data-codex-jev-settings="true"]');
-      check(jevSettings.textContent.trim() === "Jev settings", "Jev settings menu label");
-      jevSettings.click();
-      check(window.__jevHarnessLastAction === "openSettings", "Jev settings opens through host bridge");
+      await pause(50);
+      check(!codexMenu.querySelector('[data-codex-jev-settings="true"]'), "no Jev item in Codex menu");
       codexMenu.remove();
+      const settingsScreen = document.getElementById("settings-screen");
+      settingsScreen.style.display = "block";
+      await until(() => settingsScreen.querySelector('[data-codex-jev-settings="true"]'), "Jev appears in Codex settings");
+      const jevSettings = settingsScreen.querySelector('[data-codex-jev-settings="true"]');
+      check(jevSettings.closest(".settings-item").previousElementSibling.textContent.trim() === "Voice", "Jev follows Voice");
+      check(jevSettings.textContent.trim() === "Jev", "Jev navigation label");
+      check(jevSettings.querySelector('img[src$="jev-icon.png"]'), "Jev navigation uses the probability icon");
+      jevSettings.click();
+      await until(() => settingsScreen.querySelector("#codex-jev-settings-panel") &&
+        settingsScreen.querySelector("#codex-jev-settings-key-state").textContent === "An API key is saved.", "Jev settings render inline");
+      check(window.__jevHarnessSettingsRead === 1, "settings load through host bridge");
+      check(settingsScreen.querySelector("main").style.display === "none", "Voice content hidden on Jev page");
+      check(settingsScreen.querySelector("#codex-jev-settings-output-routine_min").value === "90", "threshold loaded");
+      settingsScreen.querySelector("#codex-jev-settings-test").click();
+      await until(() => settingsScreen.querySelector("#codex-jev-settings-test-status").textContent === "OK", "saved key test result");
+      settingsScreen.querySelector("#codex-jev-settings-save").click();
+      await until(() => settingsScreen.querySelector("#codex-jev-settings-message").textContent === "Settings saved.", "settings saved inline");
+      settingsScreen.querySelector('button[aria-label="General"]').click();
+      check(settingsScreen.querySelector("main").style.display !== "none" &&
+        !settingsScreen.querySelector("#codex-jev-settings-panel"), "native settings return after navigation");
+      settingsScreen.style.display = "none";
       outputEnabled = true;
       needsKey = true;
       health = { ok: false, reason: "JEV_KEY_MISSING" };
@@ -302,6 +335,10 @@
       check(setup.textContent.includes("Enter a typesafe.ai API key to use the selected integrations.") &&
         !setup.textContent.includes("Test it here before saving") &&
         !setup.textContent.includes("plugin data directory"), "concise onboarding copy");
+      check(getComputedStyle(setup).backgroundColor === "rgb(17, 17, 17)", "opaque setup backdrop hides Codex content");
+      const keyLink = setup.querySelector("#codex-jev-connect-link a");
+      check(keyLink?.href === "https://console.typesafe.ai/keys" && keyLink.target === "_blank" &&
+        getComputedStyle(keyLink.parentElement).textAlign === "center", "TypeSafe key link is centered below actions");
       const footer = setup.querySelector("#codex-jev-connect-footer");
       const saveButton = setup.querySelector("#codex-jev-save-key");
       const skipButton = setup.querySelector("#codex-jev-skip-key");

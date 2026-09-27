@@ -18,7 +18,6 @@ function activate(context) {
   let selectionQueue = Promise.resolve();
   let viewBaseline = Promise.resolve();
   let probePromise = null;
-  let settingsPanel = null;
   const settings = () => vscode.workspace.getConfiguration("codexJev");
   const dataDirectory = () => {
     const directory = settings().get("dataDirectory") || defaultDataDirectory();
@@ -202,59 +201,49 @@ function activate(context) {
     return task;
   }
 
-  async function openSettings(onboarding = false) {
-    if (settingsPanel) {
-      settingsPanel.reveal?.(vscode.ViewColumn.Active);
-      return;
-    }
-    const panel = vscode.window.createWebviewPanel("codexJev.settings", "Jev settings", vscode.ViewColumn.Active,
-      { enableScripts: true, retainContextWhenHidden: true });
-    settingsPanel = panel;
-    panel.onDidDispose?.(() => { if (settingsPanel === panel) settingsPanel = null; });
-    const script = panel.webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, "webview", "settings.js"));
-    const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src ${panel.webview.cspSource};"><title>Jev settings</title><style>
-      body{font:13px var(--vscode-font-family);color:var(--vscode-foreground);background:var(--vscode-editor-background);max-width:740px;margin:28px auto;padding:0 24px 48px}h1{font-size:24px}h2{font-size:17px;margin-top:28px;border-bottom:1px solid var(--vscode-panel-border);padding-bottom:8px}p{color:var(--vscode-descriptionForeground);line-height:1.5}.field{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:11px 0}.field label{max-width:540px}small{display:block;color:var(--vscode-descriptionForeground);margin-top:3px}input[type=number],input[type=password],select{box-sizing:border-box;background:var(--vscode-input-background);color:var(--vscode-input-foreground);border:1px solid var(--vscode-input-border);padding:7px 9px;border-radius:3px}input[type=number]{width:76px}input[type=password]{width:min(100%,480px)}button{background:var(--vscode-button-background);color:var(--vscode-button-foreground);border:1px solid transparent;border-radius:3px;padding:8px 14px;cursor:pointer}button.secondary{background:var(--vscode-button-secondaryBackground);color:var(--vscode-button-secondaryForeground);border-color:var(--vscode-contrastBorder,#707070)}button:disabled{opacity:.55;cursor:default}.actions{display:flex;align-items:center;gap:12px;margin-top:16px}#test-status{font-size:12px;font-weight:600}#test-status.ok,#message.ok{color:var(--vscode-testing-iconPassed,#4ec97f)}#test-status.error,#message.error{color:var(--vscode-errorForeground,#f48771)}#message{min-height:22px;margin-top:12px}body[data-onboarding=true]{min-height:calc(100vh - 76px);display:flex;flex-direction:column;justify-content:center;max-width:620px}body[data-onboarding=true] #advanced,body[data-onboarding=true] #key-heading,body[data-onboarding=true] #key-state{display:none}body[data-onboarding=true] h1{font-size:32px}body[data-onboarding=true] #key-section{margin-top:18px}body[data-onboarding=true] .field{display:block}body[data-onboarding=true] input[type=password]{width:100%;margin-top:14px}
-    </style></head><body data-onboarding="${onboarding}"><h1 id="page-title">Jev settings</h1><p id="intro">Changes apply to the next tool result. Jev keeps the full result whenever a safety check fails.</p><section id="key-section"><h2 id="key-heading">API key</h2><p id="key-state">Checking saved key…</p><div class="field"><label for="key">API key<small id="key-help">The saved key is masked. Enter a new key to replace it, or leave this field unchanged to keep it.</small></label><input id="key" type="password" autocomplete="off" spellcheck="false"></div><div class="actions"><button id="test" type="button" class="secondary">Test API key</button><span id="test-status" role="status" aria-live="polite"></span></div></section><section id="advanced"><h2>Behavior</h2><div class="field"><label for="mode">Mode<small>Observe records decisions; replace shortens approved results.</small></label><select id="mode"><option value="replace">Replace</option><option value="observe">Observe</option></select></div><div id="thresholds"></div></section><div class="actions"><button id="save" type="button">Save settings</button></div><p id="message" role="status" aria-live="polite"></p><script src="${script}"></script></body></html>`;
-    panel.webview.onDidReceiveMessage(async (message) => {
-      const reply = (payload) => panel.webview.postMessage(payload);
-      try {
-        const directory = dataDirectory();
-        if (message?.action === "ready") {
-          const config = await readConfig(directory);
-          let hasKey = false;
-          try { await readApiKey(directory); hasKey = true; } catch { /* no usable key */ }
-          await reply({ action: "ready", config: { ...config, thresholds: completeThresholds(config.thresholds) }, hasKey });
-        } else if (message?.action === "test") {
-          const key = typeof message.key === "string" && message.key ? message.key : null;
-          await reply({ action: "tested", result: await checkHealth(directory, globalThis.fetch, key) });
-        } else if (message?.action === "save") {
-          if (message.mode !== "observe" && message.mode !== "replace") throw new Error("Invalid mode");
-          if (!message.key) {
-            try { await readApiKey(directory); }
-            catch { throw new Error("Enter an API key before saving."); }
-          }
-          const thresholds = completeThresholds(message.thresholds);
-          const task = selectionQueue.then(async () => {
-            await writeThresholds(directory, thresholds);
-            await writeMode(directory, message.mode);
-            await settings().update("mode", message.mode, vscode.ConfigurationTarget.Global);
-            if (message.key) await writeApiKey(directory, message.key);
-            await sync();
-            if (state.enabled && message.key) await probe();
-          });
-          selectionQueue = task.catch(() => {});
-          await task;
-          await reply({ action: "saved", hasKey: true });
-        }
-      } catch (error) {
-        await reply({ action: "error", message: error.message || "Jev settings failed" });
+  async function settingsReply(request) {
+    try {
+      const directory = dataDirectory();
+      if (request.action === "settingsRead") {
+        const config = await readConfig(directory);
+        let hasKey = false;
+        try { await readApiKey(directory); hasKey = true; } catch { /* no usable key */ }
+        return { action: "ready", config: { ...config, thresholds: completeThresholds(config.thresholds) }, hasKey };
       }
-    });
-    panel.webview.html = html;
+      if (request.action === "settingsTest") {
+        const key = typeof request.key === "string" && request.key ? request.key : null;
+        return { action: "tested", result: await checkHealth(directory, globalThis.fetch, key) };
+      }
+      if (request.action === "settingsSave") {
+        if (!["observe", "replace"].includes(request.mode)) throw new Error("Invalid mode");
+        if (!request.key) {
+          try { await readApiKey(directory); }
+          catch { throw new Error("Enter an API key before saving."); }
+        }
+        const thresholds = completeThresholds(request.thresholds);
+        const task = selectionQueue.then(async () => {
+          await writeThresholds(directory, thresholds);
+          await writeMode(directory, request.mode);
+          await settings().update("mode", request.mode, vscode.ConfigurationTarget.Global);
+          if (request.key) await writeApiKey(directory, request.key);
+          await sync();
+          if (state.enabled && request.key) await probe();
+        });
+        selectionQueue = task.catch(() => {});
+        await task;
+        return { action: "saved", hasKey: true };
+      }
+    } catch (error) {
+      return { action: "error", message: error.message || "Jev settings failed" };
+    }
+    return { action: "error", message: "Unknown settings action" };
   }
 
   context.subscriptions.push(vscode.commands.registerCommand("codexJev.bridge", async (request) => {
     await enterView(request?.viewId);
+    if (["settingsRead", "settingsTest", "settingsSave"].includes(request?.action)) {
+      return { ...snapshot(), settings: await settingsReply(request) };
+    }
     if (request?.action === "testApiKey") {
       const keyTest = await checkHealth(dataDirectory(), globalThis.fetch,
         typeof request.key === "string" ? request.key : "");
@@ -271,10 +260,6 @@ function activate(context) {
         return { ...snapshot(), keySaveError: "Could not save API key" };
       }
     }
-    if (request?.action === "openSettings") {
-      await openSettings();
-      return snapshot();
-    }
     if (request?.action === "retryConnection") {
       await probe();
       return snapshot();
@@ -288,7 +273,6 @@ function activate(context) {
     }
     return snapshot();
   }));
-  context.subscriptions.push(vscode.commands.registerCommand("codexJev.openSettings", () => openSettings()));
   context.subscriptions.push(vscode.commands.registerCommand("codexJev.checkConnection", async () => {
     if (!state.enabled) {
       void vscode.window.showInformationMessage("Select a Jev integration to check the Jev connection.");

@@ -2,7 +2,7 @@
   "name": "codex-jev-control",
   "displayName": "Codex Jev Control",
   "description": "Jev integration controls inside the Codex composer",
-  "version": "0.2.11",
+  "version": "0.2.13",
   "publisher": "elhaus-labs",
   "license": "MIT",
   "icon": "icon.png",
@@ -11,11 +11,10 @@
   "main": "./extension.js",
   "engines": { "vscode": "^1.96.2" },
   "extensionKind": ["ui"],
-  "activationEvents": ["onStartupFinished", "onCommand:codexJev.bridge", "onCommand:codexJev.openSettings"],
+  "activationEvents": ["onStartupFinished", "onCommand:codexJev.bridge"],
   "contributes": {
     "commands": [
-      { "command": "codexJev.checkConnection", "title": "Jev: Check API and Key" },
-      { "command": "codexJev.openSettings", "title": "Jev settings" }
+      { "command": "codexJev.checkConnection", "title": "Jev: Check API and Key" }
     ],
     "configuration": {
       "title": "Codex Jev Control",

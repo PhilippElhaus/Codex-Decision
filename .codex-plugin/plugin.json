@@ -1,6 +1,6 @@
 {
   "name": "codex-jev",
-  "version": "0.2.7+codex.20260927070856",
+  "version": "0.2.7+codex.20260927115919",
   "description": "Jev-gated filtering for repetitive output, test/build logs, and broad search/listing results.",
   "author": {
     "name": "Philipp Elhaus",
@@ -24,6 +24,7 @@
     "capabilities": [
       "Lifecycle hooks"
     ],
+    "websiteURL": "https://philippelhaus.github.io/",
     "defaultPrompt": "Explain Codex Jev's replacement decisions and safety gates.",
     "brandColor": "#69AFF3",
     "logo": "./assets/logo.png",

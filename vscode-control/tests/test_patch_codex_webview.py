@@ -98,10 +98,14 @@ class PatchTests(unittest.TestCase):
         self.assertIn("retryConnection", (self.extension / "out/extension.js").read_text())
         self.assertIn("saveApiKey", (self.extension / "out/extension.js").read_text())
         self.assertIn("testApiKey", (self.extension / "out/extension.js").read_text())
+        self.assertIn("settingsSave", (self.extension / "out/extension.js").read_text())
         self.assertIn("feature:u.feature", (self.extension / "out/extension.js").read_text())
         self.assertIn("viewId", (self.extension / "out/extension.js").read_text())
         self.assertEqual((self.extension / patch.ASSET).read_bytes(),
                          (SOURCE.parent / "webview/jev-control.js").read_bytes())
+        self.assertEqual((self.extension / patch.SETTINGS_ASSET).read_bytes(),
+                         (SOURCE.parent / "webview/jev-settings.js").read_bytes())
+        self.assertIn(b"jev-settings.js", (self.extension / "webview/index.html").read_bytes())
         self.assertEqual((self.extension / patch.ICON_ASSET).read_bytes(),
                          (SOURCE.parent / "icon.png").read_bytes())
         self.assertIn(b"wsl.localhost", (self.extension / patch.IMAGE_ASSET).read_bytes())
@@ -118,6 +122,7 @@ class PatchTests(unittest.TestCase):
         host.write_bytes(host.read_bytes()[:-8])
         patch.restore(self.extension, self.backup)
         self.assertFalse((self.extension / patch.ASSET).exists())
+        self.assertFalse((self.extension / patch.SETTINGS_ASSET).exists())
         self.assertFalse((self.extension / patch.ICON_ASSET).exists())
         for relative, content in self.original.items():
             self.assertEqual((self.extension / relative).read_bytes(), content)
@@ -127,15 +132,19 @@ class PatchTests(unittest.TestCase):
         manifest_path = self.backup / "manifest.json"
         manifest = json.loads(manifest_path.read_text())
         del manifest["patched"][patch.ICON_ASSET]
+        del manifest["patched"][patch.SETTINGS_ASSET]
         manifest_path.write_text(json.dumps(manifest))
         (self.extension / patch.ICON_ASSET).unlink()
+        (self.extension / patch.SETTINGS_ASSET).unlink()
         patch.update(self.extension, self.backup)
         upgraded = json.loads(manifest_path.read_text())
         self.assertEqual((self.extension / patch.ICON_ASSET).read_bytes(),
                          (SOURCE.parent / "icon.png").read_bytes())
         self.assertIn(patch.ICON_ASSET, upgraded["patched"])
+        self.assertIn(patch.SETTINGS_ASSET, upgraded["patched"])
         patch.restore(self.extension, self.backup)
         self.assertFalse((self.extension / patch.ICON_ASSET).exists())
+        self.assertFalse((self.extension / patch.SETTINGS_ASSET).exists())
 
 
 if __name__ == "__main__":

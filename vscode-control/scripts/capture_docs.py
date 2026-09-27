@@ -27,6 +27,7 @@ def main() -> None:
             ('unavailable', 'jev-unavailable.png', 620, 280),
             ('missing-key', 'jev-missing-key.png', 340, 260),
             ('onboarding', 'jev-onboarding.png', 520, 720),
+            ('settings', 'jev-settings.png', 1040, 800),
         ]
         for state, name, width, height in captures:
             output = IMAGES / name
@@ -45,71 +46,15 @@ def main() -> None:
             if not found:
                 raise RuntimeError(f'Could not inspect {name} layout')
             layout = json.loads(unescape(found.group(1)))
-            if state != 'onboarding' and abs((layout['buttonTop'] - layout['anchorTop']) - layout['screenshotOffset']) > 10:
+            if state not in ('onboarding', 'settings') and abs((layout['buttonTop'] - layout['anchorTop']) - layout['screenshotOffset']) > 10:
                 raise RuntimeError(f'{name} is vertically misaligned: {layout}')
             if state == 'onboarding' and 'id="codex-jev-connect"' not in result.stdout:
                 raise RuntimeError('Connect Jev overlay was not rendered')
+            if state == 'settings' and ('id="codex-jev-settings-panel"' not in result.stdout or
+                                        'id="codex-jev-settings-test-status"' not in result.stdout or
+                                        '>OK</span>' not in result.stdout):
+                raise RuntimeError('Jev settings were not rendered in Codex settings')
             print(f'{name}: {output.stat().st_size} bytes; layout={layout}')
-
-        source = (ROOT / 'extension.js').read_text(encoding='utf-8')
-        marker = 'const html = `'
-        start = source.index(marker, source.index('async function openSettings(')) + len(marker)
-        end = source.index('`;\n    panel.webview.onDidReceiveMessage', start)
-        settings_template = source[start:end]
-        settings_template = re.sub(r'<meta http-equiv="Content-Security-Policy"[^>]+>', '', settings_template, count=1)
-        settings_template = settings_template.replace('${script}',
-            'file:///' + quote(windows_path(ROOT / 'webview/settings.js').replace('\\', '/'), safe='/:'))
-        config = json.loads((ROOT.parent / 'config.example.json').read_text(encoding='utf-8'))
-        fixture = {'mode': config['mode'], 'thresholds': config['thresholds']}
-        theme = ('<style>:root{--vscode-font-family:"Segoe UI",sans-serif;'
-                 '--vscode-foreground:#c8c8c8;--vscode-editor-background:#111111;'
-                 '--vscode-descriptionForeground:#939393;--vscode-panel-border:#333;'
-                 '--vscode-input-background:#181818;--vscode-input-foreground:#c8c8c8;'
-                 '--vscode-input-border:#3b3b3b;--vscode-button-background:#0e639c;'
-                 '--vscode-button-foreground:#fff;--vscode-button-secondaryBackground:#252525;'
-                 '--vscode-button-secondaryForeground:#ccc}body{zoom:1.25}</style>')
-        examples = ((False, 'jev-settings.png', None, 'OK'),
-                    (False, None, 'JEV_HTTP_401', 'Invalid'),
-                    (False, None, 'JEV_KEY_EXPIRED', 'Expired'),
-                    (False, None, 'HOST_CONFIG_ERROR', 'Data directory missing'))
-        for onboarding, name, failure, label in examples:
-            result_value = ('{ok: false, reason: ' + json.dumps(failure) + '}' if failure else
-                            '{ok: true, model: "jev-1.13.0"}')
-            reply = ('{action: "error", message: "Set codexJev.dataDirectory to the plugin data path."}'
-                     if failure == 'HOST_CONFIG_ERROR' else
-                     '{action: "tested", result: ' + result_value + '}')
-            bridge = ('<script>window.acquireVsCodeApi = () => ({postMessage(message) {'
-                      'if (message.action === "ready") setTimeout(() => window.dispatchEvent('
-                      'new MessageEvent("message", {data: {action: "ready", config: '
-                      + json.dumps(fixture) + ', hasKey: ' + str(not onboarding).lower() + '}})), 0);'
-                      'if (message.action === "test") setTimeout(() => window.dispatchEvent('
-                      'new MessageEvent("message", {data: ' + reply + '})), 0);'
-                      '}});'
-                      + ('' if onboarding else 'setTimeout(() => document.getElementById("test").click(), 300);')
-                      + '</script>')
-            settings = settings_template.replace('${onboarding}', str(onboarding).lower())
-            settings = settings.replace('</head>', bridge + theme + '</head>')
-            basename = name or f'jev-{failure.lower()}.png'
-            page = profile / (basename + '.html')
-            page.write_text(settings, encoding='utf-8')
-            output = (IMAGES / name) if name else (profile / basename)
-            result = subprocess.run([
-                str(edge), '--headless', '--disable-gpu', '--no-first-run',
-                '--no-default-browser-check', '--disable-extensions',
-                '--hide-scrollbars', '--force-device-scale-factor=2',
-                '--virtual-time-budget=950', '--window-size=1040,800',
-                f'--user-data-dir={windows_path(profile / (basename + "-profile"))}',
-                '--dump-dom', f'--screenshot={windows_path(output)}',
-                'file:///' + quote(windows_path(page).replace('\\', '/'), safe='/:'),
-            ], capture_output=True, text=True, timeout=30, check=False)
-            expected = 'Connect Jev' if onboarding else 'An API key is saved.'
-            if (result.returncode != 0 or not output.is_file() or output.stat().st_size < 1000
-                    or expected not in result.stdout
-                    or (not onboarding and ('Output filter' not in result.stdout or
-                                            f'>{label}</span>' not in result.stdout))):
-                raise RuntimeError(f'Could not capture {basename}: exit={result.returncode}')
-            if name: output.chmod(0o644)
-            if name: print(f'{name}: {output.stat().st_size} bytes; example values')
     finally:
         remove_profile(profile, 'jev-docs-')
 

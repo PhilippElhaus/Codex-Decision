@@ -20,6 +20,15 @@
     .codex-top strong { display: block; margin-bottom: 22px; color: #ddd; font-size: 19px; }
     .codex-top span { display: block; margin-top: 14px; }
     body[data-demo="onboarding"] .codex-top { display: block; }
+    .settings-screen { display: none; position: fixed; inset: 0; z-index: 10; background: #181818; color: #d2d2d2; }
+    body[data-demo="settings"] .settings-screen { display: block; }
+    body[data-demo="settings"] .composer { display: none; }
+    .settings-nav { box-sizing: border-box; width: 210px; height: 100%; padding: 25px 12px; border-right: 1px solid #323232; }
+    .settings-nav strong { display: block; margin: 0 12px 25px; font-size: 22px; }
+    .settings-nav button { display: block; width: 100%; padding: 10px 13px; border: 0; border-radius: 7px; background: transparent; color: #c9c9c9; text-align: left; font: inherit; }
+    .settings-nav button svg, .settings-nav button img { display: inline-block; width: 16px; height: 16px; margin-right: 10px; vertical-align: middle; }
+    .settings-nav [aria-current=page] { background: #303030; color: #f3f3f3; }
+    .settings-content { position: absolute; inset: 0 0 0 210px; overflow: auto; padding: 28px; }
     @media (max-width: 700px) { .divider, .context { display: none; } }
     /* Match the headless screenshot surface to its smaller layout viewport. */
     #codex-jev { transform: translateY(var(--screenshot-offset, 0px)); }
@@ -31,6 +40,11 @@
       "replaced · test/build · 6,367 chars · -95%",
     ];
     window.acquireVsCodeApi = () => ({ postMessage(request) {
+      const settings = request.action === "settingsRead" ? { action: "ready", hasKey: true,
+        config: { mode: "replace", thresholds: { output: { routine_min: 90, exact_max: 20, unique_max: 30 },
+          test_build: { routine_min: 85, exact_max: 25, unique_max: 35 }, search_listing: {
+            summarize_probability_min: 78, summarize_confidence_min: 70, drop_probability_min: 92, drop_confidence_min: 85 } } } } :
+        request.action === "settingsTest" ? { action: "tested", result: { ok: true, model: "jev-1.13.0" } } : undefined;
       queueMicrotask(() => window.dispatchEvent(new MessageEvent("message", { data: {
         type: "codex-jev-reply", id: request.id,
         status: {
@@ -40,11 +54,13 @@
             demo === "unavailable" ? { ok: false, reason: "JEV_TIMEOUT" } : { ok: true, model: "jev-1.13.0" },
           busy: demo === "pulse", mode: "replace", recent: history[0], history,
           stats: { calls: 1, candidates: 0, kept: 0, replaced: 1, checkedChars: 6367, savedChars: 6058, estimatedTokensSaved: 1515, elapsedMs: 1263, completed: 1 },
+          settings,
         },
       } })));
     } });
   </script>
   <script src="../webview/jev-control.js"></script>
+  <script src="../webview/jev-settings.js"></script>
 </head>
 <body>
   <div class="codex-top"><strong>Codex</strong>Chats<span>Recent conversations</span><span>Start a new chat</span></div>
@@ -58,6 +74,7 @@
       <span class="send">↑</span>
     </div>
   </div>
+  <div class="settings-screen"><nav class="settings-nav" aria-label="Settings"><strong>Settings</strong><div class="settings-items"><div class="settings-item"><button aria-label="General">General</button></div><div class="settings-item"><button aria-label="Voice" aria-current="page"><svg aria-hidden="true" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5" fill="currentColor"/></svg><span>Voice</span></button></div><div class="settings-item"><button aria-label="Configuration">Configuration</button></div><div class="settings-item"><button aria-label="Personalization">Personalization</button></div><div class="settings-item"><button aria-label="Usage &amp; billing">Usage &amp; billing</button></div><div class="settings-item"><button aria-label="MCP servers">MCP servers</button></div><div class="settings-item"><button aria-label="Hooks">Hooks</button></div><div class="settings-item"><button aria-label="Plugins">Plugins</button></div></div></nav><div class="settings-content"><main><h1>Voice</h1><p>Voice settings</p></main></div></div>
   <script>
     const api = acquireVsCodeApi();
     document.body.dataset.demo = demo;
@@ -67,7 +84,11 @@
       if (demo === "onboarding") document.getElementById("codex-jev-connect-icon").src = "../icon.png";
       if (demo === "missing-key") document.getElementById("codex-jev-skip-key").click();
       if (demo === "menu") document.getElementById("codex-jev-button").click();
-      else if (demo !== "composer" && demo !== "onboarding") document.getElementById("codex-jev-tip").style.display = "block";
+      else if (demo !== "composer" && demo !== "onboarding" && demo !== "settings") document.getElementById("codex-jev-tip").style.display = "block";
+      if (demo === "settings") {
+        document.querySelector('[data-codex-jev-settings="true"]')?.click();
+        setTimeout(() => document.getElementById("codex-jev-settings-test")?.click(), 150);
+      }
       const anchor = document.querySelector(".access").getBoundingClientRect();
       const button = document.getElementById("codex-jev-button").getBoundingClientRect();
       document.body.dataset.layout = JSON.stringify({ anchorTop: anchor.top, buttonTop: button.top, screenshotOffset: Math.max(0, outerHeight - innerHeight) });

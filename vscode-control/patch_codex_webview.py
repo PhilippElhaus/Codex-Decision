@@ -17,6 +17,7 @@ ORIGINAL = {
     "webview/index.html": "d91ea97a8bd9e9d67dd048f5496614af4e9eeb33a0dd4b412a6293e06bb3fc02",
 }
 ASSET = "webview/assets/jev-control.js"
+SETTINGS_ASSET = "webview/assets/jev-settings.js"
 ICON_ASSET = "webview/assets/jev-icon.png"
 IMAGE_ASSET = "webview/assets/app-initial-de4359f78ed1.js"
 IMAGE_ORIGINAL = "ffdf480c63b5c99009ae0b618cad846ac5f33af42af4cec900f633586370a9dc"
@@ -97,19 +98,20 @@ def patched_image_asset(original: bytes) -> bytes:
 BRIDGE = (
     'let a=e.onDidReceiveMessage(u=>{'
     'if(u&&u.type==="codex-jev"){'
-    'if(!["status","setSelection","retryConnection","openSettings","testApiKey","saveApiKey"].includes(u.action))return;'
+    'if(!["status","setSelection","retryConnection","testApiKey","saveApiKey","settingsRead","settingsTest","settingsSave"].includes(u.action))return;'
     'if(u.action==="setSelection"&&typeof u.enabled!=="boolean")return;'
     'if(u.action==="setSelection"&&!(["output","test_build","search_listing"].includes(u.feature)))return;'
-    'if(["testApiKey","saveApiKey"].includes(u.action)&&(typeof u.key!=="string"||u.key.length>4096))return;'
+    'if(["testApiKey","saveApiKey","settingsTest","settingsSave"].includes(u.action)&&(typeof u.key!=="string"||u.key.length>4096))return;'
+    'if(u.action==="settingsSave"&&(!["observe","replace"].includes(u.mode)||!u.thresholds||typeof u.thresholds!=="object"))return;'
     'if(u.viewId!==undefined&&(typeof u.viewId!=="string"||!/^[-\\w:]{1,96}$/.test(u.viewId)))return;'
     'Promise.resolve(qe.commands.executeCommand("codexJev.bridge",'
-    '{action:u.action,enabled:u.enabled,feature:u.feature,viewId:u.viewId,key:u.key})).then('
+    '{action:u.action,enabled:u.enabled,feature:u.feature,viewId:u.viewId,key:u.key,mode:u.mode,thresholds:u.thresholds})).then('
     'v=>e.postMessage({type:"codex-jev-reply",id:u.id,status:v}),'
     '()=>e.postMessage({type:"codex-jev-reply",id:u.id,status:'
     '{enabled:false,health:{ok:false,reason:"BRIDGE_UNAVAILABLE"},'
     'busy:false,mode:"replace",recent:"Control unavailable"}}));return}'
 ) + marketplace_path_bridge() + 'if(s.markMessageReceived(),u.type==="chunked-message-ack")'
-SCRIPT = '<script src="./assets/jev-control.js"></script>\n'
+SCRIPT = '<script src="./assets/jev-control.js"></script>\n<script src="./assets/jev-settings.js"></script>\n'
 MODULE = '<script type="module" crossorigin src="./assets/index-78f8e71b3851.js"></script>'
 
 
@@ -149,9 +151,10 @@ def apply(root: Path, backup: Path) -> None:
             if digest(exact_file(backup, relative).read_bytes()) != expected:
                 raise RuntimeError(f"rollback file changed: {relative}")
     source_asset = Path(__file__).with_name("webview") / "jev-control.js"
-    if not source_asset.is_file():
-        raise RuntimeError("missing composer control source")
-    if any((root / asset).exists() or (root / asset).is_symlink() for asset in (ASSET, ICON_ASSET)):
+    settings_asset = Path(__file__).with_name("webview") / "jev-settings.js"
+    if not source_asset.is_file() or not settings_asset.is_file():
+        raise RuntimeError("missing Jev webview source")
+    if any((root / asset).exists() or (root / asset).is_symlink() for asset in (ASSET, SETTINGS_ASSET, ICON_ASSET)):
         raise RuntimeError("Codex asset already exists")
     source = {}
     for relative, expected in ORIGINAL.items():
@@ -169,6 +172,7 @@ def apply(root: Path, backup: Path) -> None:
         "out/extension.js": js.replace(ANCHOR, BRIDGE).encode("utf-8"),
         "webview/index.html": html.replace(MODULE, SCRIPT + MODULE).encode("utf-8"),
         ASSET: source_asset.read_bytes(),
+        SETTINGS_ASSET: settings_asset.read_bytes(),
         ICON_ASSET: exact_file(Path(__file__).parent, "icon.png").read_bytes(),
         IMAGE_ASSET: image_patched,
     }
@@ -191,7 +195,7 @@ def apply(root: Path, backup: Path) -> None:
     try:
         for relative, data in changed.items():
             target = root / relative
-            if relative in (ASSET, ICON_ASSET):
+            if relative in (ASSET, SETTINGS_ASSET, ICON_ASSET):
                 target.write_bytes(data)
             else:
                 write_exact(target, data)
@@ -203,6 +207,7 @@ def apply(root: Path, backup: Path) -> None:
         for relative, data in source.items():
             write_exact(root / relative, data)
         (root / ASSET).unlink(missing_ok=True)
+        (root / SETTINGS_ASSET).unlink(missing_ok=True)
         (root / ICON_ASSET).unlink(missing_ok=True)
         write_exact(root / IMAGE_ASSET, image_original)
         raise
@@ -228,6 +233,8 @@ def restore(root: Path, backup: Path) -> None:
             raise RuntimeError("image rollback file changed")
         write_exact(root / IMAGE_ASSET, original_image)
     (root / ASSET).unlink()
+    if SETTINGS_ASSET in manifest["patched"]:
+        (root / SETTINGS_ASSET).unlink()
     if ICON_ASSET in manifest["patched"]:
         (root / ICON_ASSET).unlink()
 
@@ -248,6 +255,7 @@ def update(root: Path, backup: Path) -> None:
         if digest(exact_file(backup, relative).read_bytes()) != expected:
             raise RuntimeError(f"rollback file changed: {relative}")
     source_asset = Path(__file__).with_name("webview") / "jev-control.js"
+    settings_asset = Path(__file__).with_name("webview") / "jev-settings.js"
     image_backup = backup / IMAGE_ASSET
     if image_backup.is_file():
         image_original = exact_file(backup, IMAGE_ASSET).read_bytes()
@@ -255,19 +263,24 @@ def update(root: Path, backup: Path) -> None:
         image_original = exact_file(root, IMAGE_ASSET).read_bytes()
     image_patched = patched_image_asset(image_original)
     original_js = exact_file(backup, "out/extension.js").read_bytes()
+    original_html = exact_file(backup, "webview/index.html").read_bytes()
     js = original_js.decode("utf-8")
-    if js.count(ANCHOR) != 1:
+    html = original_html.decode("utf-8")
+    if js.count(ANCHOR) != 1 or html.count(MODULE) != 1:
         raise RuntimeError("Codex extension insertion point changed")
     changed = {
         "out/extension.js": js.replace(ANCHOR, BRIDGE).encode("utf-8"),
+        "webview/index.html": html.replace(MODULE, SCRIPT + MODULE).encode("utf-8"),
         ASSET: exact_file(source_asset.parent, source_asset.name).read_bytes(),
+        SETTINGS_ASSET: exact_file(settings_asset.parent, settings_asset.name).read_bytes(),
         ICON_ASSET: exact_file(Path(__file__).parent, "icon.png").read_bytes(),
         IMAGE_ASSET: image_patched,
     }
-    if ICON_ASSET not in manifest["patched"] and ((root / ICON_ASSET).exists() or (root / ICON_ASSET).is_symlink()):
-        raise RuntimeError("Codex icon asset already exists")
+    for asset in (ICON_ASSET, SETTINGS_ASSET):
+        if asset not in manifest["patched"] and ((root / asset).exists() or (root / asset).is_symlink()):
+            raise RuntimeError(f"Codex asset already exists: {asset}")
     previous = {relative: exact_file(root, relative).read_bytes() for relative in changed
-                if relative != ICON_ASSET or ICON_ASSET in manifest["patched"]}
+                if relative in manifest["patched"]}
     for relative, data in changed.items():
         manifest["patched"][relative] = digest(data)
     manifest["originalImage"] = IMAGE_ORIGINAL
@@ -282,8 +295,9 @@ def update(root: Path, backup: Path) -> None:
     except Exception:
         for relative, data in previous.items():
             write_exact(root / relative, data)
-        if ICON_ASSET not in previous:
-            (root / ICON_ASSET).unlink(missing_ok=True)
+        for asset in (ICON_ASSET, SETTINGS_ASSET):
+            if asset not in previous:
+                (root / asset).unlink(missing_ok=True)
         write_exact(manifest_path, previous_manifest)
         raise
 

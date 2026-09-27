@@ -24,21 +24,11 @@ test("composer bridge selects integrations and reports view-scoped activity with
   let probes = 0;
   let suppliedKey;
   let configListener;
-  let settingsPanel;
-  let panelsCreated = 0;
   const fake = {
     window: {
       createStatusBarItem: () => { throw new Error("Status bar item must not be created"); },
       showInformationMessage: () => {},
-      createWebviewPanel: () => {
-        panelsCreated += 1;
-        const messages = [];
-        const webview = { cspSource: "vscode-resource:", asWebviewUri: () => "vscode-resource:/settings.js",
-          postMessage: async (value) => { messages.push(value); },
-          onDidReceiveMessage: (handler) => { webview.receive = handler; } };
-        settingsPanel = { webview, messages, reveal() {} };
-        return settingsPanel;
-      },
+      createWebviewPanel: () => { throw new Error("Jev settings must stay in Codex settings"); },
     },
     Uri: { joinPath: () => ({}) }, ViewColumn: { Active: 1 }, ConfigurationTarget: { Global: 1 },
     commands: { registerCommand(name, callback) { commands.set(name, callback); return { dispose() {} }; } },
@@ -71,7 +61,6 @@ test("composer bridge selects integrations and reports view-scoped activity with
     assert.equal((await bridge({ action: "status", viewId: "view-one" })).enabled, false);
     const firstSelection = await bridge({ action: "setSelection", feature: "output", enabled: true, viewId: "view-one" });
     assert.equal(firstSelection.needsKey, true);
-    assert.equal(panelsCreated, 0);
     const firstTest = await bridge({ action: "testApiKey", key: "example-test-key", viewId: "view-one" });
     assert.equal(firstTest.keyTest.ok, true);
     assert.equal(suppliedKey, "example-test-key");
@@ -128,29 +117,29 @@ test("composer bridge selects integrations and reports view-scoped activity with
     health = { ok: true, model: "jev-1.13.0" };
     assert.equal((await bridge({ action: "retryConnection", viewId: "view-two" })).health.ok, true);
 
-    await bridge({ action: "openSettings", viewId: "view-two" });
-    assert.equal(panelsCreated, 1);
-    assert.match(settingsPanel.webview.html, /Jev settings/);
-    await settingsPanel.webview.receive({ action: "ready" });
-    const ready = settingsPanel.messages.at(-1);
+    assert.equal(commands.has("codexJev.openSettings"), false);
+    const ready = (await bridge({ action: "settingsRead" })).settings;
     assert.equal(ready.action, "ready");
     assert.equal(ready.hasKey, false);
     assert.equal(ready.config.thresholds.output.routine_min, 90);
     assert.equal(JSON.stringify(ready).includes("JEV_API_KEY"), false);
-    await settingsPanel.webview.receive({ action: "save", mode: "replace", key: "",
-      thresholds: { output: { routine_min: 90 } } });
-    assert.equal(settingsPanel.messages.at(-1).action, "error");
-    assert.match(settingsPanel.messages.at(-1).message, /Enter an API key/);
-    await settingsPanel.webview.receive({ action: "save", mode: "observe", key: "new-test-key-123",
-      thresholds: { output: { routine_min: 97 } } });
-    assert.equal(settingsPanel.messages.at(-1).action, "saved");
+    const missing = (await bridge({ action: "settingsSave", mode: "replace", key: "",
+      thresholds: { output: { routine_min: 90 } } })).settings;
+    assert.equal(missing.action, "error");
+    assert.match(missing.message, /Enter an API key/);
+    const savedSettings = (await bridge({ action: "settingsSave", mode: "observe", key: "new-test-key-123",
+      thresholds: { output: { routine_min: 97 } } })).settings;
+    assert.equal(savedSettings.action, "saved");
     assert.equal(await core.readApiKey(directory), "new-test-key-123");
     assert.equal((await core.readConfig(directory)).thresholds.output.routine_min, 97);
     assert.equal((await core.readConfig(directory)).mode, "observe");
-    assert.equal(JSON.stringify(settingsPanel.messages).includes("new-test-key-123"), false);
-    await settingsPanel.webview.receive({ action: "test", key: "" });
+    assert.equal(JSON.stringify(savedSettings).includes("new-test-key-123"), false);
+    const readyAfterSave = (await bridge({ action: "settingsRead" })).settings;
+    assert.equal(readyAfterSave.hasKey, true);
+    assert.equal(JSON.stringify(readyAfterSave).includes("new-test-key-123"), false);
+    const tested = (await bridge({ action: "settingsTest", key: "" })).settings;
     assert.equal(suppliedKey, null);
-    assert.equal(settingsPanel.messages.at(-1).result.ok, true);
+    assert.equal(tested.result.ok, true);
     const saved = await bridge({ action: "saveApiKey", key: "another-test-key-123", viewId: "view-two" });
     assert.equal(saved.keySaved, true);
     assert.equal(saved.needsKey, false);
