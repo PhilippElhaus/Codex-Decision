@@ -328,7 +328,18 @@ async function checkHealth(dataDirectory, send = globalThis.fetch, suppliedKey =
   if (!response || typeof response.ok !== "boolean") {
     return { ok: false, reason: "JEV_INVALID_RESPONSE" };
   }
-  if (!response.ok) return { ok: false, reason: `JEV_HTTP_${response.status}` };
+  if (!response.ok) {
+    if ([401, 403].includes(response.status) && typeof response.text === "function") {
+      try {
+        const error = JSON.parse((await response.text()).slice(0, 4096));
+        const details = [error.code, error.message, error.error?.code, error.error?.message];
+        if (details.some((value) => typeof value === "string" && /expir/i.test(value))) {
+          return { ok: false, reason: "JEV_KEY_EXPIRED" };
+        }
+      } catch { /* An unstructured error keeps its HTTP status. */ }
+    }
+    return { ok: false, reason: `JEV_HTTP_${response.status}` };
+  }
   try {
     const output = await response.text();
     if (output.length > 262144) throw new Error("Jev health response is too large");

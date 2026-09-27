@@ -51,7 +51,47 @@
   const key = document.getElementById("key");
   const save = document.getElementById("save");
   const test = document.getElementById("test");
+  const testStatus = document.getElementById("test-status");
+  let hasKey = false;
   let busy = false;
+  let pendingAction = null;
+  function setPageMode(onboarding) {
+    document.body.dataset.onboarding = String(onboarding);
+    document.getElementById("page-title").textContent = onboarding ? "Connect Jev" : "Jev settings";
+    document.getElementById("intro").textContent = onboarding
+      ? "Enter a Jev API key to use the selected integrations. Test it here before saving."
+      : "Changes apply to the next tool result. Jev keeps the full result whenever a safety check fails.";
+    save.textContent = onboarding ? "Save API key" : "Save settings";
+  }
+  function setKeyState(saved) {
+    hasKey = saved;
+    key.placeholder = saved ? "********" : "";
+    document.getElementById("key-state").textContent = saved ? "An API key is saved." : "No API key is saved.";
+    document.getElementById("key-help").textContent = saved
+      ? "The saved key is masked. Enter a different key to replace it, or leave this field unchanged to keep it."
+      : "Enter your Jev API key. It is stored in the plugin data directory.";
+  }
+  function testResult(value, kind = "") {
+    testStatus.textContent = value;
+    testStatus.className = kind;
+  }
+  function failureLabel(reason) {
+    const names = {
+      JEV_KEY_MISSING: "Missing", JEV_KEY_EXPIRED: "Expired", JEV_HTTP_401: "Invalid",
+      JEV_HTTP_403: "Rejected", JEV_HTTP_429: "Rate limited", JEV_TIMEOUT: "Timed out",
+      JEV_NETWORK_ERROR: "Network error", JEV_INVALID_RESPONSE: "Invalid response",
+    };
+    return names[reason] || (typeof reason === "string" && /^JEV_HTTP_\d{3}$/.test(reason)
+      ? `HTTP ${reason.slice(-3)}` : "Connection failed");
+  }
+  function errorLabel(message) {
+    if (typeof message !== "string") return "Check failed";
+    if (/expired/i.test(message)) return "Expired";
+    if (/invalid/i.test(message)) return "Invalid";
+    if (/dataDirectory/i.test(message)) return "Data directory missing";
+    if (/missing|no key|api key/i.test(message)) return "Missing";
+    return "Check failed";
+  }
   function report(value, kind = "") {
     message.textContent = value;
     message.className = kind;
@@ -78,15 +118,22 @@
   }
   test.addEventListener("click", () => {
     if (busy) return;
+    report("");
+    testStatus.title = "";
+    if (!key.value.trim() && !hasKey) { testResult("Missing", "error"); return; }
     setBusy(true);
-    report("Testing Jev connection…");
+    pendingAction = "test";
+    testResult("Checking…");
     vscode.postMessage({ action: "test", key: key.value.trim() });
   });
+  key.addEventListener("input", () => { testResult(""); testStatus.title = ""; });
   save.addEventListener("click", () => {
     if (busy) return;
     try {
       const values = thresholds();
       setBusy(true);
+      pendingAction = "save";
+      testResult("");
       report("Saving…");
       vscode.postMessage({ action: "save", key: key.value.trim(), mode: document.getElementById("mode").value,
         thresholds: values });
@@ -98,26 +145,38 @@
     if (data.action === "ready") {
       const config = data.config || {};
       document.getElementById("mode").value = config.mode || "replace";
-      document.getElementById("key-state").textContent = data.hasKey ? "An API key is saved." : "No usable API key is saved.";
+      setKeyState(Boolean(data.hasKey));
       for (const [hook, , fields] of sections) {
         for (const [name] of fields) {
           document.getElementById(`${hook}-${name}`).value = config.thresholds?.[hook]?.[name] ?? "";
         }
       }
+      if (!hasKey) key.focus();
     } else if (data.action === "tested") {
       setBusy(false);
-      report(data.result?.ok ? `API key works with ${data.result.model}.` :
-        `Connection check failed: ${String(data.result?.reason || "unknown").replace(/^JEV_/, "").replaceAll("_", " ")}.`,
-      data.result?.ok ? "ok" : "error");
+      pendingAction = null;
+      testResult(data.result?.ok ? "OK" : failureLabel(data.result?.reason), data.result?.ok ? "ok" : "error");
+      testStatus.title = data.result?.ok ? `Connected to ${data.result.model}.` : "";
     } else if (data.action === "saved") {
       setBusy(false);
+      pendingAction = null;
       key.value = "";
-      document.getElementById("key-state").textContent = data.hasKey ? "An API key is saved." : "No usable API key is saved.";
+      setKeyState(Boolean(data.hasKey));
+      if (document.body.dataset.onboarding === "true" && hasKey) setPageMode(false);
+      testResult("");
       report("Settings saved.", "ok");
     } else if (data.action === "error") {
       setBusy(false);
-      report(data.message || "Jev settings failed.", "error");
+      if (pendingAction === "test") {
+        testResult(errorLabel(data.message), "error");
+        testStatus.title = data.message || "";
+        report("");
+      } else {
+        report(data.message || "Jev settings failed.", "error");
+      }
+      pendingAction = null;
     }
   });
+  setPageMode(document.body.dataset.onboarding === "true");
   vscode.postMessage({ action: "ready" });
 })();

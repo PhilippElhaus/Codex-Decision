@@ -262,6 +262,9 @@ test("health check reads the private .env and keeps the key out of status", asyn
     assert.throws(() => parseHealthOutput('{"state":"unavailable"}'));
     assert.deepEqual(await checkHealth(directory, async () => ({ ok: false, status: 401 })),
       { ok: false, reason: "JEV_HTTP_401" });
+    assert.deepEqual(await checkHealth(directory, async () => ({ ok: false, status: 401,
+      text: async () => '{"error":{"code":"expired_api_key"}}' })),
+    { ok: false, reason: "JEV_KEY_EXPIRED" });
     assert.deepEqual(await checkHealth(directory, async () => { throw new Error("network"); }),
       { ok: false, reason: "JEV_NETWORK_ERROR" });
     assert.deepEqual(await checkHealth(directory, async () => { throw new DOMException("timed out", "TimeoutError"); }),

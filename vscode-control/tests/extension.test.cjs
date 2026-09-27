@@ -22,18 +22,21 @@ test("composer bridge selects integrations and reports view-scoped activity with
   let mode = "replace";
   let health = { ok: true, model: "jev-1.13.0" };
   let probes = 0;
+  let suppliedKey;
   let configListener;
   let settingsPanel;
+  let panelsCreated = 0;
   const fake = {
     window: {
       createStatusBarItem: () => { throw new Error("Status bar item must not be created"); },
       showInformationMessage: () => {},
       createWebviewPanel: () => {
+        panelsCreated += 1;
         const messages = [];
         const webview = { cspSource: "vscode-resource:", asWebviewUri: () => "vscode-resource:/settings.js",
           postMessage: async (value) => { messages.push(value); },
           onDidReceiveMessage: (handler) => { webview.receive = handler; } };
-        settingsPanel = { webview, messages };
+        settingsPanel = { webview, messages, reveal() {} };
         return settingsPanel;
       },
     },
@@ -47,7 +50,7 @@ test("composer bridge selects integrations and reports view-scoped activity with
   };
   const originalLoad = Module._load;
   const originalHealth = core.checkHealth;
-  core.checkHealth = async () => { probes += 1; return health; };
+  core.checkHealth = async (_directory, _send, key) => { probes += 1; suppliedKey = key; return health; };
   Module._load = function (request, parent, isMain) {
     if (request === "vscode") return fake;
     return originalLoad.call(this, request, parent, isMain);
@@ -67,6 +70,9 @@ test("composer bridge selects integrations and reports view-scoped activity with
     const bridge = commands.get("codexJev.bridge");
     assert.equal((await bridge({ action: "status", viewId: "view-one" })).enabled, false);
     await bridge({ action: "setSelection", feature: "output", enabled: true, viewId: "view-one" });
+    await until(() => Boolean(settingsPanel));
+    assert.match(settingsPanel.webview.html, /data-onboarding="true"/);
+    assert.doesNotMatch(settingsPanel.webview.html, /New API key/);
     await until(async () => (await bridge({ action: "status", viewId: "view-one" })).health?.ok === true);
     assert.equal((await core.readConfig(directory)).enabled, true);
 
@@ -120,6 +126,7 @@ test("composer bridge selects integrations and reports view-scoped activity with
     assert.equal((await bridge({ action: "retryConnection", viewId: "view-two" })).health.ok, true);
 
     await bridge({ action: "openSettings", viewId: "view-two" });
+    assert.equal(panelsCreated, 1);
     assert.match(settingsPanel.webview.html, /Jev settings/);
     await settingsPanel.webview.receive({ action: "ready" });
     const ready = settingsPanel.messages.at(-1);
@@ -127,6 +134,10 @@ test("composer bridge selects integrations and reports view-scoped activity with
     assert.equal(ready.hasKey, false);
     assert.equal(ready.config.thresholds.output.routine_min, 90);
     assert.equal(JSON.stringify(ready).includes("JEV_API_KEY"), false);
+    await settingsPanel.webview.receive({ action: "save", mode: "replace", key: "",
+      thresholds: { output: { routine_min: 90 } } });
+    assert.equal(settingsPanel.messages.at(-1).action, "error");
+    assert.match(settingsPanel.messages.at(-1).message, /Enter an API key/);
     await settingsPanel.webview.receive({ action: "save", mode: "observe", key: "new-test-key-123",
       thresholds: { output: { routine_min: 97 } } });
     assert.equal(settingsPanel.messages.at(-1).action, "saved");
@@ -134,6 +145,9 @@ test("composer bridge selects integrations and reports view-scoped activity with
     assert.equal((await core.readConfig(directory)).thresholds.output.routine_min, 97);
     assert.equal((await core.readConfig(directory)).mode, "observe");
     assert.equal(JSON.stringify(settingsPanel.messages).includes("new-test-key-123"), false);
+    await settingsPanel.webview.receive({ action: "test", key: "" });
+    assert.equal(suppliedKey, null);
+    assert.equal(settingsPanel.messages.at(-1).result.ok, true);
   } finally {
     for (const disposable of context.subscriptions.reverse()) disposable.dispose();
     await fs.rm(directory, { recursive: true, force: true });

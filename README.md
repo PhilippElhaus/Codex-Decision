@@ -18,7 +18,9 @@ All integrations start off. The button in the Codex composer selects them and sh
 
 ## Settings
 
-Open **Codex settings → Jev settings** to save or test an API key, choose `observe` or `replace`, and adjust the cutoffs for each integration. Changes apply to the next tool result. The page keeps the saved key hidden and leaves the full result in place when a safety check fails. This capture uses example settings and contains no key.
+Selecting a Jev integration without a key opens a full editor setup panel. In **Codex settings → Jev settings**, the saved key appears as `********`; enter a different key to replace it, or test the saved key without changing it. A bordered Test button shows `OK` or a short failure reason beside it. The page also controls `observe`, `replace`, and the cutoffs for each integration. Changes apply to the next tool result. The captures use example state and contain no key.
+
+<img src="docs/images/jev-onboarding.png" width="760" alt="Connect Jev setup panel requesting an API key when an integration is first enabled">
 
 <img src="docs/images/jev-settings.png" width="900" alt="Jev settings page with API key controls, behavior mode, and output filter cutoffs">
 
@@ -43,7 +45,7 @@ codex plugin marketplace add https://github.com/PhilippElhaus/Codex-Jev
 codex plugin add codex-jev@codex-jev
 ```
 
-Build the [VS Code control VSIX](vscode-control/README.md) and install `codex-jev-control-0.2.8.vsix`. Set `codexJev.dataDirectory` to the plugin data directory, and apply the version-pinned composer patch. Open **Codex settings → Jev settings** to save or test the API key and adjust hook cutoffs. Start a new Codex thread.
+Build the [VS Code control VSIX](vscode-control/README.md) and install `codex-jev-control-0.2.9.vsix`. Set `codexJev.dataDirectory` to the plugin data directory, and apply the version-pinned composer patch. Enable an integration to open key setup when no key is saved. Start a new Codex thread.
 
 ## Documentation
 
