@@ -12,9 +12,15 @@ Codex Jev trims large tool results before Codex reads them. It uses Jev to decid
 | Test/build logs | Failures and completion summaries without routine pass and progress lines. |
 | Search/listing | Relevant matches and representative file paths from broad results. |
 
-All integrations start off. The button in the Codex composer selects them and shows Jev health and recent outcomes. The images show synthetic activity.
+All integrations start off. The button in the Codex composer selects them and shows Jev health and recent outcomes. The composer images show synthetic activity from the current control.
 
 <img src="docs/images/jev-menu.png" width="620" alt="Jev integrations selector in the Codex composer">
+
+## Settings
+
+Open **Codex settings → Jev settings** to save or test an API key, choose `observe` or `replace`, and adjust the cutoffs for each integration. Changes apply to the next tool result. The page keeps the saved key hidden and leaves the full result in place when a safety check fails. This capture uses example settings and contains no key.
+
+<img src="docs/images/jev-settings.png" width="900" alt="Jev settings page with API key controls, behavior mode, and output filter cutoffs">
 
 ## Measured results
 

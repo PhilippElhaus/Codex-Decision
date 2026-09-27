@@ -27,6 +27,8 @@ Use `update` to refresh an already patched installation, or `restore` with the s
 
 Select integrations in the composer menu. An empty selection turns Jev off. Open **Codex settings → Jev settings** to save or test an API key, change the mode, and adjust each hook's Jev cutoffs. The default mode is `replace`; `observe` records decisions while keeping full tool output. A selection or cutoff change applies when the next tool result completes. A new plugin installation or hook-code change requires a new Codex thread.
 
+![Jev settings page showing example mode and output filter cutoffs](../docs/images/jev-settings.png)
+
 ## Verify
 
 ```bash
@@ -35,4 +37,4 @@ python3 -m unittest discover -s tests -p 'test_*.py'
 python3 scripts/browser_smoke.py
 ```
 
-The browser smoke test runs the real composer control against a synthetic VS Code bridge. [Visual harness](tests/visual_harness.html) is the source for the README screenshots.
+The browser smoke test runs the real composer control against a synthetic VS Code bridge. [Visual harness](tests/visual_harness.html) is the source for composer screenshots. `scripts/capture_docs.py` captures the settings page from the extension's actual webview HTML and script with example values.
