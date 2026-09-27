@@ -25,6 +25,7 @@ def main() -> None:
             ('menu', 'jev-menu.png', 620, 340),
             ('tooltip', 'jev-tooltip.png', 620, 280),
             ('unavailable', 'jev-unavailable.png', 620, 280),
+            ('missing-key', 'jev-missing-key.png', 340, 260),
             ('onboarding', 'jev-onboarding.png', 520, 720),
         ]
         for state, name, width, height in captures:

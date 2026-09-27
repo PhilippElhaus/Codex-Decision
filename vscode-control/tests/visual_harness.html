@@ -35,8 +35,8 @@
         type: "codex-jev-reply", id: request.id,
         status: {
           enabled: true, outputEnabled: true, testBuildEnabled: true, searchListingEnabled: true,
-          needsKey: demo === "onboarding",
-          health: demo === "onboarding" ? { ok: false, reason: "JEV_KEY_MISSING" } :
+          needsKey: demo === "onboarding" || demo === "missing-key",
+          health: demo === "onboarding" || demo === "missing-key" ? { ok: false, reason: "JEV_KEY_MISSING" } :
             demo === "unavailable" ? { ok: false, reason: "JEV_TIMEOUT" } : { ok: true, model: "jev-1.13.0" },
           busy: demo === "pulse", mode: "replace", recent: history[0], history,
           stats: { calls: 1, candidates: 0, kept: 0, replaced: 1, checkedChars: 6367, savedChars: 6058, estimatedTokensSaved: 1515, elapsedMs: 1263, completed: 1 },
@@ -64,6 +64,8 @@
     setTimeout(() => {
       document.documentElement.style.setProperty("--screenshot-offset", `${Math.max(0, outerHeight - innerHeight)}px`);
       if (demo !== "composer") document.querySelector(".prompt").textContent = "";
+      if (demo === "onboarding") document.getElementById("codex-jev-connect-icon").src = "../icon.png";
+      if (demo === "missing-key") document.getElementById("codex-jev-skip-key").click();
       if (demo === "menu") document.getElementById("codex-jev-button").click();
       else if (demo !== "composer" && demo !== "onboarding") document.getElementById("codex-jev-tip").style.display = "block";
       const anchor = document.querySelector(".access").getBoundingClientRect();

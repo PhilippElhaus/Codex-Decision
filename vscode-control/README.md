@@ -8,7 +8,7 @@ Build the VSIX from this checkout, then run:
 
 ```bash
 npx @vscode/vsce package --no-dependencies
-code --install-extension codex-jev-control-0.2.10.vsix --force
+code --install-extension codex-jev-control-0.2.11.vsix --force
 ```
 
 Set `codexJev.dataDirectory` to the installed plugin's absolute `PLUGIN_DATA` path (on Windows, a `\\wsl.localhost\<distro>\...` path for a WSL installation). `CODEX_JEV_DATA_DIRECTORY` is an alternative. The extension has no machine-specific default. It reads `PLUGIN_DATA/.env` to probe API health. During first setup, the entered key travels through the local Codex webview bridge to the extension; it is not sent as chat text. See [key setup](../docs/setup/setup_credentials.md).
@@ -25,9 +25,11 @@ Use `update` to refresh an already patched installation, or `restore` with the s
 
 ## Use it
 
-Select integrations in the composer menu. An empty selection turns Jev off. When an integration is enabled without a key, **Connect Jev** covers the Codex side window. Test and save the key there, or choose **Skip for now** to return to Codex; **Connect Jev…** in the Jev menu reopens it. Open **Codex settings → Jev settings** later to test the saved key, replace it, change the mode, and adjust each hook's Jev cutoffs. The saved key appears as `********` and is never sent back to the webview. The Test button shows `OK` or a short failure reason beside it. The default mode is `replace`; `observe` records decisions while keeping full tool output. A selection or cutoff change applies when the next tool result completes. A new plugin installation or hook-code change requires a new Codex thread.
+Select integrations in the composer menu. An empty selection turns Jev off. When an integration is enabled without a key, **Connect Jev** covers the Codex side window and asks for a typesafe.ai API key. Test and save the key there, or choose **Skip for now** to return to Codex; **Connect Jev…** in the Jev menu or **Connect** in the compact missing-key tooltip reopens it. Open **Codex settings → Jev settings** later to test the saved key, replace it, change the mode, and adjust each hook's Jev cutoffs. The saved key appears as `********` and is never sent back to the webview. The Test button shows `OK` or a short failure reason beside it. The default mode is `replace`; `observe` records decisions while keeping full tool output. A selection or cutoff change applies when the next tool result completes. A new plugin installation or hook-code change requires a new Codex thread.
 
 ![Connect Jev setup overlay in the Codex side window with Skip for now](../docs/images/jev-onboarding.png)
+
+![Compact Jev missing-key tooltip](../docs/images/jev-missing-key.png)
 
 ![Jev settings page showing example mode and output filter cutoffs](../docs/images/jev-settings.png)
 

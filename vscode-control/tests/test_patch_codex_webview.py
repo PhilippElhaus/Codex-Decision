@@ -102,6 +102,8 @@ class PatchTests(unittest.TestCase):
         self.assertIn("viewId", (self.extension / "out/extension.js").read_text())
         self.assertEqual((self.extension / patch.ASSET).read_bytes(),
                          (SOURCE.parent / "webview/jev-control.js").read_bytes())
+        self.assertEqual((self.extension / patch.ICON_ASSET).read_bytes(),
+                         (SOURCE.parent / "icon.png").read_bytes())
         self.assertIn(b"wsl.localhost", (self.extension / patch.IMAGE_ASSET).read_bytes())
 
         patch.update(self.extension, self.backup)
@@ -116,8 +118,24 @@ class PatchTests(unittest.TestCase):
         host.write_bytes(host.read_bytes()[:-8])
         patch.restore(self.extension, self.backup)
         self.assertFalse((self.extension / patch.ASSET).exists())
+        self.assertFalse((self.extension / patch.ICON_ASSET).exists())
         for relative, content in self.original.items():
             self.assertEqual((self.extension / relative).read_bytes(), content)
+
+    def test_update_adds_icon_to_previous_patch(self):
+        patch.apply(self.extension, self.backup)
+        manifest_path = self.backup / "manifest.json"
+        manifest = json.loads(manifest_path.read_text())
+        del manifest["patched"][patch.ICON_ASSET]
+        manifest_path.write_text(json.dumps(manifest))
+        (self.extension / patch.ICON_ASSET).unlink()
+        patch.update(self.extension, self.backup)
+        upgraded = json.loads(manifest_path.read_text())
+        self.assertEqual((self.extension / patch.ICON_ASSET).read_bytes(),
+                         (SOURCE.parent / "icon.png").read_bytes())
+        self.assertIn(patch.ICON_ASSET, upgraded["patched"])
+        patch.restore(self.extension, self.backup)
+        self.assertFalse((self.extension / patch.ICON_ASSET).exists())
 
 
 if __name__ == "__main__":

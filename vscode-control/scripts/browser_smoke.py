@@ -19,10 +19,11 @@ def main() -> None:
         target = windows_path(ROOT / 'tests/browser_harness.html').replace('\\', '/')
         address = 'file:///' + quote(target, safe='/:')
         reports = []
-        for width in (720, 1200):
+        for width, motion in ((720, 'no-preference'), (1200, 'reduce')):
             result = subprocess.run([
                 str(edge), '--headless', '--disable-gpu', '--no-first-run',
                 '--no-default-browser-check', '--disable-extensions',
+                f'--force-prefers-reduced-motion={motion}',
                 '--virtual-time-budget=3000', f'--window-size={width},600',
                 f'--user-data-dir={windows_path(profile / f"viewport-{width}")}',
                 '--dump-dom', address,
@@ -33,7 +34,7 @@ def main() -> None:
             outcome = json.loads(match.group(1).replace('&quot;', '"'))
             if not outcome.get('ok'):
                 raise AssertionError({'viewport': width, **outcome})
-            reports.append({'viewport': width, **outcome})
+            reports.append({'viewport': width, 'motion': motion, **outcome})
         print(json.dumps(reports))
     finally:
         remove_profile(profile, 'jev-edge-test-')

@@ -294,12 +294,36 @@
       health = { ok: false, reason: "JEV_KEY_MISSING" };
       const setup = document.getElementById("codex-jev-connect");
       await until(() => setup.style.display === "flex", "missing key opens over Codex pane");
+      setup.querySelector("#codex-jev-connect-icon").src = "../icon.png";
       const bounds = setup.getBoundingClientRect();
       check(bounds.left === 0 && bounds.top === 0 && bounds.width === innerWidth &&
         bounds.height === innerHeight && setup.parentElement === document.body,
         "setup covers the Codex webview");
+      check(setup.textContent.includes("Enter a typesafe.ai API key to use the selected integrations.") &&
+        !setup.textContent.includes("Test it here before saving") &&
+        !setup.textContent.includes("plugin data directory"), "concise onboarding copy");
+      const footer = setup.querySelector("#codex-jev-connect-footer");
+      const saveButton = setup.querySelector("#codex-jev-save-key");
+      const skipButton = setup.querySelector("#codex-jev-skip-key");
+      check(Math.abs(saveButton.getBoundingClientRect().top - skipButton.getBoundingClientRect().top) < 1 &&
+        footer.contains(saveButton) && footer.contains(skipButton), "Save and Skip share a row");
+      check(setup.querySelector("#codex-jev-connect-icon").getAttribute("src") === "../icon.png" &&
+        getComputedStyle(setup.querySelector("#codex-jev-connect-art pre")).animationName ===
+          (matchMedia("(prefers-reduced-motion: reduce)").matches ? "none" : "codex-jev-art-drift"),
+        "Jev icon and motion-aware ASCII backdrop");
       setup.querySelector("#codex-jev-skip-key").click();
       check(setup.style.display === "none" && needsKey, "Skip restores Codex without saving a key");
+      const missingTip = document.getElementById("codex-jev-tip");
+      missingTip.style.display = "block";
+      check(missingTip.dataset.needsKey === "true" &&
+        missingTip.getBoundingClientRect().width <= 253 &&
+        getComputedStyle(missingTip.querySelector("#codex-jev-session-heading")).display === "none" &&
+        missingTip.querySelector("#codex-jev-retry").textContent === "Connect",
+        "missing-key tooltip is compact and action-oriented");
+      missingTip.style.display = "";
+      missingTip.querySelector("#codex-jev-retry").click();
+      check(setup.style.display === "flex", "tooltip Connect reopens setup");
+      skipButton.click();
       button.click();
       const reopen = document.getElementById("codex-jev-open-connect");
       check(reopen.style.display !== "none", "skipped setup remains reachable from Jev menu");
@@ -330,6 +354,9 @@
       document.getElementById("results").textContent = JSON.stringify({ ok: false, error: error.message,
         composer: document.querySelector(".composer").getBoundingClientRect().width,
         accessRight: document.querySelector(".access").getBoundingClientRect().right,
+        iconSrc: document.getElementById("codex-jev-connect-icon")?.getAttribute("src"),
+        animation: getComputedStyle(document.querySelector("#codex-jev-connect-art pre")).animationName,
+        reducedMotion: matchMedia("(prefers-reduced-motion: reduce)").matches,
         modelLeft: document.querySelector(".model").getBoundingClientRect().left,
         buttonWidth: button?.getBoundingClientRect().width, compact: control?.dataset.compact,
         display: control?.style.display, tooltip: document.getElementById("codex-jev-tip")?.textContent,

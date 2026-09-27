@@ -139,6 +139,8 @@
       .codex-jev-option small { display: block; color: var(--vscode-descriptionForeground, #aaa); font-size: 11px; line-height: 15px; margin-top: 1px; }
       #codex-jev-menu p { margin: 5px 0 0; padding: 9px 10px 4px; border-top: 1px solid var(--vscode-menu-separatorBackground, #ffffff1a); color: var(--vscode-descriptionForeground, #999); font-size: 11px; }
       #codex-jev-tip { display: none; width: min(420px, calc(100vw - 24px)); padding: 11px 13px; border: 1px solid #454545; border-radius: 11px; background: #292929; color: #dedede; pointer-events: auto; font-size: 12px; line-height: 1.45; white-space: normal; }
+      #codex-jev-tip[data-needs-key="true"] { width: min(252px, calc(100vw - 24px)); padding: 9px 11px; }
+      #codex-jev-tip[data-needs-key="true"] #codex-jev-mode, #codex-jev-tip[data-needs-key="true"] #codex-jev-session-heading, #codex-jev-tip[data-needs-key="true"] #codex-jev-stats, #codex-jev-tip[data-needs-key="true"] #codex-jev-tokens, #codex-jev-tip[data-needs-key="true"] #codex-jev-history-heading, #codex-jev-tip[data-needs-key="true"] #codex-jev-history, #codex-jev-tip[data-needs-key="true"] #codex-jev-empty { display: none !important; }
       #codex-jev-tip::after { content: ""; position: absolute; top: 100%; left: 0; right: 0; height: 10px; }
       #codex-jev:hover #codex-jev-tip, #codex-jev:focus-within #codex-jev-tip { display: block; }
       #codex-jev[data-menu="true"] #codex-jev-tip { display: none; }
@@ -158,13 +160,18 @@
       #codex-jev-history li { margin-top: 3px; }
       #codex-jev-history strong { font-weight: 700; color: #fff; }
       #codex-jev-empty { margin: 0; color: #888; }
-      #codex-jev-connect { position: fixed; inset: 0; z-index: 2147483640; display: none; align-items: center; justify-content: center; box-sizing: border-box; overflow: auto; padding: 20px; background: #000b; color: var(--vscode-foreground, #d0d0d0); font-family: inherit; }
+      #codex-jev-connect { position: fixed; inset: 0; z-index: 2147483640; display: none; align-items: center; justify-content: center; box-sizing: border-box; overflow: auto; padding: 20px; background: #000b; color: var(--vscode-foreground, #d0d0d0); font-family: inherit; isolation: isolate; }
       #codex-jev-connect * { box-sizing: border-box; }
-      #codex-jev-connect-card { width: min(100%, 460px); margin: auto; padding: 28px; border: 1px solid var(--vscode-panel-border, #3c3c3c); border-radius: 12px; background: var(--vscode-editor-background, #1b1b1b); box-shadow: 0 20px 60px #0008; }
-      #codex-jev-connect h1 { margin: 0 0 22px; font-size: clamp(28px, 5vw, 36px); line-height: 1.2; }
-      #codex-jev-connect p { margin: 0 0 32px; color: var(--vscode-descriptionForeground, #999); font-size: 14px; line-height: 1.55; }
+      #codex-jev-connect-art { position: absolute; inset: 0; overflow: hidden; pointer-events: none; mask-image: radial-gradient(ellipse at center, #000 20%, #0009 48%, transparent 80%); }
+      #codex-jev-connect-art pre { position: absolute; top: 50%; left: 50%; margin: 0; color: #bdc9d3; opacity: .18; font: 12px/18px monospace; letter-spacing: 2px; white-space: pre; animation: codex-jev-art-drift 14s ease-in-out infinite alternate; }
+      @keyframes codex-jev-art-drift { from { transform: translate(-52%, -51%) rotate(-2deg); } to { transform: translate(-48%, -49%) rotate(2deg); } }
+      @media (prefers-reduced-motion: reduce) { #codex-jev-connect-art pre { animation: none; transform: translate(-50%, -50%); } }
+      #codex-jev-connect-card { position: relative; width: min(100%, 460px); margin: auto; padding: 28px; border: 1px solid var(--vscode-panel-border, #3c3c3c); border-radius: 12px; background: var(--vscode-editor-background, #1b1b1b); box-shadow: 0 20px 60px #0008; }
+      #codex-jev-connect-heading { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+      #codex-jev-connect h1 { margin: 0; font-size: clamp(28px, 5vw, 36px); line-height: 1.2; }
+      #codex-jev-connect-icon { width: 38px; height: 38px; object-fit: contain; flex: none; }
+      #codex-jev-connect p { margin: 0 0 28px; color: var(--vscode-descriptionForeground, #999); font-size: 14px; line-height: 1.5; }
       #codex-jev-connect label { display: block; margin-bottom: 6px; font-size: 14px; }
-      #codex-jev-connect small { display: block; margin-bottom: 14px; color: var(--vscode-descriptionForeground, #999); font-size: 12px; line-height: 1.45; }
       #codex-jev-key { width: 100%; height: 42px; padding: 8px 10px; border: 1px solid var(--vscode-input-border, #555); border-radius: 5px; outline: none; background: var(--vscode-input-background, #202020); color: var(--vscode-input-foreground, #ddd); font: inherit; }
       #codex-jev-key:focus { border-color: var(--vscode-focusBorder, #e4a900); }
       #codex-jev-connect-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
@@ -172,8 +179,11 @@
       #codex-jev-connect button:hover { background: var(--vscode-button-secondaryHoverBackground, #353535); }
       #codex-jev-connect button:focus-visible { outline: 2px solid var(--vscode-focusBorder, #83bcf7); outline-offset: 2px; }
       #codex-jev-connect button:disabled { opacity: .55; cursor: default; }
-      #codex-jev-connect #codex-jev-save-key { margin-top: 18px; border-color: transparent; background: var(--vscode-button-background, #0e639c); color: var(--vscode-button-foreground, #fff); }
+      #codex-jev-connect-footer { display: flex; align-items: center; gap: 10px; margin-top: 18px; }
+      #codex-jev-connect-footer button { white-space: nowrap; }
+      #codex-jev-connect #codex-jev-save-key { border-color: transparent; background: var(--vscode-button-background, #0e639c); color: var(--vscode-button-foreground, #fff); }
       #codex-jev-connect #codex-jev-save-key:hover { background: var(--vscode-button-hoverBackground, #1177bb); }
+      @media (max-width: 350px) { #codex-jev-connect-card { padding: 18px; } #codex-jev-connect-footer { gap: 6px; } #codex-jev-connect-footer button { padding-inline: 8px; font-size: 12px; } }
       #codex-jev-key-status { min-width: 0; font-size: 12px; font-weight: 600; }
       #codex-jev-key-status[data-ok="true"] { color: var(--vscode-testing-iconPassed, #4ec97f); }
       #codex-jev-key-status[data-ok="false"] { color: var(--vscode-errorForeground, #f48771); }
@@ -191,8 +201,13 @@
     setup.setAttribute("role", "dialog");
     setup.setAttribute("aria-modal", "true");
     setup.setAttribute("aria-labelledby", "codex-jev-connect-title");
-    setup.innerHTML = `<div id="codex-jev-connect-card"><h1 id="codex-jev-connect-title">Connect Jev</h1><p>Enter a Jev API key to use the selected integrations. Test it here before saving.</p><label for="codex-jev-key">API key</label><small>The key is stored in the plugin data directory.</small><input id="codex-jev-key" type="password" autocomplete="off" spellcheck="false" maxlength="4096"><div id="codex-jev-connect-actions"><button id="codex-jev-test-key" type="button">Test API key</button><span id="codex-jev-key-status" role="status" aria-live="polite"></span></div><button id="codex-jev-save-key" type="button">Save API key</button> <button id="codex-jev-skip-key" type="button">Skip for now</button></div>`;
+    setup.innerHTML = `<div id="codex-jev-connect-art" aria-hidden="true"><pre></pre></div><div id="codex-jev-connect-card"><div id="codex-jev-connect-heading"><h1 id="codex-jev-connect-title">Connect Jev</h1><img id="codex-jev-connect-icon" src="./assets/jev-icon.png" alt=""></div><p>Enter a typesafe.ai API key to use the selected integrations.</p><label for="codex-jev-key">API key</label><input id="codex-jev-key" type="password" autocomplete="off" spellcheck="false" maxlength="4096"><div id="codex-jev-connect-actions"><button id="codex-jev-test-key" type="button">Test API key</button><span id="codex-jev-key-status" role="status" aria-live="polite"></span></div><div id="codex-jev-connect-footer"><button id="codex-jev-save-key" type="button">Save API key</button><button id="codex-jev-skip-key" type="button">Skip for now</button></div></div>`;
     document.body.appendChild(setup);
+    setup.querySelector("#codex-jev-connect-art pre").textContent = Array.from({ length: 48 }, (_, row) =>
+      Array.from({ length: 76 }, (_, column) => {
+        const value = Math.abs(Math.sin(row * 19.31 + column * 37.17) * 10000) % 1;
+        return value > .88 ? "*" : value > .73 ? "+" : value > .5 ? "·" : " ";
+      }).join("")).join("\n");
     setup.addEventListener("click", (event) => event.stopPropagation());
     setup.addEventListener("keydown", (event) => event.stopPropagation());
     setup.querySelector("#codex-jev-key").addEventListener("input", () => showKeyStatus("", false));
@@ -232,6 +247,11 @@
     });
     root.querySelector("#codex-jev-retry").addEventListener("click", (event) => {
       event.stopPropagation();
+      if (state.needsKey) {
+        setupDismissed = false;
+        render();
+        return;
+      }
       if (retryRequestId) return;
       retryRequestId = send("retryConnection");
       render();
@@ -266,17 +286,18 @@
     root.querySelector("#codex-jev-option").setAttribute("aria-checked", String(state.outputEnabled));
     root.querySelector("#codex-jev-test-build").setAttribute("aria-checked", String(state.testBuildEnabled));
     root.querySelector("#codex-jev-search-listing").setAttribute("aria-checked", String(state.searchListingEnabled));
-    const status = !state.enabled ? "Jev off" : state.health?.ok === true ? "Jev connected" :
+    const status = !state.enabled ? "Jev off" : needsSetup ? "API key needed" : state.health?.ok === true ? "Jev connected" :
       state.health?.ok === false ? "Jev unavailable" : "Checking Jev connection";
+    root.querySelector("#codex-jev-tip").dataset.needsKey = String(needsSetup);
     root.querySelector("#codex-jev-health-row strong").textContent = status;
-    const unavailable = state.enabled && state.health?.ok === false;
+    const unavailable = state.enabled && (state.health?.ok === false || needsSetup);
     const reason = root.querySelector("#codex-jev-health-reason");
-    reason.textContent = unavailable ? `· ${healthReason(state.health.reason)}` : "";
-    reason.style.display = unavailable ? "inline" : "none";
+    reason.textContent = unavailable && !needsSetup ? `· ${healthReason(state.health.reason)}` : "";
+    reason.style.display = unavailable && !needsSetup ? "inline" : "none";
     const retry = root.querySelector("#codex-jev-retry");
     retry.style.display = unavailable ? "inline-block" : "none";
     retry.disabled = Boolean(retryRequestId);
-    retry.textContent = retryRequestId ? "Checking…" : "Retry";
+    retry.textContent = needsSetup ? "Connect" : retryRequestId ? "Checking…" : "Retry";
     root.querySelector("#codex-jev-mode").textContent = state.enabled ?
       `${[state.outputEnabled && "output", state.testBuildEnabled && "test/build", state.searchListingEnabled && "search/listing"].filter(Boolean).join(" + ")}${state.mode === "observe" ? " · observe" : ""}` : "No integrations selected. Click to choose.";
     const stats = state.stats || {};
@@ -304,7 +325,7 @@
       return item;
     }));
     root.querySelector("#codex-jev-empty").style.display = state.enabled && !history.length ? "block" : "none";
-    button.setAttribute("aria-label", `${status}${unavailable ? `: ${healthReason(state.health.reason)}` : ""}. This session: ${totals}. ${tokens}. ${history.join(". ") || state.recent}. Select Jev integrations`);
+    button.setAttribute("aria-label", `${status}${unavailable ? `: ${healthReason(state.health?.reason)}` : ""}. This session: ${totals}. ${tokens}. ${history.join(". ") || state.recent}. Select Jev integrations`);
   }
 
   function visibleRect(element) {
@@ -474,7 +495,7 @@
     item.style.right = `${Math.round(window.innerWidth - buttonLeft - width)}px`;
     item.style.top = `${Math.round(anchor.rect.top + anchor.rect.height / 2 - button.getBoundingClientRect().height / 2)}px`;
     alignPopup(item.querySelector("#codex-jev-menu"), 296, buttonLeft, buttonLeft + width);
-    alignPopup(item.querySelector("#codex-jev-tip"), 420, buttonLeft, buttonLeft + width);
+    alignPopup(item.querySelector("#codex-jev-tip"), state.needsKey ? 252 : 420, buttonLeft, buttonLeft + width);
     item.style.visibility = "";
   }
 

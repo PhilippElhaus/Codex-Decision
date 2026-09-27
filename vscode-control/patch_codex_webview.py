@@ -17,6 +17,7 @@ ORIGINAL = {
     "webview/index.html": "d91ea97a8bd9e9d67dd048f5496614af4e9eeb33a0dd4b412a6293e06bb3fc02",
 }
 ASSET = "webview/assets/jev-control.js"
+ICON_ASSET = "webview/assets/jev-icon.png"
 IMAGE_ASSET = "webview/assets/app-initial-de4359f78ed1.js"
 IMAGE_ORIGINAL = "ffdf480c63b5c99009ae0b618cad846ac5f33af42af4cec900f633586370a9dc"
 IMAGE_ANCHOR = 'let i=SS(e);if(i==null)return null;try{let e={path:i,hostId:t}'
@@ -150,7 +151,7 @@ def apply(root: Path, backup: Path) -> None:
     source_asset = Path(__file__).with_name("webview") / "jev-control.js"
     if not source_asset.is_file():
         raise RuntimeError("missing composer control source")
-    if (root / ASSET).exists() or (root / ASSET).is_symlink():
+    if any((root / asset).exists() or (root / asset).is_symlink() for asset in (ASSET, ICON_ASSET)):
         raise RuntimeError("Codex asset already exists")
     source = {}
     for relative, expected in ORIGINAL.items():
@@ -168,6 +169,7 @@ def apply(root: Path, backup: Path) -> None:
         "out/extension.js": js.replace(ANCHOR, BRIDGE).encode("utf-8"),
         "webview/index.html": html.replace(MODULE, SCRIPT + MODULE).encode("utf-8"),
         ASSET: source_asset.read_bytes(),
+        ICON_ASSET: exact_file(Path(__file__).parent, "icon.png").read_bytes(),
         IMAGE_ASSET: image_patched,
     }
     if not existing_backup:
@@ -189,7 +191,7 @@ def apply(root: Path, backup: Path) -> None:
     try:
         for relative, data in changed.items():
             target = root / relative
-            if relative == ASSET:
+            if relative in (ASSET, ICON_ASSET):
                 target.write_bytes(data)
             else:
                 write_exact(target, data)
@@ -201,6 +203,7 @@ def apply(root: Path, backup: Path) -> None:
         for relative, data in source.items():
             write_exact(root / relative, data)
         (root / ASSET).unlink(missing_ok=True)
+        (root / ICON_ASSET).unlink(missing_ok=True)
         write_exact(root / IMAGE_ASSET, image_original)
         raise
 
@@ -225,6 +228,8 @@ def restore(root: Path, backup: Path) -> None:
             raise RuntimeError("image rollback file changed")
         write_exact(root / IMAGE_ASSET, original_image)
     (root / ASSET).unlink()
+    if ICON_ASSET in manifest["patched"]:
+        (root / ICON_ASSET).unlink()
 
 
 def update(root: Path, backup: Path) -> None:
@@ -256,9 +261,13 @@ def update(root: Path, backup: Path) -> None:
     changed = {
         "out/extension.js": js.replace(ANCHOR, BRIDGE).encode("utf-8"),
         ASSET: exact_file(source_asset.parent, source_asset.name).read_bytes(),
+        ICON_ASSET: exact_file(Path(__file__).parent, "icon.png").read_bytes(),
         IMAGE_ASSET: image_patched,
     }
-    previous = {relative: exact_file(root, relative).read_bytes() for relative in changed}
+    if ICON_ASSET not in manifest["patched"] and ((root / ICON_ASSET).exists() or (root / ICON_ASSET).is_symlink()):
+        raise RuntimeError("Codex icon asset already exists")
+    previous = {relative: exact_file(root, relative).read_bytes() for relative in changed
+                if relative != ICON_ASSET or ICON_ASSET in manifest["patched"]}
     for relative, data in changed.items():
         manifest["patched"][relative] = digest(data)
     manifest["originalImage"] = IMAGE_ORIGINAL
@@ -273,6 +282,8 @@ def update(root: Path, backup: Path) -> None:
     except Exception:
         for relative, data in previous.items():
             write_exact(root / relative, data)
+        if ICON_ASSET not in previous:
+            (root / ICON_ASSET).unlink(missing_ok=True)
         write_exact(manifest_path, previous_manifest)
         raise
 
