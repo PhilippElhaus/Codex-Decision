@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 import hashlib
 import json
@@ -45,6 +47,17 @@ DEFAULT_THRESHOLDS = {
     "search_listing": {"summarize_probability_min": 78, "summarize_confidence_min": 70,
                        "drop_probability_min": 92, "drop_confidence_min": 85},
 }
+_REQUEST_CAPTURE: ContextVar[dict | None] = ContextVar("jev_request_capture", default=None)
+
+
+@contextmanager
+def capture_request(record: dict):
+    """Collect request and answer data without the Authorization header."""
+    token = _REQUEST_CAPTURE.set(record)
+    try:
+        yield
+    finally:
+        _REQUEST_CAPTURE.reset(token)
 
 
 def load_api_key(data_dir: Path) -> str:
@@ -92,6 +105,8 @@ class Config:
     timeout_seconds: float = 3.0
     model: str = "jev-1.13.0"
     allow_mcp_replacement: bool = False
+    log_limit_mb: int = 50
+    never_delete_logs: bool = False
     thresholds: dict[str, dict[str, int]] = field(default_factory=lambda: {
         hook: dict(values) for hook, values in DEFAULT_THRESHOLDS.items()})
 
@@ -125,6 +140,8 @@ class Config:
             or not isinstance(config.model, str)
             or not re.fullmatch(r"jev-[\w.-]{1,40}", config.model)
             or type(config.allow_mcp_replacement) is not bool
+            or type(config.log_limit_mb) is not int or not 1 <= config.log_limit_mb <= 9999
+            or type(config.never_delete_logs) is not bool
             or not isinstance(config.thresholds, dict)
             or set(config.thresholds) - set(DEFAULT_THRESHOLDS)
             or any(not isinstance(values, dict) or set(values) - set(DEFAULT_THRESHOLDS[hook])
@@ -331,9 +348,13 @@ def jev_choice_request(state: dict, questions: dict, config: Config, api_key: st
 def _request_answers(state: dict, config: Config, api_key: str, questions: dict) -> dict:
     if not api_key:
         raise ValueError("Jev API key is missing")
-    payload = json.dumps({"state": state, "model": config.model, "questions": questions}, ensure_ascii=False).encode()
+    message = {"state": state, "model": config.model, "questions": questions}
+    payload = json.dumps(message, ensure_ascii=False).encode()
     if len(payload) > MAX_JEV_REQUEST_BYTES:
         raise ValueError("Jev request exceeds safe context budget")
+    capture = _REQUEST_CAPTURE.get()
+    if capture is not None:
+        capture["request"] = message
     req = request.Request(
         ENDPOINT,
         data=payload,
@@ -345,6 +366,8 @@ def _request_answers(state: dict, config: Config, api_key: str, questions: dict)
     answers = body.get("answers")
     if not isinstance(answers, dict):
         raise ValueError("missing answers")
+    if capture is not None:
+        capture["raw_answer"] = answers
     return answers
 
 
@@ -545,12 +568,9 @@ def decide(
     return result("replace", "jev_replace", size, capsule_chars=len(feedback), scores=scores, hook_output=hook_output)
 
 
-def append_log(storage: Path, result: Result, tool_name: str, filter_name: str = "output") -> None:
-    storage.mkdir(mode=0o700, parents=True, exist_ok=True)
-    path = storage / "events.jsonl"
-    flags = os.O_WRONLY | os.O_APPEND | os.O_CREAT
-    if hasattr(os, "O_NOFOLLOW"):
-        flags |= os.O_NOFOLLOW
-    fd = os.open(path, flags, 0o600)
-    with os.fdopen(fd, "a", encoding="utf-8") as file:
-        file.write(json.dumps(result.to_log(tool_name, filter_name), separators=(",", ":")) + "\n")
+def append_log(storage: Path, result: Result, tool_name: str, filter_name: str = "output",
+               event: dict | None = None, config: Config | None = None) -> None:
+    from receipts import append_event
+    settings = config or Config()
+    append_event(storage, event or {}, result.to_log(tool_name, filter_name),
+                 settings.log_limit_mb, settings.never_delete_logs)

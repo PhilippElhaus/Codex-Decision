@@ -333,7 +333,7 @@ class ContractTests(unittest.TestCase):
             self.assertEqual(result["continue"], False)
             self.assertIn("Full original:", result["reason"])
             self.assertEqual(len(list(Path(directory).rglob("*.txt"))), 1)
-            records = [json.loads(line) for line in Path(directory, "events.jsonl").read_text().splitlines()]
+            records = [json.loads(line) for line in Path(directory, "logs/events.jsonl").read_text().splitlines()]
             self.assertEqual([record["status"] for record in records], ["calling", "replace"])
             self.assertNotIn("Compiling module", json.dumps(records))
             jev.assert_called_once()
@@ -408,7 +408,7 @@ class ContractTests(unittest.TestCase):
             ):
                 post_tool_use.main()
             self.assertEqual(output.getvalue().strip(), "{}")
-            log = Path(directory, "events.jsonl").read_text()
+            log = Path(directory, "logs/events.jsonl").read_text()
             self.assertIn("evaluator_unavailable", log)
             self.assertIn('"status":"calling"', log)
             self.assertNotIn("Compiling module", log)
@@ -424,7 +424,7 @@ class ContractTests(unittest.TestCase):
             ):
                 post_tool_use.main()
             self.assertEqual(output.getvalue().strip(), "{}")
-            self.assertFalse(Path(directory, "events.jsonl").exists())
+            self.assertFalse(Path(directory, "logs/events.jsonl").exists())
 
     def test_command_hook_records_keep_when_jev_rejects_replacement(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -439,7 +439,7 @@ class ContractTests(unittest.TestCase):
             ):
                 post_tool_use.main()
             self.assertEqual(output.getvalue().strip(), "{}")
-            records = [json.loads(line) for line in Path(directory, "events.jsonl").read_text().splitlines()]
+            records = [json.loads(line) for line in Path(directory, "logs/events.jsonl").read_text().splitlines()]
             self.assertEqual([row["status"] for row in records], ["calling", "keep"])
             self.assertEqual(records[-1]["reason"], "jev_keep")
             self.assertFalse(list(Path(directory).rglob("*.txt")))

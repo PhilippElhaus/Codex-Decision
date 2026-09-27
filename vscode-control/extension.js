@@ -6,7 +6,7 @@ const vscode = require("vscode");
 const {
   checkHealth, decisionSummary, defaultDataDirectory, estimateTokensSaved,
   isJevOutcome, outcomeLine, readConfig, readEventOffset, readEventsSince, savedCharacters,
-  readApiKey, readLifetimeStats, writeApiKey, writeMode, writeSelection, writeThresholds, completeThresholds, DEFAULT_THRESHOLDS,
+  readApiKey, readLifetimeStats, writeApiKey, writeMode, writeSelection, writeSettings, completeThresholds, DEFAULT_THRESHOLDS,
 } = require("./core");
 
 function emptyStats() {
@@ -210,24 +210,23 @@ function activate(context) {
         let hasKey = false;
         try { await readApiKey(directory); hasKey = true; } catch { /* no usable key */ }
         const lifetime = await readLifetimeStats(directory);
-        return { action: "ready", config: { ...config, thresholds: completeThresholds(config.thresholds) },
-          defaults: { mode: "replace", thresholds: DEFAULT_THRESHOLDS }, hasKey, lifetime };
+        return { action: "ready", config: { ...config, thresholds: completeThresholds(config.thresholds),
+          log_limit_mb: config.log_limit_mb ?? 50, never_delete_logs: config.never_delete_logs ?? false },
+          defaults: { mode: "replace", thresholds: DEFAULT_THRESHOLDS,
+            log_limit_mb: 50, never_delete_logs: false }, hasKey, lifetime };
       }
       if (request.action === "settingsOpenLogs") {
-        const log = path.join(directory, "events.jsonl");
-        let target = directory;
+        const parent = await fs.lstat(directory);
+        if (!parent.isDirectory() || parent.isSymbolicLink()) throw new Error("Unsafe Jev data directory");
+        let target = path.join(directory, "logs");
         try {
-          const details = await fs.lstat(log);
-          if (!details.isFile() || details.isSymbolicLink()) throw new Error("Unsafe Jev decision log");
-          target = log;
+          const details = await fs.lstat(target);
+          if (!details.isDirectory() || details.isSymbolicLink()) throw new Error("Unsafe Jev logs directory");
         } catch (error) {
           if (error.code !== "ENOENT") throw error;
+          target = directory;
         }
-        if (target === directory) {
-          const details = await fs.lstat(directory);
-          if (!details.isDirectory() || details.isSymbolicLink()) throw new Error("Unsafe Jev data directory");
-        }
-        await vscode.commands.executeCommand("revealFileInOS", vscode.Uri.file(target));
+        if (!await vscode.env.openExternal(vscode.Uri.file(target))) throw new Error("Could not open Jev logs");
         return { action: "openedLogs" };
       }
       if (request.action === "settingsTest") {
@@ -236,14 +235,15 @@ function activate(context) {
       }
       if (request.action === "settingsSave") {
         if (!["observe", "replace"].includes(request.mode)) throw new Error("Invalid mode");
+        if (!Number.isInteger(request.logLimitMb) || request.logLimitMb < 1 || request.logLimitMb > 9999 ||
+            typeof request.neverDeleteLogs !== "boolean") throw new Error("Log retention must be 1 to 9999 MB");
         if (!request.key) {
           try { await readApiKey(directory); }
           catch { throw new Error("Enter an API key before saving."); }
         }
         const thresholds = completeThresholds(request.thresholds);
         const task = selectionQueue.then(async () => {
-          await writeThresholds(directory, thresholds);
-          await writeMode(directory, request.mode);
+          await writeSettings(directory, request.mode, thresholds, request.logLimitMb, request.neverDeleteLogs);
           await settings().update("mode", request.mode, vscode.ConfigurationTarget.Global);
           if (request.key) await writeApiKey(directory, request.key);
           await sync();
@@ -261,6 +261,14 @@ function activate(context) {
 
   context.subscriptions.push(vscode.commands.registerCommand("codexJev.bridge", async (request) => {
     await enterView(request?.viewId);
+    if (request?.action === "openTypeSafe") {
+      try {
+        const externalOpen = await vscode.env.openExternal(vscode.Uri.parse("https://typesafe.ai/"));
+        return { ...snapshot(), externalOpen: externalOpen === true };
+      } catch {
+        return { ...snapshot(), externalOpen: false };
+      }
+    }
     if (["settingsRead", "settingsTest", "settingsSave", "settingsOpenLogs"].includes(request?.action)) {
       return { ...snapshot(), settings: await settingsReply(request) };
     }

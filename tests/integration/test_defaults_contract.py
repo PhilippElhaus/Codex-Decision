@@ -28,6 +28,8 @@ class DefaultsContractTests(unittest.TestCase):
         self.assertEqual(example["thresholds"], node_defaults)
         self.assertEqual(jev.Config().thresholds, node_defaults)
         self.assertEqual(example["mode"], jev.Config().mode)
+        self.assertEqual(example["log_limit_mb"], jev.Config().log_limit_mb)
+        self.assertEqual(example["never_delete_logs"], jev.Config().never_delete_logs)
 
 
 if __name__ == "__main__":

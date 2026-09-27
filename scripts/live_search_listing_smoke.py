@@ -31,7 +31,7 @@ def invoke(hook: Path, data: Path, command: str, output: str, call: str, task: s
         "turn_id": "live-turn", "tool_use_id": call, "tool_input": {"command": command},
         "tool_response": output, "transcript_path": str(transcript),
     }
-    log = data / "events.jsonl"
+    log = data / "logs/events.jsonl"
     previous = len(log.read_text().splitlines()) if log.exists() else 0
     completed = subprocess.run([sys.executable, str(hook)], input=json.dumps(event),
                                text=True, capture_output=True, timeout=20, check=True,

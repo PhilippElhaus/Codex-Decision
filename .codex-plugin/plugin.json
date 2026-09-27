@@ -1,6 +1,6 @@
 {
   "name": "codex-jev",
-  "version": "0.2.7+codex.20260927133012",
+  "version": "0.2.7+codex.20260927150619",
   "description": "Jev-gated filtering for repetitive output, test/build logs, and broad search/listing results.",
   "author": {
     "name": "Philipp Elhaus",

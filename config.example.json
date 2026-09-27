@@ -9,6 +9,8 @@
   "timeout_seconds": 3.0,
   "model": "jev-1.13.0",
   "allow_mcp_replacement": false,
+  "log_limit_mb": 50,
+  "never_delete_logs": false,
   "thresholds": {
     "output": {"routine_min": 90, "exact_max": 12, "unique_max": 10, "confidence_min": 70},
     "test_build": {"routine_min": 90, "exact_max": 20, "unique_max": 20, "confidence_min": 70},

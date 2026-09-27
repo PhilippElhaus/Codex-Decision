@@ -192,7 +192,7 @@ class SearchListingTests(unittest.TestCase):
             path.write_text('{"enabled":false,"test_build_enabled":false,"search_listing_enabled":false}')
             self.assertEqual(call("off-again"), {})
             self.assertEqual(calls, ["search"])
-            logs = [json.loads(row) for row in (root / "events.jsonl").read_text().splitlines()]
+            logs = [json.loads(row) for row in (root / "logs/events.jsonl").read_text().splitlines()]
             self.assertEqual([(row["filter"], row["status"]) for row in logs], [("output", "skip"), ("search_listing", "calling"), ("search_listing", "replace")])
 
 

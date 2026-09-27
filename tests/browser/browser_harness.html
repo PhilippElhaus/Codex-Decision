@@ -31,6 +31,7 @@
     window.__jevHarnessLastAction = "";
     window.__jevHarnessSettingsRead = 0;
     window.__jevHarnessLastSettingsSave = null;
+    window.__jevHarnessExternalOpen = true;
     window.acquireVsCodeApi = () => ({ postMessage(request) {
       calls += 1;
       window.__jevHarnessLastAction = request.action;
@@ -52,10 +53,10 @@
       if (keySaved) { needsKey = false; health = { ok: true, model: "jev-1.13.0" }; }
       const settings = request.action === "settingsRead" ? { action: "ready", hasKey: true,
         lifetime: { calls: 126, completed: 124, replaced: 41, estimatedTokensSaved: 87320, averageMs: 487 },
-        defaults: { mode: "replace", thresholds: { output: { routine_min: 90, exact_max: 12, unique_max: 10, confidence_min: 70 },
+        defaults: { mode: "replace", log_limit_mb: 50, never_delete_logs: false, thresholds: { output: { routine_min: 90, exact_max: 12, unique_max: 10, confidence_min: 70 },
           test_build: { routine_min: 90, exact_max: 20, unique_max: 20, confidence_min: 70 }, search_listing: {
             summarize_probability_min: 78, summarize_confidence_min: 70, drop_probability_min: 92, drop_confidence_min: 85 } } },
-        config: { mode: "replace", thresholds: { output: { routine_min: 90, exact_max: 20, unique_max: 30, confidence_min: 70 },
+        config: { mode: "replace", log_limit_mb: 75, never_delete_logs: false, thresholds: { output: { routine_min: 90, exact_max: 20, unique_max: 30, confidence_min: 70 },
           test_build: { routine_min: 85, exact_max: 25, unique_max: 35, confidence_min: 70 }, search_listing: {
             summarize_probability_min: 78, summarize_confidence_min: 70, drop_probability_min: 92, drop_confidence_min: 85 } } } } :
         request.action === "settingsSave" ? { action: "saved", hasKey: true } :
@@ -63,7 +64,7 @@
             request.action === "settingsOpenLogs" ? { action: "openedLogs" } : undefined;
       queueMicrotask(() => window.dispatchEvent(new MessageEvent("message", { data: {
         type: "codex-jev-reply", id: request.id,
-        status: { enabled: outputEnabled || testBuildEnabled || searchListingEnabled, outputEnabled, testBuildEnabled, searchListingEnabled, needsKey, keyTest, keySaved, settings, health, busy, mode, recent: freshView ? "No decision recorded yet" : history[0],
+        status: { enabled: outputEnabled || testBuildEnabled || searchListingEnabled, outputEnabled, testBuildEnabled, searchListingEnabled, needsKey, keyTest, keySaved, externalOpen: request.action === "openTypeSafe" ? window.__jevHarnessExternalOpen : undefined, settings, health, busy, mode, recent: freshView ? "No decision recorded yet" : history[0],
           history: freshView ? [] : history,
           stats: freshView ? { calls: 0, candidates: 0, kept: 0, replaced: 0, checkedChars: 0, elapsedMs: 0, completed: 0 } : stats },
       } })));
@@ -373,6 +374,21 @@
       }
       settingsScreen.querySelector("#codex-jev-settings-mode").value = "observe";
       const reset = settingsScreen.querySelector("#codex-jev-settings-reset");
+      const logLimit = settingsScreen.querySelector("#codex-jev-settings-log-limit");
+      const neverDelete = settingsScreen.querySelector("#codex-jev-settings-never-delete");
+      check(logLimit.value === "75" && !neverDelete.checked && !logLimit.disabled,
+        "saved log retention is shown and editable");
+      logLimit.value = "9999";
+      neverDelete.click();
+      check(neverDelete.checked && logLimit.disabled, "never delete overrides the MB limit");
+      neverDelete.click();
+      check(!neverDelete.checked && !logLimit.disabled, "log limit returns when never delete is off");
+      const saveSettings = settingsScreen.querySelector("#codex-jev-settings-save");
+      const settingsActions = reset.parentElement;
+      check(settingsActions.classList.contains("save-actions") &&
+        Math.abs(reset.getBoundingClientRect().right - settingsActions.getBoundingClientRect().right) <= 2 &&
+        reset.getBoundingClientRect().left > saveSettings.getBoundingClientRect().right + 12,
+        "Reset defaults is right aligned in the settings action row");
       const keyField = settingsScreen.querySelector("#codex-jev-settings-key");
       keyField.value = "unsaved-key";
       check(!reset.disabled && getComputedStyle(reset).color !== getComputedStyle(settingsScreen.querySelector("#codex-jev-settings-save")).color,
@@ -386,8 +402,18 @@
           settingsScreen.querySelector("#codex-jev-settings-message").textContent.includes("0 to 100"),
           `invalid percentage ${invalid} cannot be saved`);
       }
+      routineNumber.value = "90%";
+      for (const invalid of ["0", "10000", "1.5", "abc"]) {
+        logLimit.value = invalid;
+        saveSettings.click();
+        check(window.__jevHarnessLastSettingsSave === null &&
+          settingsScreen.querySelector("#codex-jev-settings-message").textContent.includes("1 to 9999"),
+          `invalid log limit ${invalid} cannot be saved`);
+      }
+      logLimit.value = "9999";
       reset.click();
       check(settingsScreen.querySelector("#codex-jev-settings-mode").value === "replace" &&
+        logLimit.value === "50" && !neverDelete.checked &&
         settingsScreen.querySelector("#codex-jev-settings-output-exact_max").value === "12%" &&
         settingsScreen.querySelector("#codex-jev-settings-test_build-routine_min").value === "90%" &&
         routineNumber.value === "90%" && routineSlider.value === "90" && keyField.value === "unsaved-key" &&
@@ -411,8 +437,16 @@
       await until(() => settingsScreen.querySelector("#codex-jev-settings-message").textContent === "Settings saved.", "settings saved inline");
       check(window.__jevHarnessLastSettingsSave.mode === "replace" &&
         window.__jevHarnessLastSettingsSave.thresholds.output.exact_max === 12 &&
-        window.__jevHarnessLastSettingsSave.thresholds.output.routine_min === 90,
+        window.__jevHarnessLastSettingsSave.thresholds.output.routine_min === 90 &&
+        window.__jevHarnessLastSettingsSave.logLimitMb === 50 &&
+        window.__jevHarnessLastSettingsSave.neverDeleteLogs === false,
         "save submits reset percentages as numbers");
+      logLimit.value = "9999";
+      neverDelete.click();
+      saveSettings.click();
+      await until(() => window.__jevHarnessLastSettingsSave?.logLimitMb === 9999 &&
+        window.__jevHarnessLastSettingsSave.neverDeleteLogs === true,
+        "never delete and maximum limit are sent together");
       settingsScreen.querySelector('button[aria-label="General"]').click();
       check(settingsScreen.querySelector("main").style.display !== "none" &&
         !settingsScreen.querySelector("#codex-jev-settings-panel"), "native settings return after navigation");
@@ -438,8 +472,17 @@
         !setup.textContent.includes("plugin data directory"), "concise onboarding copy");
       check(getComputedStyle(setup).backgroundColor === "rgb(17, 17, 17)", "opaque setup backdrop hides Codex content");
       const keyLink = setup.querySelector("#codex-jev-connect-link a");
-      check(keyLink?.href === "https://console.typesafe.ai/keys" && keyLink.target === "_blank" &&
+      check(keyLink?.href === "https://typesafe.ai/" &&
         getComputedStyle(keyLink.parentElement).textAlign === "center", "TypeSafe key link is centered below actions");
+      const linkClick = new MouseEvent("click", { bubbles: true, cancelable: true });
+      const navigated = keyLink.dispatchEvent(linkClick);
+      check(!navigated && linkClick.defaultPrevented && window.__jevHarnessLastAction === "openTypeSafe" &&
+        setup.style.display === "flex", "TypeSafe link asks the extension to open the browser without navigating the webview");
+      window.__jevHarnessExternalOpen = false;
+      keyLink.click();
+      await until(() => setup.querySelector("#codex-jev-key-status").textContent === "Could not open browser",
+        "browser launch failure is shown in Connect Jev");
+      window.__jevHarnessExternalOpen = true;
       const footer = setup.querySelector("#codex-jev-connect-footer");
       const saveButton = setup.querySelector("#codex-jev-save-key");
       const skipButton = setup.querySelector("#codex-jev-skip-key");

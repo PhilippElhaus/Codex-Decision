@@ -8,7 +8,7 @@ Build the VSIX from this checkout, then run:
 
 ```bash
 npx @vscode/vsce package --no-dependencies
-code --install-extension codex-jev-control-0.2.15.vsix --force
+code --install-extension codex-jev-control-0.2.16.vsix --force
 ```
 
 Set `codexJev.dataDirectory` to the installed plugin's absolute `PLUGIN_DATA` path (on Windows, a `\\wsl.localhost\<distro>\...` path for a WSL installation). `CODEX_JEV_DATA_DIRECTORY` is an alternative. The extension has no machine-specific default. It reads `PLUGIN_DATA/.env` to probe API health. During first setup, the entered key travels through the local Codex webview bridge to the extension; it is not sent as chat text. See [key setup](../docs/setup/setup_credentials.md).
@@ -25,15 +25,17 @@ Use `update` to refresh an already patched installation, or `restore` with the s
 
 ## Use it
 
-Select integrations in the composer menu. An empty selection turns Jev off. When an integration is enabled without a key, **Connect Jev** covers the Codex side window with a solid backdrop and asks for a typesafe.ai API key. A link below Save and Skip opens typesafe.ai. Test and save the key there, or choose **Skip for now** to return to Codex; **Connect Jev…** in the Jev menu or **Connect** in the compact missing-key tooltip reopens it. The setup card stacks its buttons when the side window is narrow.
+Select integrations in the composer menu. An empty selection turns Jev off. When an integration is enabled without a key, **Connect Jev** covers the Codex side window with a solid backdrop and asks for a typesafe.ai API key. A link below Save and Skip opens the typesafe.ai homepage in the system browser. If the browser cannot open, the overlay shows an error. Test and save the key in Connect Jev, or choose **Skip for now** to return to Codex; **Connect Jev…** in the Jev menu or **Connect** in the compact missing-key tooltip reopens it. The setup card stacks its buttons when the side window is narrow.
 
-Open **Codex settings → Jev**, below **Voice**, to test or replace the key, see lifetime usage, open the decision log in Explorer, change the mode, and adjust each hook's Jev cutoffs with sliders or percentage fields. Enter a whole number with or without `%`; the field shows `%` after it loses focus. **Reset defaults** loads the default mode and cutoffs into the form. Select **Save settings** to apply them. Reset does not change the API key or integration selections. Output and test/build filtering require a confident Jev Choice answer in addition to the three safety probabilities. The saved key is never sent back to the webview. **Filter** shortens approved results; **Monitor** previews decisions in the logs while leaving tool output unchanged. The stored mode values remain `replace` and `observe` for compatibility. A selection or cutoff change applies when the next tool result completes. A new plugin installation or hook-code change requires a new Codex thread.
+Open **Codex settings → Jev**, below **Voice**, to test or replace the key, see lifetime usage, open the session logs in Explorer, change the mode, and adjust each hook's Jev cutoffs with sliders or percentage fields. Enter a whole number with or without `%`; the field shows `%` after it loses focus. The **Log retention** field accepts 1–9999 MB and defaults to 50 MB. **Never delete logs** disables that limit. **Reset defaults**, on the right of the action row, loads the default mode, cutoffs, and log retention into the form. Select **Save settings** to apply them. Reset does not change the API key or integration selections. Output and test/build filtering require a confident Jev Choice answer in addition to the three safety probabilities. The saved key is never sent back to the webview. **Filter** shortens approved results; **Monitor** previews decisions in the logs while leaving tool output unchanged. The stored mode values remain `replace` and `observe` for compatibility. A selection or cutoff change applies when the next tool result completes. A new plugin installation or hook-code change requires a new Codex thread.
+
+**Open logs** opens `PLUGIN_DATA/logs/` in the system file manager after the first session log exists. Before that, it opens `PLUGIN_DATA/`. Each dated session folder contains one JSON receipt for each Jev request, including each chunk request. The receipt contains exact original and visible output and the request, answer, mode, cutoffs, and decision. Its filename includes UTC `HH-MM-SS` and microseconds. Logs and receipts are private because they can contain tool output. The oldest managed log files are deleted when the saved limit is exceeded, beginning with the next Jev event. The aggregate activity index is bounded to 1 MiB while retention is enabled. Lifetime counters live in `PLUGIN_DATA/stats.json` and survive log cleanup. Exact originals referenced in shortened results live separately under `PLUGIN_DATA/outputs/` and are outside the log limit. Existing root `events.jsonl` files remain as legacy data; the first new event imports their counters.
 
 ![Connect Jev setup overlay in the Codex side window with Skip for now](../docs/images/jev-onboarding.png)
 
 ![Compact Jev missing-key tooltip](../docs/images/jev-missing-key.png)
 
-![Illustrative Jev settings with visible sliders, percentage fields, and Reset defaults](../docs/images/jev-settings.png)
+![Illustrative Jev settings with log retention, visible sliders, percentage fields, and Reset defaults on the right](../docs/images/jev-settings.png)
 
 ## Verify
 

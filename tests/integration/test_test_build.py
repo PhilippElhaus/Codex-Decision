@@ -241,7 +241,7 @@ class AdapterTests(unittest.TestCase):
             config_path.write_text(json.dumps({"enabled": False, "test_build_enabled": False, "mode": "replace"}))
             self.assertEqual(call("off-2", "echo progress", progress), {})
             self.assertEqual(requests, ["test_build", "output"])
-            records = [json.loads(line) for line in (root / "events.jsonl").read_text().splitlines()]
+            records = [json.loads(line) for line in (root / "logs/events.jsonl").read_text().splitlines()]
             self.assertEqual([(row["filter"], row["status"]) for row in records], [
                 ("test_build", "calling"), ("test_build", "replace"),
                 ("output", "calling"), ("output", "replace"),
@@ -283,7 +283,7 @@ class AdapterTests(unittest.TestCase):
                 post_tool_use.main()
             response = json.loads(printed.getvalue())
             self.assertIs(response["continue"], False)
-            records = [json.loads(line) for line in (root / "events.jsonl").read_text().splitlines()]
+            records = [json.loads(line) for line in (root / "logs/events.jsonl").read_text().splitlines()]
             self.assertEqual([(row["filter"], row["status"]) for row in records],
                              [("test_build", "calling"), ("test_build", "replace")])
             self.assertEqual(records[-1]["scores"], GOOD)
@@ -305,7 +305,7 @@ class AdapterTests(unittest.TestCase):
             ):
                 post_tool_use.main()
             self.assertEqual(json.loads(printed.getvalue()), {})
-            self.assertEqual([json.loads(line)["status"] for line in (root / "events.jsonl").read_text().splitlines()],
+            self.assertEqual([json.loads(line)["status"] for line in (root / "logs/events.jsonl").read_text().splitlines()],
                              ["calling", "keep"])
             self.assertEqual(list(root.rglob("*.txt")), [])
             request.assert_called_once()
@@ -322,7 +322,7 @@ class AdapterTests(unittest.TestCase):
             ):
                 post_tool_use.main()
             self.assertEqual(json.loads(printed.getvalue()), {})
-            self.assertFalse((root / "events.jsonl").exists())
+            self.assertFalse((root / "logs/events.jsonl").exists())
 
     def test_unrecognized_command_still_uses_jev_when_both_selected(self):
         with tempfile.TemporaryDirectory(prefix="jev-test-build-", dir="/tmp") as directory:
@@ -341,7 +341,7 @@ class AdapterTests(unittest.TestCase):
             ):
                 post_tool_use.main()
             self.assertIs(json.loads(printed.getvalue())["continue"], False)
-            self.assertEqual([json.loads(line)["filter"] for line in (root / "events.jsonl").read_text().splitlines()],
+            self.assertEqual([json.loads(line)["filter"] for line in (root / "logs/events.jsonl").read_text().splitlines()],
                              ["output", "output"])
             request.assert_called_once()
 
@@ -358,7 +358,7 @@ class AdapterTests(unittest.TestCase):
             ):
                 post_tool_use.main()
             self.assertEqual(json.loads(printed.getvalue()), {})
-            self.assertFalse((root / "events.jsonl").exists())
+            self.assertFalse((root / "logs/events.jsonl").exists())
 
 
 if __name__ == "__main__":

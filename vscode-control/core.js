@@ -17,6 +17,7 @@ const DEFAULT_THRESHOLDS = Object.freeze({
 const CONFIG_KEYS = new Set([
   "enabled", "test_build_enabled", "search_listing_enabled", "precompact_enabled", "mode", "min_chars", "max_chars", "sample_chars",
   "timeout_seconds", "model", "allow_mcp_replacement", "thresholds",
+  "log_limit_mb", "never_delete_logs",
 ]);
 
 function completeThresholds(value = {}) {
@@ -45,7 +46,7 @@ async function readConfig(directory) {
     const merged = {
       enabled: false, test_build_enabled: false, search_listing_enabled: false, mode: "replace", min_chars: 8192, max_chars: 2_000_000,
       sample_chars: 12_000, timeout_seconds: 3, model: "jev-1.13.0",
-      allow_mcp_replacement: false, ...raw,
+      allow_mcp_replacement: false, log_limit_mb: 50, never_delete_logs: false, ...raw,
     };
     if (!raw || typeof raw !== "object" || Array.isArray(raw) ||
         Object.keys(raw).some((key) => !CONFIG_KEYS.has(key)) ||
@@ -58,7 +59,9 @@ async function readConfig(directory) {
         !Number.isInteger(merged.sample_chars) || merged.sample_chars < 1000 || merged.sample_chars > 24_000 ||
         typeof merged.timeout_seconds !== "number" || merged.timeout_seconds < 0.1 || merged.timeout_seconds > 4 ||
         typeof merged.model !== "string" || !/^jev-[\w.-]{1,40}$/.test(merged.model) ||
-        typeof merged.allow_mcp_replacement !== "boolean") {
+        typeof merged.allow_mcp_replacement !== "boolean" ||
+        !Number.isInteger(merged.log_limit_mb) || merged.log_limit_mb < 1 || merged.log_limit_mb > 9999 ||
+        typeof merged.never_delete_logs !== "boolean") {
       throw new Error("Invalid Jev config");
     }
     completeThresholds(merged.thresholds);
@@ -116,6 +119,36 @@ async function writeThresholds(directory, thresholds) {
   return writeConfig(directory, { thresholds: completeThresholds(thresholds) });
 }
 
+async function writeSettings(directory, mode, thresholds, limitMb, neverDelete) {
+  if (!["replace", "observe"].includes(mode)) throw new TypeError("invalid Jev mode");
+  if (!Number.isInteger(limitMb) || limitMb < 1 || limitMb > 9999 || typeof neverDelete !== "boolean") {
+    throw new TypeError("Log retention must be 1 to 9999 MB");
+  }
+  return writeConfig(directory, { mode, thresholds: completeThresholds(thresholds),
+    log_limit_mb: limitMb, never_delete_logs: neverDelete });
+}
+
+async function activityLogPath(directory) {
+  const current = path.join(directory, "logs", "events.jsonl");
+  try {
+    const logs = await fs.lstat(path.join(directory, "logs"));
+    if (!logs.isDirectory() || logs.isSymbolicLink()) throw new Error("Unsafe Jev logs directory");
+    const index = await fs.lstat(current);
+    if (!index.isFile() || index.isSymbolicLink()) throw new Error("Unsafe Jev activity index");
+    return current;
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+    const legacy = path.join(directory, "events.jsonl");
+    try {
+      const details = await fs.lstat(legacy);
+      if (!details.isFile() || details.isSymbolicLink()) throw new Error("Unsafe Jev legacy log");
+    } catch (legacyError) {
+      if (legacyError.code !== "ENOENT") throw legacyError;
+    }
+    return legacy;
+  }
+}
+
 function isJevOutcome(event) {
   return ["candidate", "keep", "replace"].includes(event.status);
 }
@@ -142,7 +175,7 @@ function parseLogLine(line) {
 }
 
 async function readLatestEvent(directory, { informativeOnly = false } = {}) {
-  const filename = path.join(directory, "events.jsonl");
+  const filename = await activityLogPath(directory);
   let file;
   try {
     file = await fs.open(filename, "r");
@@ -171,7 +204,7 @@ async function readLatestEvent(directory, { informativeOnly = false } = {}) {
 async function readRecentOutcomes(directory, limit = 3) {
   let file;
   try {
-    file = await fs.open(path.join(directory, "events.jsonl"), "r");
+    file = await fs.open(await activityLogPath(directory), "r");
   } catch (error) {
     if (error.code === "ENOENT") return { outcomes: [], offset: 0 };
     throw error;
@@ -196,7 +229,7 @@ async function readRecentOutcomes(directory, limit = 3) {
 
 async function readEventOffset(directory) {
   try {
-    return (await fs.stat(path.join(directory, "events.jsonl"))).size;
+    return (await fs.stat(await activityLogPath(directory))).size;
   } catch (error) {
     if (error.code === "ENOENT") return 0;
     throw error;
@@ -206,7 +239,7 @@ async function readEventOffset(directory) {
 async function readEventsSince(directory, offset) {
   let file;
   try {
-    file = await fs.open(path.join(directory, "events.jsonl"), "r");
+    file = await fs.open(await activityLogPath(directory), "r");
   } catch (error) {
     if (error.code === "ENOENT") return { events: [], offset: 0, reset: offset > 0 };
     throw error;
@@ -231,7 +264,21 @@ async function readEventsSince(directory, offset) {
 async function readLifetimeStats(directory) {
   const totals = { calls: 0, completed: 0, replaced: 0, savedChars: 0,
     estimatedTokensSaved: 0, averageMs: 0 };
-  const filename = path.join(directory, "events.jsonl");
+  const statsFile = path.join(directory, "stats.json");
+  try {
+    const details = await fs.lstat(statsFile);
+    if (!details.isFile() || details.isSymbolicLink() || details.size > 8192) throw new Error("Unsafe Jev stats file");
+    const stats = JSON.parse(await fs.readFile(statsFile, "utf8"));
+    for (const key of ["calls", "completed", "replaced", "savedChars", "timed", "elapsedMs"]) {
+      if (!Number.isSafeInteger(stats[key]) || stats[key] < 0) throw new Error("Invalid Jev stats file");
+    }
+    return { calls: stats.calls, completed: stats.completed, replaced: stats.replaced,
+      savedChars: stats.savedChars, estimatedTokensSaved: estimateTokensSaved(stats.savedChars),
+      averageMs: stats.timed ? Math.round(stats.elapsedMs / stats.timed) : 0 };
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
+  const filename = await activityLogPath(directory);
   let file;
   try {
     const details = await fs.lstat(filename);
@@ -436,4 +483,5 @@ module.exports = {
   isInformativeEvent, isJevOutcome, outcomeLine, parseHealthOutput, readConfig,
   readApiKey, readEventOffset, readEventsSince, readLatestEvent, readLifetimeStats, readRecentOutcomes,
   savedCharacters, writeApiKey, writeEnabled, writeMode, writeSelection, writeThresholds,
+  writeSettings,
 };

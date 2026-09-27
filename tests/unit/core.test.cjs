@@ -7,7 +7,7 @@ const path = require("node:path");
 const test = require("node:test");
 const {
   activitySummary, checkHealth, completeThresholds, decisionSummary, estimateTokensSaved, formatDuration, outcomeLine, parseHealthOutput, readApiKey, readConfig,
-  readEventOffset, readEventsSince, readLatestEvent, readLifetimeStats, readRecentOutcomes, writeApiKey, writeEnabled, writeMode, writeSelection, writeThresholds,
+  readEventOffset, readEventsSince, readLatestEvent, readLifetimeStats, readRecentOutcomes, writeApiKey, writeEnabled, writeMode, writeSelection, writeThresholds, writeSettings,
 } = require("../../vscode-control/core");
 
 test("settings thresholds round trip and reject invalid percentages", async () => {
@@ -21,6 +21,44 @@ test("settings thresholds round trip and reject invalid percentages", async () =
     await assert.rejects(writeThresholds(directory, { output: { routine_min: 101 } }), /percentages/);
     await assert.rejects(writeThresholds(directory, { output: { typo: 80 } }), /Invalid Jev thresholds/);
     assert.deepEqual((await readConfig(directory)).thresholds, next);
+  } finally { await fs.rm(directory, { recursive: true, force: true }); }
+});
+
+test("log retention and cutoffs save atomically with strict bounds", async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-retention-test-"));
+  try {
+    await writeSettings(directory, "observe", { output: { routine_min: 96 } }, 9999, true);
+    const saved = await readConfig(directory);
+    assert.equal(saved.mode, "observe");
+    assert.equal(saved.thresholds.output.routine_min, 96);
+    assert.equal(saved.log_limit_mb, 9999);
+    assert.equal(saved.never_delete_logs, true);
+    for (const invalid of [0, -1, 10000, 1.5, "50", true]) {
+      await assert.rejects(writeSettings(directory, "replace", {}, invalid, false), /Log retention/);
+    }
+    await assert.rejects(writeSettings(directory, "replace", {}, 50, "yes"), /Log retention/);
+    assert.deepEqual(await readConfig(directory), saved);
+  } finally { await fs.rm(directory, { recursive: true, force: true }); }
+});
+
+test("session activity index and cumulative stats take precedence over legacy log", async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-retention-test-"));
+  try {
+    await fs.writeFile(path.join(directory, "events.jsonl"), JSON.stringify({
+      status: "keep", reason: "legacy", tool: "Bash", original_chars: 1000,
+    }) + "\n");
+    await fs.mkdir(path.join(directory, "logs"));
+    await fs.writeFile(path.join(directory, "logs", "events.jsonl"), JSON.stringify({
+      status: "replace", reason: "jev_replace", tool: "Bash", original_chars: 1000, capsule_chars: 100,
+    }) + "\n");
+    await fs.writeFile(path.join(directory, "stats.json"), JSON.stringify({
+      calls: 3, completed: 3, replaced: 1, savedChars: 900, timed: 2, elapsedMs: 400,
+    }));
+    assert.equal((await readLatestEvent(directory)).status, "replace");
+    assert.equal((await readEventOffset(directory)), (await fs.stat(path.join(directory, "logs", "events.jsonl"))).size);
+    assert.deepEqual(await readLifetimeStats(directory), {
+      calls: 3, completed: 3, replaced: 1, savedChars: 900, estimatedTokensSaved: 225, averageMs: 200,
+    });
   } finally { await fs.rm(directory, { recursive: true, force: true }); }
 });
 

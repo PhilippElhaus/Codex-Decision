@@ -23,7 +23,8 @@ test("composer bridge selects integrations and reports view-scoped activity with
   let health = { ok: true, model: "jev-1.13.0" };
   let probes = 0;
   let suppliedKey;
-  let revealed;
+  let openedExternal;
+  let browserAvailable = true;
   let configListener;
   const fake = {
     window: {
@@ -31,10 +32,11 @@ test("composer bridge selects integrations and reports view-scoped activity with
       showInformationMessage: () => {},
       createWebviewPanel: () => { throw new Error("Jev settings must stay in Codex settings"); },
     },
-    Uri: { joinPath: () => ({}), file: (filename) => ({ fsPath: filename }) }, ViewColumn: { Active: 1 }, ConfigurationTarget: { Global: 1 },
+    Uri: { joinPath: () => ({}), file: (filename) => ({ fsPath: filename }), parse: (uri) => ({ toString: () => uri }) }, ViewColumn: { Active: 1 }, ConfigurationTarget: { Global: 1 },
+    env: { openExternal: async (uri) => { openedExternal = uri.fsPath || uri.toString(); return browserAvailable; } },
     commands: {
       registerCommand(name, callback) { commands.set(name, callback); return { dispose() {} }; },
-      async executeCommand(name, uri) { revealed = { name, path: uri.fsPath }; },
+      async executeCommand() {},
     },
     workspace: {
       getConfiguration: () => ({ get: (key) => key === "dataDirectory" ? directory : key === "mode" ? mode : "",
@@ -63,6 +65,11 @@ test("composer bridge selects integrations and reports view-scoped activity with
     assert.equal(commands.has("codexJev.selectHooks"), false);
     const bridge = commands.get("codexJev.bridge");
     assert.equal((await bridge({ action: "status", viewId: "view-one" })).enabled, false);
+    assert.equal((await bridge({ action: "openTypeSafe", viewId: "view-one" })).externalOpen, true);
+    assert.equal(openedExternal, "https://typesafe.ai/");
+    browserAvailable = false;
+    assert.equal((await bridge({ action: "openTypeSafe", viewId: "view-one" })).externalOpen, false);
+    browserAvailable = true;
     const firstSelection = await bridge({ action: "setSelection", feature: "output", enabled: true, viewId: "view-one" });
     assert.equal(firstSelection.needsKey, true);
     const firstTest = await bridge({ action: "testApiKey", key: "example-test-key", viewId: "view-one" });
@@ -126,23 +133,30 @@ test("composer bridge selects integrations and reports view-scoped activity with
     assert.equal(ready.action, "ready");
     assert.equal(ready.hasKey, false);
     assert.equal(ready.config.thresholds.output.routine_min, 90);
-    assert.deepEqual(ready.defaults, { mode: "replace", thresholds: core.DEFAULT_THRESHOLDS });
+    assert.deepEqual(ready.defaults, { mode: "replace", thresholds: core.DEFAULT_THRESHOLDS,
+      log_limit_mb: 50, never_delete_logs: false });
+    assert.equal(ready.config.log_limit_mb, 50);
     assert.equal(ready.lifetime.calls, 1);
     assert.equal(ready.lifetime.replaced, 1);
     assert.equal(ready.lifetime.estimatedTokensSaved, 2652);
     assert.equal(JSON.stringify(ready).includes("JEV_API_KEY"), false);
     assert.equal((await bridge({ action: "settingsOpenLogs" })).settings.action, "openedLogs");
-    assert.deepEqual(revealed, { name: "revealFileInOS", path: path.join(directory, "events.jsonl") });
-    const missing = (await bridge({ action: "settingsSave", mode: "replace", key: "",
+    assert.equal(openedExternal, directory);
+    await fs.mkdir(path.join(directory, "logs"));
+    assert.equal((await bridge({ action: "settingsOpenLogs" })).settings.action, "openedLogs");
+    assert.equal(openedExternal, path.join(directory, "logs"));
+    const missing = (await bridge({ action: "settingsSave", mode: "replace", key: "", logLimitMb: 50, neverDeleteLogs: false,
       thresholds: { output: { routine_min: 90 } } })).settings;
     assert.equal(missing.action, "error");
     assert.match(missing.message, /Enter an API key/);
-    const savedSettings = (await bridge({ action: "settingsSave", mode: "observe", key: "new-test-key-123",
+    const savedSettings = (await bridge({ action: "settingsSave", mode: "observe", key: "new-test-key-123", logLimitMb: 9999, neverDeleteLogs: true,
       thresholds: { output: { routine_min: 97 } } })).settings;
     assert.equal(savedSettings.action, "saved");
     assert.equal(await core.readApiKey(directory), "new-test-key-123");
     assert.equal((await core.readConfig(directory)).thresholds.output.routine_min, 97);
     assert.equal((await core.readConfig(directory)).mode, "observe");
+    assert.equal((await core.readConfig(directory)).log_limit_mb, 9999);
+    assert.equal((await core.readConfig(directory)).never_delete_logs, true);
     assert.equal(JSON.stringify(savedSettings).includes("new-test-key-123"), false);
     const readyAfterSave = (await bridge({ action: "settingsRead" })).settings;
     assert.equal(readyAfterSave.hasKey, true);

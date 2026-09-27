@@ -18,13 +18,15 @@ All integrations start off. The button in the Codex composer selects them and sh
 
 ## Settings
 
-Selecting a Jev integration without a key opens **Connect Jev** over the Codex side window. Its solid backdrop hides the current chats, and a link below the buttons opens typesafe.ai for a key. You can test and save the key there, or choose **Skip for now** and reopen setup from the Jev menu or the compact missing-key tooltip. Open **Codex settings → Jev**, below **Voice**, to test or replace the key, view lifetime savings and activity, open the decision log in Explorer, or change the integration cutoffs with visible sliders and percentage fields. Enter a whole percentage with or without `%`; the field adds `%` when it loses focus. **Reset defaults** stages the default mode and cutoffs until you select **Save settings**. It leaves the API key and integration selections intact. The output filters also require Jev's filter decision to meet the configured confidence minimum. **Monitor** previews decisions in the logs and leaves tool output unchanged. **Filter** shortens approved results. Changes apply to the next tool result. The captures show example state and contain no key.
+Selecting a Jev integration without a key opens **Connect Jev** over the Codex side window. Its solid backdrop hides the current chats, and a link below the buttons opens the typesafe.ai homepage in the system browser. You can test and save the key in Connect Jev, or choose **Skip for now** and reopen setup from the Jev menu or the compact missing-key tooltip. Open **Codex settings → Jev**, below **Voice**, to test or replace the key, view lifetime savings and activity, open the session logs in Explorer, or change the integration cutoffs with visible sliders and percentage fields. Enter a whole percentage with or without `%`; the field adds `%` when it loses focus. **Reset defaults**, at the right of the action row, stages the default mode, cutoffs, and 50 MB log limit until you select **Save settings**. It leaves the API key and integration selections intact. The output filters also require Jev's filter decision to meet the configured confidence minimum. **Monitor** previews decisions in the logs and leaves tool output unchanged. **Filter** shortens approved results. Changes apply to the next tool result. The captures show example state and contain no key.
+
+Each Jev request gets a private JSON receipt under `PLUGIN_DATA/logs/YYYY-MM-DD-<session-hash>/`. Its filename includes the UTC time. The receipt records the original and visible result, request, answer, decision, and chunk position. Logs have a 50 MB default limit; the oldest files are removed first. Set 1–9999 MB in **Log retention**, or select **Never delete logs** to disable cleanup. The limit applies to session logs and receipts; originals referenced by shortened tool output stay under `PLUGIN_DATA/outputs/` until removed separately.
 
 <img src="docs/images/jev-onboarding.png" width="520" alt="Connect Jev API key setup with a solid backdrop, Save and Skip buttons, and a TypeSafe API key link">
 
 <img src="docs/images/jev-missing-key.png" width="340" alt="Compact Jev tooltip with a Connect button when no API key is saved">
 
-<img src="docs/images/jev-settings.png" width="900" alt="Illustrative Jev settings with slider tracks, percentage fields, and Reset defaults">
+<img src="docs/images/jev-settings.png" width="900" alt="Illustrative Jev settings with log retention, slider tracks, percentage fields, and right aligned Reset defaults">
 
 ## Measured results
 
@@ -47,7 +49,7 @@ codex plugin marketplace add https://github.com/PhilippElhaus/Codex-Jev
 codex plugin add codex-jev@codex-jev
 ```
 
-Build the [VS Code control VSIX](vscode-control/README.md) and install `codex-jev-control-0.2.15.vsix`. Set `codexJev.dataDirectory` to the plugin data directory, and apply the version-pinned composer patch. Enable an integration to open key setup when no key is saved. Start a new Codex thread.
+Build the [VS Code control VSIX](vscode-control/README.md) and install `codex-jev-control-0.2.16.vsix`. Set `codexJev.dataDirectory` to the plugin data directory, and apply the version-pinned composer patch. Enable an integration to open key setup when no key is saved. Start a new Codex thread.
 
 ## Documentation
 

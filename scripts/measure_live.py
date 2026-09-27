@@ -37,7 +37,7 @@ def measure(repetitions: int, hook_script: Path = HOOK) -> dict:
             }), encoding="utf-8")
             for number, source in enumerate(cases):
                 event = {**source, "session_id": f"measure-{mode}", "tool_use_id": f"{mode}-{number}"}
-                log = data / "events.jsonl"
+                log = data / "logs/events.jsonl"
                 before = log.stat().st_size if log.exists() else 0
                 started = time.perf_counter()
                 result = subprocess.run(

@@ -13,6 +13,7 @@
   let setup;
   let setupDismissed = false;
   let keyRequestId = 0;
+  let externalRequestId = 0;
   let pending = 0;
   let retryRequestId = 0;
   let menuOpen = false;
@@ -207,7 +208,7 @@
     setup.setAttribute("role", "dialog");
     setup.setAttribute("aria-modal", "true");
     setup.setAttribute("aria-labelledby", "codex-jev-connect-title");
-    setup.innerHTML = `<div id="codex-jev-connect-art" aria-hidden="true"><pre></pre></div><div id="codex-jev-connect-card"><div id="codex-jev-connect-heading"><h1 id="codex-jev-connect-title">Connect Jev</h1><img id="codex-jev-connect-icon" src="./assets/jev-icon.png" alt=""></div><p>Enter a typesafe.ai API key to use the selected integrations.</p><label for="codex-jev-key">API key</label><input id="codex-jev-key" type="password" autocomplete="off" spellcheck="false" maxlength="4096"><div id="codex-jev-connect-actions"><button id="codex-jev-test-key" type="button">Test API key</button><span id="codex-jev-key-status" role="status" aria-live="polite"></span></div><div id="codex-jev-connect-footer"><button id="codex-jev-save-key" type="button">Save API key</button><button id="codex-jev-skip-key" type="button">Skip for now</button></div><p id="codex-jev-connect-link">Need a key? <a href="https://console.typesafe.ai/keys" target="_blank" rel="noopener noreferrer">Get an API key at typesafe.ai</a></p></div>`;
+    setup.innerHTML = `<div id="codex-jev-connect-art" aria-hidden="true"><pre></pre></div><div id="codex-jev-connect-card"><div id="codex-jev-connect-heading"><h1 id="codex-jev-connect-title">Connect Jev</h1><img id="codex-jev-connect-icon" src="./assets/jev-icon.png" alt=""></div><p>Enter a typesafe.ai API key to use the selected integrations.</p><label for="codex-jev-key">API key</label><input id="codex-jev-key" type="password" autocomplete="off" spellcheck="false" maxlength="4096"><div id="codex-jev-connect-actions"><button id="codex-jev-test-key" type="button">Test API key</button><span id="codex-jev-key-status" role="status" aria-live="polite"></span></div><div id="codex-jev-connect-footer"><button id="codex-jev-save-key" type="button">Save API key</button><button id="codex-jev-skip-key" type="button">Skip for now</button></div><p id="codex-jev-connect-link">Need a key? <a href="https://typesafe.ai/" rel="noopener noreferrer">Get an API key at typesafe.ai</a></p></div>`;
     document.body.appendChild(setup);
     setup.querySelector("#codex-jev-connect-art pre").textContent = Array.from({ length: 48 }, (_, row) =>
       Array.from({ length: 76 }, (_, column) => {
@@ -219,6 +220,11 @@
     setup.querySelector("#codex-jev-key").addEventListener("input", () => showKeyStatus("", false));
     setup.querySelector("#codex-jev-test-key").addEventListener("click", () => requestKey("testApiKey"));
     setup.querySelector("#codex-jev-save-key").addEventListener("click", () => requestKey("saveApiKey"));
+    setup.querySelector("#codex-jev-connect-link a").addEventListener("click", (event) => {
+      event.preventDefault();
+      externalRequestId = send("openTypeSafe");
+      if (!externalRequestId) showKeyStatus("Could not open browser", false);
+    });
     setup.querySelector("#codex-jev-skip-key").addEventListener("click", () => {
       setupDismissed = true;
       setup.querySelector("#codex-jev-key").value = "";
@@ -524,6 +530,10 @@
       const sentView = sentViews.get(event.data.id);
       sentViews.delete(event.data.id);
       if (event.data.id === retryRequestId) retryRequestId = 0;
+      if (event.data.id === externalRequestId) {
+        externalRequestId = 0;
+        if (!event.data.status?.externalOpen) showKeyStatus("Could not open browser", false);
+      }
       if (event.data.id === keyRequestId) {
         keyRequestId = 0;
         setup.querySelector("#codex-jev-test-key").disabled = false;

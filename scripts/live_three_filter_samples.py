@@ -33,7 +33,7 @@ def invoke(hook: Path, data: Path, run_id: str, name: str, command: str,
     }
     if transcript is not None:
         event["transcript_path"] = str(transcript)
-    log = data / "events.jsonl"
+    log = data / "logs/events.jsonl"
     offset = log.stat().st_size if log.exists() else 0
     completed = subprocess.run([sys.executable, str(hook)], input=json.dumps(event),
                                text=True, capture_output=True, timeout=20, check=True,

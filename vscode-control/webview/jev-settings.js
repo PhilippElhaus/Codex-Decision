@@ -33,6 +33,7 @@
   let hasKey = false;
   let busy = false;
   let defaults = null;
+  let savedLogLimit = 50;
 
   function visible(element) {
     const rect = element.getBoundingClientRect();
@@ -127,6 +128,12 @@
     return Number.isInteger(number) && number <= 100 ? number : null;
   }
 
+  function parseLogLimit(value) {
+    const text = value.trim();
+    const number = /^\d{1,4}$/.test(text) ? Number(text) : NaN;
+    return Number.isInteger(number) && number >= 1 && number <= 9999 ? number : null;
+  }
+
   function setThresholds(thresholds) {
     for (const [hook, , fields] of sections) {
       for (const [name] of fields) {
@@ -182,6 +189,11 @@
       #codex-jev-settings-panel small { display: block; margin-top: 3px; }
       #codex-jev-settings-panel input, #codex-jev-settings-panel select { background: var(--vscode-input-background, #181818); color: var(--vscode-input-foreground, #ddd); border: 1px solid var(--vscode-input-border, #555); border-radius: 9px; padding: 7px 9px; font: inherit; }
       #codex-jev-settings-panel .percent-input { width: 76px; flex: none; text-align: right; font-variant-numeric: tabular-nums; }
+      #codex-jev-settings-panel .log-limit-input { width: 96px; text-align: right; font-variant-numeric: tabular-nums; }
+      #codex-jev-settings-panel .log-retention { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+      #codex-jev-settings-panel .log-retention label { display: inline-flex; align-items: center; gap: 6px; }
+      #codex-jev-settings-panel .log-retention input[type=checkbox] { margin: 0; }
+      #codex-jev-settings-panel .log-limit-input:disabled { opacity: .5; }
       #codex-jev-settings-panel input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; min-width: 0; flex: 1; height: 6px; padding: 0; border: 0; border-radius: 999px; background: linear-gradient(to right, var(--vscode-button-background, #3287ac) 0 var(--fill, 0%), var(--vscode-input-border, #555) var(--fill, 0%) 100%); cursor: pointer; }
       #codex-jev-settings-panel input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 16px; height: 16px; border: 2px solid var(--vscode-editor-background, #181818); border-radius: 50%; background: var(--vscode-button-background, #3287ac); box-shadow: 0 0 0 1px var(--vscode-button-background, #3287ac); }
       #codex-jev-settings-panel input[type=range]::-moz-range-thumb { width: 12px; height: 12px; border: 2px solid var(--vscode-editor-background, #181818); border-radius: 50%; background: var(--vscode-button-background, #3287ac); }
@@ -195,6 +207,8 @@
       #codex-jev-settings-panel button:focus-visible, #codex-jev-settings-panel select:focus-visible, #codex-jev-settings-panel input:focus-visible { outline: 2px solid var(--vscode-focusBorder, #83bcf7); outline-offset: 2px; }
       #codex-jev-settings-panel button:disabled { opacity: .55; cursor: default; }
       #codex-jev-settings-panel .actions { display: flex; align-items: center; gap: 12px; margin-top: 16px; }
+      #codex-jev-settings-panel .save-actions { flex-wrap: wrap; }
+      #codex-jev-settings-reset { margin-left: auto; }
       #codex-jev-settings-test-status { font-size: 12px; font-weight: 600; }
       #codex-jev-settings-panel .ok { color: var(--vscode-testing-iconPassed, #4ec97f); }
       #codex-jev-settings-panel .error { color: var(--vscode-errorForeground, #f48771); }
@@ -206,7 +220,7 @@
     document.head.append(style);
     panel = document.createElement("div");
     panel.id = "codex-jev-settings-panel";
-    panel.innerHTML = `<div class="header"><h1>Jev</h1><button id="codex-jev-settings-open-logs" type="button">Open logs</button></div><section aria-label="Lifetime activity"><h2>Lifetime</h2><div class="metrics"><div class="metric"><strong id="codex-jev-settings-lifetime-tokens">—</strong><span>Estimated tokens saved</span></div><div class="metric"><strong id="codex-jev-settings-lifetime-replaced">—</strong><span>Results shortened</span></div><div class="metric"><strong id="codex-jev-settings-lifetime-calls">—</strong><span>Jev checks</span></div><div class="metric"><strong id="codex-jev-settings-lifetime-time">—</strong><span>Avg. decision time</span></div></div></section><section><h2>API key</h2><div class="field"><label for="codex-jev-settings-key">API key</label><input id="codex-jev-settings-key" type="password" autocomplete="off" spellcheck="false" maxlength="4096"></div><div class="actions"><button id="codex-jev-settings-test" type="button">Test API key</button><span id="codex-jev-settings-test-status" role="status" aria-live="polite"></span></div></section><section><h2>Behavior</h2><div class="field"><label for="codex-jev-settings-mode">Mode<small>Monitor previews Jev's decisions in the logs while leaving tool output unchanged. Filter shortens approved results.</small></label><select id="codex-jev-settings-mode"><option value="observe">Monitor</option><option value="replace">Filter</option></select></div><div id="codex-jev-settings-thresholds"></div></section><div class="actions"><button id="codex-jev-settings-save" type="button" class="primary">Save settings</button><button id="codex-jev-settings-reset" type="button" class="subtle" title="Restore the default mode and cutoffs in this form. Save to apply." disabled>Reset defaults</button></div><p id="codex-jev-settings-message" role="status" aria-live="polite"></p>`;
+    panel.innerHTML = `<div class="header"><h1>Jev</h1><button id="codex-jev-settings-open-logs" type="button">Open logs</button></div><section aria-label="Lifetime activity"><h2>Lifetime</h2><div class="metrics"><div class="metric"><strong id="codex-jev-settings-lifetime-tokens">—</strong><span>Estimated tokens saved</span></div><div class="metric"><strong id="codex-jev-settings-lifetime-replaced">—</strong><span>Results shortened</span></div><div class="metric"><strong id="codex-jev-settings-lifetime-calls">—</strong><span>Jev checks</span></div><div class="metric"><strong id="codex-jev-settings-lifetime-time">—</strong><span>Avg. decision time</span></div></div></section><section><h2>Log retention</h2><div class="log-retention"><label for="codex-jev-settings-log-limit">Storage limit (MB)</label><input id="codex-jev-settings-log-limit" class="log-limit-input" type="text" inputmode="numeric" maxlength="4" aria-label="Log storage limit in MB"><label for="codex-jev-settings-never-delete"><input id="codex-jev-settings-never-delete" type="checkbox">Never delete logs</label></div><small>Oldest session log files are removed when the limit is reached.</small></section><section><h2>API key</h2><div class="field"><label for="codex-jev-settings-key">API key</label><input id="codex-jev-settings-key" type="password" autocomplete="off" spellcheck="false" maxlength="4096"></div><div class="actions"><button id="codex-jev-settings-test" type="button">Test API key</button><span id="codex-jev-settings-test-status" role="status" aria-live="polite"></span></div></section><section><h2>Behavior</h2><div class="field"><label for="codex-jev-settings-mode">Mode<small>Monitor previews Jev's decisions in the logs while leaving tool output unchanged. Filter shortens approved results.</small></label><select id="codex-jev-settings-mode"><option value="observe">Monitor</option><option value="replace">Filter</option></select></div><div id="codex-jev-settings-thresholds"></div></section><div class="actions save-actions"><button id="codex-jev-settings-save" type="button" class="primary">Save settings</button><button id="codex-jev-settings-reset" type="button" class="subtle" title="Restore the default settings in this form. Save to apply." disabled>Reset defaults</button></div><p id="codex-jev-settings-message" role="status" aria-live="polite"></p>`;
     const thresholds = panel.querySelector("#codex-jev-settings-thresholds");
     for (const [hook, heading, fields] of sections) {
       const title = document.createElement("h2");
@@ -271,10 +285,18 @@
       if (request("settingsOpenLogs")) { setBusy(true); showMessage(""); }
     });
     panel.querySelector("#codex-jev-settings-key").addEventListener("input", () => showTest(""));
+    panel.querySelector("#codex-jev-settings-never-delete").addEventListener("change", (event) => {
+      const limit = panel.querySelector("#codex-jev-settings-log-limit");
+      if (event.target.checked && parseLogLimit(limit.value) === null) limit.value = String(savedLogLimit);
+      limit.disabled = event.target.checked;
+    });
     panel.querySelector("#codex-jev-settings-reset").addEventListener("click", () => {
       if (busy || !defaults) return;
       panel.querySelector("#codex-jev-settings-mode").value = defaults.mode;
       setThresholds(defaults.thresholds);
+      panel.querySelector("#codex-jev-settings-log-limit").value = String(defaults.log_limit_mb);
+      panel.querySelector("#codex-jev-settings-log-limit").disabled = defaults.never_delete_logs;
+      panel.querySelector("#codex-jev-settings-never-delete").checked = defaults.never_delete_logs;
       showMessage("Defaults ready. Save settings to apply.");
     });
     panel.querySelector("#codex-jev-settings-save").addEventListener("click", () => {
@@ -283,7 +305,10 @@
         const key = panel.querySelector("#codex-jev-settings-key").value.trim();
         const mode = panel.querySelector("#codex-jev-settings-mode").value;
         const thresholds = thresholdValues();
-        if (request("settingsSave", { key, mode, thresholds })) {
+        const logLimitMb = parseLogLimit(panel.querySelector("#codex-jev-settings-log-limit").value);
+        if (logLimitMb === null) throw new Error("Enter a log limit from 1 to 9999 MB.");
+        const neverDeleteLogs = panel.querySelector("#codex-jev-settings-never-delete").checked;
+        if (request("settingsSave", { key, mode, thresholds, logLimitMb, neverDeleteLogs })) {
           setBusy(true); showMessage("Saving…"); showTest("");
         }
       } catch (error) { showMessage(error.message, "error"); }
@@ -309,6 +334,11 @@
       showLifetime(reply.lifetime);
       panel.querySelector("#codex-jev-settings-mode").value = reply.config?.mode || "replace";
       setThresholds(reply.config?.thresholds);
+      savedLogLimit = reply.config?.log_limit_mb || 50;
+      panel.querySelector("#codex-jev-settings-log-limit").value = String(savedLogLimit);
+      const neverDelete = Boolean(reply.config?.never_delete_logs);
+      panel.querySelector("#codex-jev-settings-never-delete").checked = neverDelete;
+      panel.querySelector("#codex-jev-settings-log-limit").disabled = neverDelete;
     } else if (action === "settingsTest" && reply.action === "tested") {
       if (reply.result?.ok) showTest("OK", "ok");
       else {
@@ -319,6 +349,7 @@
       }
     } else if (action === "settingsSave" && reply.action === "saved") {
       hasKey = true;
+      savedLogLimit = parseLogLimit(panel.querySelector("#codex-jev-settings-log-limit").value) || 50;
       panel.querySelector("#codex-jev-settings-key").value = "";
       panel.querySelector("#codex-jev-settings-key").placeholder = "••••••••";
       showMessage("Settings saved.", "ok");

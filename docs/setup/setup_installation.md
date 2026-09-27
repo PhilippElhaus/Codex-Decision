@@ -14,7 +14,7 @@ For VS Code, build the companion VSIX from this checkout, then install it:
 ```bash
 cd vscode-control
 npx @vscode/vsce package --no-dependencies
-code --install-extension codex-jev-control-0.2.15.vsix --force
+code --install-extension codex-jev-control-0.2.16.vsix --force
 ```
 
 Set `codexJev.dataDirectory` to the installed plugin's absolute `PLUGIN_DATA` directory. Enabling an integration opens key setup if no key is saved. The [credential setup](setup_credentials.md) explains that directory and the Jev key. Apply the [version-pinned Codex composer patch](../../vscode-control/README.md#install-the-companion-extension).

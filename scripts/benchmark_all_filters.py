@@ -307,7 +307,7 @@ def invoke_hook(hook: Path, data: Path, item: dict, enabled: bool) -> tuple[dict
         "enabled": enabled, "test_build_enabled": enabled,
         "search_listing_enabled": enabled, "mode": "replace", "timeout_seconds": 4.0,
     }))
-    log = data / "events.jsonl"
+    log = data / "logs/events.jsonl"
     offset = log.stat().st_size if log.exists() else 0
     started = time.perf_counter()
     completed = subprocess.run([sys.executable, str(hook)], input=json.dumps(item), text=True,

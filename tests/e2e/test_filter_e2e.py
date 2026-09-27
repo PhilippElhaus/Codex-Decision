@@ -152,7 +152,10 @@ class CommandHookEndToEndTests(unittest.TestCase):
         return [json.loads(row) for row in self.calls.read_text().splitlines()] if self.calls.exists() else []
 
     def records(self):
-        return [json.loads(row) for row in (self.data / "events.jsonl").read_text().splitlines()]
+        return [json.loads(row) for row in (self.data / "logs/events.jsonl").read_text().splitlines()]
+
+    def receipts(self):
+        return [json.loads(path.read_text()) for path in sorted((self.data / "logs").glob("*/receipt-*.json"))]
 
     def test_three_routes_batch_once_save_exact_original_and_preserve_diagnostics(self):
         fixtures = [
@@ -180,6 +183,17 @@ class CommandHookEndToEndTests(unittest.TestCase):
         self.assertTrue(all(call["auth_ok"] for call in calls))
         self.assertEqual([len(call["questions"]) for call in calls], [4, 4, 2])
         self.assertTrue(all(len(json.dumps(call["state"])) < 20_000 for call in calls))
+        receipts = self.receipts()
+        self.assertEqual(len(receipts), len(calls))
+        for receipt, (name, item) in zip(receipts, fixtures):
+            self.assertEqual(receipt["filter"], name)
+            self.assertEqual(receipt["initial_output"], item["tool_response"])
+            self.assertEqual(receipt["decision"]["status"], "replace")
+            self.assertEqual(receipt["call_count"], 1)
+            self.assertTrue(receipt["jev_answer"])
+            self.assertTrue(receipt["jev_raw_answer"])
+            self.assertEqual(receipt["jev_request"]["model"], "jev-1.13.0")
+            self.assertEqual(len(receipt["jev_request"]["questions"]), len(calls[fixtures.index((name, item))]["questions"]))
         rows = self.records()
         self.assertEqual([(row["filter"], row["status"]) for row in rows], [
             (name, status) for name in ("output", "test_build", "search_listing")
@@ -197,12 +211,22 @@ class CommandHookEndToEndTests(unittest.TestCase):
             with self.subTest(call=item["tool_use_id"]):
                 self.assertEqual(self.invoke(item), {})
         self.assertEqual(self.jev_calls(), [])
+        self.assertEqual(self.receipts(), [])
         self.assertFalse((self.data / "outputs").exists())
         self.assertTrue(all(row["status"] == "skip" for row in self.records()))
 
     def test_large_output_is_checked_in_bounded_chunks_and_saved_exactly(self):
         item = event("echo progress", output_fixture() * 12, "chunked-output")
         feedback = self.invoke(item)
+        receipts = self.receipts()
+        self.assertEqual(len(receipts), len(self.jev_calls()))
+        self.assertGreater(len(receipts), 1)
+        self.assertEqual([receipt["call_index"] for receipt in receipts], list(range(1, len(receipts) + 1)))
+        self.assertTrue(all(receipt["call_count"] == len(receipts) and
+                            receipt["initial_output"] == item["tool_response"] and
+                            receipt["visible_output"] == feedback["reason"] for receipt in receipts))
+        self.assertEqual("".join(receipt["jev_request"]["state"]["output_sample"] for receipt in receipts),
+                         item["tool_response"])
         self.assertIs(feedback["continue"], False)
         calls = self.jev_calls()
         self.assertGreater(len(calls), 1)
@@ -224,6 +248,11 @@ class CommandHookEndToEndTests(unittest.TestCase):
                 with self.subTest(failure=failure, call=item["tool_use_id"]):
                     self.assertEqual(self.invoke(item, failure), {})
         self.assertEqual(len(self.jev_calls()), 6)
+        receipts = self.receipts()
+        self.assertEqual(len(receipts), 6)
+        self.assertTrue(all(receipt["decision"]["status"] == "keep" and
+                            receipt["visible_output"] == receipt["initial_output"] and
+                            receipt["jev_error"] in {"OSError", "JSONDecodeError"} for receipt in receipts))
         self.assertFalse((self.data / "outputs").exists())
         self.assertEqual([row["status"] for row in self.records() if row["status"] != "calling"],
                          ["keep"] * 6)

@@ -98,7 +98,10 @@ class PatchTests(unittest.TestCase):
         self.assertIn("retryConnection", (self.extension / "out/extension.js").read_text())
         self.assertIn("saveApiKey", (self.extension / "out/extension.js").read_text())
         self.assertIn("testApiKey", (self.extension / "out/extension.js").read_text())
+        self.assertIn('"openTypeSafe"', (self.extension / "out/extension.js").read_text())
         self.assertIn("settingsSave", (self.extension / "out/extension.js").read_text())
+        self.assertIn("logLimitMb:u.logLimitMb", (self.extension / "out/extension.js").read_text())
+        self.assertIn("neverDeleteLogs:u.neverDeleteLogs", (self.extension / "out/extension.js").read_text())
         self.assertIn("feature:u.feature", (self.extension / "out/extension.js").read_text())
         self.assertIn("viewId", (self.extension / "out/extension.js").read_text())
         self.assertEqual((self.extension / patch.ASSET).read_bytes(),
