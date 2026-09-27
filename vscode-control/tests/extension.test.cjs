@@ -69,10 +69,13 @@ test("composer bridge selects integrations and reports view-scoped activity with
     assert.equal(commands.has("codexJev.selectHooks"), false);
     const bridge = commands.get("codexJev.bridge");
     assert.equal((await bridge({ action: "status", viewId: "view-one" })).enabled, false);
-    await bridge({ action: "setSelection", feature: "output", enabled: true, viewId: "view-one" });
-    await until(() => Boolean(settingsPanel));
-    assert.match(settingsPanel.webview.html, /data-onboarding="true"/);
-    assert.doesNotMatch(settingsPanel.webview.html, /New API key/);
+    const firstSelection = await bridge({ action: "setSelection", feature: "output", enabled: true, viewId: "view-one" });
+    assert.equal(firstSelection.needsKey, true);
+    assert.equal(panelsCreated, 0);
+    const firstTest = await bridge({ action: "testApiKey", key: "example-test-key", viewId: "view-one" });
+    assert.equal(firstTest.keyTest.ok, true);
+    assert.equal(suppliedKey, "example-test-key");
+    assert.equal(JSON.stringify(firstTest).includes("example-test-key"), false);
     await until(async () => (await bridge({ action: "status", viewId: "view-one" })).health?.ok === true);
     assert.equal((await core.readConfig(directory)).enabled, true);
 
@@ -148,6 +151,11 @@ test("composer bridge selects integrations and reports view-scoped activity with
     await settingsPanel.webview.receive({ action: "test", key: "" });
     assert.equal(suppliedKey, null);
     assert.equal(settingsPanel.messages.at(-1).result.ok, true);
+    const saved = await bridge({ action: "saveApiKey", key: "another-test-key-123", viewId: "view-two" });
+    assert.equal(saved.keySaved, true);
+    assert.equal(saved.needsKey, false);
+    assert.equal(await core.readApiKey(directory), "another-test-key-123");
+    assert.equal(JSON.stringify(saved).includes("another-test-key-123"), false);
   } finally {
     for (const disposable of context.subscriptions.reverse()) disposable.dispose();
     await fs.rm(directory, { recursive: true, force: true });

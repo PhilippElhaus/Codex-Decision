@@ -1,4 +1,4 @@
-/* Local Codex composer control. The host bridge returns metadata only. */
+/* Local Codex composer control. Key setup uses the local extension bridge. */
 (() => {
   const acquire = window.acquireVsCodeApi;
   if (typeof acquire !== "function") return;
@@ -8,8 +8,11 @@
     return api;
   };
 
-  let state = { enabled: false, outputEnabled: false, testBuildEnabled: false, searchListingEnabled: false, health: null, busy: false, mode: "replace", recent: "No decision recorded yet", history: [], stats: {} };
+  let state = { enabled: false, outputEnabled: false, testBuildEnabled: false, searchListingEnabled: false, needsKey: false, health: null, busy: false, mode: "replace", recent: "No decision recorded yet", history: [], stats: {} };
   let root;
+  let setup;
+  let setupDismissed = false;
+  let keyRequestId = 0;
   let pending = 0;
   let retryRequestId = 0;
   let menuOpen = false;
@@ -32,20 +35,21 @@
       viewLocation = window.location.href;
       viewId = newViewId();
       retryRequestId = 0;
+      setupDismissed = false;
       state = { ...state, busy: false, recent: "No decision recorded yet", history: [], stats: {} };
       render();
     }
     return viewId;
   }
 
-  function send(action, enabled, feature) {
+  function send(action, enabled, feature, key) {
     const api = window.__codexJevApi;
     if (!api) return 0;
     const id = ++pending;
     const current = currentViewId();
     sentViews.set(id, current);
     if (sentViews.size > 50) sentViews.delete(sentViews.keys().next().value);
-    api.postMessage({ type: "codex-jev", action, enabled, feature, viewId: current, id });
+    api.postMessage({ type: "codex-jev", action, enabled, feature, ...(key === undefined ? {} : { key }), viewId: current, id });
     return id;
   }
 
@@ -65,6 +69,39 @@
     };
     return known[reason] || (/^JEV_HTTP_\d{3}$/.test(reason || "")
       ? `API error ${reason.slice(-3)}` : "Connection check failed");
+  }
+
+  function keyResult(result) {
+    if (result?.ok) return { text: "OK", ok: true };
+    const labels = {
+      JEV_KEY_MISSING: "Enter a valid key", JEV_HTTP_401: "Invalid", JEV_KEY_EXPIRED: "Expired",
+      JEV_HTTP_403: "Access denied", JEV_HTTP_429: "Rate limited", JEV_TIMEOUT: "Timed out",
+      JEV_NETWORK_ERROR: "Network error", JEV_INVALID_RESPONSE: "Invalid response",
+    };
+    return { text: labels[result?.reason] || "Connection failed", ok: false };
+  }
+
+  function showKeyStatus(text, ok) {
+    const label = setup.querySelector("#codex-jev-key-status");
+    label.textContent = text;
+    label.dataset.ok = String(ok);
+  }
+
+  function requestKey(action) {
+    if (keyRequestId) return;
+    const key = setup.querySelector("#codex-jev-key").value;
+    if (key.length < 8 || key.length > 4096 || /\s|\0/.test(key)) {
+      showKeyStatus("Enter a valid key", false);
+      return;
+    }
+    keyRequestId = send(action, undefined, undefined, key);
+    if (!keyRequestId) {
+      showKeyStatus("Connection unavailable", false);
+      return;
+    }
+    setup.querySelector("#codex-jev-test-key").disabled = true;
+    setup.querySelector("#codex-jev-save-key").disabled = true;
+    showKeyStatus(action === "testApiKey" ? "Testing…" : "Saving…", false);
   }
 
   function formatDuration(elapsedMs) {
@@ -121,6 +158,25 @@
       #codex-jev-history li { margin-top: 3px; }
       #codex-jev-history strong { font-weight: 700; color: #fff; }
       #codex-jev-empty { margin: 0; color: #888; }
+      #codex-jev-connect { position: fixed; inset: 0; z-index: 2147483640; display: none; align-items: center; justify-content: center; box-sizing: border-box; overflow: auto; padding: 20px; background: #000b; color: var(--vscode-foreground, #d0d0d0); font-family: inherit; }
+      #codex-jev-connect * { box-sizing: border-box; }
+      #codex-jev-connect-card { width: min(100%, 460px); margin: auto; padding: 28px; border: 1px solid var(--vscode-panel-border, #3c3c3c); border-radius: 12px; background: var(--vscode-editor-background, #1b1b1b); box-shadow: 0 20px 60px #0008; }
+      #codex-jev-connect h1 { margin: 0 0 22px; font-size: clamp(28px, 5vw, 36px); line-height: 1.2; }
+      #codex-jev-connect p { margin: 0 0 32px; color: var(--vscode-descriptionForeground, #999); font-size: 14px; line-height: 1.55; }
+      #codex-jev-connect label { display: block; margin-bottom: 6px; font-size: 14px; }
+      #codex-jev-connect small { display: block; margin-bottom: 14px; color: var(--vscode-descriptionForeground, #999); font-size: 12px; line-height: 1.45; }
+      #codex-jev-key { width: 100%; height: 42px; padding: 8px 10px; border: 1px solid var(--vscode-input-border, #555); border-radius: 5px; outline: none; background: var(--vscode-input-background, #202020); color: var(--vscode-input-foreground, #ddd); font: inherit; }
+      #codex-jev-key:focus { border-color: var(--vscode-focusBorder, #e4a900); }
+      #codex-jev-connect-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+      #codex-jev-connect button { min-height: 36px; padding: 7px 13px; border: 1px solid var(--vscode-contrastBorder, #707070); border-radius: 5px; background: var(--vscode-button-secondaryBackground, #262626); color: var(--vscode-button-secondaryForeground, #ddd); font: inherit; cursor: pointer; }
+      #codex-jev-connect button:hover { background: var(--vscode-button-secondaryHoverBackground, #353535); }
+      #codex-jev-connect button:focus-visible { outline: 2px solid var(--vscode-focusBorder, #83bcf7); outline-offset: 2px; }
+      #codex-jev-connect button:disabled { opacity: .55; cursor: default; }
+      #codex-jev-connect #codex-jev-save-key { margin-top: 18px; border-color: transparent; background: var(--vscode-button-background, #0e639c); color: var(--vscode-button-foreground, #fff); }
+      #codex-jev-connect #codex-jev-save-key:hover { background: var(--vscode-button-hoverBackground, #1177bb); }
+      #codex-jev-key-status { min-width: 0; font-size: 12px; font-weight: 600; }
+      #codex-jev-key-status[data-ok="true"] { color: var(--vscode-testing-iconPassed, #4ec97f); }
+      #codex-jev-key-status[data-ok="false"] { color: var(--vscode-errorForeground, #f48771); }
     `;
     document.head.appendChild(style);
     root = document.createElement("div");
@@ -128,8 +184,32 @@
     root.innerHTML = `
       <button id="codex-jev-button" type="button" aria-label="Jev integrations" aria-expanded="false" aria-controls="codex-jev-menu"><span id="codex-jev-dot"></span><span id="codex-jev-label">jev</span><span id="codex-jev-observe">OBS</span></button>
       <div id="codex-jev-tip" role="group" aria-label="Jev status"><div id="codex-jev-health-row"><strong></strong><span id="codex-jev-health-reason"></span><button id="codex-jev-retry" type="button">Retry</button></div><span id="codex-jev-mode"></span><h3 id="codex-jev-session-heading">This session</h3><div id="codex-jev-stats"></div><div id="codex-jev-tokens"></div><h3 id="codex-jev-history-heading">Recent Actions</h3><ol id="codex-jev-history"></ol><p id="codex-jev-empty">None yet</p></div>
-      <div id="codex-jev-menu" role="group" aria-label="Jev integrations" data-open="false"><h2>Jev integrations</h2><button id="codex-jev-option" class="codex-jev-option" type="button" role="checkbox" aria-checked="false"><span class="codex-jev-check"></span><span><strong>Output filter</strong><small>Check repetitive tool output with Jev</small></span></button><button id="codex-jev-test-build" class="codex-jev-option" type="button" role="checkbox" aria-checked="false"><span class="codex-jev-check"></span><span><strong>Test/build logs</strong><small>Jev checks routine lines before trimming</small></span></button><button id="codex-jev-search-listing" class="codex-jev-option" type="button" role="checkbox" aria-checked="false"><span class="codex-jev-check"></span><span><strong>Search/listing</strong><small>Jev trims broad search and file lists</small></span></button><p>Select none to turn Jev off.</p></div>`;
+      <div id="codex-jev-menu" role="group" aria-label="Jev integrations" data-open="false"><h2>Jev integrations</h2><button id="codex-jev-option" class="codex-jev-option" type="button" role="checkbox" aria-checked="false"><span class="codex-jev-check"></span><span><strong>Output filter</strong><small>Check repetitive tool output with Jev</small></span></button><button id="codex-jev-test-build" class="codex-jev-option" type="button" role="checkbox" aria-checked="false"><span class="codex-jev-check"></span><span><strong>Test/build logs</strong><small>Jev checks routine lines before trimming</small></span></button><button id="codex-jev-search-listing" class="codex-jev-option" type="button" role="checkbox" aria-checked="false"><span class="codex-jev-check"></span><span><strong>Search/listing</strong><small>Jev trims broad search and file lists</small></span></button><button id="codex-jev-open-connect" class="codex-jev-option" type="button">Connect Jev…</button><p>Select none to turn Jev off.</p></div>`;
     document.body.appendChild(root);
+    setup = document.createElement("div");
+    setup.id = "codex-jev-connect";
+    setup.setAttribute("role", "dialog");
+    setup.setAttribute("aria-modal", "true");
+    setup.setAttribute("aria-labelledby", "codex-jev-connect-title");
+    setup.innerHTML = `<div id="codex-jev-connect-card"><h1 id="codex-jev-connect-title">Connect Jev</h1><p>Enter a Jev API key to use the selected integrations. Test it here before saving.</p><label for="codex-jev-key">API key</label><small>The key is stored in the plugin data directory.</small><input id="codex-jev-key" type="password" autocomplete="off" spellcheck="false" maxlength="4096"><div id="codex-jev-connect-actions"><button id="codex-jev-test-key" type="button">Test API key</button><span id="codex-jev-key-status" role="status" aria-live="polite"></span></div><button id="codex-jev-save-key" type="button">Save API key</button> <button id="codex-jev-skip-key" type="button">Skip for now</button></div>`;
+    document.body.appendChild(setup);
+    setup.addEventListener("click", (event) => event.stopPropagation());
+    setup.addEventListener("keydown", (event) => event.stopPropagation());
+    setup.querySelector("#codex-jev-key").addEventListener("input", () => showKeyStatus("", false));
+    setup.querySelector("#codex-jev-test-key").addEventListener("click", () => requestKey("testApiKey"));
+    setup.querySelector("#codex-jev-save-key").addEventListener("click", () => requestKey("saveApiKey"));
+    setup.querySelector("#codex-jev-skip-key").addEventListener("click", () => {
+      setupDismissed = true;
+      setup.querySelector("#codex-jev-key").value = "";
+      showKeyStatus("", false);
+      render();
+    });
+    root.querySelector("#codex-jev-open-connect").addEventListener("click", (event) => {
+      event.stopPropagation();
+      setupDismissed = false;
+      menuOpen = false;
+      render();
+    });
     root.querySelector("#codex-jev-button").addEventListener("click", (event) => {
       event.stopPropagation();
       menuOpen = !menuOpen;
@@ -168,6 +248,13 @@
 
   function render() {
     if (!root) return;
+    const needsSetup = Boolean(state.enabled && state.needsKey);
+    if (!needsSetup) setupDismissed = false;
+    const showSetup = needsSetup && !setupDismissed;
+    const wasVisible = setup.style.display === "flex";
+    setup.style.display = showSetup ? "flex" : "none";
+    if (showSetup && !wasVisible) queueMicrotask(() => setup.querySelector("#codex-jev-key").focus());
+    root.querySelector("#codex-jev-open-connect").style.display = needsSetup ? "flex" : "none";
     const button = root.querySelector("#codex-jev-button");
     const visual = !state.enabled ? "off" : state.busy ? "busy" :
       state.health?.ok === true ? "healthy" : state.health?.ok === false ? "failed" : "off";
@@ -435,6 +522,20 @@
       const sentView = sentViews.get(event.data.id);
       sentViews.delete(event.data.id);
       if (event.data.id === retryRequestId) retryRequestId = 0;
+      if (event.data.id === keyRequestId) {
+        keyRequestId = 0;
+        setup.querySelector("#codex-jev-test-key").disabled = false;
+        setup.querySelector("#codex-jev-save-key").disabled = false;
+        if (event.data.status?.keyTest) {
+          const result = keyResult(event.data.status.keyTest);
+          showKeyStatus(result.text, result.ok);
+        } else if (event.data.status?.keySaved) {
+          setup.querySelector("#codex-jev-key").value = "";
+          showKeyStatus("", false);
+        } else {
+          showKeyStatus(event.data.status?.keySaveError || "Connection unavailable", false);
+        }
+      }
       if (!sentView || sentView !== currentViewId()) return;
       if (event.data.status && typeof event.data.status === "object") {
         state = event.data.status;

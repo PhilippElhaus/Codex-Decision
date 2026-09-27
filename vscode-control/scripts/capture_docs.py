@@ -25,6 +25,7 @@ def main() -> None:
             ('menu', 'jev-menu.png', 620, 340),
             ('tooltip', 'jev-tooltip.png', 620, 280),
             ('unavailable', 'jev-unavailable.png', 620, 280),
+            ('onboarding', 'jev-onboarding.png', 520, 720),
         ]
         for state, name, width, height in captures:
             output = IMAGES / name
@@ -38,12 +39,15 @@ def main() -> None:
             ], capture_output=True, text=True, timeout=30, check=False)
             if result.returncode != 0 or not output.is_file() or output.stat().st_size < 1000:
                 raise RuntimeError(f'Could not capture {name}: exit={result.returncode}')
+            output.chmod(0o644)
             found = re.search(r'data-layout="([^"]+)"', result.stdout)
             if not found:
                 raise RuntimeError(f'Could not inspect {name} layout')
             layout = json.loads(unescape(found.group(1)))
-            if abs((layout['buttonTop'] - layout['anchorTop']) - layout['screenshotOffset']) > 10:
+            if state != 'onboarding' and abs((layout['buttonTop'] - layout['anchorTop']) - layout['screenshotOffset']) > 10:
                 raise RuntimeError(f'{name} is vertically misaligned: {layout}')
+            if state == 'onboarding' and 'id="codex-jev-connect"' not in result.stdout:
+                raise RuntimeError('Connect Jev overlay was not rendered')
             print(f'{name}: {output.stat().st_size} bytes; layout={layout}')
 
         source = (ROOT / 'extension.js').read_text(encoding='utf-8')
@@ -64,7 +68,6 @@ def main() -> None:
                  '--vscode-button-foreground:#fff;--vscode-button-secondaryBackground:#252525;'
                  '--vscode-button-secondaryForeground:#ccc}body{zoom:1.25}</style>')
         examples = ((False, 'jev-settings.png', None, 'OK'),
-                    (True, 'jev-onboarding.png', None, None),
                     (False, None, 'JEV_HTTP_401', 'Invalid'),
                     (False, None, 'JEV_KEY_EXPIRED', 'Expired'),
                     (False, None, 'HOST_CONFIG_ERROR', 'Data directory missing'))
@@ -104,6 +107,7 @@ def main() -> None:
                     or (not onboarding and ('Output filter' not in result.stdout or
                                             f'>{label}</span>' not in result.stdout))):
                 raise RuntimeError(f'Could not capture {basename}: exit={result.returncode}')
+            if name: output.chmod(0o644)
             if name: print(f'{name}: {output.stat().st_size} bytes; example values')
     finally:
         remove_profile(profile, 'jev-docs-')

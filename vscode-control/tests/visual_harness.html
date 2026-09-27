@@ -16,6 +16,10 @@
     .divider { height: 34px; border-left: 1px solid #303030; }
     .context { color: #989898; }
     .send { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 50%; background: #c5c5c5; color: #202020; font-size: 21px; margin-left: 3px; }
+    .codex-top { display: none; padding: 18px 24px; color: #aaa; }
+    .codex-top strong { display: block; margin-bottom: 22px; color: #ddd; font-size: 19px; }
+    .codex-top span { display: block; margin-top: 14px; }
+    body[data-demo="onboarding"] .codex-top { display: block; }
     @media (max-width: 700px) { .divider, .context { display: none; } }
     /* Match the headless screenshot surface to its smaller layout viewport. */
     #codex-jev { transform: translateY(var(--screenshot-offset, 0px)); }
@@ -31,7 +35,9 @@
         type: "codex-jev-reply", id: request.id,
         status: {
           enabled: true, outputEnabled: true, testBuildEnabled: true, searchListingEnabled: true,
-          health: demo === "unavailable" ? { ok: false, reason: "JEV_TIMEOUT" } : { ok: true, model: "jev-1.13.0" },
+          needsKey: demo === "onboarding",
+          health: demo === "onboarding" ? { ok: false, reason: "JEV_KEY_MISSING" } :
+            demo === "unavailable" ? { ok: false, reason: "JEV_TIMEOUT" } : { ok: true, model: "jev-1.13.0" },
           busy: demo === "pulse", mode: "replace", recent: history[0], history,
           stats: { calls: 1, candidates: 0, kept: 0, replaced: 1, checkedChars: 6367, savedChars: 6058, estimatedTokensSaved: 1515, elapsedMs: 1263, completed: 1 },
         },
@@ -41,6 +47,7 @@
   <script src="../webview/jev-control.js"></script>
 </head>
 <body>
+  <div class="codex-top"><strong>Codex</strong>Chats<span>Recent conversations</span><span>Start a new chat</span></div>
   <div class="composer">
     <div class="prompt">Ask for follow-up changes</div>
     <div class="toolbar">
@@ -53,11 +60,12 @@
   </div>
   <script>
     const api = acquireVsCodeApi();
+    document.body.dataset.demo = demo;
     setTimeout(() => {
       document.documentElement.style.setProperty("--screenshot-offset", `${Math.max(0, outerHeight - innerHeight)}px`);
       if (demo !== "composer") document.querySelector(".prompt").textContent = "";
       if (demo === "menu") document.getElementById("codex-jev-button").click();
-      else if (demo !== "composer") document.getElementById("codex-jev-tip").style.display = "block";
+      else if (demo !== "composer" && demo !== "onboarding") document.getElementById("codex-jev-tip").style.display = "block";
       const anchor = document.querySelector(".access").getBoundingClientRect();
       const button = document.getElementById("codex-jev-button").getBoundingClientRect();
       document.body.dataset.layout = JSON.stringify({ anchorTop: anchor.top, buttonTop: button.top, screenshotOffset: Math.max(0, outerHeight - innerHeight) });

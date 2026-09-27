@@ -14,12 +14,10 @@ function emptyStats() {
 }
 
 function activate(context) {
-  const state = { enabled: false, outputEnabled: false, testBuildEnabled: false, searchListingEnabled: false, mode: "replace", health: null, recent: null, history: [], stats: emptyStats(), busyUntil: 0, eventSize: -1, checking: false, polling: null, callingSeen: false, viewId: null, generation: 0, eventDirectory: null };
+  const state = { enabled: false, outputEnabled: false, testBuildEnabled: false, searchListingEnabled: false, needsKey: false, mode: "replace", health: null, recent: null, history: [], stats: emptyStats(), busyUntil: 0, eventSize: -1, checking: false, polling: null, callingSeen: false, viewId: null, generation: 0, eventDirectory: null };
   let selectionQueue = Promise.resolve();
   let viewBaseline = Promise.resolve();
   let probePromise = null;
-  let setupPrompted = false;
-  let setupCheck = null;
   let settingsPanel = null;
   const settings = () => vscode.workspace.getConfiguration("codexJev");
   const dataDirectory = () => {
@@ -34,6 +32,7 @@ function activate(context) {
     outputEnabled: state.outputEnabled,
     testBuildEnabled: state.testBuildEnabled,
     searchListingEnabled: state.searchListingEnabled,
+    needsKey: state.needsKey,
     health: state.health,
     busy: state.enabled && Date.now() < state.busyUntil,
     mode: state.mode,
@@ -84,7 +83,6 @@ function activate(context) {
         }
         state.eventDirectory = directory;
         state.health = null;
-        setupPrompted = false;
       }
       const selectedMode = settings().get("mode") || "replace";
       if (!["replace", "observe"].includes(selectedMode)) throw new Error("Invalid codexJev.mode setting");
@@ -96,35 +94,27 @@ function activate(context) {
       state.searchListingEnabled = config.search_listing_enabled;
       state.enabled = state.outputEnabled || state.testBuildEnabled || state.searchListingEnabled;
       state.mode = config.mode;
+      const wasMissingKey = state.needsKey;
+      if (state.enabled) {
+        try { await readApiKey(directory); state.needsKey = false; }
+        catch { state.needsKey = true; }
+      } else state.needsKey = false;
+      if (state.needsKey) state.health = { ok: false, reason: "JEV_KEY_MISSING" };
+      else if (state.enabled && wasMissingKey) void (probePromise ? probePromise.then(() => probe()) : probe());
       if (!state.enabled) {
         state.health = null;
-        setupPrompted = false;
       }
       if (state.enabled && (!wasEnabled || directoryChanged)) {
         void (probePromise ? probePromise.then(() => probe()) : probe());
-        void ensureSetup(directory);
       }
     } catch {
       state.enabled = false;
       state.outputEnabled = false;
       state.testBuildEnabled = false;
       state.searchListingEnabled = false;
+      state.needsKey = false;
       state.health = null;
     }
-  }
-
-  function ensureSetup(directory) {
-    if (setupPrompted || setupCheck) return setupCheck || Promise.resolve();
-    setupCheck = (async () => {
-      try { await readApiKey(directory); }
-      catch {
-        if (state.enabled && state.eventDirectory === directory && !setupPrompted) {
-          setupPrompted = true;
-          await openSettings(true);
-        }
-      }
-    })().finally(() => { setupCheck = null; });
-    return setupCheck;
   }
 
   function probe() {
@@ -265,6 +255,22 @@ function activate(context) {
 
   context.subscriptions.push(vscode.commands.registerCommand("codexJev.bridge", async (request) => {
     await enterView(request?.viewId);
+    if (request?.action === "testApiKey") {
+      const keyTest = await checkHealth(dataDirectory(), globalThis.fetch,
+        typeof request.key === "string" ? request.key : "");
+      return { ...snapshot(), keyTest };
+    }
+    if (request?.action === "saveApiKey") {
+      try {
+        await writeApiKey(dataDirectory(), request.key);
+        state.needsKey = false;
+        if (probePromise) await probePromise;
+        await probe();
+        return { ...snapshot(), keySaved: true };
+      } catch {
+        return { ...snapshot(), keySaveError: "Could not save API key" };
+      }
+    }
     if (request?.action === "openSettings") {
       await openSettings();
       return snapshot();

@@ -14,7 +14,7 @@
     .results { position: absolute; top: 16px; left: 16px; font: 12px monospace; }
   </style>
   <script>
-    let outputEnabled = false, testBuildEnabled = false, searchListingEnabled = false, health = { ok: true, model: "jev-1.13.0" }, busy = false, mode = "replace";
+    let outputEnabled = false, testBuildEnabled = false, searchListingEnabled = false, needsKey = false, health = { ok: true, model: "jev-1.13.0" }, busy = false, mode = "replace";
     const stats = { calls: 7, candidates: 4, kept: 2, replaced: 1, checkedChars: 90640, savedChars: 6058, estimatedTokensSaved: 1515, elapsedMs: 8120, completed: 7 };
     const history = [
       "replaced · test/build · 6,367 chars · -95%",
@@ -34,9 +34,15 @@
         else outputEnabled = request.enabled;
       }
       if (request.action === "retryConnection") health = { ok: true, model: "jev-1.13.0" };
+      const keyTest = request.action === "testApiKey" ?
+        (request.key === "expired-example-key" ? { ok: false, reason: "JEV_KEY_EXPIRED" } :
+          request.key === "invalid-example-key" ? { ok: false, reason: "JEV_HTTP_401" } :
+            { ok: true, model: "jev-1.13.0" }) : undefined;
+      const keySaved = request.action === "saveApiKey";
+      if (keySaved) { needsKey = false; health = { ok: true, model: "jev-1.13.0" }; }
       queueMicrotask(() => window.dispatchEvent(new MessageEvent("message", { data: {
         type: "codex-jev-reply", id: request.id,
-        status: { enabled: outputEnabled || testBuildEnabled || searchListingEnabled, outputEnabled, testBuildEnabled, searchListingEnabled, health, busy, mode, recent: freshView ? "No decision recorded yet" : history[0],
+        status: { enabled: outputEnabled || testBuildEnabled || searchListingEnabled, outputEnabled, testBuildEnabled, searchListingEnabled, needsKey, keyTest, keySaved, health, busy, mode, recent: freshView ? "No decision recorded yet" : history[0],
           history: freshView ? [] : history,
           stats: freshView ? { calls: 0, candidates: 0, kept: 0, replaced: 0, checkedChars: 0, elapsedMs: 0, completed: 0 } : stats },
       } })));
@@ -283,6 +289,37 @@
       jevSettings.click();
       check(window.__jevHarnessLastAction === "openSettings", "Jev settings opens through host bridge");
       codexMenu.remove();
+      outputEnabled = true;
+      needsKey = true;
+      health = { ok: false, reason: "JEV_KEY_MISSING" };
+      const setup = document.getElementById("codex-jev-connect");
+      await until(() => setup.style.display === "flex", "missing key opens over Codex pane");
+      const bounds = setup.getBoundingClientRect();
+      check(bounds.left === 0 && bounds.top === 0 && bounds.width === innerWidth &&
+        bounds.height === innerHeight && setup.parentElement === document.body,
+        "setup covers the Codex webview");
+      setup.querySelector("#codex-jev-skip-key").click();
+      check(setup.style.display === "none" && needsKey, "Skip restores Codex without saving a key");
+      button.click();
+      const reopen = document.getElementById("codex-jev-open-connect");
+      check(reopen.style.display !== "none", "skipped setup remains reachable from Jev menu");
+      reopen.click();
+      check(setup.style.display === "flex", "Jev menu reopens setup");
+      const key = setup.querySelector("#codex-jev-key");
+      const result = setup.querySelector("#codex-jev-key-status");
+      key.value = "invalid-example-key";
+      setup.querySelector("#codex-jev-test-key").click();
+      await until(() => result.textContent === "Invalid", "invalid key result beside Test button");
+      key.value = "expired-example-key";
+      setup.querySelector("#codex-jev-test-key").click();
+      await until(() => result.textContent === "Expired", "expired key result beside Test button");
+      key.value = "working-example-key";
+      setup.querySelector("#codex-jev-test-key").click();
+      await until(() => result.textContent === "OK", "good key result beside Test button");
+      check(result.dataset.ok === "true", "success status is green");
+      setup.querySelector("#codex-jev-save-key").click();
+      await until(() => setup.style.display === "none" && !needsKey, "saving key closes overlay");
+      check(key.value === "", "key field cleared after save");
       check(calls >= 5, "host bridge used");
       document.getElementById("results").textContent = JSON.stringify({ ok: true, calls });
       document.title = "JEV_BROWSER_PASS";
