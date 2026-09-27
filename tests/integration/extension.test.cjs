@@ -6,7 +6,7 @@ const Module = require("node:module");
 const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
-const core = require("../core");
+const core = require("../../vscode-control/core");
 
 async function until(predicate, timeoutMs = 2000) {
   const start = Date.now();
@@ -51,8 +51,8 @@ test("composer bridge selects integrations and reports view-scoped activity with
   };
   let extension;
   try {
-    delete require.cache[require.resolve("../extension")];
-    extension = require("../extension");
+    delete require.cache[require.resolve("../../vscode-control/extension")];
+    extension = require("../../vscode-control/extension");
   } finally {
     Module._load = originalLoad;
     core.checkHealth = originalHealth;

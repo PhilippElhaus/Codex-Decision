@@ -63,8 +63,8 @@
       } })));
     } });
   </script>
-  <script src="../webview/jev-control.js"></script>
-  <script src="../webview/jev-settings.js"></script>
+  <script src="../../vscode-control/webview/jev-control.js"></script>
+  <script src="../../vscode-control/webview/jev-settings.js"></script>
 </head>
 <body>
   <div class="codex-top"><strong>Codex</strong>Chats<span>Recent conversations</span><span>Start a new chat</span></div>
@@ -85,13 +85,13 @@
     setTimeout(() => {
       document.documentElement.style.setProperty("--screenshot-offset", `${Math.max(0, outerHeight - innerHeight)}px`);
       if (demo !== "composer") document.querySelector(".prompt").textContent = "";
-      if (demo === "onboarding") document.getElementById("codex-jev-connect-icon").src = "../icon.png";
+      if (demo === "onboarding") document.getElementById("codex-jev-connect-icon").src = "../../vscode-control/icon.png";
       if (demo === "missing-key") document.getElementById("codex-jev-skip-key").click();
       if (demo === "menu") document.getElementById("codex-jev-button").click();
       else if (demo !== "composer" && demo !== "onboarding" && demo !== "settings") document.getElementById("codex-jev-tip").style.display = "block";
       if (demo === "settings") {
         document.querySelector('[data-codex-jev-settings="true"]')?.click();
-        document.querySelector('[data-codex-jev-settings="true"] img')?.setAttribute("src", "../icon.png");
+        document.querySelector('[data-codex-jev-settings="true"] img')?.setAttribute("src", "../../vscode-control/icon.png");
       }
       const anchor = document.querySelector(".access").getBoundingClientRect();
       const button = document.getElementById("codex-jev-button").getBoundingClientRect();

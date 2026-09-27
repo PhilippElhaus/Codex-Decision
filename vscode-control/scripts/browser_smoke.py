@@ -16,10 +16,10 @@ def main() -> None:
     edge, temporary = browser_environment()
     profile = Path(tempfile.mkdtemp(prefix='jev-edge-test-', dir=temporary))
     try:
-        target = windows_path(ROOT / 'tests/browser_harness.html').replace('\\', '/')
+        target = windows_path(ROOT.parent / 'tests/browser/browser_harness.html').replace('\\', '/')
         address = 'file:///' + quote(target, safe='/:')
         reports = []
-        for width, motion in ((720, 'no-preference'), (1200, 'reduce')):
+        for width, motion in ((360, 'reduce'), (720, 'no-preference'), (1200, 'reduce')):
             result = subprocess.run([
                 str(edge), '--headless', '--disable-gpu', '--no-first-run',
                 '--no-default-browser-check', '--disable-extensions',

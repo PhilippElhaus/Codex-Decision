@@ -69,8 +69,8 @@
       } })));
     } });
   </script>
-  <script src="../webview/jev-control.js"></script>
-  <script src="../webview/jev-settings.js"></script>
+  <script src="../../vscode-control/webview/jev-control.js"></script>
+  <script src="../../vscode-control/webview/jev-settings.js"></script>
 </head>
 <body>
   <pre class="results" id="results">pending</pre>
@@ -362,19 +362,30 @@
       routineNumber.focus();
       routineNumber.blur();
       check(routineNumber.value === "88%", "blur keeps one percent sign");
+      for (const [entered, normalized, sliderValue] of [["0", "0%", "0"], ["100%", "100%", "100"]]) {
+        routineNumber.value = entered;
+        routineNumber.dispatchEvent(new Event("input", { bubbles: true }));
+        routineNumber.focus();
+        routineNumber.blur();
+        check(routineNumber.value === normalized && routineSlider.value === sliderValue &&
+          routineSlider.style.getPropertyValue("--fill") === normalized,
+          `percentage boundary ${entered} updates both controls`);
+      }
       settingsScreen.querySelector("#codex-jev-settings-mode").value = "observe";
       const reset = settingsScreen.querySelector("#codex-jev-settings-reset");
       const keyField = settingsScreen.querySelector("#codex-jev-settings-key");
       keyField.value = "unsaved-key";
       check(!reset.disabled && getComputedStyle(reset).color !== getComputedStyle(settingsScreen.querySelector("#codex-jev-settings-save")).color,
         "reset is available with a subdued style");
-      routineNumber.value = "101%";
-      routineNumber.focus();
-      routineNumber.blur();
-      settingsScreen.querySelector("#codex-jev-settings-save").click();
-      check(window.__jevHarnessLastSettingsSave === null &&
-        settingsScreen.querySelector("#codex-jev-settings-message").textContent.includes("0 to 100"),
-        "out-of-range percentages cannot be saved");
+      for (const invalid of ["101%", "-1", "10.5%", "abc"]) {
+        routineNumber.value = invalid;
+        routineNumber.focus();
+        routineNumber.blur();
+        settingsScreen.querySelector("#codex-jev-settings-save").click();
+        check(window.__jevHarnessLastSettingsSave === null &&
+          settingsScreen.querySelector("#codex-jev-settings-message").textContent.includes("0 to 100"),
+          `invalid percentage ${invalid} cannot be saved`);
+      }
       reset.click();
       check(settingsScreen.querySelector("#codex-jev-settings-mode").value === "replace" &&
         settingsScreen.querySelector("#codex-jev-settings-output-exact_max").value === "12%" &&
@@ -417,7 +428,7 @@
       health = { ok: false, reason: "JEV_KEY_MISSING" };
       const setup = document.getElementById("codex-jev-connect");
       await until(() => setup.style.display === "flex", "missing key opens over Codex pane");
-      setup.querySelector("#codex-jev-connect-icon").src = "../icon.png";
+      setup.querySelector("#codex-jev-connect-icon").src = "../../vscode-control/icon.png";
       const bounds = setup.getBoundingClientRect();
       check(bounds.left === 0 && bounds.top === 0 && bounds.width === innerWidth &&
         bounds.height === innerHeight && setup.parentElement === document.body,
@@ -448,7 +459,7 @@
         "narrow Connect Jev panel contains heading, icon, and both actions");
       setup.style.width = "";
       setup.style.right = "";
-      check(setup.querySelector("#codex-jev-connect-icon").getAttribute("src") === "../icon.png" &&
+      check(setup.querySelector("#codex-jev-connect-icon").getAttribute("src") === "../../vscode-control/icon.png" &&
         getComputedStyle(setup.querySelector("#codex-jev-connect-art pre")).animationName ===
           (matchMedia("(prefers-reduced-motion: reduce)").matches ? "none" : "codex-jev-art-drift"),
         "Jev icon and motion-aware ASCII backdrop");

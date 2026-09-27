@@ -19,7 +19,7 @@ def main() -> None:
     IMAGES.mkdir(parents=True, exist_ok=True)
     profile = Path(tempfile.mkdtemp(prefix='jev-docs-', dir=temporary))
     try:
-        target = windows_path(ROOT / 'tests/visual_harness.html').replace('\\', '/')
+        target = windows_path(ROOT.parent / 'tests/browser/visual_harness.html').replace('\\', '/')
         address = 'file:///' + quote(target, safe='/:')
         captures = [
             ('menu', 'jev-menu.png', 620, 340),

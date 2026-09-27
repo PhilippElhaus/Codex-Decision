@@ -12,7 +12,7 @@ import unittest
 from unittest import mock
 
 
-SOURCE = Path(__file__).resolve().parents[1] / "patch_codex_webview.py"
+SOURCE = Path(__file__).resolve().parents[2] / "vscode-control/patch_codex_webview.py"
 SPEC = importlib.util.spec_from_file_location("jev_patch", SOURCE)
 patch = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(patch)

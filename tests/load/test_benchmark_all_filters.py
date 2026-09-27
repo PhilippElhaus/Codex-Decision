@@ -7,10 +7,10 @@ import tempfile
 import unittest
 from unittest import mock
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
 import benchmark_all_filters as bench  # noqa: E402
-from tests.test_filter_e2e import MOCK_HTTP  # noqa: E402
+from tests.e2e.test_filter_e2e import MOCK_HTTP  # noqa: E402
 
 
 class BenchmarkTests(unittest.TestCase):

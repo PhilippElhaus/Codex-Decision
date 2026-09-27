@@ -8,7 +8,7 @@ const test = require("node:test");
 const {
   activitySummary, checkHealth, completeThresholds, decisionSummary, estimateTokensSaved, formatDuration, outcomeLine, parseHealthOutput, readApiKey, readConfig,
   readEventOffset, readEventsSince, readLatestEvent, readLifetimeStats, readRecentOutcomes, writeApiKey, writeEnabled, writeMode, writeSelection, writeThresholds,
-} = require("../core");
+} = require("../../vscode-control/core");
 
 test("settings thresholds round trip and reject invalid percentages", async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-settings-test-"));

@@ -37,10 +37,12 @@ Open **Codex settings → Jev**, below **Voice**, to test or replace the key, se
 
 ## Verify
 
+Run these commands from the repository root:
+
 ```bash
-npm test
-python3 -m unittest discover -s tests -p 'test_*.py'
-python3 scripts/browser_smoke.py
+npm --prefix vscode-control test
+python3 -m unittest discover -s tests/integration -p 'test_*.py' -v
+python3 vscode-control/scripts/browser_smoke.py
 ```
 
-The browser smoke test runs the real composer control, key overlay, and settings form against a synthetic VS Code bridge. [Visual harness](tests/visual_harness.html) is the source for the illustrative screenshots. `scripts/capture_docs.py` captures example state without a key.
+The Node suite also covers settings and log edge cases and a large decision log. The browser smoke test runs the real composer control, key overlay, and settings form against a synthetic VS Code bridge. [Visual harness](../tests/browser/visual_harness.html) is the source for the illustrative screenshots. `vscode-control/scripts/capture_docs.py` captures example state without a key. See the [full test map](../tests/README.md).

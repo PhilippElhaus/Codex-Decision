@@ -18,13 +18,13 @@ All integrations start off. The button in the Codex composer selects them and sh
 
 ## Settings
 
-Selecting a Jev integration without a key opens **Connect Jev** over the Codex side window. Its solid backdrop hides the current chats, and a link below the buttons opens typesafe.ai for a key. You can test and save the key there, or choose **Skip for now** and reopen setup from the Jev menu or the compact missing-key tooltip. Open **Codex settings → Jev**, below **Voice**, to test or replace the key, view lifetime savings and activity, open the decision log in Explorer, or change the integration cutoffs with sliders or number fields. The output filters also require Jev's filter decision to meet the configured confidence minimum. **Monitor** records decisions and keeps full output; **Filter** shortens approved results. Changes apply to the next tool result. The captures show example state and contain no key.
+Selecting a Jev integration without a key opens **Connect Jev** over the Codex side window. Its solid backdrop hides the current chats, and a link below the buttons opens typesafe.ai for a key. You can test and save the key there, or choose **Skip for now** and reopen setup from the Jev menu or the compact missing-key tooltip. Open **Codex settings → Jev**, below **Voice**, to test or replace the key, view lifetime savings and activity, open the decision log in Explorer, or change the integration cutoffs with visible sliders and percentage fields. Enter a whole percentage with or without `%`; the field adds `%` when it loses focus. **Reset defaults** stages the default mode and cutoffs until you select **Save settings**. It leaves the API key and integration selections intact. The output filters also require Jev's filter decision to meet the configured confidence minimum. **Monitor** previews decisions in the logs and leaves tool output unchanged. **Filter** shortens approved results. Changes apply to the next tool result. The captures show example state and contain no key.
 
 <img src="docs/images/jev-onboarding.png" width="520" alt="Connect Jev API key setup with a solid backdrop, Save and Skip buttons, and a TypeSafe API key link">
 
 <img src="docs/images/jev-missing-key.png" width="340" alt="Compact Jev tooltip with a Connect button when no API key is saved">
 
-<img src="docs/images/jev-settings.png" width="900" alt="Illustrative Jev settings with lifetime statistics, Open logs, and confidence cutoffs with sliders">
+<img src="docs/images/jev-settings.png" width="900" alt="Illustrative Jev settings with slider tracks, percentage fields, and Reset defaults">
 
 ## Measured results
 
@@ -54,4 +54,4 @@ Build the [VS Code control VSIX](vscode-control/README.md) and install `codex-je
 - [Installation](docs/setup/setup_installation.md), [credentials](docs/setup/setup_credentials.md), and [migration](docs/setup/setup_migration.md)
 - [Integration design](docs/architecture/design_integrations.md) and [data handling](docs/architecture/design_data.md)
 - [VS Code control](docs/architecture/design_vscode.md)
-- [Benchmarks](docs/benchmarks/benchmark_live_2026-09-26.md) and [verification](docs/development/development_verification.md)
+- [Benchmarks](docs/benchmarks/benchmark_live_2026-09-26.md), [test map](tests/README.md), and [verification](docs/development/development_verification.md)
