@@ -20,6 +20,12 @@
       ["drop_confidence_min", "Drop confidence, minimum", "Minimum confidence for omitting a group."],
     ]],
   ];
+  const sectionDescriptions = {
+    output: "Shortens repetitive tool output while keeping useful details.",
+    test_build: "Removes routine test passes and build progress; keeps failures and summaries.",
+    search_listing: "Condenses broad results to relevant paths and representative matches.",
+  };
+  const sectionMethods = { output: ["noul", "choice"], test_build: ["noul", "choice"], search_listing: ["choice"] };
   let active = false;
   let openingVoice = false;
   let navItem = null;
@@ -34,6 +40,7 @@
   let busy = false;
   let defaults = null;
   let savedLogLimit = 50;
+  let savedNeverDeleteLogs = false;
 
   function visible(element) {
     const rect = element.getBoundingClientRect();
@@ -107,6 +114,17 @@
     panel.querySelector("#codex-jev-settings-save").disabled = value;
     panel.querySelector("#codex-jev-settings-reset").disabled = value || !defaults;
     panel.querySelector("#codex-jev-settings-open-logs").disabled = value;
+    panel.querySelector("#codex-jev-settings-never-delete").disabled = value;
+  }
+
+  function showNeverDeleteLogs(value) {
+    panel.querySelector("#codex-jev-settings-never-delete").checked = value;
+    panel.querySelector("#codex-jev-settings-log-limit").disabled = value;
+  }
+
+  function showSavedKeyLength(length) {
+    panel.querySelector("#codex-jev-settings-key").placeholder =
+      Number.isInteger(length) && length >= 8 && length <= 4096 ? "•".repeat(length) : "Enter API key";
   }
 
   function formatDuration(milliseconds) {
@@ -147,13 +165,40 @@
     }
   }
 
+  function updateMethodControls(hook) {
+    const noul = hook !== "search_listing" && panel.querySelector(`#codex-jev-settings-${hook}-method-noul`).checked;
+    const choice = panel.querySelector(`#codex-jev-settings-${hook}-method-choice`).checked;
+    for (const [name] of sections.find(([key]) => key === hook)[2]) {
+      const enabled = hook === "search_listing" ? choice : (name === "confidence_min" ? choice : noul);
+      panel.querySelector(`#codex-jev-settings-${hook}-${name}`).disabled = !enabled;
+      panel.querySelector(`#codex-jev-settings-${hook}-${name}-slider`).disabled = !enabled;
+    }
+  }
+
+  function setDecisionMethods(methods = {}) {
+    for (const [hook, names] of Object.entries(sectionMethods)) {
+      for (const name of names) {
+        panel.querySelector(`#codex-jev-settings-${hook}-method-${name}`).checked = methods[hook]?.[name] ?? true;
+      }
+      updateMethodControls(hook);
+    }
+  }
+
+  function decisionMethodValues() {
+    return Object.fromEntries(Object.entries(sectionMethods).map(([hook, names]) =>
+      [hook, Object.fromEntries(names.map((name) => [name,
+        panel.querySelector(`#codex-jev-settings-${hook}-method-${name}`).checked]))]));
+  }
+
   function thresholdValues() {
     const values = {};
     for (const [hook, , fields] of sections) {
       values[hook] = {};
       for (const [name] of fields) {
         const input = panel.querySelector(`#codex-jev-settings-${hook}-${name}`);
-        const value = parsePercentage(input.value);
+        const value = parsePercentage(input.disabled
+          ? panel.querySelector(`#codex-jev-settings-${hook}-${name}-slider`).value
+          : input.value);
         if (value === null) {
           input.focus();
           throw new Error("Enter whole percentages from 0 to 100.");
@@ -177,6 +222,10 @@
       #codex-jev-settings-panel .header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
       #codex-jev-settings-panel h1 { font-size: 24px; margin: 0; }
       #codex-jev-settings-panel h2 { font-size: 17px; margin: 26px 0 12px; padding-bottom: 8px; border-bottom: 1px solid var(--vscode-panel-border, #333); }
+      #codex-jev-settings-panel .section-description { margin: -5px 0 15px; color: var(--vscode-descriptionForeground, #999); font-size: 11px; line-height: 1.4; }
+      #codex-jev-settings-panel .method-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 18px; margin: 0 0 15px; }
+      #codex-jev-settings-panel .method-controls label { display: inline-flex; align-items: center; gap: 6px; color: var(--vscode-descriptionForeground, #aaa); font-size: 11px; cursor: pointer; }
+      #codex-jev-settings-panel .threshold-field input:disabled { opacity: .45; cursor: default; }
       #codex-jev-settings-panel .metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 9px; }
       #codex-jev-settings-panel .metric { min-width: 0; padding: 13px; border: 1px solid var(--vscode-panel-border, #3b3b3b); border-radius: 10px; background: #ffffff06; }
       #codex-jev-settings-panel .metric strong { display: block; font-size: 20px; font-weight: 650; line-height: 1.2; font-variant-numeric: tabular-nums; }
@@ -192,7 +241,10 @@
       #codex-jev-settings-panel .log-limit-input { width: 96px; text-align: right; font-variant-numeric: tabular-nums; }
       #codex-jev-settings-panel .log-retention { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
       #codex-jev-settings-panel .log-retention label { display: inline-flex; align-items: center; gap: 6px; }
-      #codex-jev-settings-panel .log-retention input[type=checkbox] { margin: 0; }
+      #codex-jev-settings-panel input[type=checkbox] { -webkit-appearance: none; appearance: none; display: inline-grid; place-content: center; width: 16px; height: 16px; flex: none; margin: 0; padding: 0; border: 1px solid var(--vscode-checkbox-border, #777); border-radius: 3px; background: var(--vscode-checkbox-background, #3c3c3c); color: var(--vscode-checkbox-foreground, #fff); cursor: pointer; }
+      #codex-jev-settings-panel input[type=checkbox]::after { content: ""; display: none; width: 8px; height: 5px; border: solid currentColor; border-width: 0 0 2px 2px; transform: translateY(-1px) rotate(-45deg); }
+      #codex-jev-settings-panel input[type=checkbox]:checked::after { display: block; }
+      #codex-jev-settings-panel input[type=checkbox]:disabled { opacity: .6; cursor: default; }
       #codex-jev-settings-panel .log-limit-input:disabled { opacity: .5; }
       #codex-jev-settings-panel input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; min-width: 0; flex: 1; height: 6px; padding: 0; border: 0; border-radius: 999px; background: linear-gradient(to right, var(--vscode-button-background, #3287ac) 0 var(--fill, 0%), var(--vscode-input-border, #555) var(--fill, 0%) 100%); cursor: pointer; }
       #codex-jev-settings-panel input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 16px; height: 16px; border: 2px solid var(--vscode-editor-background, #181818); border-radius: 50%; background: var(--vscode-button-background, #3287ac); box-shadow: 0 0 0 1px var(--vscode-button-background, #3287ac); }
@@ -226,6 +278,23 @@
       const title = document.createElement("h2");
       title.textContent = heading;
       thresholds.append(title);
+      const description = document.createElement("p");
+      description.className = "section-description";
+      description.textContent = sectionDescriptions[hook];
+      thresholds.append(description);
+      const methods = document.createElement("div");
+      methods.className = "method-controls";
+      for (const name of sectionMethods[hook]) {
+        const label = document.createElement("label");
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.id = `codex-jev-settings-${hook}-method-${name}`;
+        checkbox.checked = true;
+        checkbox.addEventListener("change", () => updateMethodControls(hook));
+        label.append(checkbox, `Allow ${name === "noul" ? "Noul" : "Choice"}`);
+        methods.append(label);
+      }
+      thresholds.append(methods);
       for (const [name, label, help] of fields) {
         const id = `codex-jev-settings-${hook}-${name}`;
         const row = document.createElement("div");
@@ -238,6 +307,7 @@
         input.id = id;
         input.type = "text";
         input.inputMode = "numeric";
+        input.maxLength = 4;
         input.className = "percent-input";
         input.required = true;
         input.setAttribute("aria-label", `${heading}: ${label} (percent)`);
@@ -259,6 +329,7 @@
         });
         input.addEventListener("input", () => {
           const value = parsePercentage(input.value);
+          input.setAttribute("aria-invalid", value === null ? "true" : "false");
           if (value !== null) {
             slider.value = String(value);
             slider.style.setProperty("--fill", `${value}%`);
@@ -266,8 +337,9 @@
         });
         input.addEventListener("blur", () => {
           const value = parsePercentage(input.value);
-          if (value === null) showMessage("Enter whole percentages from 0 to 100.", "error");
-          input.value = value === null ? `${input.value.trim().replace(/\s*%\s*$/, "")}%` : `${value}%`;
+          if (value === null) showMessage("Enter whole percentages from 0 to 100. Previous value restored.", "error");
+          input.value = `${value === null ? slider.value : value}%`;
+          input.setAttribute("aria-invalid", "false");
         });
         controls.append(slider, input);
         row.append(caption, controls);
@@ -286,17 +358,25 @@
     });
     panel.querySelector("#codex-jev-settings-key").addEventListener("input", () => showTest(""));
     panel.querySelector("#codex-jev-settings-never-delete").addEventListener("change", (event) => {
+      if (busy) { showNeverDeleteLogs(savedNeverDeleteLogs); return; }
       const limit = panel.querySelector("#codex-jev-settings-log-limit");
       if (event.target.checked && parseLogLimit(limit.value) === null) limit.value = String(savedLogLimit);
       limit.disabled = event.target.checked;
+      if (request("settingsSetNeverDeleteLogs", { neverDeleteLogs: event.target.checked })) {
+        setBusy(true);
+        showMessage("Saving log retention…");
+      } else {
+        showNeverDeleteLogs(savedNeverDeleteLogs);
+        showMessage("Jev settings are unavailable.", "error");
+      }
     });
     panel.querySelector("#codex-jev-settings-reset").addEventListener("click", () => {
       if (busy || !defaults) return;
       panel.querySelector("#codex-jev-settings-mode").value = defaults.mode;
       setThresholds(defaults.thresholds);
+      setDecisionMethods(defaults.decision_methods);
       panel.querySelector("#codex-jev-settings-log-limit").value = String(defaults.log_limit_mb);
-      panel.querySelector("#codex-jev-settings-log-limit").disabled = defaults.never_delete_logs;
-      panel.querySelector("#codex-jev-settings-never-delete").checked = defaults.never_delete_logs;
+      showNeverDeleteLogs(defaults.never_delete_logs);
       showMessage("Defaults ready. Save settings to apply.");
     });
     panel.querySelector("#codex-jev-settings-save").addEventListener("click", () => {
@@ -305,10 +385,11 @@
         const key = panel.querySelector("#codex-jev-settings-key").value.trim();
         const mode = panel.querySelector("#codex-jev-settings-mode").value;
         const thresholds = thresholdValues();
+        const decisionMethods = decisionMethodValues();
         const logLimitMb = parseLogLimit(panel.querySelector("#codex-jev-settings-log-limit").value);
         if (logLimitMb === null) throw new Error("Enter a log limit from 1 to 9999 MB.");
         const neverDeleteLogs = panel.querySelector("#codex-jev-settings-never-delete").checked;
-        if (request("settingsSave", { key, mode, thresholds, logLimitMb, neverDeleteLogs })) {
+        if (request("settingsSave", { key, mode, thresholds, decisionMethods, logLimitMb, neverDeleteLogs })) {
           setBusy(true); showMessage("Saving…"); showTest("");
         }
       } catch (error) { showMessage(error.message, "error"); }
@@ -323,6 +404,7 @@
     setBusy(false);
     const reply = data.status?.settings;
     if (!reply || reply.action === "error") {
+      if (action === "settingsSetNeverDeleteLogs") showNeverDeleteLogs(savedNeverDeleteLogs);
       showMessage(reply?.message || "Jev settings are unavailable.", "error");
       return;
     }
@@ -330,15 +412,19 @@
       hasKey = Boolean(reply.hasKey);
       defaults = reply.defaults || null;
       setBusy(false);
-      panel.querySelector("#codex-jev-settings-key").placeholder = hasKey ? "••••••••" : "Enter API key";
+      showSavedKeyLength(reply.keyLength);
       showLifetime(reply.lifetime);
       panel.querySelector("#codex-jev-settings-mode").value = reply.config?.mode || "replace";
       setThresholds(reply.config?.thresholds);
+      setDecisionMethods(reply.config?.decision_methods);
       savedLogLimit = reply.config?.log_limit_mb || 50;
       panel.querySelector("#codex-jev-settings-log-limit").value = String(savedLogLimit);
-      const neverDelete = Boolean(reply.config?.never_delete_logs);
-      panel.querySelector("#codex-jev-settings-never-delete").checked = neverDelete;
-      panel.querySelector("#codex-jev-settings-log-limit").disabled = neverDelete;
+      savedNeverDeleteLogs = Boolean(reply.config?.never_delete_logs);
+      showNeverDeleteLogs(savedNeverDeleteLogs);
+    } else if (action === "settingsSetNeverDeleteLogs" && reply.action === "neverDeleteLogsSaved") {
+      savedNeverDeleteLogs = reply.neverDeleteLogs;
+      showNeverDeleteLogs(savedNeverDeleteLogs);
+      showMessage("Log retention saved.", "ok");
     } else if (action === "settingsTest" && reply.action === "tested") {
       if (reply.result?.ok) showTest("OK", "ok");
       else {
@@ -350,9 +436,13 @@
     } else if (action === "settingsSave" && reply.action === "saved") {
       hasKey = true;
       savedLogLimit = parseLogLimit(panel.querySelector("#codex-jev-settings-log-limit").value) || 50;
+      savedNeverDeleteLogs = panel.querySelector("#codex-jev-settings-never-delete").checked;
       panel.querySelector("#codex-jev-settings-key").value = "";
-      panel.querySelector("#codex-jev-settings-key").placeholder = "••••••••";
+      showSavedKeyLength(reply.keyLength);
       showMessage("Settings saved.", "ok");
+    } else if (action === "settingsSetNeverDeleteLogs") {
+      showNeverDeleteLogs(savedNeverDeleteLogs);
+      showMessage("Jev settings are unavailable.", "error");
     }
   }
 

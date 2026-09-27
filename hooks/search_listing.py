@@ -12,7 +12,7 @@ import stat
 import time
 from typing import Callable
 
-from jev import Config, Result, SENSITIVE, _output_path, save_original, threshold
+from jev import Config, Result, SENSITIVE, _output_path, decision_method, save_original, threshold
 
 
 MIN_CHARS = 4096
@@ -151,9 +151,14 @@ def _groups(output: str, kind: str) -> OrderedDict[str, list[str]] | None:
     return None
 
 
+def _representatives(lines: list[str]) -> list[str]:
+    last = len(lines) - 1
+    positions = (0, last // 4, last // 2, (last * 3) // 4, last)
+    return list(dict.fromkeys(lines[index] for index in positions))
+
+
 def _sample(lines: list[str]) -> str:
-    candidates = [lines[0], lines[len(lines) // 2], lines[-1]]
-    return " | ".join(line.strip()[:100] for line in dict.fromkeys(candidates))[:280]
+    return " | ".join(line.strip()[:80] for line in _representatives(lines))[:420]
 
 
 def _choice_questions(groups: OrderedDict[str, list[str]]) -> dict:
@@ -208,6 +213,8 @@ def decide_search_listing(
 
     if not config.search_listing_enabled or not isinstance(event, dict) or event.get("hook_event_name") != "PostToolUse" or event.get("tool_name") != "Bash":
         return result("skip", "unsupported_event")
+    if not decision_method(config, "search_listing", "choice"):
+        return result("skip", "no_decision_methods")
     kind = command_kind(event.get("tool_input"))
     if kind is None:
         return result("skip", "unsupported_command")
@@ -254,7 +261,7 @@ def decide_search_listing(
             if choice == "retain":
                 pieces.extend(lines)
             elif choice == "summarize":
-                examples = list(dict.fromkeys((lines[0], lines[len(lines) // 2], lines[-1])))
+                examples = _representatives(lines)
                 pieces.append(f"[{path}: {len(lines)} entries, {len(lines) - len(examples)} omitted]\n")
                 pieces.extend(examples)
                 omitted += len(lines) - len(examples)

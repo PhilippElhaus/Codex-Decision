@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "hooks"))
 sys.path.insert(0, str(ROOT / "scripts"))
 import jev  # noqa: E402
+import test_build  # noqa: E402
 import post_tool_use  # noqa: E402
 import replay  # noqa: E402
 import benchmark_context  # noqa: E402
@@ -103,7 +104,9 @@ class ConfigTests(unittest.TestCase):
         self.assertFalse(jev.candidate(GOOD, strict))
 
     def test_invalid_configs_fail_closed(self):
-        for invalid in ({"enabled": "true"}, {"test_build_enabled": "true"}, {"search_listing_enabled": "true"}, {"mode": "destroy"}, {"min_chars": 10}, {"unknown": 1}, {"timeout_seconds": 10}):
+        for invalid in ({"enabled": "true"}, {"test_build_enabled": "true"}, {"search_listing_enabled": "true"}, {"mode": "destroy"}, {"min_chars": 10}, {"unknown": 1}, {"timeout_seconds": 10},
+                        {"decision_methods": {"output": {"noul": "false"}}},
+                        {"decision_methods": {"search_listing": {"score": True}}}):
             with self.subTest(invalid=invalid), tempfile.TemporaryDirectory() as directory:
                 path = Path(directory) / "config.json"
                 path.write_text(json.dumps(invalid), encoding="utf-8")
@@ -357,6 +360,45 @@ class ContractTests(unittest.TestCase):
         self.assertTrue(all(sent["questions"][name]["type"] == "noul" for name in jev.SCORE_NAMES))
         self.assertEqual(sent["questions"]["filter_decision"]["type"], "choice")
         self.assertEqual(scores, GOOD)
+
+    def test_decision_method_settings_change_questions_and_gates(self):
+        answer_sets = {
+            "noul": {key: {"type": "noul", "noul": GOOD[key]} for key in jev.SCORE_NAMES},
+            "choice": {"filter_decision": {"type": "choice", "choice": "filter", "confidence": .96,
+                                            "probabilities": {"filter": .98, "keep": .02}}},
+        }
+        for hook, request_method in (("output", jev.jev_request), ("test_build", jev.jev_test_build_request)):
+            for enabled in ("noul", "choice"):
+                methods = {hook: {"noul": enabled == "noul", "choice": enabled == "choice"}}
+                config = settings(decision_methods=methods)
+                with self.subTest(hook=hook, enabled=enabled), mock.patch.object(jev.request, "urlopen") as urlopen:
+                    urlopen.return_value.__enter__.return_value = io.BytesIO(json.dumps({"answers": answer_sets[enabled]}).encode())
+                    scores = request_method({"output_sample": "routine"}, config, "test-key")
+                    sent = json.loads(urlopen.call_args.args[0].data)
+                    self.assertEqual(set(sent["questions"]), set(answer_sets[enabled]))
+                    self.assertTrue(jev._valid_scores(scores, config, hook))
+                    if enabled == "noul":
+                        self.assertIsNone(scores["filter_approved"])
+                    else:
+                        self.assertIsNone(scores["routine_noise"])
+                    approved = jev.candidate(scores, config) if hook == "output" else test_build.jev_approves_omission(scores, config)
+                    self.assertTrue(approved)
+
+        disabled = settings(decision_methods={"output": {"noul": False, "choice": False}})
+        evaluator = mock.Mock()
+        result = jev.decide(event(), disabled, evaluator=evaluator, simulate=True)
+        self.assertEqual(result.reason, "no_decision_methods")
+        evaluator.assert_not_called()
+
+    def test_chunked_choice_only_uses_every_chunk_and_keeps_uncertain_result(self):
+        config = settings(decision_methods={"output": {"noul": False, "choice": True}})
+        result = jev.decide(event(PROGRESS * 8), config, evaluator=lambda state, _: {
+            "routine_noise": None, "needs_exact_text": None, "one_off_value": None,
+            "filter_approved": True, "filter_confidence": .69 if state["chunk_index"] == 2 else .96,
+        }, simulate=True)
+        self.assertEqual(result.reason, "jev_keep")
+        self.assertEqual(result.scores["filter_confidence"], .69)
+        self.assertIsNone(result.scores["routine_noise"])
 
     def test_missing_choice_confidence_fails_closed(self):
         answers = {key: {"type": "noul", "noul": GOOD[key]} for key in jev.SCORE_NAMES}

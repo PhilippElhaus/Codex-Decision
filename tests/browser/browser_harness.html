@@ -31,12 +31,25 @@
     window.__jevHarnessLastAction = "";
     window.__jevHarnessSettingsRead = 0;
     window.__jevHarnessLastSettingsSave = null;
+    window.__jevHarnessNeverDelete = false;
+    window.__jevHarnessFailNeverDelete = false;
+    window.__jevHarnessKeyLength = 32;
+    window.__jevHarnessDecisionMethods = { output: { noul: true, choice: true },
+      test_build: { noul: true, choice: true }, search_listing: { choice: true } };
     window.__jevHarnessExternalOpen = true;
     window.acquireVsCodeApi = () => ({ postMessage(request) {
       calls += 1;
       window.__jevHarnessLastAction = request.action;
       if (request.action === "settingsRead") window.__jevHarnessSettingsRead += 1;
       if (request.action === "settingsSave") window.__jevHarnessLastSettingsSave = request;
+      if (request.action === "settingsSetNeverDeleteLogs" && !window.__jevHarnessFailNeverDelete) {
+        window.__jevHarnessNeverDelete = request.neverDeleteLogs;
+      }
+      if (request.action === "settingsSave") {
+        window.__jevHarnessNeverDelete = request.neverDeleteLogs;
+        window.__jevHarnessDecisionMethods = request.decisionMethods;
+        if (request.key) window.__jevHarnessKeyLength = request.key.length;
+      }
       if (activeViewId && activeViewId !== request.viewId) freshView = true;
       activeViewId = request.viewId;
       if (request.action === "setSelection") {
@@ -51,15 +64,22 @@
             { ok: true, model: "jev-1.13.0" }) : undefined;
       const keySaved = request.action === "saveApiKey";
       if (keySaved) { needsKey = false; health = { ok: true, model: "jev-1.13.0" }; }
-      const settings = request.action === "settingsRead" ? { action: "ready", hasKey: true,
+      const settings = request.action === "settingsRead" ? { action: "ready", hasKey: true, keyLength: window.__jevHarnessKeyLength,
         lifetime: { calls: 126, completed: 124, replaced: 41, estimatedTokensSaved: 87320, averageMs: 487 },
-        defaults: { mode: "replace", log_limit_mb: 50, never_delete_logs: false, thresholds: { output: { routine_min: 90, exact_max: 12, unique_max: 10, confidence_min: 70 },
+        defaults: { mode: "replace", log_limit_mb: 50, never_delete_logs: false,
+          decision_methods: { output: { noul: true, choice: true }, test_build: { noul: true, choice: true }, search_listing: { choice: true } },
+          thresholds: { output: { routine_min: 90, exact_max: 12, unique_max: 10, confidence_min: 70 },
           test_build: { routine_min: 90, exact_max: 20, unique_max: 20, confidence_min: 70 }, search_listing: {
             summarize_probability_min: 78, summarize_confidence_min: 70, drop_probability_min: 92, drop_confidence_min: 85 } } },
-        config: { mode: "replace", log_limit_mb: 75, never_delete_logs: false, thresholds: { output: { routine_min: 90, exact_max: 20, unique_max: 30, confidence_min: 70 },
+        config: { mode: "replace", log_limit_mb: 75, never_delete_logs: window.__jevHarnessNeverDelete,
+          decision_methods: window.__jevHarnessDecisionMethods,
+          thresholds: { output: { routine_min: 90, exact_max: 20, unique_max: 30, confidence_min: 70 },
           test_build: { routine_min: 85, exact_max: 25, unique_max: 35, confidence_min: 70 }, search_listing: {
             summarize_probability_min: 78, summarize_confidence_min: 70, drop_probability_min: 92, drop_confidence_min: 85 } } } } :
-        request.action === "settingsSave" ? { action: "saved", hasKey: true } :
+        request.action === "settingsSave" ? { action: "saved", hasKey: true, keyLength: window.__jevHarnessKeyLength } :
+          request.action === "settingsSetNeverDeleteLogs" ? (window.__jevHarnessFailNeverDelete ?
+            { action: "error", message: "Could not save log retention" } :
+            { action: "neverDeleteLogsSaved", neverDeleteLogs: request.neverDeleteLogs }) :
           request.action === "settingsTest" ? { action: "tested", result: { ok: true, model: "jev-1.13.0" } } :
             request.action === "settingsOpenLogs" ? { action: "openedLogs" } : undefined;
       queueMicrotask(() => window.dispatchEvent(new MessageEvent("message", { data: {
@@ -347,6 +367,23 @@
       check(!settingsScreen.querySelector('label[for="codex-jev-settings-output-routine_min"]').textContent.includes("(%)") &&
         getComputedStyle(routineSlider).backgroundImage.includes("linear-gradient"),
         "percent sign moves into the field and slider track is painted");
+      const descriptions = [...settingsScreen.querySelectorAll("#codex-jev-settings-thresholds .section-description")];
+      check(descriptions.length === 3 && descriptions.every((item) => item.textContent.length > 20 &&
+        getComputedStyle(item).fontSize === "11px") &&
+        descriptions[0].textContent.includes("tool output") && descriptions[1].textContent.includes("test passes") &&
+        descriptions[2].textContent.includes("paths"), "each filter has a concise muted explanation");
+      const outputNoul = settingsScreen.querySelector("#codex-jev-settings-output-method-noul");
+      const outputChoice = settingsScreen.querySelector("#codex-jev-settings-output-method-choice");
+      const testChoice = settingsScreen.querySelector("#codex-jev-settings-test_build-method-choice");
+      const searchChoice = settingsScreen.querySelector("#codex-jev-settings-search_listing-method-choice");
+      check(outputNoul.checked && outputChoice.checked && testChoice.checked && searchChoice.checked &&
+        !settingsScreen.querySelector("#codex-jev-settings-search_listing-method-noul"),
+        "available decision methods are enabled by default; unused Noul is absent from search");
+      outputNoul.click();
+      check(settingsScreen.querySelector("#codex-jev-settings-output-routine_min").disabled &&
+        !settingsScreen.querySelector("#codex-jev-settings-output-confidence_min").disabled,
+        "disabling Noul disables only its output thresholds");
+      outputNoul.click();
       routineSlider.value = "82";
       routineSlider.dispatchEvent(new Event("input", { bubbles: true }));
       check(routineNumber.value === "82%" && routineSlider.style.getPropertyValue("--fill") === "82%",
@@ -380,9 +417,22 @@
         "saved log retention is shown and editable");
       logLimit.value = "9999";
       neverDelete.click();
-      check(neverDelete.checked && logLimit.disabled, "never delete overrides the MB limit");
+      await until(() => window.__jevHarnessNeverDelete && !neverDelete.disabled, "checkbox saves immediately");
+      check(neverDelete.checked && logLimit.disabled &&
+        getComputedStyle(neverDelete, "::after").display === "block" &&
+        getComputedStyle(neverDelete).borderTopLeftRadius === "3px",
+        "VS Code style square checkbox shows a tick and overrides the MB limit");
+      window.__jevHarnessFailNeverDelete = true;
       neverDelete.click();
-      check(!neverDelete.checked && !logLimit.disabled, "log limit returns when never delete is off");
+      await until(() => !neverDelete.disabled, "failed checkbox save returns control");
+      check(neverDelete.checked && logLimit.disabled && window.__jevHarnessNeverDelete &&
+        settingsScreen.querySelector("#codex-jev-settings-message").textContent.includes("Could not save"),
+        "failed checkbox save restores the persisted setting");
+      window.__jevHarnessFailNeverDelete = false;
+      neverDelete.click();
+      await until(() => !window.__jevHarnessNeverDelete && !neverDelete.disabled, "checkbox clears persistently");
+      check(!neverDelete.checked && !logLimit.disabled &&
+        getComputedStyle(neverDelete, "::after").display === "none", "log limit returns when never delete is off");
       const saveSettings = settingsScreen.querySelector("#codex-jev-settings-save");
       const settingsActions = reset.parentElement;
       check(settingsActions.classList.contains("save-actions") &&
@@ -390,18 +440,26 @@
         reset.getBoundingClientRect().left > saveSettings.getBoundingClientRect().right + 12,
         "Reset defaults is right aligned in the settings action row");
       const keyField = settingsScreen.querySelector("#codex-jev-settings-key");
+      check(keyField.placeholder.length === 32 && /^•+$/.test(keyField.placeholder),
+        "saved key mask uses the exact stored key length");
       keyField.value = "unsaved-key";
       check(!reset.disabled && getComputedStyle(reset).color !== getComputedStyle(settingsScreen.querySelector("#codex-jev-settings-save")).color,
         "reset is available with a subdued style");
       for (const invalid of ["101%", "-1", "10.5%", "abc"]) {
         routineNumber.value = invalid;
-        routineNumber.focus();
-        routineNumber.blur();
         settingsScreen.querySelector("#codex-jev-settings-save").click();
         check(window.__jevHarnessLastSettingsSave === null &&
           settingsScreen.querySelector("#codex-jev-settings-message").textContent.includes("0 to 100"),
           `invalid percentage ${invalid} cannot be saved`);
+        routineNumber.focus();
+        routineNumber.blur();
+        check(routineNumber.value === "100%" && routineSlider.value === "100" &&
+          routineNumber.getAttribute("aria-invalid") === "false", `invalid percentage ${invalid} restores last valid value`);
       }
+      routineNumber.value = "1110%";
+      routineNumber.focus();
+      routineNumber.blur();
+      check(routineNumber.value === "100%", "four digit percentage cannot remain in the field");
       routineNumber.value = "90%";
       for (const invalid of ["0", "10000", "1.5", "abc"]) {
         logLimit.value = invalid;
@@ -420,7 +478,12 @@
         settingsScreen.querySelector("#codex-jev-settings-message").textContent.includes("Save settings to apply") &&
         window.__jevHarnessLastSettingsSave === null,
         "reset stages default mode and cutoffs without changing the key or saving");
-      keyField.value = "";
+      testChoice.click();
+      searchChoice.click();
+      check(settingsScreen.querySelector("#codex-jev-settings-test_build-confidence_min").disabled &&
+        settingsScreen.querySelector("#codex-jev-settings-search_listing-drop_probability_min").disabled,
+        "turning off a method disables only its related thresholds");
+      keyField.value = "unsaved-key";
       const settingsContent = settingsScreen.querySelector(".settings-content");
       settingsContent.style.width = "320px";
       settingsContent.style.right = "auto";
@@ -435,14 +498,19 @@
       await until(() => settingsScreen.querySelector("#codex-jev-settings-test-status").textContent === "OK", "saved key test result");
       settingsScreen.querySelector("#codex-jev-settings-save").click();
       await until(() => settingsScreen.querySelector("#codex-jev-settings-message").textContent === "Settings saved.", "settings saved inline");
+      check(keyField.placeholder.length === 11 && /^•+$/.test(keyField.placeholder),
+        "saved key mask updates when a new key is stored");
       check(window.__jevHarnessLastSettingsSave.mode === "replace" &&
         window.__jevHarnessLastSettingsSave.thresholds.output.exact_max === 12 &&
         window.__jevHarnessLastSettingsSave.thresholds.output.routine_min === 90 &&
         window.__jevHarnessLastSettingsSave.logLimitMb === 50 &&
-        window.__jevHarnessLastSettingsSave.neverDeleteLogs === false,
-        "save submits reset percentages as numbers");
+        window.__jevHarnessLastSettingsSave.neverDeleteLogs === false &&
+        window.__jevHarnessLastSettingsSave.decisionMethods.test_build.choice === false &&
+        window.__jevHarnessLastSettingsSave.decisionMethods.search_listing.choice === false,
+        "save submits reset percentages and selected decision methods");
       logLimit.value = "9999";
       neverDelete.click();
+      await until(() => window.__jevHarnessNeverDelete && !neverDelete.disabled, "checkbox saved before full save");
       saveSettings.click();
       await until(() => window.__jevHarnessLastSettingsSave?.logLimitMb === 9999 &&
         window.__jevHarnessLastSettingsSave.neverDeleteLogs === true,
@@ -455,6 +523,13 @@
       await until(() => settingsScreen.querySelector("#codex-jev-settings-panel") &&
         settingsScreen.querySelector(".settings-content > div").style.display === "none",
         "Jev opens in the Codex content shell without a Voice heading or main element");
+      await until(() => !settingsScreen.querySelector("#codex-jev-settings-never-delete").disabled,
+        "reopened settings loads saved retention");
+      check(settingsScreen.querySelector("#codex-jev-settings-never-delete").checked &&
+        settingsScreen.querySelector("#codex-jev-settings-key").placeholder.length === 11 &&
+        !settingsScreen.querySelector("#codex-jev-settings-test_build-method-choice").checked &&
+        !settingsScreen.querySelector("#codex-jev-settings-search_listing-method-choice").checked,
+        "checkbox, decision methods, and key mask persist after reopening settings");
       settingsScreen.querySelector('button[aria-label="General"]').click();
       settingsScreen.style.display = "none";
       outputEnabled = true;

@@ -30,6 +30,12 @@ class DefaultsContractTests(unittest.TestCase):
         self.assertEqual(example["mode"], jev.Config().mode)
         self.assertEqual(example["log_limit_mb"], jev.Config().log_limit_mb)
         self.assertEqual(example["never_delete_logs"], jev.Config().never_delete_logs)
+        methods = subprocess.run(
+            ["node", "-e", "process.stdout.write(JSON.stringify(require(process.argv[1]).DEFAULT_DECISION_METHODS))",
+             str(extension)], capture_output=True, text=True, check=True,
+        )
+        self.assertEqual(json.loads(methods.stdout), jev.DEFAULT_DECISION_METHODS)
+        self.assertEqual(example["decision_methods"], jev.DEFAULT_DECISION_METHODS)
 
 
 if __name__ == "__main__":

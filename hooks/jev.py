@@ -47,6 +47,11 @@ DEFAULT_THRESHOLDS = {
     "search_listing": {"summarize_probability_min": 78, "summarize_confidence_min": 70,
                        "drop_probability_min": 92, "drop_confidence_min": 85},
 }
+DEFAULT_DECISION_METHODS = {
+    "output": {"noul": True, "choice": True},
+    "test_build": {"noul": True, "choice": True},
+    "search_listing": {"choice": True},
+}
 _REQUEST_CAPTURE: ContextVar[dict | None] = ContextVar("jev_request_capture", default=None)
 
 
@@ -109,6 +114,8 @@ class Config:
     never_delete_logs: bool = False
     thresholds: dict[str, dict[str, int]] = field(default_factory=lambda: {
         hook: dict(values) for hook, values in DEFAULT_THRESHOLDS.items()})
+    decision_methods: dict[str, dict[str, bool]] = field(default_factory=lambda: {
+        hook: dict(values) for hook, values in DEFAULT_DECISION_METHODS.items()})
 
     @classmethod
     def from_file(cls, path: Path) -> Config:
@@ -147,6 +154,11 @@ class Config:
             or any(not isinstance(values, dict) or set(values) - set(DEFAULT_THRESHOLDS[hook])
                    or any(type(value) is not int or not 0 <= value <= 100 for value in values.values())
                    for hook, values in config.thresholds.items())
+            or not isinstance(config.decision_methods, dict)
+            or set(config.decision_methods) - set(DEFAULT_DECISION_METHODS)
+            or any(not isinstance(values, dict) or set(values) - set(DEFAULT_DECISION_METHODS[hook])
+                   or any(type(value) is not bool for value in values.values())
+                   for hook, values in config.decision_methods.items())
         ):
             raise ValueError("invalid config values")
         return config
@@ -156,6 +168,10 @@ def threshold(config: Config, hook: str, name: str) -> float:
     return config.thresholds.get(hook, {}).get(name, DEFAULT_THRESHOLDS[hook][name]) / 100
 
 
+def decision_method(config: Config, hook: str, method: str) -> bool:
+    return config.decision_methods.get(hook, {}).get(method, DEFAULT_DECISION_METHODS[hook][method])
+
+
 @dataclass(frozen=True)
 class Result:
     status: str
@@ -163,7 +179,7 @@ class Result:
     original_chars: int = 0
     capsule_chars: int = 0
     elapsed_ms: int = 0
-    scores: dict[str, float | bool] | None = None
+    scores: dict[str, float | bool | None] | None = None
     hook_output: dict | None = None
 
     def to_log(self, tool_name: str, filter_name: str = "output") -> dict:
@@ -225,7 +241,7 @@ def sample(output: str, limit: int) -> str:
     )
 
 
-def jev_request(state: dict, config: Config, api_key: str) -> dict[str, float | bool]:
+def jev_request(state: dict, config: Config, api_key: str) -> dict[str, float | bool | None]:
     questions = {
         "routine_noise": {
             "type": "noul",
@@ -260,10 +276,10 @@ def jev_request(state: dict, config: Config, api_key: str) -> dict[str, float | 
             },
         },
     }
-    return _request_nouls(state, config, api_key, questions)
+    return _request_nouls(state, config, api_key, questions, "output")
 
 
-def jev_test_build_request(state: dict, config: Config, api_key: str) -> dict[str, float | bool]:
+def jev_test_build_request(state: dict, config: Config, api_key: str) -> dict[str, float | bool | None]:
     """Ask Jev whether known pass/progress lines are safe to omit for this run."""
     questions = {
         "routine_noise": {
@@ -299,23 +315,36 @@ def jev_test_build_request(state: dict, config: Config, api_key: str) -> dict[st
             },
         },
     }
-    return _request_nouls(state, config, api_key, questions)
+    return _request_nouls(state, config, api_key, questions, "test_build")
 
 
-def _request_nouls(state: dict, config: Config, api_key: str, questions: dict) -> dict[str, float | bool]:
-    answers = _request_answers(state, config, api_key, questions)
+def _request_nouls(state: dict, config: Config, api_key: str, questions: dict, hook: str) -> dict[str, float | bool | None]:
+    use_noul = decision_method(config, hook, "noul")
+    use_choice = decision_method(config, hook, "choice")
+    if not use_noul and not use_choice:
+        raise ValueError("No Jev decision method is enabled")
+    active_questions = {name: question for name, question in questions.items()
+                        if (name == "filter_decision" and use_choice) or (name != "filter_decision" and use_noul)}
+    answers = _request_answers(state, config, api_key, active_questions)
     scores = {}
     for name in SCORE_NAMES:
+        if not use_noul:
+            scores[name] = None
+            continue
         answer = answers.get(name)
         value = answer.get("noul") if isinstance(answer, dict) and answer.get("type") == "noul" else None
         if type(value) not in (int, float) or not 0 <= value <= 1:
             raise ValueError("invalid noul answer")
         scores[name] = float(value)
-    decision = answers.get("filter_decision")
-    if not _valid_choice_answer(decision, {"filter", "keep"}):
-        raise ValueError("invalid filter decision")
-    scores["filter_approved"] = decision["choice"] == "filter"
-    scores["filter_confidence"] = float(decision["confidence"])
+    if use_choice:
+        decision = answers.get("filter_decision")
+        if not _valid_choice_answer(decision, {"filter", "keep"}):
+            raise ValueError("invalid filter decision")
+        scores["filter_approved"] = decision["choice"] == "filter"
+        scores["filter_confidence"] = float(decision["confidence"])
+    else:
+        scores["filter_approved"] = None
+        scores["filter_confidence"] = None
     return scores
 
 
@@ -371,15 +400,16 @@ def _request_answers(state: dict, config: Config, api_key: str, questions: dict)
     return answers
 
 
-def candidate(scores: dict[str, float | bool], config: Config | None = None) -> bool:
+def candidate(scores: dict[str, float | bool | None], config: Config | None = None) -> bool:
     config = config or Config()
-    return (
-        scores["routine_noise"] >= threshold(config, "output", "routine_min")
-        and scores["needs_exact_text"] <= threshold(config, "output", "exact_max")
-        and scores["one_off_value"] <= threshold(config, "output", "unique_max")
-        and scores["filter_approved"] is True
-        and scores["filter_confidence"] >= threshold(config, "output", "confidence_min")
-    )
+    use_noul = decision_method(config, "output", "noul")
+    use_choice = decision_method(config, "output", "choice")
+    return ((use_noul or use_choice)
+            and (not use_noul or (scores["routine_noise"] >= threshold(config, "output", "routine_min")
+                                  and scores["needs_exact_text"] <= threshold(config, "output", "exact_max")
+                                  and scores["one_off_value"] <= threshold(config, "output", "unique_max")))
+            and (not use_choice or (scores["filter_approved"] is True
+                                    and scores["filter_confidence"] >= threshold(config, "output", "confidence_min"))))
 
 
 def _output_path(storage: Path, event: dict) -> Path:
@@ -453,19 +483,26 @@ def _output_chunks(output: str) -> list[str] | None:
     return chunks
 
 
-def _valid_scores(scores: dict[str, float | bool]) -> bool:
-    return (isinstance(scores, dict) and set(scores) == set(FILTER_KEYS)
-            and all(type(scores[name]) in (float, int) and 0 <= scores[name] <= 1
-                    for name in (*SCORE_NAMES, "filter_confidence"))
-            and type(scores["filter_approved"]) is bool)
+def _valid_scores(scores: dict[str, float | bool | None], config: Config | None = None, hook: str = "output") -> bool:
+    config = config or Config()
+    if not isinstance(scores, dict) or set(scores) != set(FILTER_KEYS):
+        return False
+    use_noul = decision_method(config, hook, "noul")
+    use_choice = decision_method(config, hook, "choice")
+    return ((all(type(scores[name]) in (float, int) and 0 <= scores[name] <= 1 for name in SCORE_NAMES)
+             if use_noul else all(scores[name] is None for name in SCORE_NAMES))
+            and ((type(scores["filter_approved"]) is bool
+                  and type(scores["filter_confidence"]) in (float, int)
+                  and 0 <= scores["filter_confidence"] <= 1)
+                 if use_choice else scores["filter_approved"] is None and scores["filter_confidence"] is None))
 
 
 def _evaluate_output(state: dict, output: str, config: Config,
-                     evaluator: Callable[[dict, Config], dict[str, float | bool]]) -> dict[str, float | bool] | None:
+                     evaluator: Callable[[dict, Config], dict[str, float | bool | None]]) -> dict[str, float | bool | None] | None:
     # The short path preserves the single-request behavior for ordinary results.
     if len(json.dumps(output, ensure_ascii=False).encode()) <= CHUNK_JSON_BYTES:
         scores = evaluator(state, config)
-        if not _valid_scores(scores):
+        if not _valid_scores(scores, config):
             raise ValueError("invalid evaluator scores")
         return scores
     chunks = _output_chunks(output)
@@ -473,30 +510,30 @@ def _evaluate_output(state: dict, output: str, config: Config,
         return None
     count = len(chunks)
 
-    def evaluate(item: tuple[int, str]) -> dict[str, float | bool]:
+    def evaluate(item: tuple[int, str]) -> dict[str, float | bool | None]:
         index, chunk = item
         chunk_state = {**state, "output_sample": chunk, "chunk_index": index + 1,
                        "chunk_count": count}
         scores = evaluator(chunk_state, config)
-        if not _valid_scores(scores):
+        if not _valid_scores(scores, config):
             raise ValueError("invalid evaluator scores")
         return scores
 
     with ThreadPoolExecutor(max_workers=CHUNK_WORKERS) as pool:
         scores_by_chunk = list(pool.map(evaluate, enumerate(chunks)))
     return {
-        "routine_noise": min(scores["routine_noise"] for scores in scores_by_chunk),
-        "needs_exact_text": max(scores["needs_exact_text"] for scores in scores_by_chunk),
-        "one_off_value": max(scores["one_off_value"] for scores in scores_by_chunk),
-        "filter_approved": all(scores["filter_approved"] for scores in scores_by_chunk),
-        "filter_confidence": min(scores["filter_confidence"] for scores in scores_by_chunk),
+        "routine_noise": min(scores["routine_noise"] for scores in scores_by_chunk) if decision_method(config, "output", "noul") else None,
+        "needs_exact_text": max(scores["needs_exact_text"] for scores in scores_by_chunk) if decision_method(config, "output", "noul") else None,
+        "one_off_value": max(scores["one_off_value"] for scores in scores_by_chunk) if decision_method(config, "output", "noul") else None,
+        "filter_approved": all(scores["filter_approved"] for scores in scores_by_chunk) if decision_method(config, "output", "choice") else None,
+        "filter_confidence": min(scores["filter_confidence"] for scores in scores_by_chunk) if decision_method(config, "output", "choice") else None,
     }
 
 
 def decide(
     event: dict,
     config: Config,
-    evaluator: Callable[[dict, Config], dict[str, float | bool]] | None = None,
+    evaluator: Callable[[dict, Config], dict[str, float | bool | None]] | None = None,
     storage: Path | None = None,
     simulate: bool = False,
 ) -> Result:
@@ -507,6 +544,8 @@ def decide(
 
     if not config.enabled:
         return result("skip", "disabled")
+    if not any(config.decision_methods.get("output", {}).get(name, True) for name in ("noul", "choice")):
+        return result("skip", "no_decision_methods")
     if not isinstance(event, dict) or event.get("hook_event_name") != "PostToolUse":
         return result("skip", "unsupported_event")
     tool = event.get("tool_name")

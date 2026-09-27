@@ -61,6 +61,30 @@ class SearchListingTests(unittest.TestCase):
         strict = self.config(thresholds={"search_listing": {"drop_confidence_min": 95}})
         self.assertEqual(search_listing._decision(answer, strict), "summarize")
 
+    def test_choice_off_keeps_search_result_without_evaluator(self):
+        evaluator = mock.Mock()
+        config = self.config(decision_methods={"search_listing": {"choice": False}})
+        result = search_listing.decide_search_listing(event("rg -n function .", hits()), config, evaluator)
+        self.assertEqual(result.reason, "no_decision_methods")
+        evaluator.assert_not_called()
+
+    def test_broad_group_samples_and_keeps_spread_out_examples(self):
+        output = hits()
+        seen = []
+        def summarize(state, questions, config):
+            seen.append(state)
+            return choices(state, questions, config, {"docs/archive": "summarize"})
+        result = search_listing.decide_search_listing(event("rg -n function .", output), self.config(), summarize,
+                                                      simulate=True)
+        self.assertEqual(result.status, "replace")
+        group = next(group for group in seen[0]["groups"] if group["path"] == "docs/archive")
+        lines = [line for line in output.splitlines(keepends=True) if line.startswith("docs/archive/")]
+        representatives = search_listing._representatives(lines)
+        self.assertEqual(len(representatives), 5)
+        self.assertTrue(all(line.strip()[:80] in group["sample"] for line in representatives))
+        self.assertTrue(all(line in result.hook_output["reason"] for line in representatives))
+        self.assertLess(len(json.dumps(seen[0])), search_listing.MAX_STATE_CHARS)
+
     def test_command_gate_accepts_simple_searches_and_listings_only(self):
         accepted = {
             "rg -n function app": "search", "rg --line-number -F 'status' app": "search",

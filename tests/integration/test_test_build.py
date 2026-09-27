@@ -88,6 +88,13 @@ class ReductionTests(unittest.TestCase):
         self.assertFalse(test_build.jev_approves_omission({**scores, "filter_confidence": .69}))
         self.assertFalse(test_build.jev_approves_omission({**scores, "filter_approved": False}))
 
+    def test_no_decision_methods_keeps_test_log_without_evaluator(self):
+        evaluator = mock.Mock()
+        config = self.settings(decision_methods={"test_build": {"noul": False, "choice": False}})
+        result = self.decide(hook_event("python3 -m unittest discover -v", unittest_log()), config, evaluator=evaluator)
+        self.assertEqual(result.reason, "no_decision_methods")
+        evaluator.assert_not_called()
+
     def decide(self, event, config, storage=None, evaluator=lambda *_: GOOD):
         return test_build.decide_test_build(event, config, evaluator=evaluator, storage=storage)
 

@@ -132,14 +132,25 @@ test("composer bridge selects integrations and reports view-scoped activity with
     const ready = (await bridge({ action: "settingsRead" })).settings;
     assert.equal(ready.action, "ready");
     assert.equal(ready.hasKey, false);
+    assert.equal(ready.keyLength, 0);
     assert.equal(ready.config.thresholds.output.routine_min, 90);
     assert.deepEqual(ready.defaults, { mode: "replace", thresholds: core.DEFAULT_THRESHOLDS,
+      decision_methods: core.DEFAULT_DECISION_METHODS,
       log_limit_mb: 50, never_delete_logs: false });
     assert.equal(ready.config.log_limit_mb, 50);
     assert.equal(ready.lifetime.calls, 1);
     assert.equal(ready.lifetime.replaced, 1);
     assert.equal(ready.lifetime.estimatedTokensSaved, 2652);
     assert.equal(JSON.stringify(ready).includes("JEV_API_KEY"), false);
+    const retained = (await bridge({ action: "settingsSetNeverDeleteLogs", neverDeleteLogs: true })).settings;
+    assert.deepEqual(retained, { action: "neverDeleteLogsSaved", neverDeleteLogs: true });
+    assert.equal((await bridge({ action: "settingsRead" })).settings.config.never_delete_logs, true);
+    assert.equal((await core.readConfig(directory)).mode, "replace");
+    const invalidRetention = (await bridge({ action: "settingsSetNeverDeleteLogs", neverDeleteLogs: "true" })).settings;
+    assert.equal(invalidRetention.action, "error");
+    assert.equal((await core.readConfig(directory)).never_delete_logs, true);
+    assert.equal((await bridge({ action: "settingsSetNeverDeleteLogs", neverDeleteLogs: false })).settings.action,
+      "neverDeleteLogsSaved");
     assert.equal((await bridge({ action: "settingsOpenLogs" })).settings.action, "openedLogs");
     assert.equal(openedExternal, directory);
     await fs.mkdir(path.join(directory, "logs"));
@@ -149,17 +160,23 @@ test("composer bridge selects integrations and reports view-scoped activity with
       thresholds: { output: { routine_min: 90 } } })).settings;
     assert.equal(missing.action, "error");
     assert.match(missing.message, /Enter an API key/);
+    const decisionMethods = { output: { noul: false, choice: true }, test_build: { noul: true, choice: false },
+      search_listing: { choice: true } };
     const savedSettings = (await bridge({ action: "settingsSave", mode: "observe", key: "new-test-key-123", logLimitMb: 9999, neverDeleteLogs: true,
-      thresholds: { output: { routine_min: 97 } } })).settings;
+      decisionMethods, thresholds: { output: { routine_min: 97 } } })).settings;
     assert.equal(savedSettings.action, "saved");
+    assert.equal(savedSettings.keyLength, "new-test-key-123".length);
     assert.equal(await core.readApiKey(directory), "new-test-key-123");
     assert.equal((await core.readConfig(directory)).thresholds.output.routine_min, 97);
     assert.equal((await core.readConfig(directory)).mode, "observe");
     assert.equal((await core.readConfig(directory)).log_limit_mb, 9999);
     assert.equal((await core.readConfig(directory)).never_delete_logs, true);
+    assert.deepEqual((await core.readConfig(directory)).decision_methods, decisionMethods);
     assert.equal(JSON.stringify(savedSettings).includes("new-test-key-123"), false);
     const readyAfterSave = (await bridge({ action: "settingsRead" })).settings;
     assert.equal(readyAfterSave.hasKey, true);
+    assert.equal(readyAfterSave.keyLength, "new-test-key-123".length);
+    assert.deepEqual(readyAfterSave.config.decision_methods, decisionMethods);
     assert.equal(readyAfterSave.defaults.thresholds.output.routine_min, 90);
     assert.equal(JSON.stringify(readyAfterSave).includes("new-test-key-123"), false);
     const tested = (await bridge({ action: "settingsTest", key: "" })).settings;

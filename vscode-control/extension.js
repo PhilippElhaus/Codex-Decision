@@ -6,7 +6,8 @@ const vscode = require("vscode");
 const {
   checkHealth, decisionSummary, defaultDataDirectory, estimateTokensSaved,
   isJevOutcome, outcomeLine, readConfig, readEventOffset, readEventsSince, savedCharacters,
-  readApiKey, readLifetimeStats, writeApiKey, writeMode, writeSelection, writeSettings, completeThresholds, DEFAULT_THRESHOLDS,
+  readApiKey, readLifetimeStats, writeApiKey, writeMode, writeSelection, writeSettings, writeNeverDeleteLogs,
+  completeThresholds, completeDecisionMethods, DEFAULT_THRESHOLDS, DEFAULT_DECISION_METHODS,
 } = require("./core");
 
 function emptyStats() {
@@ -207,13 +208,15 @@ function activate(context) {
       const directory = dataDirectory();
       if (request.action === "settingsRead") {
         const config = await readConfig(directory);
-        let hasKey = false;
-        try { await readApiKey(directory); hasKey = true; } catch { /* no usable key */ }
+        let keyLength = 0;
+        try { keyLength = (await readApiKey(directory)).length; } catch { /* no usable key */ }
         const lifetime = await readLifetimeStats(directory);
         return { action: "ready", config: { ...config, thresholds: completeThresholds(config.thresholds),
+          decision_methods: completeDecisionMethods(config.decision_methods),
           log_limit_mb: config.log_limit_mb ?? 50, never_delete_logs: config.never_delete_logs ?? false },
           defaults: { mode: "replace", thresholds: DEFAULT_THRESHOLDS,
-            log_limit_mb: 50, never_delete_logs: false }, hasKey, lifetime };
+            decision_methods: DEFAULT_DECISION_METHODS, log_limit_mb: 50, never_delete_logs: false },
+          hasKey: keyLength > 0, keyLength, lifetime };
       }
       if (request.action === "settingsOpenLogs") {
         const parent = await fs.lstat(directory);
@@ -233,6 +236,13 @@ function activate(context) {
         const key = typeof request.key === "string" && request.key ? request.key : null;
         return { action: "tested", result: await checkHealth(directory, globalThis.fetch, key) };
       }
+      if (request.action === "settingsSetNeverDeleteLogs") {
+        if (typeof request.neverDeleteLogs !== "boolean") throw new Error("Never delete logs must be a boolean");
+        const task = selectionQueue.then(() => writeNeverDeleteLogs(directory, request.neverDeleteLogs));
+        selectionQueue = task.catch(() => {});
+        await task;
+        return { action: "neverDeleteLogsSaved", neverDeleteLogs: request.neverDeleteLogs };
+      }
       if (request.action === "settingsSave") {
         if (!["observe", "replace"].includes(request.mode)) throw new Error("Invalid mode");
         if (!Number.isInteger(request.logLimitMb) || request.logLimitMb < 1 || request.logLimitMb > 9999 ||
@@ -242,8 +252,9 @@ function activate(context) {
           catch { throw new Error("Enter an API key before saving."); }
         }
         const thresholds = completeThresholds(request.thresholds);
+        const decisionMethods = completeDecisionMethods(request.decisionMethods);
         const task = selectionQueue.then(async () => {
-          await writeSettings(directory, request.mode, thresholds, request.logLimitMb, request.neverDeleteLogs);
+          await writeSettings(directory, request.mode, thresholds, request.logLimitMb, request.neverDeleteLogs, decisionMethods);
           await settings().update("mode", request.mode, vscode.ConfigurationTarget.Global);
           if (request.key) await writeApiKey(directory, request.key);
           await sync();
@@ -251,7 +262,7 @@ function activate(context) {
         });
         selectionQueue = task.catch(() => {});
         await task;
-        return { action: "saved", hasKey: true };
+        return { action: "saved", hasKey: true, keyLength: (await readApiKey(directory)).length };
       }
     } catch (error) {
       return { action: "error", message: error.message || "Jev settings failed" };
@@ -269,7 +280,7 @@ function activate(context) {
         return { ...snapshot(), externalOpen: false };
       }
     }
-    if (["settingsRead", "settingsTest", "settingsSave", "settingsOpenLogs"].includes(request?.action)) {
+    if (["settingsRead", "settingsTest", "settingsSave", "settingsSetNeverDeleteLogs", "settingsOpenLogs"].includes(request?.action)) {
       return { ...snapshot(), settings: await settingsReply(request) };
     }
     if (request?.action === "testApiKey") {

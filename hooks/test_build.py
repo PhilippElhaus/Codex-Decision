@@ -8,7 +8,7 @@ import shlex
 import time
 from typing import Callable
 
-from jev import Config, FAILURE, Result, SENSITIVE, _output_path, _valid_scores, sample, save_original, threshold
+from jev import Config, FAILURE, Result, SENSITIVE, _output_path, _valid_scores, decision_method, sample, save_original, threshold
 
 
 MIN_CHARS = 2048
@@ -106,20 +106,23 @@ def _has_completion(lines: list[str]) -> bool:
     return any(pattern.search(_clean(line)) for line in lines for pattern in COMPLETION)
 
 
-def jev_approves_omission(scores: dict[str, float | bool], config: Config | None = None) -> bool:
+def jev_approves_omission(scores: dict[str, float | bool | None], config: Config | None = None) -> bool:
     # Candidate lines have already matched pass/progress formats; Jev judges
     # whether this run gives those otherwise routine lines special value.
     config = config or Config()
-    return (scores["routine_noise"] >= threshold(config, "test_build", "routine_min")
-            and scores["needs_exact_text"] <= threshold(config, "test_build", "exact_max")
-            and scores["one_off_value"] <= threshold(config, "test_build", "unique_max")
-            and scores["filter_approved"] is True
-            and scores["filter_confidence"] >= threshold(config, "test_build", "confidence_min"))
+    use_noul = decision_method(config, "test_build", "noul")
+    use_choice = decision_method(config, "test_build", "choice")
+    return ((use_noul or use_choice)
+            and (not use_noul or (scores["routine_noise"] >= threshold(config, "test_build", "routine_min")
+                                  and scores["needs_exact_text"] <= threshold(config, "test_build", "exact_max")
+                                  and scores["one_off_value"] <= threshold(config, "test_build", "unique_max")))
+            and (not use_choice or (scores["filter_approved"] is True
+                                    and scores["filter_confidence"] >= threshold(config, "test_build", "confidence_min"))))
 
 
 def decide_test_build(
     event: dict, config: Config,
-    evaluator: Callable[[dict, Config], dict[str, float | bool]] | None = None,
+    evaluator: Callable[[dict, Config], dict[str, float | bool | None]] | None = None,
     storage: Path | None = None, simulate: bool = False,
 ) -> Result:
     started = time.perf_counter()
@@ -129,6 +132,8 @@ def decide_test_build(
 
     if not config.test_build_enabled:
         return result("skip", "disabled")
+    if not any(config.decision_methods.get("test_build", {}).get(name, True) for name in ("noul", "choice")):
+        return result("skip", "no_decision_methods")
     if not isinstance(event, dict) or event.get("hook_event_name") != "PostToolUse" or event.get("tool_name") != "Bash":
         return result("skip", "unsupported_event")
     kind = command_kind(event.get("tool_input"))
@@ -179,7 +184,7 @@ def decide_test_build(
     }
     try:
         scores = evaluator(state, config)
-        if not _valid_scores(scores):
+        if not _valid_scores(scores, config, "test_build"):
             raise ValueError("invalid Jev scores")
     except Exception:
         return result("keep", "evaluator_unavailable", size)

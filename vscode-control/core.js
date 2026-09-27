@@ -14,10 +14,15 @@ const DEFAULT_THRESHOLDS = Object.freeze({
   search_listing: { summarize_probability_min: 78, summarize_confidence_min: 70,
     drop_probability_min: 92, drop_confidence_min: 85 },
 });
+const DEFAULT_DECISION_METHODS = Object.freeze({
+  output: { noul: true, choice: true },
+  test_build: { noul: true, choice: true },
+  search_listing: { choice: true },
+});
 const CONFIG_KEYS = new Set([
   "enabled", "test_build_enabled", "search_listing_enabled", "precompact_enabled", "mode", "min_chars", "max_chars", "sample_chars",
   "timeout_seconds", "model", "allow_mcp_replacement", "thresholds",
-  "log_limit_mb", "never_delete_logs",
+  "log_limit_mb", "never_delete_logs", "decision_methods",
 ]);
 
 function completeThresholds(value = {}) {
@@ -32,6 +37,20 @@ function completeThresholds(value = {}) {
     if (Object.values(result[hook]).some((number) => !Number.isInteger(number) || number < 0 || number > 100)) {
       throw new Error("Jev thresholds must be whole percentages from 0 to 100");
     }
+  }
+  return result;
+}
+
+function completeDecisionMethods(value = {}) {
+  if (!value || typeof value !== "object" || Array.isArray(value) ||
+      Object.keys(value).some((hook) => !Object.hasOwn(DEFAULT_DECISION_METHODS, hook))) throw new Error("Invalid Jev decision methods");
+  const result = {};
+  for (const [hook, defaults] of Object.entries(DEFAULT_DECISION_METHODS)) {
+    const entered = value[hook] === undefined ? {} : value[hook];
+    if (!entered || typeof entered !== "object" || Array.isArray(entered) ||
+        Object.keys(entered).some((name) => !Object.hasOwn(defaults, name))) throw new Error("Invalid Jev decision methods");
+    result[hook] = { ...defaults, ...entered };
+    if (Object.values(result[hook]).some((enabled) => typeof enabled !== "boolean")) throw new Error("Jev decision methods must be booleans");
   }
   return result;
 }
@@ -65,6 +84,7 @@ async function readConfig(directory) {
       throw new Error("Invalid Jev config");
     }
     completeThresholds(merged.thresholds);
+    completeDecisionMethods(merged.decision_methods);
     const { precompact_enabled: _legacy, ...current } = raw;
     return { enabled: false, test_build_enabled: false, search_listing_enabled: false, mode: "replace", ...current };
   } catch (error) {
@@ -76,6 +96,7 @@ async function readConfig(directory) {
 async function writeConfig(directory, updates) {
   const config = { ...await readConfig(directory), ...updates };
   completeThresholds(config.thresholds);
+  completeDecisionMethods(config.decision_methods);
   await fs.mkdir(directory, { recursive: true, mode: 0o700 });
   if ((await fs.lstat(directory)).isSymbolicLink()) throw new Error("Plugin data directory is a link");
   const target = path.join(directory, "config.json");
@@ -119,13 +140,19 @@ async function writeThresholds(directory, thresholds) {
   return writeConfig(directory, { thresholds: completeThresholds(thresholds) });
 }
 
-async function writeSettings(directory, mode, thresholds, limitMb, neverDelete) {
+async function writeSettings(directory, mode, thresholds, limitMb, neverDelete, decisionMethods) {
   if (!["replace", "observe"].includes(mode)) throw new TypeError("invalid Jev mode");
   if (!Number.isInteger(limitMb) || limitMb < 1 || limitMb > 9999 || typeof neverDelete !== "boolean") {
     throw new TypeError("Log retention must be 1 to 9999 MB");
   }
   return writeConfig(directory, { mode, thresholds: completeThresholds(thresholds),
-    log_limit_mb: limitMb, never_delete_logs: neverDelete });
+    log_limit_mb: limitMb, never_delete_logs: neverDelete,
+    ...(decisionMethods === undefined ? {} : { decision_methods: completeDecisionMethods(decisionMethods) }) });
+}
+
+async function writeNeverDeleteLogs(directory, neverDelete) {
+  if (typeof neverDelete !== "boolean") throw new TypeError("Never delete logs must be a boolean");
+  return writeConfig(directory, { never_delete_logs: neverDelete });
 }
 
 async function activityLogPath(directory) {
@@ -479,9 +506,10 @@ async function writeApiKey(directory, key) {
 }
 
 module.exports = {
-  activitySummary, checkHealth, completeThresholds, DEFAULT_THRESHOLDS, decisionSummary, defaultDataDirectory, estimateTokensSaved, formatDuration,
+  activitySummary, checkHealth, completeThresholds, completeDecisionMethods, DEFAULT_THRESHOLDS, DEFAULT_DECISION_METHODS,
+  decisionSummary, defaultDataDirectory, estimateTokensSaved, formatDuration,
   isInformativeEvent, isJevOutcome, outcomeLine, parseHealthOutput, readConfig,
   readApiKey, readEventOffset, readEventsSince, readLatestEvent, readLifetimeStats, readRecentOutcomes,
   savedCharacters, writeApiKey, writeEnabled, writeMode, writeSelection, writeThresholds,
-  writeSettings,
+  writeSettings, writeNeverDeleteLogs,
 };

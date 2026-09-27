@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 import sys
 
-from jev import Config, DEFAULT_THRESHOLDS, Result, append_log, capture_request, decide, extract_text, jev_choice_request, jev_request, jev_test_build_request, load_api_key
+from jev import Config, DEFAULT_DECISION_METHODS, DEFAULT_THRESHOLDS, Result, append_log, capture_request, decide, extract_text, jev_choice_request, jev_request, jev_test_build_request, load_api_key
 from receipts import write_receipts
 from search_listing import command_kind as search_kind, decide_search_listing
 from test_build import command_kind, decide_test_build
@@ -34,8 +34,10 @@ def main() -> None:
                 write_receipts(data_dir, event, outcome,
                                sorted(calls, key=lambda call: call["state"].get("chunk_index", 1)),
                                filter_name, config.log_limit_mb, config.never_delete_logs,
-                               {"mode": config.mode, "cutoffs": {
-                                   **DEFAULT_THRESHOLDS[filter_name], **config.thresholds.get(filter_name, {})}},
+                               {"mode": config.mode,
+                                "decision_methods": {
+                                    **DEFAULT_DECISION_METHODS[filter_name], **config.decision_methods.get(filter_name, {})},
+                                "cutoffs": {**DEFAULT_THRESHOLDS[filter_name], **config.thresholds.get(filter_name, {})}},
                                extract_text(str(event.get("tool_name", "")), event.get("tool_response")))
             except (OSError, ValueError, TypeError):
                 pass

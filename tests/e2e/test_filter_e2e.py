@@ -190,6 +190,7 @@ class CommandHookEndToEndTests(unittest.TestCase):
             self.assertEqual(receipt["initial_output"], item["tool_response"])
             self.assertEqual(receipt["decision"]["status"], "replace")
             self.assertEqual(receipt["call_count"], 1)
+            self.assertEqual(receipt["settings"]["decision_methods"], jev.DEFAULT_DECISION_METHODS[name])
             self.assertTrue(receipt["jev_answer"])
             self.assertTrue(receipt["jev_raw_answer"])
             self.assertEqual(receipt["jev_request"]["model"], "jev-1.13.0")

@@ -11,6 +11,11 @@
   "allow_mcp_replacement": false,
   "log_limit_mb": 50,
   "never_delete_logs": false,
+  "decision_methods": {
+    "output": {"noul": true, "choice": true},
+    "test_build": {"noul": true, "choice": true},
+    "search_listing": {"choice": true}
+  },
   "thresholds": {
     "output": {"routine_min": 90, "exact_max": 12, "unique_max": 10, "confidence_min": 70},
     "test_build": {"routine_min": 90, "exact_max": 20, "unique_max": 20, "confidence_min": 70},

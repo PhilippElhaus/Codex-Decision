@@ -30,7 +30,7 @@ python3 vscode-control/scripts/browser_smoke.py
 python3 scripts/benchmark_all_filters.py --mode mock --per-variant 100
 ```
 
-The browser smoke test runs the real webview scripts with a synthetic VS Code bridge. It checks the TypeSafe link click, browser-launch error, log retention controls, Reset defaults alignment, and layouts at 360, 720, and 1200 pixels in Microsoft Edge. The Node bridge test checks that the fixed TypeSafe URL is sent to VS Code's external browser API. Process-level tests check one receipt per Jev request and exact output for every chunk. Edge tests check permissions, pruning, symlink preservation, and concurrent event writes. Browser smoke needs Windows Edge and `pwsh.exe` available from WSL. Python and Node tests can run without the browser.
+The browser smoke test runs the real webview scripts with a synthetic VS Code bridge. It checks the TypeSafe link click, browser-launch error, the checked log-retention tick and persistence, failed-save recovery, method controls, percentage boundaries, saved-key mask length, Reset defaults alignment, and layouts at 360, 720, and 1200 pixels in Microsoft Edge. The Node bridge test checks that the fixed TypeSafe URL is sent to VS Code's external browser API. Process-level tests check one receipt per Jev request and exact output for every chunk. Edge tests check permissions, pruning, symlink preservation, and concurrent event writes. Browser smoke needs Windows Edge and `pwsh.exe` available from WSL. Python and Node tests can run without the browser.
 
 The mock benchmark checks all three routes. Its result is a test fixture, not a live performance claim. The dated live benchmark in `docs/benchmarks/` is separate from the offline suite.
 

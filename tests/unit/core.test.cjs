@@ -6,8 +6,8 @@ const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
 const {
-  activitySummary, checkHealth, completeThresholds, decisionSummary, estimateTokensSaved, formatDuration, outcomeLine, parseHealthOutput, readApiKey, readConfig,
-  readEventOffset, readEventsSince, readLatestEvent, readLifetimeStats, readRecentOutcomes, writeApiKey, writeEnabled, writeMode, writeSelection, writeThresholds, writeSettings,
+  activitySummary, checkHealth, completeThresholds, completeDecisionMethods, decisionSummary, estimateTokensSaved, formatDuration, outcomeLine, parseHealthOutput, readApiKey, readConfig,
+  readEventOffset, readEventsSince, readLatestEvent, readLifetimeStats, readRecentOutcomes, writeApiKey, writeEnabled, writeMode, writeSelection, writeThresholds, writeSettings, writeNeverDeleteLogs,
 } = require("../../vscode-control/core");
 
 test("settings thresholds round trip and reject invalid percentages", async () => {
@@ -38,6 +38,36 @@ test("log retention and cutoffs save atomically with strict bounds", async () =>
     }
     await assert.rejects(writeSettings(directory, "replace", {}, 50, "yes"), /Log retention/);
     assert.deepEqual(await readConfig(directory), saved);
+  } finally { await fs.rm(directory, { recursive: true, force: true }); }
+});
+
+test("decision method selection validates the schema and round trips with settings", async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-methods-test-"));
+  try {
+    const methods = completeDecisionMethods({ output: { noul: false }, search_listing: { choice: false } });
+    await writeSettings(directory, "replace", {}, 50, false, methods);
+    assert.deepEqual((await readConfig(directory)).decision_methods, methods);
+    for (const invalid of [{ output: { score: true } }, { output: { noul: "false" } }, { search_listing: { choice: 0 } }]) {
+      await assert.rejects(writeSettings(directory, "replace", {}, 50, false, invalid), /decision methods|booleans/);
+    }
+    assert.deepEqual((await readConfig(directory)).decision_methods, methods);
+  } finally { await fs.rm(directory, { recursive: true, force: true }); }
+});
+
+test("never delete can save alone without changing draft settings or needing a key", async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-checkbox-test-"));
+  try {
+    await writeSettings(directory, "observe", { output: { routine_min: 96 } }, 75, false);
+    await writeNeverDeleteLogs(directory, true);
+    assert.deepEqual({ ...(await readConfig(directory)) }, {
+      enabled: false, test_build_enabled: false, search_listing_enabled: false,
+      mode: "observe", thresholds: completeThresholds({ output: { routine_min: 96 } }),
+      log_limit_mb: 75, never_delete_logs: true,
+    });
+    await assert.rejects(writeNeverDeleteLogs(directory, "true"), /boolean/);
+    assert.equal((await readConfig(directory)).never_delete_logs, true);
+    await writeNeverDeleteLogs(directory, false);
+    assert.equal((await readConfig(directory)).never_delete_logs, false);
   } finally { await fs.rm(directory, { recursive: true, force: true }); }
 });
 
