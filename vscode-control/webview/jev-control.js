@@ -11,6 +11,7 @@
   let state = { enabled: false, outputEnabled: false, testBuildEnabled: false, searchListingEnabled: false, health: null, busy: false, mode: "replace", recent: "No decision recorded yet", history: [], stats: {} };
   let root;
   let pending = 0;
+  let retryRequestId = 0;
   let menuOpen = false;
   let layoutObserver;
   let observed = [];
@@ -30,6 +31,7 @@
     if (window.location.href !== viewLocation) {
       viewLocation = window.location.href;
       viewId = newViewId();
+      retryRequestId = 0;
       state = { ...state, busy: false, recent: "No decision recorded yet", history: [], stats: {} };
       render();
     }
@@ -38,12 +40,31 @@
 
   function send(action, enabled, feature) {
     const api = window.__codexJevApi;
-    if (!api) return;
+    if (!api) return 0;
     const id = ++pending;
     const current = currentViewId();
     sentViews.set(id, current);
     if (sentViews.size > 50) sentViews.delete(sentViews.keys().next().value);
     api.postMessage({ type: "codex-jev", action, enabled, feature, viewId: current, id });
+    return id;
+  }
+
+  function healthReason(reason) {
+    const known = {
+      JEV_KEY_MISSING: "API key missing or unreadable",
+      JEV_HTTP_401: "API key rejected",
+      JEV_HTTP_403: "Access denied",
+      JEV_HTTP_429: "Rate limited",
+      JEV_HTTP_529: "Jev overloaded",
+      JEV_TIMEOUT: "Connection timed out",
+      JEV_NETWORK_ERROR: "Network connection failed",
+      JEV_INVALID_RESPONSE: "Invalid Jev response",
+      JEV_CONFIG_ERROR: "Configuration error",
+      JEV_UNAVAILABLE: "Connection check failed",
+      BRIDGE_UNAVAILABLE: "VS Code bridge unavailable",
+    };
+    return known[reason] || (/^JEV_HTTP_\d{3}$/.test(reason || "")
+      ? `API error ${reason.slice(-3)}` : "Connection check failed");
   }
 
   function formatDuration(elapsedMs) {
@@ -80,15 +101,25 @@
       .codex-jev-option strong { display: block; font-size: 13px; font-weight: 600; line-height: 18px; }
       .codex-jev-option small { display: block; color: var(--vscode-descriptionForeground, #aaa); font-size: 11px; line-height: 15px; margin-top: 1px; }
       #codex-jev-menu p { margin: 5px 0 0; padding: 9px 10px 4px; border-top: 1px solid var(--vscode-menu-separatorBackground, #ffffff1a); color: var(--vscode-descriptionForeground, #999); font-size: 11px; }
-      #codex-jev-tip { display: none; width: min(420px, calc(100vw - 24px)); padding: 11px 13px; border: 1px solid #454545; border-radius: 11px; background: #292929; color: #dedede; pointer-events: none; font-size: 12px; line-height: 1.45; white-space: normal; }
-      #codex-jev:hover #codex-jev-tip { display: block; }
+      #codex-jev-tip { display: none; width: min(420px, calc(100vw - 24px)); padding: 11px 13px; border: 1px solid #454545; border-radius: 11px; background: #292929; color: #dedede; pointer-events: auto; font-size: 12px; line-height: 1.45; white-space: normal; }
+      #codex-jev-tip::after { content: ""; position: absolute; top: 100%; left: 0; right: 0; height: 10px; }
+      #codex-jev:hover #codex-jev-tip, #codex-jev:focus-within #codex-jev-tip { display: block; }
       #codex-jev[data-menu="true"] #codex-jev-tip { display: none; }
-      #codex-jev-tip strong { color: #fff; }
+      #codex-jev-health-row { display: flex; align-items: center; gap: 5px; min-height: 20px; }
+      #codex-jev-health-row strong { color: #fff; white-space: nowrap; }
+      #codex-jev-health-reason { display: none; color: #e99490; margin: 0; min-width: 0; }
+      #codex-jev-retry { display: none; margin-left: auto; padding: 2px 6px; border: 1px solid #666; border-radius: 5px; background: #383838; color: #eee; font: inherit; cursor: pointer; }
+      #codex-jev-retry:hover { background: #484848; }
+      #codex-jev-retry:disabled { opacity: .6; cursor: default; }
+      #codex-jev-retry:focus-visible { outline: 2px solid #83bcf7; outline-offset: 2px; }
       #codex-jev-tip span { display: block; color: #aaa; margin-top: 3px; }
+      #codex-jev-tip #codex-jev-health-reason { color: #e99490; margin: 0; }
       #codex-jev-stats { color: #d4d4d4; }
+      #codex-jev-tokens { margin-top: 3px; color: #d4d4d4; }
       #codex-jev-tip h3 { margin: 10px 0 4px; color: #aaa; font-size: 11px; font-weight: 650; letter-spacing: .04em; }
       #codex-jev-history { margin: 0; padding-left: 18px; color: #d4d4d4; }
       #codex-jev-history li { margin-top: 3px; }
+      #codex-jev-history strong { font-weight: 700; color: #fff; }
       #codex-jev-empty { margin: 0; color: #888; }
     `;
     document.head.appendChild(style);
@@ -96,7 +127,7 @@
     root.id = "codex-jev";
     root.innerHTML = `
       <button id="codex-jev-button" type="button" aria-label="Jev integrations" aria-expanded="false" aria-controls="codex-jev-menu"><span id="codex-jev-dot"></span><span id="codex-jev-label">jev</span><span id="codex-jev-observe">OBS</span></button>
-      <div id="codex-jev-tip" role="tooltip"><strong></strong><span id="codex-jev-mode"></span><h3 id="codex-jev-session-heading">Since this view opened</h3><div id="codex-jev-stats"></div><h3 id="codex-jev-history-heading">Recent Jev outcomes</h3><ol id="codex-jev-history"></ol><p id="codex-jev-empty">None yet</p></div>
+      <div id="codex-jev-tip" role="group" aria-label="Jev status"><div id="codex-jev-health-row"><strong></strong><span id="codex-jev-health-reason"></span><button id="codex-jev-retry" type="button">Retry</button></div><span id="codex-jev-mode"></span><h3 id="codex-jev-session-heading">This session</h3><div id="codex-jev-stats"></div><div id="codex-jev-tokens"></div><h3 id="codex-jev-history-heading">Recent Actions</h3><ol id="codex-jev-history"></ol><p id="codex-jev-empty">None yet</p></div>
       <div id="codex-jev-menu" role="group" aria-label="Jev integrations" data-open="false"><h2>Jev integrations</h2><button id="codex-jev-option" class="codex-jev-option" type="button" role="checkbox" aria-checked="false"><span class="codex-jev-check"></span><span><strong>Output filter</strong><small>Check repetitive tool output with Jev</small></span></button><button id="codex-jev-test-build" class="codex-jev-option" type="button" role="checkbox" aria-checked="false"><span class="codex-jev-check"></span><span><strong>Test/build logs</strong><small>Jev checks routine lines before trimming</small></span></button><button id="codex-jev-search-listing" class="codex-jev-option" type="button" role="checkbox" aria-checked="false"><span class="codex-jev-check"></span><span><strong>Search/listing</strong><small>Jev trims broad search and file lists</small></span></button><p>Select none to turn Jev off.</p></div>`;
     document.body.appendChild(root);
     root.querySelector("#codex-jev-button").addEventListener("click", (event) => {
@@ -117,6 +148,12 @@
     root.querySelector("#codex-jev-search-listing").addEventListener("click", (event) => {
       event.stopPropagation();
       send("setSelection", !state.searchListingEnabled, "search_listing");
+      render();
+    });
+    root.querySelector("#codex-jev-retry").addEventListener("click", (event) => {
+      event.stopPropagation();
+      if (retryRequestId) return;
+      retryRequestId = send("retryConnection");
       render();
     });
     document.addEventListener("click", (event) => {
@@ -144,25 +181,43 @@
     root.querySelector("#codex-jev-search-listing").setAttribute("aria-checked", String(state.searchListingEnabled));
     const status = !state.enabled ? "Jev off" : state.health?.ok === true ? "Jev connected" :
       state.health?.ok === false ? "Jev unavailable" : "Checking Jev connection";
-    root.querySelector("#codex-jev-tip strong").textContent = status;
+    root.querySelector("#codex-jev-health-row strong").textContent = status;
+    const unavailable = state.enabled && state.health?.ok === false;
+    const reason = root.querySelector("#codex-jev-health-reason");
+    reason.textContent = unavailable ? `· ${healthReason(state.health.reason)}` : "";
+    reason.style.display = unavailable ? "inline" : "none";
+    const retry = root.querySelector("#codex-jev-retry");
+    retry.style.display = unavailable ? "inline-block" : "none";
+    retry.disabled = Boolean(retryRequestId);
+    retry.textContent = retryRequestId ? "Checking…" : "Retry";
     root.querySelector("#codex-jev-mode").textContent = state.enabled ?
-      `${[state.outputEnabled && "output", state.testBuildEnabled && "test/build", state.searchListingEnabled && "search/listing"].filter(Boolean).join(" + ")} · ${state.mode}` : "No integrations selected. Click to choose.";
+      `${[state.outputEnabled && "output", state.testBuildEnabled && "test/build", state.searchListingEnabled && "search/listing"].filter(Boolean).join(" + ")}${state.mode === "observe" ? " · observe" : ""}` : "No integrations selected. Click to choose.";
     const stats = state.stats || {};
     const completed = Number(stats.completed) || 0;
     const average = completed ? formatDuration((Number(stats.elapsedMs) || 0) / completed) : "—";
     const totals = `${completed} checked · ${Number(stats.replaced) || 0} replaced · ${average} avg`;
     root.querySelector("#codex-jev-stats").textContent = state.enabled ? totals : "";
+    const tokens = `Total Tokens saved: ~${(Number(stats.estimatedTokensSaved) || 0).toLocaleString("en-US")}`;
+    root.querySelector("#codex-jev-tokens").textContent = state.enabled ? tokens : "";
     root.querySelector("#codex-jev-session-heading").style.display = state.enabled ? "block" : "none";
     root.querySelector("#codex-jev-history-heading").style.display = state.enabled ? "block" : "none";
     const history = Array.isArray(state.history) ? state.history.slice(0, 3) : [];
     const list = root.querySelector("#codex-jev-history");
     list.replaceChildren(...history.map((line) => {
       const item = document.createElement("li");
-      item.textContent = String(line);
+      const match = String(line).match(/^(.*) · (-\d+%)$/);
+      if (match) {
+        item.append(document.createTextNode(`${match[1]} · `));
+        const reduction = document.createElement("strong");
+        reduction.textContent = match[2];
+        item.append(reduction);
+      } else {
+        item.textContent = String(line);
+      }
       return item;
     }));
     root.querySelector("#codex-jev-empty").style.display = state.enabled && !history.length ? "block" : "none";
-    button.setAttribute("aria-label", `${status}. Since this view opened: ${totals}. ${history.join(". ") || state.recent}. Select Jev integrations`);
+    button.setAttribute("aria-label", `${status}${unavailable ? `: ${healthReason(state.health.reason)}` : ""}. This session: ${totals}. ${tokens}. ${history.join(". ") || state.recent}. Select Jev integrations`);
   }
 
   function visibleRect(element) {
@@ -354,13 +409,14 @@
       if (event.data?.type !== "codex-jev-reply") return;
       const sentView = sentViews.get(event.data.id);
       sentViews.delete(event.data.id);
+      if (event.data.id === retryRequestId) retryRequestId = 0;
       if (!sentView || sentView !== currentViewId()) return;
       if (event.data.status && typeof event.data.status === "object") {
         state = event.data.status;
         render();
       }
     });
-    setInterval(() => send("status"), 120);
+    setInterval(() => { if (!retryRequestId) send("status"); }, 120);
     setInterval(schedulePosition, 300);
     send("status");
   }

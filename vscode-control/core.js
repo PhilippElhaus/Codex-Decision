@@ -199,14 +199,25 @@ function outcomeLine(event) {
   const action = event.status === "replace" ? "replaced" :
     event.status === "candidate" ? "candidate" : "kept";
   const mode = event.reason === "observe" ? " (observe)" : "";
-  const saved = event.status === "replace" && Number.isFinite(event.original_chars) &&
-    Number.isFinite(event.capsule_chars) && event.original_chars > 0 &&
-    event.capsule_chars >= 0 && event.capsule_chars <= event.original_chars
-    ? ` · ${Math.round(100 * (event.original_chars - event.capsule_chars) / event.original_chars)}%`
+  const savedChars = savedCharacters(event);
+  const saved = savedChars > 0
+    ? ` · -${Math.round(100 * savedChars / event.original_chars)}%`
     : "";
   const source = event.filter === "test_build" ? "test/build" :
     event.filter === "search_listing" ? "search/listing" : (event.tool || "tool");
-  return `${action}${mode} · ${source} · ${event.original_chars.toLocaleString()} chars · ${formatDuration(event.elapsed_ms)}${saved}`;
+  return `${action}${mode} · ${source} · ${event.original_chars.toLocaleString()} chars${saved}`;
+}
+
+function savedCharacters(event) {
+  return event.status === "replace" && Number.isFinite(event.original_chars) &&
+    Number.isFinite(event.capsule_chars) && event.original_chars > 0 &&
+    event.capsule_chars >= 0 && event.capsule_chars <= event.original_chars
+    ? event.original_chars - event.capsule_chars : 0;
+}
+
+function estimateTokensSaved(characters) {
+  // OpenAI's plain-text rule of thumb is approximately four characters per token.
+  return Number.isFinite(characters) && characters > 0 ? Math.round(characters / 4) : 0;
 }
 
 function formatDuration(elapsedMs) {
@@ -231,7 +242,7 @@ function decisionSummary(event) {
     event.status === "keep" ? "kept" : "skipped";
   const source = event.filter === "test_build" ? "test/build " :
     event.filter === "search_listing" ? "search/listing " : "";
-  return `Last decision: ${action} ${source}${event.tool || "tool"} output (${event.reason}); ${event.original_chars.toLocaleString()} chars, ${formatDuration(event.elapsed_ms)}`;
+  return `Last decision: ${action} ${source}${event.tool || "tool"} output (${event.reason}); ${event.original_chars.toLocaleString()} chars`;
 }
 
 function parseHealthOutput(stdout) {
@@ -273,22 +284,32 @@ async function checkHealth(dataDirectory, send = globalThis.fetch) {
     model: "jev-1.13.0",
     questions: { ready: { type: "noul", instructions: "Is output_sample routine build progress?" } },
   });
+  let response;
   try {
-    const response = await send(JEV_ENDPOINT, {
+    response = await send(JEV_ENDPOINT, {
       method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
       body, signal: AbortSignal.timeout(6000),
     });
-    if (!response.ok) return { ok: false, reason: `JEV_HTTP_${response.status}` };
+  } catch (error) {
+    return { ok: false, reason: ["AbortError", "TimeoutError"].includes(error?.name)
+      ? "JEV_TIMEOUT" : "JEV_NETWORK_ERROR" };
+  }
+  if (!response || typeof response.ok !== "boolean") {
+    return { ok: false, reason: "JEV_INVALID_RESPONSE" };
+  }
+  if (!response.ok) return { ok: false, reason: `JEV_HTTP_${response.status}` };
+  try {
     const output = await response.text();
     if (output.length > 262144) throw new Error("Jev health response is too large");
     return parseHealthOutput(output);
   } catch {
-    return { ok: false, reason: "JEV_UNAVAILABLE" };
+    return { ok: false, reason: "JEV_INVALID_RESPONSE" };
   }
 }
 
 module.exports = {
-  activitySummary, checkHealth, decisionSummary, defaultDataDirectory, formatDuration,
+  activitySummary, checkHealth, decisionSummary, defaultDataDirectory, estimateTokensSaved, formatDuration,
   isInformativeEvent, isJevOutcome, outcomeLine, parseHealthOutput, readConfig,
-  readApiKey, readEventOffset, readEventsSince, readLatestEvent, readRecentOutcomes, writeEnabled, writeMode, writeSelection,
+  readApiKey, readEventOffset, readEventsSince, readLatestEvent, readRecentOutcomes,
+  savedCharacters, writeEnabled, writeMode, writeSelection,
 };

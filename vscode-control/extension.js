@@ -3,18 +3,21 @@
 const path = require("node:path");
 const vscode = require("vscode");
 const {
-  checkHealth, decisionSummary, defaultDataDirectory,
-  isJevOutcome, outcomeLine, readConfig, readEventOffset, readEventsSince, writeMode, writeSelection,
+  checkHealth, decisionSummary, defaultDataDirectory, estimateTokensSaved,
+  isJevOutcome, outcomeLine, readConfig, readEventOffset, readEventsSince, savedCharacters,
+  writeMode, writeSelection,
 } = require("./core");
 
 function emptyStats() {
-  return { calls: 0, candidates: 0, kept: 0, replaced: 0, checkedChars: 0, elapsedMs: 0, completed: 0 };
+  return { calls: 0, candidates: 0, kept: 0, replaced: 0, checkedChars: 0,
+    savedChars: 0, elapsedMs: 0, completed: 0 };
 }
 
 function activate(context) {
   const state = { enabled: false, outputEnabled: false, testBuildEnabled: false, searchListingEnabled: false, mode: "replace", health: null, recent: null, history: [], stats: emptyStats(), busyUntil: 0, eventSize: -1, checking: false, polling: null, callingSeen: false, viewId: null, generation: 0, eventDirectory: null };
   let selectionQueue = Promise.resolve();
   let viewBaseline = Promise.resolve();
+  let probePromise = null;
   const settings = () => vscode.workspace.getConfiguration("codexJev");
   const dataDirectory = () => {
     const directory = settings().get("dataDirectory") || defaultDataDirectory();
@@ -33,7 +36,7 @@ function activate(context) {
     mode: state.mode,
     recent: decisionSummary(state.recent),
     history: state.history.map(outcomeLine),
-    stats: { ...state.stats },
+    stats: { ...state.stats, estimatedTokensSaved: estimateTokensSaved(state.stats.savedChars) },
   });
 
   function clearActivity() {
@@ -69,13 +72,15 @@ function activate(context) {
   async function sync() {
     try {
       const directory = dataDirectory();
-      if (state.eventDirectory !== directory) {
+      const directoryChanged = state.eventDirectory !== directory;
+      if (directoryChanged) {
         if (state.eventDirectory !== null) {
           state.generation += 1;
           state.eventSize = -1;
           clearActivity();
         }
         state.eventDirectory = directory;
+        state.health = null;
       }
       const selectedMode = settings().get("mode") || "replace";
       if (!["replace", "observe"].includes(selectedMode)) throw new Error("Invalid codexJev.mode setting");
@@ -88,7 +93,9 @@ function activate(context) {
       state.enabled = state.outputEnabled || state.testBuildEnabled || state.searchListingEnabled;
       state.mode = config.mode;
       if (!state.enabled) state.health = null;
-      if (state.enabled && !wasEnabled) void probe();
+      if (state.enabled && (!wasEnabled || directoryChanged)) {
+        void (probePromise ? probePromise.then(() => probe()) : probe());
+      }
     } catch {
       state.enabled = false;
       state.outputEnabled = false;
@@ -98,16 +105,24 @@ function activate(context) {
     }
   }
 
-  async function probe() {
-    if (!state.enabled || state.checking) return;
+  function probe() {
+    if (!state.enabled) return Promise.resolve();
+    if (probePromise) return probePromise;
     state.checking = true;
     pulse();
-    try {
-      const result = await checkHealth(dataDirectory());
-      if (state.enabled) state.health = result;
-    } finally {
+    probePromise = (async () => {
+      try {
+        const directory = dataDirectory();
+        const result = await checkHealth(directory);
+        if (state.enabled && state.eventDirectory === directory) state.health = result;
+      } catch {
+        if (state.enabled) state.health = { ok: false, reason: "JEV_CONFIG_ERROR" };
+      }
+    })().finally(() => {
       state.checking = false;
-    }
+      probePromise = null;
+    });
+    return probePromise;
   }
 
   async function pollEvent() {
@@ -137,6 +152,7 @@ function activate(context) {
             if (!state.callingSeen) pulse();
             state.stats.completed += 1;
             state.stats.checkedChars += event.original_chars;
+            state.stats.savedChars += savedCharacters(event);
             state.stats.elapsedMs += event.elapsed_ms;
             if (event.status === "candidate") state.stats.candidates += 1;
             else if (event.status === "replace") state.stats.replaced += 1;
@@ -147,7 +163,9 @@ function activate(context) {
             state.callingSeen = false;
           }
           if (event.reason === "no_evaluator" || event.reason === "evaluator_unavailable") {
-            state.health = { ok: false, reason: event.reason === "no_evaluator" ? "HOOK_KEY_MISSING" : "JEV_UNAVAILABLE" };
+            // A hook failure may be transient or unrelated to connection health.
+            // Check the connection instead of leaving this window red for minutes.
+            void probe();
           }
         }
       } catch (error) {
@@ -174,6 +192,10 @@ function activate(context) {
 
   context.subscriptions.push(vscode.commands.registerCommand("codexJev.bridge", async (request) => {
     await enterView(request?.viewId);
+    if (request?.action === "retryConnection") {
+      await probe();
+      return snapshot();
+    }
     if (request?.action === "setSelection" && typeof request.enabled === "boolean") {
       return saveSelection((current) => ({
         enabled: request.feature === "output" ? request.enabled : current.enabled,
@@ -199,7 +221,12 @@ function activate(context) {
   const eventTimer = setInterval(() => { void pollEvent(); }, 250);
   const configTimer = setInterval(() => { void sync(); }, 10_000);
   const healthTimer = setInterval(() => { void probe(); }, 5 * 60_000);
-  context.subscriptions.push({ dispose: () => { clearInterval(eventTimer); clearInterval(configTimer); clearInterval(healthTimer); } });
+  const retryTimer = setInterval(() => {
+    if (state.enabled && state.health?.ok === false) void probe();
+  }, 30_000);
+  context.subscriptions.push({ dispose: () => {
+    clearInterval(eventTimer); clearInterval(configTimer); clearInterval(healthTimer); clearInterval(retryTimer);
+  } });
   void sync();
 }
 

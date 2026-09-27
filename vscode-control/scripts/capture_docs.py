@@ -24,6 +24,7 @@ def main() -> None:
         captures = [
             ('menu', 'jev-menu.png', 620, 340),
             ('tooltip', 'jev-tooltip.png', 620, 280),
+            ('unavailable', 'jev-unavailable.png', 620, 280),
         ]
         for state, name, width, height in captures:
             output = IMAGES / name

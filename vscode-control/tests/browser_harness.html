@@ -15,11 +15,11 @@
   </style>
   <script>
     let outputEnabled = false, testBuildEnabled = false, searchListingEnabled = false, health = { ok: true, model: "jev-1.13.0" }, busy = false, mode = "replace";
-    const stats = { calls: 7, candidates: 4, kept: 2, replaced: 1, checkedChars: 90640, elapsedMs: 8120, completed: 7 };
+    const stats = { calls: 7, candidates: 4, kept: 2, replaced: 1, checkedChars: 90640, savedChars: 6058, estimatedTokensSaved: 1515, elapsedMs: 8120, completed: 7 };
     const history = [
-      "replaced · test/build · 6,367 chars · 1,2s · 95%",
-      "kept · mcp__demo__logs · 14,000 chars · 1,3s",
-      "replaced · Bash · 12,960 chars · 1,1s · 92%",
+      "replaced · test/build · 6,367 chars · -95%",
+      "kept · mcp__demo__logs · 14,000 chars",
+      "replaced · Bash · 12,960 chars · -92%",
     ];
     let calls = 0, activeViewId = null, freshView = false;
     window.acquireVsCodeApi = () => ({ postMessage(request) {
@@ -31,6 +31,7 @@
         else if (request.feature === "search_listing") searchListingEnabled = request.enabled;
         else outputEnabled = request.enabled;
       }
+      if (request.action === "retryConnection") health = { ok: true, model: "jev-1.13.0" };
       queueMicrotask(() => window.dispatchEvent(new MessageEvent("message", { data: {
         type: "codex-jev-reply", id: request.id,
         status: { enabled: outputEnabled || testBuildEnabled || searchListingEnabled, outputEnabled, testBuildEnabled, searchListingEnabled, health, busy, mode, recent: freshView ? "No decision recorded yet" : history[0],
@@ -206,8 +207,13 @@
       mode = "replace";
       await until(() => root.dataset.observe === "false", "replacement mode restored");
       const tooltip = document.getElementById("codex-jev-tip");
-      check(tooltip.textContent.includes("7 checked · 1 replaced · 1,1s avg") &&
-        !tooltip.textContent.includes("chars checked") && tooltip.textContent.includes("· 95%"), "three-signal tooltip and compact savings");
+      check(tooltip.textContent.includes("This session") && tooltip.textContent.includes("Recent Actions") &&
+        tooltip.textContent.includes("7 checked · 1 replaced · 1,1s avg") &&
+        tooltip.textContent.includes("Total Tokens saved: ~1,515") &&
+        !tooltip.textContent.includes("chars checked") && !tooltip.textContent.includes("· replace"),
+        "session labels and estimated token savings");
+      check(tooltip.querySelector("li strong")?.textContent === "-95%" &&
+        !tooltip.querySelector("li")?.textContent.includes("1,2s"), "bold reductions without action timings");
       check(tooltip.querySelectorAll("li").length === 3 && tooltip.textContent.includes("mcp__demo__logs"), "three cross-tool outcomes");
       const firstOutcome = tooltip.querySelector("li");
       check(firstOutcome.getBoundingClientRect().height <= parseFloat(getComputedStyle(firstOutcome).lineHeight) + 1,
@@ -220,6 +226,14 @@
       health = { ok: false, reason: "JEV_HTTP_401" };
       await pause(150);
       check(button.style.color === "rgb(233, 148, 144)", "failure red");
+      const retry = document.getElementById("codex-jev-retry");
+      check(tooltip.textContent.includes("API key rejected") && retry.style.display !== "none" &&
+        getComputedStyle(tooltip).pointerEvents === "auto" &&
+        getComputedStyle(tooltip, "::after").height === "10px", "reachable retry and short failure reason");
+      retry.click();
+      await until(() => button.style.color === "rgb(135, 205, 164)" && retry.style.display === "none", "manual retry restores connection");
+      health = { ok: false, reason: "JEV_HTTP_401" };
+      await until(() => button.style.color === "rgb(233, 148, 144)", "failure can be shown again");
       location.hash = "#reopened-thread";
       await until(() => freshView && tooltip.textContent.includes("0 checked") && tooltip.querySelectorAll("li").length === 0,
         "new or reopened thread has no old outcomes");

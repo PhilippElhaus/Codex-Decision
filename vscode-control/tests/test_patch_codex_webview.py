@@ -76,6 +76,7 @@ class PatchTests(unittest.TestCase):
         manifest_path = self.backup / "manifest.json"
         first = json.loads(manifest_path.read_text())
         self.assertIn("codexJev.bridge", (self.extension / "out/extension.js").read_text())
+        self.assertIn("retryConnection", (self.extension / "out/extension.js").read_text())
         self.assertIn("feature:u.feature", (self.extension / "out/extension.js").read_text())
         self.assertIn("viewId", (self.extension / "out/extension.js").read_text())
         self.assertEqual((self.extension / patch.ASSET).read_bytes(),

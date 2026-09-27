@@ -17,8 +17,8 @@ def main() -> None:
         if not (config.enabled or config.test_build_enabled or config.search_listing_enabled):
             print("{}")
             return
-        payload = sys.stdin.read(5_000_001)
-        if len(payload) > 5_000_000:
+        payload = sys.stdin.read(16_000_001)
+        if len(payload) > 16_000_000:
             print("{}")
             return
         event = json.loads(payload)

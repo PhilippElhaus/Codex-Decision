@@ -2,7 +2,9 @@
 
 The companion extension connects the Jev button in the Codex composer to the installed plugin. The button opens three checkboxes. The menu stays open while selections change; click outside or press Escape to close it. Clear all checkboxes to turn Jev off. The extension checks Jev health and reads recent decision metadata.
 
-The button stays on the toolbar row and beside the model control when Codex shows icon-only controls or the gap closes. Once it becomes a dot, it stays a dot as the pane gets narrower. Gray means off, green means connected, red means unavailable, and blue means a request is in progress. `OBS` marks observe mode when the full label fits. The tooltip shows activity since the current composer view opened. A new view starts with empty counters.
+The button stays on the toolbar row and beside the model control when Codex shows icon-only controls or the gap closes. Once it becomes a dot, it stays a dot as the pane gets narrower. Gray means off, green means connected, red means unavailable, and blue means a request is in progress. `OBS` marks observe mode when the full label fits. The tooltip shows activity for the current composer view, with a new view starting at zero. Recent actions show bold negative percentages for reductions. The token total estimates model-visible text saved from the removed character count using [OpenAI's rough four-characters-per-token rule](https://developers.openai.com/api/docs/concepts#tokens); it is not a billed-token count. A failed health check shows a short reason and Retry button, and the extension rechecks failed connections every 30 seconds.
+
+![Jev unavailable tooltip with a timeout reason and Retry button](../images/jev-unavailable.png)
 
 Set `codexJev.dataDirectory` to the installed `PLUGIN_DATA` directory. The extension has no machine-specific default. See [installation](../setup/setup_installation.md).
 

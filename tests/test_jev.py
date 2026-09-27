@@ -171,6 +171,49 @@ class SafetyTests(unittest.TestCase):
         self.assertEqual(result.reason, "sensitive")
         evaluator.assert_not_called()
 
+    def test_large_output_keeps_original_if_any_chunk_has_unique_value(self):
+        routine = PROGRESS * 12
+        output = routine[:len(routine) // 4] + "receipt id: fixture-only-9XQ7\n" + routine[len(routine) // 4:]
+        self.assertNotIn("receipt id:", jev.sample(output, settings().sample_chars))
+        calls = []
+        def evaluate(state, _config):
+            calls.append(state)
+            return BAD if "receipt id:" in state["output_sample"] else GOOD
+        result = jev.decide(event(output), settings(), evaluator=evaluate, simulate=True)
+        self.assertEqual(result.reason, "jev_keep")
+        self.assertGreater(len(calls), 1)
+        self.assertEqual("".join(state["output_sample"] for state in sorted(calls, key=lambda state: state["chunk_index"])), output)
+
+    def test_chunk_limit_keeps_large_output_without_partial_judgment(self):
+        output = PROGRESS * 120
+        evaluator = mock.Mock(return_value=GOOD)
+        with mock.patch.object(jev, "MAX_CHUNKS", 2):
+            result = jev.decide(event(output), settings(), evaluator=evaluator, simulate=True)
+        self.assertEqual(result.reason, "too_many_chunks")
+        evaluator.assert_not_called()
+
+    def test_multibyte_and_escaped_text_is_covered_without_oversized_chunks(self):
+        output = 'Compiling 狐🦊 "quoted"\tmodule 001 ... done\n' * 1000
+        seen = []
+        result = jev.decide(event(output), settings(),
+                            evaluator=lambda state, _config: seen.append(state) or GOOD,
+                            simulate=True)
+        self.assertEqual(result.status, "replace")
+        ordered = sorted(seen, key=lambda state: state["chunk_index"])
+        self.assertEqual("".join(state["output_sample"] for state in ordered), output)
+        self.assertTrue(all(len(json.dumps(state["output_sample"], ensure_ascii=False).encode())
+                            <= jev.CHUNK_JSON_BYTES for state in ordered))
+
+    def test_chunk_request_failure_keeps_original(self):
+        output = PROGRESS * 8
+        def evaluate(state, _config):
+            if state["chunk_index"] == 2:
+                raise OSError("Jev unavailable")
+            return GOOD
+        result = jev.decide(event(output), settings(), evaluator=evaluate, simulate=True)
+        self.assertEqual(result.reason, "evaluator_unavailable")
+        self.assertIsNone(result.hook_output)
+
     def test_missing_failed_or_malformed_evaluator_keeps_original(self):
         for evaluator in (None, lambda _state, _config: 1 / 0, lambda _state, _config: {"routine_noise": 0.99}, lambda _state, _config: {**GOOD, "one_off_value": 2.0}):
             with self.subTest(evaluator=evaluator):
@@ -274,6 +317,12 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(set(sent["questions"]), set(jev.SCORE_NAMES))
         self.assertTrue(all(question["type"] == "noul" for question in sent["questions"].values()))
         self.assertEqual(scores, GOOD)
+
+    def test_oversized_jev_payload_is_rejected_before_http(self):
+        with mock.patch.object(jev.request, "urlopen") as urlopen:
+            with self.assertRaisesRegex(ValueError, "context budget"):
+                jev.jev_request({"output_sample": "x" * 30_000}, settings(), "test-key")
+        urlopen.assert_not_called()
 
     def test_private_env_file_is_read_without_shell_expansion(self):
         with tempfile.TemporaryDirectory() as directory:

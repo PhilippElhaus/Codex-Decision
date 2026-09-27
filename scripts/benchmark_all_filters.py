@@ -309,7 +309,7 @@ def invoke_hook(hook: Path, data: Path, item: dict, enabled: bool) -> tuple[dict
     offset = log.stat().st_size if log.exists() else 0
     started = time.perf_counter()
     completed = subprocess.run([sys.executable, str(hook)], input=json.dumps(item), text=True,
-                               capture_output=True, timeout=12, check=True,
+                               capture_output=True, timeout=70, check=True,
                                env={**os.environ, "PLUGIN_DATA": str(data)})
     wall_ms = (time.perf_counter() - started) * 1000
     if completed.stderr:
@@ -339,10 +339,11 @@ def run_live(rounds: int = 3, hook: Path = HOOK) -> dict:
             item = event(source["command"], source["output"], f"live-{index}", transcript if source["task"] else None)
             _, _, off_ms = invoke_hook(hook, data, item, False)
             response, records, wall_ms = invoke_hook(hook, data, item, True)
-            if len(records) not in (1, 2) or records[-1]["filter"] != source["route"]:
+            if not records or records[-1]["filter"] != source["route"]:
                 raise AssertionError(f"wrong route for {source['category']}: {records}")
-            if len(records) == 2 and records[0]["status"] != "calling":
-                raise AssertionError("Jev request was not recorded")
+            if any(row["status"] != "calling" or row["filter"] != source["route"]
+                   for row in records[:-1]):
+                raise AssertionError(f"unexpected Jev request records: {records}")
             status = records[-1]["status"]
             if status == "replace" and response.get("continue") is not False or status != "replace" and response:
                 raise AssertionError(f"invalid hook response for {source['category']}: {status}")

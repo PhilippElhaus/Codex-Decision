@@ -21,6 +21,7 @@ test("composer bridge selects integrations and reports view-scoped activity with
   const commands = new Map();
   let mode = "replace";
   let health = { ok: true, model: "jev-1.13.0" };
+  let probes = 0;
   let configListener;
   const fake = {
     window: {
@@ -35,7 +36,7 @@ test("composer bridge selects integrations and reports view-scoped activity with
   };
   const originalLoad = Module._load;
   const originalHealth = core.checkHealth;
-  core.checkHealth = async () => health;
+  core.checkHealth = async () => { probes += 1; return health; };
   Module._load = function (request, parent, isMain) {
     if (request === "vscode") return fake;
     return originalLoad.call(this, request, parent, isMain);
@@ -74,8 +75,19 @@ test("composer bridge selects integrations and reports view-scoped activity with
     }) + "\n");
     await until(async () => (await bridge({ action: "status", viewId: "view-one" })).stats.replaced === 1);
     const first = await bridge({ action: "status", viewId: "view-one" });
-    assert.match(first.history[0], /replaced · Bash.*92%/);
+    assert.match(first.history[0], /replaced · Bash.*-92%/);
     assert.equal(first.stats.completed, 1);
+    assert.equal(first.stats.savedChars, 10608);
+    assert.equal(first.stats.estimatedTokensSaved, 2652);
+    const beforeFailureProbe = probes;
+    await fs.appendFile(path.join(directory, "events.jsonl"), JSON.stringify({
+      status: "keep", reason: "evaluator_unavailable", tool: "Bash",
+      original_chars: 20000, capsule_chars: 0, elapsed_ms: 120,
+    }) + "\n");
+    await until(async () => probes > beforeFailureProbe &&
+      (await bridge({ action: "status", viewId: "view-one" })).stats.completed === 2);
+    assert.equal((await bridge({ action: "status", viewId: "view-one" })).health.ok, true);
+    assert.equal((await bridge({ action: "status", viewId: "view-one" })).stats.estimatedTokensSaved, 2652);
 
     await Promise.all([
       bridge({ action: "setSelection", feature: "output", enabled: false, viewId: "view-one" }),
@@ -87,11 +99,14 @@ test("composer bridge selects integrations and reports view-scoped activity with
     assert.equal(selected.stats.replaced, 1);
     const newView = await bridge({ action: "status", viewId: "view-two" });
     assert.equal(newView.stats.completed, 0);
+    assert.equal(newView.stats.estimatedTokensSaved, 0);
     assert.deepEqual(newView.history, []);
 
     health = { ok: false, reason: "JEV_HTTP_ERROR" };
     await commands.get("codexJev.checkConnection")();
     assert.equal((await bridge({ action: "status", viewId: "view-two" })).health.reason, "JEV_HTTP_ERROR");
+    health = { ok: true, model: "jev-1.13.0" };
+    assert.equal((await bridge({ action: "retryConnection", viewId: "view-two" })).health.ok, true);
   } finally {
     for (const disposable of context.subscriptions.reverse()) disposable.dispose();
     await fs.rm(directory, { recursive: true, force: true });

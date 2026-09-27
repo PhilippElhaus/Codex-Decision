@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 import hashlib
 import json
@@ -31,6 +32,12 @@ FAILURE = re.compile(
     re.IGNORECASE | re.MULTILINE,
 )
 SAFE_KEY = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
+# A serialized byte is a conservative upper bound for a text token. Keep the
+# entire request below Jev's 32k state + longest-question limit, with headroom.
+MAX_JEV_REQUEST_BYTES = 28_000
+CHUNK_JSON_BYTES = 20_000
+MAX_CHUNKS = 128
+CHUNK_WORKERS = 12
 
 
 def load_api_key(data_dir: Path) -> str:
@@ -187,9 +194,9 @@ def jev_request(state: dict, config: Config, api_key: str) -> dict[str, float]:
     questions = {
         "routine_noise": {
             "type": "noul",
-            "instructions": "Is `output_sample` mostly repeated routine progress or listing noise, while the essential outcome remains clear from its beginning and end?",
+            "instructions": "Is `output_sample` mostly repeated routine progress or listing noise, with no unique result or diagnostic in it?",
             "criteria": {
-                "true": "Mostly repeated progress; a short beginning/end excerpt conveys the outcome.",
+                "true": "Mostly repeated progress or listing text; no detail in this portion is needed.",
                 "false": "Contains substantive facts, diagnostic detail, search matches, or data that may matter individually.",
             },
         },
@@ -279,7 +286,9 @@ def jev_choice_request(state: dict, questions: dict, config: Config, api_key: st
 def _request_answers(state: dict, config: Config, api_key: str, questions: dict) -> dict:
     if not api_key:
         raise ValueError("Jev API key is missing")
-    payload = json.dumps({"state": state, "model": config.model, "questions": questions}).encode()
+    payload = json.dumps({"state": state, "model": config.model, "questions": questions}, ensure_ascii=False).encode()
+    if len(payload) > MAX_JEV_REQUEST_BYTES:
+        raise ValueError("Jev request exceeds safe context budget")
     req = request.Request(
         ENDPOINT,
         data=payload,
@@ -349,6 +358,66 @@ def capsule(output: str, original_path: str) -> str:
     )
 
 
+def _output_chunks(output: str) -> list[str] | None:
+    """Cover every character in bounded, JSON-safe pieces; reject excessive fan-out."""
+    chunks = []
+    start = 0
+    while start < len(output):
+        low, high = start + 1, min(len(output), start + CHUNK_JSON_BYTES)
+        end = low
+        while low <= high:
+            middle = (low + high) // 2
+            size = len(json.dumps(output[start:middle], ensure_ascii=False).encode())
+            if size <= CHUNK_JSON_BYTES:
+                end = middle
+                low = middle + 1
+            else:
+                high = middle - 1
+        if end == start:
+            return None
+        chunks.append(output[start:end])
+        if len(chunks) > MAX_CHUNKS:
+            return None
+        start = end
+    return chunks
+
+
+def _valid_scores(scores: dict[str, float]) -> bool:
+    return (isinstance(scores, dict) and set(scores) == set(SCORE_NAMES)
+            and all(type(value) in (float, int) and 0 <= value <= 1 for value in scores.values()))
+
+
+def _evaluate_output(state: dict, output: str, config: Config,
+                     evaluator: Callable[[dict, Config], dict[str, float]]) -> dict[str, float] | None:
+    # The short path preserves the single-request behavior for ordinary results.
+    if len(json.dumps(output, ensure_ascii=False).encode()) <= CHUNK_JSON_BYTES:
+        scores = evaluator(state, config)
+        if not _valid_scores(scores):
+            raise ValueError("invalid evaluator scores")
+        return scores
+    chunks = _output_chunks(output)
+    if chunks is None:
+        return None
+    count = len(chunks)
+
+    def evaluate(item: tuple[int, str]) -> dict[str, float]:
+        index, chunk = item
+        chunk_state = {**state, "output_sample": chunk, "chunk_index": index + 1,
+                       "chunk_count": count}
+        scores = evaluator(chunk_state, config)
+        if not _valid_scores(scores):
+            raise ValueError("invalid evaluator scores")
+        return scores
+
+    with ThreadPoolExecutor(max_workers=CHUNK_WORKERS) as pool:
+        scores_by_chunk = list(pool.map(evaluate, enumerate(chunks)))
+    return {
+        "routine_noise": min(scores["routine_noise"] for scores in scores_by_chunk),
+        "needs_exact_text": max(scores["needs_exact_text"] for scores in scores_by_chunk),
+        "one_off_value": max(scores["one_off_value"] for scores in scores_by_chunk),
+    }
+
+
 def decide(
     event: dict,
     config: Config,
@@ -394,11 +463,11 @@ def decide(
         "output_chars": size,
     }
     try:
-        scores = evaluator(state, config)
-        if set(scores) != set(SCORE_NAMES) or any(type(v) not in (float, int) or not 0 <= v <= 1 for v in scores.values()):
-            raise ValueError("invalid evaluator scores")
+        scores = _evaluate_output(state, output, config, evaluator)
     except Exception:
         return result("keep", "evaluator_unavailable", size)
+    if scores is None:
+        return result("skip", "too_many_chunks", size)
     if not candidate(scores):
         return result("keep", "jev_keep", size, scores=scores)
     if config.mode == "observe":

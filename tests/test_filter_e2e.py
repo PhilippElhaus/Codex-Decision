@@ -24,6 +24,7 @@ def mock_urlopen(request, timeout=None):
     payload = json.loads(request.data)
     with open(os.environ["JEV_MOCK_CALLS"], "a", encoding="utf-8") as log:
         log.write(json.dumps({"state": payload["state"], "questions": list(payload["questions"]),
+                              "request_bytes": len(request.data),
                               "auth_ok": request.get_header("Authorization") == "Bearer synthetic-test-key"}) + "\\n")
     if os.environ.get("JEV_MOCK_FAILURE") == "exit":
         raise OSError("Synthetic Jev outage")
@@ -88,7 +89,7 @@ class OversizeUnitTests(unittest.TestCase):
     def test_near_limit_jev_state_is_bounded_for_all_routes(self):
         settings = jev.Config(enabled=True, test_build_enabled=True, search_listing_enabled=True)
         fixtures = (
-            ("output", jev.decide, event("echo progress", output_fixture() * 105, "large-output")),
+            ("output", jev.decide, event("echo progress", output_fixture() * 150, "large-output")),
             ("test_build", test_build.decide_test_build,
              event("python3 -m unittest discover -v", test_fixture() * 105, "large-test")),
             ("search_listing", search_listing.decide_search_listing,
@@ -107,9 +108,11 @@ class OversizeUnitTests(unittest.TestCase):
                     return SCORES
                 result = decide(item, settings, evaluator=evaluate, simulate=True)
                 self.assertEqual(result.status, "replace")
-                self.assertEqual(len(seen), 1)
-                state = seen[0][0]
-                self.assertLess(len(json.dumps(state)), 20_000)
+                self.assertGreater(len(seen), 1 if name == "output" else 0)
+                if name == "output":
+                    ordered = sorted((state for state, _ in seen), key=lambda state: state["chunk_index"])
+                    self.assertEqual("".join(state["output_sample"] for state in ordered), item["tool_response"])
+                self.assertTrue(all(len(json.dumps(state)) < 23_000 for state, _ in seen))
                 self.assertLess(result.capsule_chars, result.original_chars * 0.7)
 
 
@@ -192,6 +195,19 @@ class CommandHookEndToEndTests(unittest.TestCase):
         self.assertEqual(self.jev_calls(), [])
         self.assertFalse((self.data / "outputs").exists())
         self.assertTrue(all(row["status"] == "skip" for row in self.records()))
+
+    def test_large_output_is_checked_in_bounded_chunks_and_saved_exactly(self):
+        item = event("echo progress", output_fixture() * 12, "chunked-output")
+        feedback = self.invoke(item)
+        self.assertIs(feedback["continue"], False)
+        calls = self.jev_calls()
+        self.assertGreater(len(calls), 1)
+        ordered = sorted(calls, key=lambda call: call["state"]["chunk_index"])
+        self.assertEqual("".join(call["state"]["output_sample"] for call in ordered), item["tool_response"])
+        self.assertTrue(all(call["auth_ok"] for call in calls))
+        self.assertTrue(all(call["request_bytes"] <= jev.MAX_JEV_REQUEST_BYTES for call in calls))
+        original = next((self.data / "outputs").rglob("*.txt"))
+        self.assertEqual(original.read_text(), item["tool_response"])
 
     def test_jev_error_or_invalid_json_fails_open_on_each_route(self):
         fixtures = [

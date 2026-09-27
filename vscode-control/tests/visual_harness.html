@@ -24,15 +24,16 @@
     document.documentElement.style.setProperty("--screenshot-offset", `${Math.max(0, outerHeight - innerHeight)}px`);
     const demo = new URLSearchParams(location.search).get("demo") || "tooltip";
     const history = [
-      "replaced · test/build · 6,367 chars · 1,2s · 95%",
+      "replaced · test/build · 6,367 chars · -95%",
     ];
     window.acquireVsCodeApi = () => ({ postMessage(request) {
       queueMicrotask(() => window.dispatchEvent(new MessageEvent("message", { data: {
         type: "codex-jev-reply", id: request.id,
         status: {
-          enabled: true, outputEnabled: true, testBuildEnabled: true, searchListingEnabled: true, health: { ok: true, model: "jev-1.13.0" },
+          enabled: true, outputEnabled: true, testBuildEnabled: true, searchListingEnabled: true,
+          health: demo === "unavailable" ? { ok: false, reason: "JEV_TIMEOUT" } : { ok: true, model: "jev-1.13.0" },
           busy: demo === "pulse", mode: "replace", recent: history[0], history,
-          stats: { calls: 1, candidates: 0, kept: 0, replaced: 1, checkedChars: 6367, elapsedMs: 1263, completed: 1 },
+          stats: { calls: 1, candidates: 0, kept: 0, replaced: 1, checkedChars: 6367, savedChars: 6058, estimatedTokensSaved: 1515, elapsedMs: 1263, completed: 1 },
         },
       } })));
     } });

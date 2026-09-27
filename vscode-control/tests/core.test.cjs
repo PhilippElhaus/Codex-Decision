@@ -6,7 +6,7 @@ const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
 const {
-  activitySummary, checkHealth, decisionSummary, formatDuration, outcomeLine, parseHealthOutput, readApiKey, readConfig,
+  activitySummary, checkHealth, decisionSummary, estimateTokensSaved, formatDuration, outcomeLine, parseHealthOutput, readApiKey, readConfig,
   readEventOffset, readEventsSince, readLatestEvent, readRecentOutcomes, writeEnabled, writeMode, writeSelection,
 } = require("../core");
 
@@ -93,10 +93,10 @@ test("recent decision is read from a bounded log tail", async () => {
     assert.equal(event.reason, "small");
     const decision = await readLatestEvent(directory, { informativeOnly: true });
     assert.equal(decision.status, "replace");
-    assert.match(decisionSummary(decision), /replaced Bash output.*12[,.]345 chars, 480 ms/);
+    assert.match(decisionSummary(decision), /replaced Bash output.*12[,.]345 chars$/);
     const recent = await readRecentOutcomes(directory);
     assert.equal(recent.outcomes.length, 1);
-    assert.match(outcomeLine(recent.outcomes[0]), /replaced · Bash · 12[,.]345 chars · 480 ms · 92%/);
+    assert.match(outcomeLine(recent.outcomes[0]), /replaced · Bash · 12[,.]345 chars · -92%/);
   } finally {
     await fs.rm(directory, { recursive: true, force: true });
   }
@@ -108,18 +108,21 @@ test("summary keeps three signals and missing capsule sizes do not imply savings
   assert.equal(activitySummary({ calls: 0, replaced: 0, completed: 0, elapsedMs: 0 }),
     "0 checked · 0 replaced · — avg");
   assert.equal(outcomeLine({ status: "replace", tool: "Bash", original_chars: 10000, capsule_chars: null, elapsed_ms: 100 }),
-    "replaced · Bash · 10,000 chars · 100 ms");
+    "replaced · Bash · 10,000 chars");
   assert.equal(outcomeLine({ filter: "test_build", status: "replace", tool: "Bash", original_chars: 10000, capsule_chars: 1000, elapsed_ms: 4 }),
-    "replaced · test/build · 10,000 chars · 4 ms · 90%");
+    "replaced · test/build · 10,000 chars · -90%");
   assert.equal(outcomeLine({ filter: "test_build", status: "replace", tool: "Bash", original_chars: 6367, capsule_chars: 309, elapsed_ms: 1263 }),
-    "replaced · test/build · 6,367 chars · 1,2s · 95%");
+    "replaced · test/build · 6,367 chars · -95%");
   assert.equal(activitySummary({ completed: 1, replaced: 1, elapsedMs: 1263 }),
     "1 checked · 1 replaced · 1,2s avg");
   assert.equal(formatDuration(999), "999 ms");
   assert.equal(formatDuration(1000), "1,0s");
   assert.equal(outcomeLine({ filter: "search_listing", status: "replace", tool: "Bash", original_chars: 5000, capsule_chars: 1200, elapsed_ms: 1263 }),
-    "replaced · search/listing · 5,000 chars · 1,2s · 76%");
+    "replaced · search/listing · 5,000 chars · -76%");
   assert.match(decisionSummary({ filter: "search_listing", status: "replace", tool: "Bash", original_chars: 5000, elapsed_ms: 1263 }), /replaced search\/listing Bash output/);
+  assert.equal(estimateTokensSaved(6058), 1515);
+  assert.equal(estimateTokensSaved(0), 0);
+  assert.equal(estimateTokensSaved(NaN), 0);
 });
 
 test("incremental event reader keeps incomplete lines for the next poll", async () => {
@@ -230,7 +233,11 @@ test("health check reads the private .env and keeps the key out of status", asyn
     assert.deepEqual(await checkHealth(directory, async () => ({ ok: false, status: 401 })),
       { ok: false, reason: "JEV_HTTP_401" });
     assert.deepEqual(await checkHealth(directory, async () => { throw new Error("network"); }),
-      { ok: false, reason: "JEV_UNAVAILABLE" });
+      { ok: false, reason: "JEV_NETWORK_ERROR" });
+    assert.deepEqual(await checkHealth(directory, async () => { throw new DOMException("timed out", "TimeoutError"); }),
+      { ok: false, reason: "JEV_TIMEOUT" });
+    assert.deepEqual(await checkHealth(directory, async () => ({ ok: true, text: async () => "not json" })),
+      { ok: false, reason: "JEV_INVALID_RESPONSE" });
     await fs.writeFile(path.join(directory, ".env"), "JEV_API_KEY=short\n");
     assert.deepEqual(await checkHealth(directory, async () => { throw new Error("must not call"); }),
       { ok: false, reason: "JEV_KEY_MISSING" });

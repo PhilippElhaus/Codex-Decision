@@ -68,7 +68,7 @@ def marketplace_path_bridge() -> str:
 BRIDGE = (
     'let a=e.onDidReceiveMessage(u=>{'
     'if(u&&u.type==="codex-jev"){'
-    'if(u.action!=="status"&&u.action!=="setSelection")return;'
+    'if(u.action!=="status"&&u.action!=="setSelection"&&u.action!=="retryConnection")return;'
     'if(u.action==="setSelection"&&typeof u.enabled!=="boolean")return;'
     'if(u.action==="setSelection"&&!(["output","test_build","search_listing"].includes(u.feature)))return;'
     'if(u.viewId!==undefined&&(typeof u.viewId!=="string"||!/^[-\\w:]{1,96}$/.test(u.viewId)))return;'

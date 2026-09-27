@@ -12,7 +12,7 @@ Review and trust the bundled hook when Codex prompts. Start a new Codex thread a
 For VS Code, download the VSIX from the [latest release](https://github.com/PhilippElhaus/Codex-Jev/releases/latest), then install it:
 
 ```bash
-code --install-extension codex-jev-control-0.2.6.vsix --force
+code --install-extension codex-jev-control-0.2.7.vsix --force
 ```
 
 Set `codexJev.dataDirectory` to the installed plugin's absolute `PLUGIN_DATA` directory. The [credential setup](setup_credentials.md) explains that directory and the Jev key. Apply the [version-pinned Codex composer patch](../../vscode-control/README.md#install-the-companion-extension).
