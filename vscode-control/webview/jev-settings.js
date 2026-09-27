@@ -58,6 +58,7 @@
   }
 
   function nativeContent(voice) {
+    if (hiddenContent?.isConnected) return hiddenContent;
     const heading = [...document.querySelectorAll("h1,h2")]
       .find((item) => item.textContent.trim() === "Voice" && !voice.contains(item) && visible(item));
     if (heading) {
@@ -66,6 +67,11 @@
       let branch = heading;
       while (branch.parentElement && !branch.parentElement.contains(voice)) branch = branch.parentElement;
       if (branch !== heading) return branch;
+    }
+    const content = voice.closest('.app-shell-left-panel')?.nextElementSibling;
+    if (content && !content.contains(voice) && visible(content)) {
+      const page = content.firstElementChild;
+      return page && visible(page) ? page : content;
     }
     return [...document.querySelectorAll('main,[role="tabpanel"]')]
       .find((item) => !item.contains(voice) && visible(item)) || null;
