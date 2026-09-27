@@ -5,11 +5,13 @@
       ["routine_min", "Routine noise, minimum", "Act only when Jev rates routine noise at least this high."],
       ["exact_max", "Exact text needed, maximum", "Keep output if the chance exact lines matter is higher."],
       ["unique_max", "Unique value, maximum", "Keep output if the chance of a one-time value is higher."],
+      ["confidence_min", "Confidence, minimum", "Minimum confidence in Jev's filter-or-keep decision; uncertain results stay intact."],
     ]],
     ["test_build", "Test/build logs", [
       ["routine_min", "Routine lines, minimum", "Trim only when Jev rates omitted lines as routine."],
       ["exact_max", "Exact test text needed, maximum", "Keep lines when exact names or values may matter."],
       ["unique_max", "Unique value, maximum", "Keep lines when a unique result may be present."],
+      ["confidence_min", "Confidence, minimum", "Minimum confidence in Jev's filter-or-keep decision; uncertain results stay intact."],
     ]],
     ["search_listing", "Search/listing", [
       ["summarize_probability_min", "Summarize probability, minimum", "Minimum probability for a group to be summarized."],
@@ -141,6 +143,7 @@
       [data-codex-jev-settings="true"][aria-selected="true"] { background: var(--vscode-list-activeSelectionBackground, #303030) !important; color: var(--vscode-list-activeSelectionForeground, #f3f3f3) !important; }
       nav[aria-label="Settings"]:has([data-codex-jev-settings="true"][aria-selected="true"]) button[aria-label="Voice"] { background: transparent !important; }
       #codex-jev-settings-panel { box-sizing: border-box; width: 100%; max-width: 740px; margin: 0 auto; padding: 28px 24px 56px; color: var(--vscode-foreground, #d0d0d0); font: 13px var(--vscode-font-family, sans-serif); }
+      #codex-jev-settings-panel { container-type: inline-size; }
       #codex-jev-settings-panel * { box-sizing: border-box; }
       #codex-jev-settings-panel .header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
       #codex-jev-settings-panel h1 { font-size: 24px; margin: 0; }
@@ -151,10 +154,13 @@
       #codex-jev-settings-panel .metric span { display: block; margin-top: 5px; color: var(--vscode-descriptionForeground, #999); font-size: 11px; line-height: 1.3; }
       #codex-jev-settings-panel p, #codex-jev-settings-panel small { color: var(--vscode-descriptionForeground, #999); line-height: 1.5; }
       #codex-jev-settings-panel .field { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 11px 0; }
+      #codex-jev-settings-panel .threshold-field { display: grid; grid-template-columns: minmax(0, 1fr) minmax(160px, 300px); }
+      #codex-jev-settings-panel .threshold-controls { display: flex; align-items: center; gap: 12px; min-width: 0; }
       #codex-jev-settings-panel .field label { max-width: 540px; }
       #codex-jev-settings-panel small { display: block; margin-top: 3px; }
       #codex-jev-settings-panel input, #codex-jev-settings-panel select { background: var(--vscode-input-background, #181818); color: var(--vscode-input-foreground, #ddd); border: 1px solid var(--vscode-input-border, #555); border-radius: 9px; padding: 7px 9px; font: inherit; }
-      #codex-jev-settings-panel input[type=number] { width: 76px; }
+      #codex-jev-settings-panel input[type=number] { width: 76px; flex: none; }
+      #codex-jev-settings-panel input[type=range] { width: 100%; min-width: 0; flex: 1; padding: 0; border: 0; background: transparent; accent-color: var(--vscode-button-background, #83bcf7); cursor: pointer; }
       #codex-jev-settings-panel input[type=password] { width: min(100%, 340px); }
       #codex-jev-settings-panel button { min-height: 36px; padding: 7px 12px; border: 1px solid var(--vscode-contrastBorder, #555); border-radius: 10px; background: var(--vscode-button-secondaryBackground, #282828); color: var(--vscode-button-secondaryForeground, #e5e5e5); font: inherit; cursor: pointer; }
       #codex-jev-settings-panel button:hover { background: var(--vscode-button-secondaryHoverBackground, #363636); }
@@ -168,6 +174,8 @@
       #codex-jev-settings-panel .error { color: var(--vscode-errorForeground, #f48771); }
       #codex-jev-settings-message { min-height: 22px; margin-top: 12px; }
       @media (max-width: 650px) { #codex-jev-settings-panel .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } #codex-jev-settings-panel .field { display: block; } #codex-jev-settings-panel input, #codex-jev-settings-panel select { margin-top: 8px; } }
+      @container (max-width: 520px) { #codex-jev-settings-panel .threshold-field { display: grid; grid-template-columns: minmax(0, 1fr); gap: 7px; } #codex-jev-settings-panel .threshold-controls { width: 100%; } }
+      @container (max-width: 320px) { #codex-jev-settings-panel .threshold-controls { gap: 8px; } #codex-jev-settings-panel input[type=number] { width: 68px; } }
     `;
     document.head.append(style);
     panel = document.createElement("div");
@@ -194,7 +202,25 @@
         input.step = "1";
         input.required = true;
         input.title = help;
-        row.append(caption, input);
+        row.classList.add("threshold-field");
+        const controls = document.createElement("div");
+        controls.className = "threshold-controls";
+        const slider = document.createElement("input");
+        slider.id = `${id}-slider`;
+        slider.type = "range";
+        slider.min = "0";
+        slider.max = "100";
+        slider.step = "1";
+        slider.title = help;
+        slider.setAttribute("aria-label", `${heading}: ${label} slider`);
+        slider.addEventListener("input", () => { input.value = slider.value; });
+        input.addEventListener("input", () => {
+          if (input.value !== "" && Number.isInteger(Number(input.value)) && Number(input.value) >= 0 && Number(input.value) <= 100) {
+            slider.value = input.value;
+          }
+        });
+        controls.append(slider, input);
+        row.append(caption, controls);
         thresholds.append(row);
       }
     }
@@ -240,8 +266,9 @@
       panel.querySelector("#codex-jev-settings-mode").value = reply.config?.mode || "replace";
       for (const [hook, , fields] of sections) {
         for (const [name] of fields) {
-          panel.querySelector(`#codex-jev-settings-${hook}-${name}`).value =
-            reply.config?.thresholds?.[hook]?.[name] ?? "";
+          const value = reply.config?.thresholds?.[hook]?.[name] ?? "";
+          panel.querySelector(`#codex-jev-settings-${hook}-${name}`).value = value;
+          panel.querySelector(`#codex-jev-settings-${hook}-${name}-slider`).value = value;
         }
       }
     } else if (action === "settingsTest" && reply.action === "tested") {

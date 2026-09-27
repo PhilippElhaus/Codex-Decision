@@ -16,7 +16,8 @@ import jev  # noqa: E402
 import post_tool_use  # noqa: E402
 import test_build  # noqa: E402
 
-GOOD = {"routine_noise": 0.98, "needs_exact_text": 0.02, "one_off_value": 0.01}
+GOOD = {"routine_noise": 0.98, "needs_exact_text": 0.02, "one_off_value": 0.01,
+        "filter_approved": True, "filter_confidence": 0.96}
 
 
 def hook_event(command, output, call="test-build-call"):
@@ -80,10 +81,12 @@ class ReductionTests(unittest.TestCase):
         return jev.Config(test_build_enabled=True, **changes)
 
     def test_threshold_can_keep_ambiguous_routine_lines(self):
-        scores = {"routine_noise": .93, "needs_exact_text": .12, "one_off_value": .09}
+        scores = {**GOOD, "routine_noise": .93, "needs_exact_text": .12, "one_off_value": .09}
         self.assertTrue(test_build.jev_approves_omission(scores))
         strict = self.settings(thresholds={"test_build": {"routine_min": 96}})
         self.assertFalse(test_build.jev_approves_omission(scores, strict))
+        self.assertFalse(test_build.jev_approves_omission({**scores, "filter_confidence": .69}))
+        self.assertFalse(test_build.jev_approves_omission({**scores, "filter_approved": False}))
 
     def decide(self, event, config, storage=None, evaluator=lambda *_: GOOD):
         return test_build.decide_test_build(event, config, evaluator=evaluator, storage=storage)
@@ -176,13 +179,13 @@ class ReductionTests(unittest.TestCase):
 
     def test_test_build_thresholds_account_for_whitelisted_pass_lines(self):
         self.assertTrue(test_build.jev_approves_omission({
-            "routine_noise": 0.97, "needs_exact_text": 0.09, "one_off_value": 0.15,
+            **GOOD, "routine_noise": 0.97, "needs_exact_text": 0.09, "one_off_value": 0.15,
         }))
         self.assertFalse(test_build.jev_approves_omission({
-            "routine_noise": 0.97, "needs_exact_text": 0.21, "one_off_value": 0.15,
+            **GOOD, "routine_noise": 0.97, "needs_exact_text": 0.21, "one_off_value": 0.15,
         }))
         self.assertFalse(test_build.jev_approves_omission({
-            "routine_noise": 0.97, "needs_exact_text": 0.09, "one_off_value": 0.21,
+            **GOOD, "routine_noise": 0.97, "needs_exact_text": 0.09, "one_off_value": 0.21,
         }))
 
     def test_jev_receives_only_bounded_candidate_and_retained_samples(self):
@@ -246,7 +249,9 @@ class AdapterTests(unittest.TestCase):
 
     def test_test_build_request_uses_jev_nouls_and_bounded_state(self):
         response = {"model": "jev-1.13.0", "answers": {
-            key: {"type": "noul", "noul": value} for key, value in GOOD.items()
+            **{key: {"type": "noul", "noul": GOOD[key]} for key in jev.SCORE_NAMES},
+            "filter_decision": {"type": "choice", "choice": "filter", "confidence": .96,
+                                "probabilities": {"filter": .98, "keep": .02}},
         }}
         fake = io.BytesIO(json.dumps(response).encode())
         state = {"kind": "test", "omitted_sample": "test_a ... ok", "retained_sample": "Ran 1 test\nOK"}
@@ -256,7 +261,7 @@ class AdapterTests(unittest.TestCase):
         self.assertEqual(scores, GOOD)
         payload = json.loads(urlopen.call_args.args[0].data)
         self.assertEqual(payload["state"], state)
-        self.assertEqual(set(payload["questions"]), set(GOOD))
+        self.assertEqual(set(payload["questions"]), set(jev.SCORE_NAMES) | {"filter_decision"})
         self.assertTrue(all("omitted_sample" in question["instructions"] for question in payload["questions"].values()))
 
     def test_test_build_filter_calls_jev_and_logs_scores(self):
@@ -327,7 +332,7 @@ class AdapterTests(unittest.TestCase):
             (root / "config.json").write_text('{"enabled":true,"test_build_enabled":true}')
             payload = hook_event("git status", "Compiling module 1\n" * 900)
             printed = io.StringIO()
-            scores = {"routine_noise": 0.99, "needs_exact_text": 0.01, "one_off_value": 0.01}
+            scores = {**GOOD, "routine_noise": 0.99, "needs_exact_text": 0.01, "one_off_value": 0.01}
             with (
                 mock.patch.dict(os.environ, {"PLUGIN_DATA": directory}),
                 mock.patch.object(sys, "stdin", io.StringIO(json.dumps(payload))),

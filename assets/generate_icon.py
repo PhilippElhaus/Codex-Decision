@@ -23,23 +23,15 @@ def render() -> Image.Image:
     draw.rounded_rectangle((10 * SCALE, 10 * SCALE, 246 * SCALE, 246 * SCALE),
                            radius=43 * SCALE, fill="#20252b", outline="#42505b", width=2 * SCALE)
 
-    # The track spans zero at the left to one at the right. The bars represent
-    # independent, deliberately unordered probabilities.
-    for center, probability in ((73, 0.42), (128, 0.89), (183, 0.64)):
+    # Each solid bar runs from zero at the left toward one at the right.
+    # Independent probabilities are deliberately unordered from top to bottom.
+    for center, probability in ((73, 0.28), (128, 0.91), (183, 0.60)):
         top = center * SCALE - BAR_HEIGHT // 2
         bottom = top + BAR_HEIGHT
-        draw.rounded_rectangle((START, top, END, bottom), radius=BAR_HEIGHT // 2,
-                               fill="#62707b")
         limit = round(START + (END - START) * probability)
-        gradient = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
-        pixels = ImageDraw.Draw(gradient)
-        for x in range(START, limit + 1):
-            fraction = (x - START) / (END - START)
-            pixels.line((x, top, x, bottom), fill=(*mix((239, 242, 245), (54, 149, 239), fraction), 255))
-        mask = Image.new("L", (SIZE, SIZE), 0)
-        ImageDraw.Draw(mask).rounded_rectangle((START, top, limit, bottom),
-                                                radius=BAR_HEIGHT // 2, fill=255)
-        image.paste(gradient, (0, 0), mask)
+        tint = min(1.0, max(0.0, (probability - 0.28) / (0.91 - 0.28)))
+        draw.rounded_rectangle((START, top, limit, bottom), radius=BAR_HEIGHT // 2,
+                               fill=mix((239, 242, 245), (54, 149, 239), tint))
     return image
 
 

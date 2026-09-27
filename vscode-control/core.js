@@ -9,8 +9,8 @@ const { promisify } = require("node:util");
 const runFile = promisify(execFile);
 const JEV_ENDPOINT = "https://api.typesafe.ai/v1/systemone";
 const DEFAULT_THRESHOLDS = Object.freeze({
-  output: { routine_min: 90, exact_max: 12, unique_max: 10 },
-  test_build: { routine_min: 90, exact_max: 20, unique_max: 20 },
+  output: { routine_min: 90, exact_max: 12, unique_max: 10, confidence_min: 70 },
+  test_build: { routine_min: 90, exact_max: 20, unique_max: 20, confidence_min: 70 },
   search_listing: { summarize_probability_min: 78, summarize_confidence_min: 70,
     drop_probability_min: 92, drop_confidence_min: 85 },
 });

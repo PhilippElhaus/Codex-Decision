@@ -24,8 +24,10 @@ import migrate_legacy_data  # noqa: E402
 import configure_key  # noqa: E402
 
 
-GOOD = {"routine_noise": 0.99, "needs_exact_text": 0.01, "one_off_value": 0.01}
-BAD = {"routine_noise": 0.01, "needs_exact_text": 0.99, "one_off_value": 0.99}
+GOOD = {"routine_noise": 0.99, "needs_exact_text": 0.01, "one_off_value": 0.01,
+        "filter_approved": True, "filter_confidence": 0.96}
+BAD = {"routine_noise": 0.01, "needs_exact_text": 0.99, "one_off_value": 0.99,
+       "filter_approved": False, "filter_confidence": 0.96}
 PROGRESS = "".join(f"Compiling module {n:05d} ... done\n" for n in range(400))
 
 
@@ -81,7 +83,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.mode, "replace")
 
     def test_output_threshold_changes_decision_and_invalid_values_fail(self):
-        scores = {"routine_noise": .94, "needs_exact_text": .08, "one_off_value": .05}
+        scores = {**GOOD, "routine_noise": .94, "needs_exact_text": .08, "one_off_value": .05}
         self.assertTrue(jev.candidate(scores))
         stricter = jev.Config(thresholds={"output": {"routine_min": 96}})
         self.assertFalse(jev.candidate(scores, stricter))
@@ -92,6 +94,13 @@ class ConfigTests(unittest.TestCase):
             path.write_text(json.dumps({"thresholds": {"output": {"routine_min": 101}}}))
             with self.assertRaises(ValueError):
                 jev.Config.from_file(path)
+
+    def test_filter_requires_jev_choice_and_its_reported_confidence(self):
+        self.assertFalse(jev.candidate({**GOOD, "filter_approved": False}))
+        self.assertFalse(jev.candidate({**GOOD, "filter_confidence": .69}))
+        self.assertTrue(jev.candidate({**GOOD, "filter_confidence": .70}))
+        strict = jev.Config(thresholds={"output": {"confidence_min": 97}})
+        self.assertFalse(jev.candidate(GOOD, strict))
 
     def test_invalid_configs_fail_closed(self):
         for invalid in ({"enabled": "true"}, {"test_build_enabled": "true"}, {"search_listing_enabled": "true"}, {"mode": "destroy"}, {"min_chars": 10}, {"unknown": 1}, {"timeout_seconds": 10}):
@@ -196,6 +205,19 @@ class SafetyTests(unittest.TestCase):
         self.assertEqual(result.reason, "jev_keep")
         self.assertGreater(len(calls), 1)
         self.assertEqual("".join(state["output_sample"] for state in sorted(calls, key=lambda state: state["chunk_index"])), output)
+
+    def test_large_output_keeps_original_if_one_chunk_has_low_choice_confidence(self):
+        output = PROGRESS * 8
+        result = jev.decide(event(output), settings(), evaluator=lambda state, _: {
+            **GOOD, "filter_confidence": .69 if state["chunk_index"] == 2 else .96,
+        }, simulate=True)
+        self.assertEqual(result.reason, "jev_keep")
+        self.assertEqual(result.scores["filter_confidence"], .69)
+        disagreed = jev.decide(event(output), settings(), evaluator=lambda state, _: {
+            **GOOD, "filter_approved": state["chunk_index"] != 2,
+        }, simulate=True)
+        self.assertEqual(disagreed.reason, "jev_keep")
+        self.assertIs(disagreed.scores["filter_approved"], False)
 
     def test_chunk_limit_keeps_large_output_without_partial_judgment(self):
         output = PROGRESS * 120
@@ -317,8 +339,12 @@ class ContractTests(unittest.TestCase):
             jev.assert_called_once()
             self.assertEqual(jev.call_args.args[2], "synthetic-test-key")
 
-    def test_type_safe_request_uses_three_nouls_and_checks_response(self):
-        response = {"model": "jev-1.13.0", "answers": {key: {"type": "noul", "noul": value} for key, value in GOOD.items()}}
+    def test_type_safe_request_uses_three_nouls_and_choice_confidence(self):
+        response = {"model": "jev-1.13.0", "answers": {
+            **{key: {"type": "noul", "noul": GOOD[key]} for key in jev.SCORE_NAMES},
+            "filter_decision": {"type": "choice", "choice": "filter", "confidence": .96,
+                                "probabilities": {"filter": .98, "keep": .02}},
+        }}
         fake = io.BytesIO(json.dumps(response).encode())
         with mock.patch.object(jev.request, "urlopen") as urlopen:
             urlopen.return_value.__enter__.return_value = fake
@@ -327,9 +353,19 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(req.full_url, jev.ENDPOINT)
         self.assertEqual(req.get_header("Authorization"), "Bearer test-key")
         sent = json.loads(req.data)
-        self.assertEqual(set(sent["questions"]), set(jev.SCORE_NAMES))
-        self.assertTrue(all(question["type"] == "noul" for question in sent["questions"].values()))
+        self.assertEqual(set(sent["questions"]), set(jev.SCORE_NAMES) | {"filter_decision"})
+        self.assertTrue(all(sent["questions"][name]["type"] == "noul" for name in jev.SCORE_NAMES))
+        self.assertEqual(sent["questions"]["filter_decision"]["type"], "choice")
         self.assertEqual(scores, GOOD)
+
+    def test_missing_choice_confidence_fails_closed(self):
+        answers = {key: {"type": "noul", "noul": GOOD[key]} for key in jev.SCORE_NAMES}
+        answers["filter_decision"] = {"type": "choice", "choice": "filter",
+                                      "probabilities": {"filter": .98, "keep": .02}}
+        with mock.patch.object(jev.request, "urlopen") as urlopen:
+            urlopen.return_value.__enter__.return_value = io.BytesIO(json.dumps({"answers": answers}).encode())
+            with self.assertRaisesRegex(ValueError, "filter decision"):
+                jev.jev_request({"output_sample": "text"}, settings(), "test-key")
 
     def test_oversized_jev_payload_is_rejected_before_http(self):
         with mock.patch.object(jev.request, "urlopen") as urlopen:

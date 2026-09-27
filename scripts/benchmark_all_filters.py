@@ -32,8 +32,10 @@ from benchmark_context import token_counter  # noqa: E402
 from live_key import copy_key  # noqa: E402
 
 HOOK = ROOT / "hooks" / "post_tool_use.py"
-GOOD = {"routine_noise": 0.98, "needs_exact_text": 0.01, "one_off_value": 0.01}
-UNCERTAIN = {"routine_noise": 0.59, "needs_exact_text": 0.50, "one_off_value": 0.50}
+GOOD = {"routine_noise": 0.98, "needs_exact_text": 0.01, "one_off_value": 0.01,
+        "filter_approved": True, "filter_confidence": 0.96}
+UNCERTAIN = {"routine_noise": 0.59, "needs_exact_text": 0.50, "one_off_value": 0.50,
+             "filter_approved": False, "filter_confidence": 0.25}
 ONE_OFF = {**GOOD, "one_off_value": 0.99}
 ROUTES = {"output": decide, "test_build": decide_test_build, "search_listing": decide_search_listing}
 

@@ -48,7 +48,7 @@ def invoke(hook: Path, data: Path, command: str, output: str, call: str, mode: s
     record = new_records[-1]
     assert record["filter"] == "test_build", record
     assert isinstance(record["scores"], dict) and set(record["scores"]) == {
-        "routine_noise", "needs_exact_text", "one_off_value",
+        "routine_noise", "needs_exact_text", "one_off_value", "filter_approved", "filter_confidence",
     }, record
     return response, record
 

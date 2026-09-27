@@ -10,8 +10,8 @@
   "model": "jev-1.13.0",
   "allow_mcp_replacement": false,
   "thresholds": {
-    "output": {"routine_min": 90, "exact_max": 12, "unique_max": 10},
-    "test_build": {"routine_min": 90, "exact_max": 20, "unique_max": 20},
+    "output": {"routine_min": 90, "exact_max": 12, "unique_max": 10, "confidence_min": 70},
+    "test_build": {"routine_min": 90, "exact_max": 20, "unique_max": 20, "confidence_min": 70},
     "search_listing": {"summarize_probability_min": 78, "summarize_confidence_min": 70, "drop_probability_min": 92, "drop_confidence_min": 85}
   }
 }

@@ -50,8 +50,8 @@
       if (keySaved) { needsKey = false; health = { ok: true, model: "jev-1.13.0" }; }
       const settings = request.action === "settingsRead" ? { action: "ready", hasKey: true,
         lifetime: { calls: 126, completed: 124, replaced: 41, estimatedTokensSaved: 87320, averageMs: 487 },
-        config: { mode: "replace", thresholds: { output: { routine_min: 90, exact_max: 20, unique_max: 30 },
-          test_build: { routine_min: 85, exact_max: 25, unique_max: 35 }, search_listing: {
+        config: { mode: "replace", thresholds: { output: { routine_min: 90, exact_max: 20, unique_max: 30, confidence_min: 70 },
+          test_build: { routine_min: 85, exact_max: 25, unique_max: 35, confidence_min: 70 }, search_listing: {
             summarize_probability_min: 78, summarize_confidence_min: 70, drop_probability_min: 92, drop_confidence_min: 85 } } } } :
         request.action === "settingsSave" ? { action: "saved", hasKey: true } :
           request.action === "settingsTest" ? { action: "tested", result: { ok: true, model: "jev-1.13.0" } } :
@@ -330,6 +330,29 @@
       await until(() => !openLogs.disabled, "Open logs request completes");
       await until(() => settingsScreen.querySelector("main").style.display === "none", "Voice content hidden on Jev page");
       check(settingsScreen.querySelector("#codex-jev-settings-output-routine_min").value === "90", "threshold loaded");
+      check(settingsScreen.querySelector("#codex-jev-settings-output-confidence_min").value === "70" &&
+        settingsScreen.querySelector("#codex-jev-settings-test_build-confidence_min").value === "70",
+        "confidence thresholds loaded for both output filters");
+      const routineNumber = settingsScreen.querySelector("#codex-jev-settings-output-routine_min");
+      const routineSlider = settingsScreen.querySelector("#codex-jev-settings-output-routine_min-slider");
+      routineSlider.value = "82";
+      routineSlider.dispatchEvent(new Event("input", { bubbles: true }));
+      check(routineNumber.value === "82", "slider updates the number field");
+      routineNumber.value = "91";
+      routineNumber.dispatchEvent(new Event("input", { bubbles: true }));
+      check(routineSlider.value === "91", "number field updates the slider");
+      routineNumber.value = "90";
+      routineNumber.dispatchEvent(new Event("input", { bubbles: true }));
+      const settingsContent = settingsScreen.querySelector(".settings-content");
+      settingsContent.style.width = "320px";
+      settingsContent.style.right = "auto";
+      await pause(30);
+      const thresholdRow = settingsScreen.querySelector(".threshold-field");
+      check(thresholdRow.scrollWidth <= thresholdRow.clientWidth + 1 &&
+        routineNumber.getBoundingClientRect().right <= thresholdRow.getBoundingClientRect().right + 1,
+        "narrow settings panel contains slider and number");
+      settingsContent.style.width = "";
+      settingsContent.style.right = "";
       settingsScreen.querySelector("#codex-jev-settings-test").click();
       await until(() => settingsScreen.querySelector("#codex-jev-settings-test-status").textContent === "OK", "saved key test result");
       settingsScreen.querySelector("#codex-jev-settings-save").click();
@@ -365,7 +388,21 @@
       const saveButton = setup.querySelector("#codex-jev-save-key");
       const skipButton = setup.querySelector("#codex-jev-skip-key");
       check(Math.abs(saveButton.getBoundingClientRect().top - skipButton.getBoundingClientRect().top) < 1 &&
-        footer.contains(saveButton) && footer.contains(skipButton), "Save and Skip share a row");
+        footer.contains(saveButton) && footer.contains(skipButton) &&
+        Math.abs(skipButton.getBoundingClientRect().right - footer.getBoundingClientRect().right) < 2,
+        "Skip is right aligned beside Save in a wide panel");
+      setup.style.width = "300px";
+      setup.style.right = "auto";
+      await pause(30);
+      const card = setup.querySelector("#codex-jev-connect-card");
+      check(card.scrollWidth <= card.clientWidth + 1 &&
+        saveButton.getBoundingClientRect().right <= card.getBoundingClientRect().right &&
+        skipButton.getBoundingClientRect().right <= card.getBoundingClientRect().right &&
+        skipButton.getBoundingClientRect().top > saveButton.getBoundingClientRect().top &&
+        setup.querySelector("#codex-jev-connect-icon").getBoundingClientRect().right <= card.getBoundingClientRect().right,
+        "narrow Connect Jev panel contains heading, icon, and both actions");
+      setup.style.width = "";
+      setup.style.right = "";
       check(setup.querySelector("#codex-jev-connect-icon").getAttribute("src") === "../icon.png" &&
         getComputedStyle(setup.querySelector("#codex-jev-connect-art pre")).animationName ===
           (matchMedia("(prefers-reduced-motion: reduce)").matches ? "none" : "codex-jev-art-drift"),

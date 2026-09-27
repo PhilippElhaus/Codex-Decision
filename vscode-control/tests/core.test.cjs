@@ -13,8 +13,10 @@ const {
 test("settings thresholds round trip and reject invalid percentages", async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-settings-test-"));
   try {
-    const next = completeThresholds({ output: { routine_min: 96 }, search_listing: { drop_confidence_min: 94 } });
+    const next = completeThresholds({ output: { routine_min: 96, confidence_min: 85 }, search_listing: { drop_confidence_min: 94 } });
     await writeThresholds(directory, next);
+    assert.equal(next.output.confidence_min, 85);
+    assert.equal(next.test_build.confidence_min, 70);
     assert.deepEqual((await readConfig(directory)).thresholds, next);
     await assert.rejects(writeThresholds(directory, { output: { routine_min: 101 } }), /percentages/);
     await assert.rejects(writeThresholds(directory, { output: { typo: 80 } }), /Invalid Jev thresholds/);

@@ -15,8 +15,10 @@ sys.path.insert(0, str(ROOT / "hooks"))
 from jev import Config, decide, jev_request, load_api_key  # noqa: E402
 
 
-REPLACE = {"routine_noise": 0.99, "needs_exact_text": 0.01, "one_off_value": 0.01}
-KEEP = {"routine_noise": 0.01, "needs_exact_text": 0.99, "one_off_value": 0.99}
+REPLACE = {"routine_noise": 0.99, "needs_exact_text": 0.01, "one_off_value": 0.01,
+           "filter_approved": True, "filter_confidence": 0.96}
+KEEP = {"routine_noise": 0.01, "needs_exact_text": 0.99, "one_off_value": 0.99,
+        "filter_approved": False, "filter_confidence": 0.96}
 
 
 def generated_cases(per_category: int):

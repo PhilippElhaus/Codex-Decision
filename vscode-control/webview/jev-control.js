@@ -160,13 +160,13 @@
       #codex-jev-history li { margin-top: 3px; }
       #codex-jev-history strong { font-weight: 700; color: #fff; }
       #codex-jev-empty { margin: 0; color: #888; }
-      #codex-jev-connect { position: fixed; inset: 0; z-index: 2147483640; display: none; align-items: center; justify-content: center; box-sizing: border-box; overflow: auto; padding: 20px; background: var(--vscode-editor-background, #111); color: var(--vscode-foreground, #d0d0d0); font-family: inherit; isolation: isolate; }
+      #codex-jev-connect { position: fixed; inset: 0; z-index: 2147483640; display: none; align-items: center; justify-content: center; box-sizing: border-box; overflow: auto; padding: 16px; background: var(--vscode-editor-background, #111); color: var(--vscode-foreground, #d0d0d0); font-family: inherit; isolation: isolate; container-type: inline-size; }
       #codex-jev-connect * { box-sizing: border-box; }
       #codex-jev-connect-art { position: absolute; inset: 0; overflow: hidden; pointer-events: none; mask-image: radial-gradient(ellipse at center, #000 20%, #0009 48%, transparent 80%); }
       #codex-jev-connect-art pre { position: absolute; top: 50%; left: 50%; margin: 0; color: #bdc9d3; opacity: .18; font: 12px/18px monospace; letter-spacing: 2px; white-space: pre; animation: codex-jev-art-drift 14s ease-in-out infinite alternate; }
       @keyframes codex-jev-art-drift { from { transform: translate(-52%, -51%) rotate(-2deg); } to { transform: translate(-48%, -49%) rotate(2deg); } }
       @media (prefers-reduced-motion: reduce) { #codex-jev-connect-art pre { animation: none; transform: translate(-50%, -50%); } }
-      #codex-jev-connect-card { position: relative; width: min(100%, 460px); margin: auto; padding: 28px; border: 1px solid var(--vscode-panel-border, #3c3c3c); border-radius: 12px; background: var(--vscode-editor-background, #1b1b1b); box-shadow: 0 20px 60px #0008; }
+      #codex-jev-connect-card { position: relative; width: min(100%, 460px); min-width: 0; margin: auto; padding: 28px; border: 1px solid var(--vscode-panel-border, #3c3c3c); border-radius: 12px; background: var(--vscode-editor-background, #1b1b1b); box-shadow: 0 20px 60px #0008; }
       #codex-jev-connect-heading { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
       #codex-jev-connect h1 { margin: 0; font-size: clamp(28px, 5vw, 36px); line-height: 1.2; }
       #codex-jev-connect-icon { width: 38px; height: 38px; object-fit: contain; flex: none; }
@@ -181,13 +181,15 @@
       #codex-jev-connect button:disabled { opacity: .55; cursor: default; }
       #codex-jev-connect-footer { display: flex; align-items: center; gap: 10px; margin-top: 18px; }
       #codex-jev-connect-footer button { white-space: nowrap; }
+      #codex-jev-skip-key { margin-left: auto; }
       #codex-jev-connect-link { margin: 18px 0 0 !important; text-align: center; font-size: 12px !important; }
       #codex-jev-connect-link a { color: var(--vscode-textLink-foreground, #83bcf7); text-decoration: none; }
       #codex-jev-connect-link a:hover { text-decoration: underline; }
       #codex-jev-connect-link a:focus-visible { outline: 2px solid var(--vscode-focusBorder, #83bcf7); outline-offset: 2px; }
       #codex-jev-connect #codex-jev-save-key { border-color: transparent; background: var(--vscode-button-background, #0e639c); color: var(--vscode-button-foreground, #fff); }
       #codex-jev-connect #codex-jev-save-key:hover { background: var(--vscode-button-hoverBackground, #1177bb); }
-      @media (max-width: 350px) { #codex-jev-connect-card { padding: 18px; } #codex-jev-connect-footer { gap: 6px; } #codex-jev-connect-footer button { padding-inline: 8px; font-size: 12px; } }
+      @container (max-width: 420px) { #codex-jev-connect-card { padding: 20px; } #codex-jev-connect-heading { gap: 8px; } #codex-jev-connect h1 { font-size: 24px; white-space: nowrap; } #codex-jev-connect-icon { width: 32px; height: 32px; } #codex-jev-connect-footer { display: grid; grid-template-columns: minmax(0, 1fr); } #codex-jev-connect-footer button { width: 100%; } #codex-jev-skip-key { margin-left: 0; } }
+      @container (max-width: 300px) { #codex-jev-connect-card { padding: 16px; } #codex-jev-connect h1 { font-size: 20px; } #codex-jev-connect-icon { width: 28px; height: 28px; } }
       #codex-jev-key-status { min-width: 0; font-size: 12px; font-weight: 600; }
       #codex-jev-key-status[data-ok="true"] { color: var(--vscode-testing-iconPassed, #4ec97f); }
       #codex-jev-key-status[data-ok="false"] { color: var(--vscode-errorForeground, #f48771); }

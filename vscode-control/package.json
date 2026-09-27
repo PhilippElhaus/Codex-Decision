@@ -2,7 +2,7 @@
   "name": "codex-jev-control",
   "displayName": "Codex Jev Control",
   "description": "Jev integration controls inside the Codex composer",
-  "version": "0.2.14",
+  "version": "0.2.15",
   "publisher": "elhaus-labs",
   "license": "MIT",
   "icon": "icon.png",

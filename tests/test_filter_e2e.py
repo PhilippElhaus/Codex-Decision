@@ -18,7 +18,8 @@ import search_listing  # noqa: E402
 import test_build  # noqa: E402
 
 HOOK = ROOT / "hooks" / "post_tool_use.py"
-SCORES = {"routine_noise": 0.98, "needs_exact_text": 0.01, "one_off_value": 0.01}
+SCORES = {"routine_noise": 0.98, "needs_exact_text": 0.01, "one_off_value": 0.01,
+          "filter_approved": True, "filter_confidence": 0.96}
 MOCK_HTTP = '''import io, json, os, urllib.request
 def mock_urlopen(request, timeout=None):
     payload = json.loads(request.data)
@@ -34,6 +35,9 @@ def mock_urlopen(request, timeout=None):
     for name, question in payload["questions"].items():
         if question["type"] == "noul":
             answers[name] = {"type": "noul", "noul": 0.98 if name == "routine_noise" else 0.01}
+        elif name == "filter_decision":
+            answers[name] = {"type": "choice", "choice": "filter", "confidence": 0.96,
+                             "probabilities": {"filter": 0.98, "keep": 0.02}}
         else:
             index = int(name.split("_")[1])
             choice = "drop" if "archive" in payload["state"]["groups"][index]["path"] else "retain"
@@ -174,7 +178,7 @@ class CommandHookEndToEndTests(unittest.TestCase):
         calls = self.jev_calls()
         self.assertEqual(len(calls), 3)
         self.assertTrue(all(call["auth_ok"] for call in calls))
-        self.assertEqual([len(call["questions"]) for call in calls], [3, 3, 2])
+        self.assertEqual([len(call["questions"]) for call in calls], [4, 4, 2])
         self.assertTrue(all(len(json.dumps(call["state"])) < 20_000 for call in calls))
         rows = self.records()
         self.assertEqual([(row["filter"], row["status"]) for row in rows], [

@@ -18,6 +18,7 @@ from urllib import request
 
 ENDPOINT = "https://api.typesafe.ai/v1/systemone"
 SCORE_NAMES = ("routine_noise", "needs_exact_text", "one_off_value")
+FILTER_KEYS = (*SCORE_NAMES, "filter_approved", "filter_confidence")
 SENSITIVE = re.compile(
     r"-----BEGIN [A-Z ]*PRIVATE KEY-----|"
     r"(?:api[_-]?key|access[_-]?token|client[_-]?secret|authorization|password|passwd|secret|token)\s*[:=]|"
@@ -39,8 +40,8 @@ CHUNK_JSON_BYTES = 20_000
 MAX_CHUNKS = 128
 CHUNK_WORKERS = 12
 DEFAULT_THRESHOLDS = {
-    "output": {"routine_min": 90, "exact_max": 12, "unique_max": 10},
-    "test_build": {"routine_min": 90, "exact_max": 20, "unique_max": 20},
+    "output": {"routine_min": 90, "exact_max": 12, "unique_max": 10, "confidence_min": 70},
+    "test_build": {"routine_min": 90, "exact_max": 20, "unique_max": 20, "confidence_min": 70},
     "search_listing": {"summarize_probability_min": 78, "summarize_confidence_min": 70,
                        "drop_probability_min": 92, "drop_confidence_min": 85},
 }
@@ -145,7 +146,7 @@ class Result:
     original_chars: int = 0
     capsule_chars: int = 0
     elapsed_ms: int = 0
-    scores: dict[str, float] | None = None
+    scores: dict[str, float | bool] | None = None
     hook_output: dict | None = None
 
     def to_log(self, tool_name: str, filter_name: str = "output") -> dict:
@@ -207,7 +208,7 @@ def sample(output: str, limit: int) -> str:
     )
 
 
-def jev_request(state: dict, config: Config, api_key: str) -> dict[str, float]:
+def jev_request(state: dict, config: Config, api_key: str) -> dict[str, float | bool]:
     questions = {
         "routine_noise": {
             "type": "noul",
@@ -233,11 +234,19 @@ def jev_request(state: dict, config: Config, api_key: str) -> dict[str, float]:
                 "false": "Contains only repeatable progress or listing text.",
             },
         },
+        "filter_decision": {
+            "type": "choice",
+            "instructions": "Should `output_sample` be shortened for a coding agent?",
+            "criteria": {
+                "filter": "It is routine repetition; a brief excerpt preserves what matters for the next step.",
+                "keep": "The full result may contain a useful exact line, diagnostic, search match, or one-time value.",
+            },
+        },
     }
     return _request_nouls(state, config, api_key, questions)
 
 
-def jev_test_build_request(state: dict, config: Config, api_key: str) -> dict[str, float]:
+def jev_test_build_request(state: dict, config: Config, api_key: str) -> dict[str, float | bool]:
     """Ask Jev whether known pass/progress lines are safe to omit for this run."""
     questions = {
         "routine_noise": {
@@ -264,11 +273,19 @@ def jev_test_build_request(state: dict, config: Config, api_key: str) -> dict[st
                 "false": "The omitted lines contain only ordinary pass/progress entries; their exact text remains recoverable from the saved original.",
             },
         },
+        "filter_decision": {
+            "type": "choice",
+            "instructions": "Can `omitted_sample` be removed while `retained_sample` still explains this test or build run?",
+            "criteria": {
+                "filter": "Omitted lines are routine passes or progress; retained text preserves the outcome and diagnostics.",
+                "keep": "Omitted lines may contain a useful exact test name, result, value, or diagnostic.",
+            },
+        },
     }
     return _request_nouls(state, config, api_key, questions)
 
 
-def _request_nouls(state: dict, config: Config, api_key: str, questions: dict) -> dict[str, float]:
+def _request_nouls(state: dict, config: Config, api_key: str, questions: dict) -> dict[str, float | bool]:
     answers = _request_answers(state, config, api_key, questions)
     scores = {}
     for name in SCORE_NAMES:
@@ -277,7 +294,25 @@ def _request_nouls(state: dict, config: Config, api_key: str, questions: dict) -
         if type(value) not in (int, float) or not 0 <= value <= 1:
             raise ValueError("invalid noul answer")
         scores[name] = float(value)
+    decision = answers.get("filter_decision")
+    if not _valid_choice_answer(decision, {"filter", "keep"}):
+        raise ValueError("invalid filter decision")
+    scores["filter_approved"] = decision["choice"] == "filter"
+    scores["filter_confidence"] = float(decision["confidence"])
     return scores
+
+
+def _valid_choice_answer(answer: object, options: set[str]) -> bool:
+    if not isinstance(answer, dict):
+        return False
+    probabilities = answer.get("probabilities")
+    confidence = answer.get("confidence")
+    return (answer.get("type") == "choice" and answer.get("choice") in options
+            and isinstance(probabilities, dict) and set(probabilities) == options
+            and all(type(value) in (int, float) and 0 <= value <= 1 for value in probabilities.values())
+            and 0.97 <= sum(probabilities.values()) <= 1.03
+            and probabilities[answer["choice"]] >= max(probabilities.values()) - 0.01
+            and type(confidence) in (int, float) and 0 <= confidence <= 1)
 
 
 def jev_choice_request(state: dict, questions: dict, config: Config, api_key: str) -> dict[str, dict]:
@@ -288,14 +323,7 @@ def jev_choice_request(state: dict, questions: dict, config: Config, api_key: st
     for name, question in questions.items():
         answer = answers[name]
         options = set(question["criteria"])
-        probabilities = answer.get("probabilities") if isinstance(answer, dict) else None
-        confidence = answer.get("confidence") if isinstance(answer, dict) else None
-        if (not isinstance(answer, dict) or answer.get("type") != "choice" or answer.get("choice") not in options
-                or not isinstance(probabilities, dict) or set(probabilities) != options
-                or any(type(value) not in (int, float) or not 0 <= value <= 1 for value in probabilities.values())
-                or not 0.97 <= sum(probabilities.values()) <= 1.03
-                or probabilities[answer["choice"]] < max(probabilities.values()) - 0.01
-                or type(confidence) not in (int, float) or not 0 <= confidence <= 1):
+        if not _valid_choice_answer(answer, options):
             raise ValueError("invalid choice answer")
     return answers
 
@@ -320,12 +348,14 @@ def _request_answers(state: dict, config: Config, api_key: str, questions: dict)
     return answers
 
 
-def candidate(scores: dict[str, float], config: Config | None = None) -> bool:
+def candidate(scores: dict[str, float | bool], config: Config | None = None) -> bool:
     config = config or Config()
     return (
         scores["routine_noise"] >= threshold(config, "output", "routine_min")
         and scores["needs_exact_text"] <= threshold(config, "output", "exact_max")
         and scores["one_off_value"] <= threshold(config, "output", "unique_max")
+        and scores["filter_approved"] is True
+        and scores["filter_confidence"] >= threshold(config, "output", "confidence_min")
     )
 
 
@@ -400,13 +430,15 @@ def _output_chunks(output: str) -> list[str] | None:
     return chunks
 
 
-def _valid_scores(scores: dict[str, float]) -> bool:
-    return (isinstance(scores, dict) and set(scores) == set(SCORE_NAMES)
-            and all(type(value) in (float, int) and 0 <= value <= 1 for value in scores.values()))
+def _valid_scores(scores: dict[str, float | bool]) -> bool:
+    return (isinstance(scores, dict) and set(scores) == set(FILTER_KEYS)
+            and all(type(scores[name]) in (float, int) and 0 <= scores[name] <= 1
+                    for name in (*SCORE_NAMES, "filter_confidence"))
+            and type(scores["filter_approved"]) is bool)
 
 
 def _evaluate_output(state: dict, output: str, config: Config,
-                     evaluator: Callable[[dict, Config], dict[str, float]]) -> dict[str, float] | None:
+                     evaluator: Callable[[dict, Config], dict[str, float | bool]]) -> dict[str, float | bool] | None:
     # The short path preserves the single-request behavior for ordinary results.
     if len(json.dumps(output, ensure_ascii=False).encode()) <= CHUNK_JSON_BYTES:
         scores = evaluator(state, config)
@@ -418,7 +450,7 @@ def _evaluate_output(state: dict, output: str, config: Config,
         return None
     count = len(chunks)
 
-    def evaluate(item: tuple[int, str]) -> dict[str, float]:
+    def evaluate(item: tuple[int, str]) -> dict[str, float | bool]:
         index, chunk = item
         chunk_state = {**state, "output_sample": chunk, "chunk_index": index + 1,
                        "chunk_count": count}
@@ -433,13 +465,15 @@ def _evaluate_output(state: dict, output: str, config: Config,
         "routine_noise": min(scores["routine_noise"] for scores in scores_by_chunk),
         "needs_exact_text": max(scores["needs_exact_text"] for scores in scores_by_chunk),
         "one_off_value": max(scores["one_off_value"] for scores in scores_by_chunk),
+        "filter_approved": all(scores["filter_approved"] for scores in scores_by_chunk),
+        "filter_confidence": min(scores["filter_confidence"] for scores in scores_by_chunk),
     }
 
 
 def decide(
     event: dict,
     config: Config,
-    evaluator: Callable[[dict, Config], dict[str, float]] | None = None,
+    evaluator: Callable[[dict, Config], dict[str, float | bool]] | None = None,
     storage: Path | None = None,
     simulate: bool = False,
 ) -> Result:
