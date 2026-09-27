@@ -17,6 +17,8 @@ import time
 from typing import Callable
 from urllib import request
 
+from evidence import omission_ranges, select_lines, template
+
 
 ENDPOINT = "https://api.typesafe.ai/v1/systemone"
 SCORE_NAMES = ("routine_noise", "needs_exact_text", "one_off_value")
@@ -215,16 +217,21 @@ def extract_text(tool_name: str, response: object) -> str | None:
     return "\n".join(texts)
 
 
-def repetitive_fraction(output: str) -> float:
-    lines = [line.strip() for line in output.splitlines() if line.strip()]
+def repetitive_fraction(output: str, analysis: dict | None = None) -> float:
+    lines = output.splitlines(keepends=True)
+    if analysis is not None:
+        analysis["lines"] = lines
     if len(lines) < 30:
         return 0.0
-    # Distinct paths and file:line hits are evidence, not progress counters.
-    normalized = {
-        line if "/" in line or "\\" in line else re.sub(r"\d+", "#", line)
-        for line in lines
-    }
-    return 1.0 - len(normalized) / len(lines)
+    # Only known progress counters can be normalized. Other numbers may be evidence.
+    templates = [template(line) for line in lines]
+    if analysis is not None:
+        analysis["templates"] = templates
+    normalized = {key for line, key in zip(lines, templates) if line.strip()}
+    nonblank = sum(bool(line.strip()) for line in lines)
+    if analysis is not None:
+        analysis["distinct_templates"] = len(normalized)
+    return 1.0 - len(normalized) / nonblank if nonblank >= 30 else 0.0
 
 
 def sample(output: str, limit: int) -> str:
@@ -449,14 +456,37 @@ def save_original(storage: Path, event: dict, output: str) -> Path:
     return path
 
 
-def capsule(output: str, original_path: str) -> str:
-    head = output[:350].strip()
-    tail = output[-350:].strip()
-    return (
-        f"{head}\n[... repetitive middle omitted by Codex Jev ...]\n{tail}\n"
-        f"Full original: {original_path}\n"
-        "Read that file if exact lines are needed."
-    )
+def capsule(output: str, original_path: str, task: str = "", analysis: dict | None = None) -> str:
+    lines = analysis["lines"] if analysis is not None else output.splitlines(keepends=True)
+    if not lines:
+        return f"Full original: {original_path}\nRead that file if exact lines are needed."
+    # Keep enough room for the recovery path and the omission map.
+    budget = min(2400, max(700, len(output) // 10))
+    if analysis is not None and analysis.get("distinct_templates") == 1:
+        selected = sorted({0, len(lines) // 2, len(lines) - 1})
+    else:
+        selected = select_lines(lines, task, limit=min(14, max(5, budget // 180)),
+                                templates=analysis.get("templates") if analysis is not None else None)
+    while selected and sum(len(lines[i]) for i in selected) > budget:
+        if len(selected) <= 2:
+            break
+        selected.pop(-2)
+    pieces = [f"[Codex Jev: {len(lines)} lines; selected source text]\n"]
+    truncated = []
+    for index in selected:
+        line = lines[index].rstrip("\r\n")
+        if len(line) > 600:
+            truncated.append(index + 1)
+        pieces.append(f"[{index + 1}] {line[:600]}{' [line truncated]' if len(line) > 600 else ''}\n")
+    ranges = omission_ranges(selected, len(lines))
+    if ranges:
+        preview = ", ".join(f"{start}-{end}" if start != end else str(start)
+                            for start, end in ranges[:12])
+        pieces.append(f"Omitted original lines: {preview}{', ...' if len(ranges) > 12 else ''}\n")
+    if truncated:
+        pieces.append(f"Truncated selected lines: {', '.join(map(str, truncated))}\n")
+    pieces.append(f"Full original: {original_path}\nRead that file if exact lines are needed.")
+    return "".join(pieces)
 
 
 def _output_chunks(output: str) -> list[str] | None:
@@ -476,6 +506,10 @@ def _output_chunks(output: str) -> list[str] | None:
                 high = middle - 1
         if end == start:
             return None
+        # Keep ordinary log records together; very long records still split safely.
+        boundary = output.rfind("\n", start, end)
+        if boundary >= start + (end - start) // 2:
+            end = boundary + 1
         chunks.append(output[start:end])
         if len(chunks) > MAX_CHUNKS:
             return None
@@ -519,8 +553,14 @@ def _evaluate_output(state: dict, output: str, config: Config,
             raise ValueError("invalid evaluator scores")
         return scores
 
+    scores_by_chunk = []
     with ThreadPoolExecutor(max_workers=CHUNK_WORKERS) as pool:
-        scores_by_chunk = list(pool.map(evaluate, enumerate(chunks)))
+        for start in range(0, count, CHUNK_WORKERS):
+            batch = list(pool.map(evaluate, enumerate(chunks[start:start + CHUNK_WORKERS], start)))
+            scores_by_chunk.extend(batch)
+            # Any veto is final under the all-chunks-must-pass rule.
+            if any(not candidate(scores, config) for scores in batch):
+                break
     return {
         "routine_noise": min(scores["routine_noise"] for scores in scores_by_chunk) if decision_method(config, "output", "noul") else None,
         "needs_exact_text": max(scores["needs_exact_text"] for scores in scores_by_chunk) if decision_method(config, "output", "noul") else None,
@@ -566,14 +606,15 @@ def decide(
         return result("skip", "sensitive", size)
     if FAILURE.search(output):
         return result("skip", "diagnostic", size)
-    if repetitive_fraction(output) < 0.6:
+    analysis = {}
+    if repetitive_fraction(output, analysis) < 0.6:
         return result("skip", "not_repetitive", size)
     if evaluator is None:
         return result("skip", "no_evaluator", size)
     state = {
         "tool": tool,
         "input_excerpt": input_text[:400],
-        "output_sample": sample(output, config.sample_chars),
+        "output_sample": output,
         "output_chars": size,
     }
     try:
@@ -592,7 +633,7 @@ def decide(
         return result("keep", "storage_unavailable", size, scores=scores)
     try:
         original_path = "[replay: original retained in fixture]" if simulate else str(_output_path(storage, event))
-        feedback = capsule(output, original_path)
+        feedback = capsule(output, original_path, input_text[:400], analysis)
         if len(feedback) >= size // 5:
             return result("keep", "insufficient_reduction", size, scores=scores)
         if not simulate:

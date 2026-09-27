@@ -89,12 +89,13 @@ class SearchListingTests(unittest.TestCase):
         accepted = {
             "rg -n function app": "search", "rg --line-number -F 'status' app": "search",
             "rg -n -- 'my pattern' app": "search", "rg --files -g '*.py'": "listing",
-            "git ls-files": "listing",
+            "git ls-files": "listing", "rg -n --json function": "search_json",
+            "rg --json function app": "search_json",
         }
         for command, kind in accepted.items():
             with self.subTest(command=command):
                 self.assertEqual(search_listing.command_kind({"command": command}), kind)
-        for command in ("rg function app", "rg -n function | head", "rg -n --json function", "rg -n -C 2 function", "rg -n -o function", "rg --files -0", "git status", "rg -n $(cat query)", "rg -n pattern > out", "cat file.py"):
+        for command in ("rg function app", "rg -n function | head", "rg -n -C 2 function", "rg -n -o function", "rg --files -0", "git status", "rg -n $(cat query)", "rg -n pattern > out", "cat file.py"):
             with self.subTest(command=command):
                 self.assertIsNone(search_listing.command_kind({"command": command}))
 

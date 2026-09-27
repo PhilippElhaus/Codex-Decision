@@ -13,6 +13,7 @@ import time
 from typing import Callable
 
 from jev import Config, Result, SENSITIVE, _output_path, decision_method, save_original, threshold
+from evidence import task_terms
 
 
 MIN_CHARS = 4096
@@ -23,9 +24,10 @@ MAX_REQUEST_CHARS = 10000
 MAX_FEEDBACK_CHARS = 8000
 SHELL_OPERATORS = re.compile(r"[;&|<>`\r\n]|\$\(")
 HIT = re.compile(r"^([^\r\n:]+):(\d+):(.*)$")
+HIT_PATH = re.compile(r"^(.*):\d+:")
 PATH = re.compile(r"^[^\x00-\x1f\x7f]+$")
 OPTIONS_WITH_VALUE = {"-g", "--glob", "-t", "--type", "-T", "--type-not", "--iglob"}
-UNSAFE_OPTIONS = {"--json", "--null", "-0", "--multiline", "-U", "--count", "-c", "--count-matches", "--files-with-matches", "-l", "--files-without-match", "--vimgrep", "--heading", "--context", "-C", "--before-context", "-B", "--after-context", "-A", "--only-matching", "-o", "--replace", "-r"}
+UNSAFE_OPTIONS = {"--null", "-0", "--multiline", "-U", "--count", "-c", "--count-matches", "--files-with-matches", "-l", "--files-without-match", "--vimgrep", "--heading", "--context", "-C", "--before-context", "-B", "--after-context", "-A", "--only-matching", "-o", "--replace", "-r"}
 
 
 def command_kind(tool_input: object) -> str | None:
@@ -61,7 +63,8 @@ def command_kind(tool_input: object) -> str | None:
                 return None
             index += 1
         return "listing"
-    if not any(arg in ("-n", "--line-number") or arg.startswith("-") and "n" in arg[1:] and not arg.startswith("--") for arg in args):
+    is_json = "--json" in args
+    if not is_json and not any(arg in ("-n", "--line-number") or arg.startswith("-") and "n" in arg[1:] and not arg.startswith("--") for arg in args):
         return None
     patterns = []
     index = 0
@@ -78,12 +81,12 @@ def command_kind(tool_input: object) -> str | None:
             patterns.extend(args[index + 1:])
             break
         if arg.startswith("-"):
-            if arg not in {"-n", "--line-number", "-i", "--ignore-case", "-F", "--fixed-strings", "-S", "--smart-case", "--hidden", "--no-ignore"}:
+            if arg not in {"-n", "--line-number", "--json", "-i", "--ignore-case", "-F", "--fixed-strings", "-S", "--smart-case", "--hidden", "--no-ignore"}:
                 return None
         else:
             patterns.append(arg)
         index += 1
-    return "search" if patterns and patterns[0] not in {"", ".", "./"} else None
+    return ("search_json" if is_json else "search") if patterns and patterns[0] not in {"", ".", "./"} else None
 
 
 def _task_hint(event: dict, kind: str) -> str:
@@ -119,26 +122,63 @@ def _task_hint(event: dict, kind: str) -> str:
                     os.close(fd)
         except (OSError, ValueError, TypeError, json.JSONDecodeError):
             pass
-    return command[:300] if kind == "search" else ""
+    return command[:300] if kind.startswith("search") else ""
+
+
+def _json_matches(output: str) -> list[tuple[str, str]] | None:
+    """Read ripgrep JSONL match records; reject unknown or malformed records."""
+    matches = []
+    saw_summary = False
+    for raw in output.splitlines():
+        try:
+            row = json.loads(raw)
+        except (ValueError, TypeError):
+            return None
+        if not isinstance(row, dict) or row.get("type") not in {"begin", "match", "end", "summary"}:
+            return None
+        if row["type"] == "summary":
+            saw_summary = True
+        if row["type"] != "match":
+            continue
+        data = row.get("data")
+        if not isinstance(data, dict):
+            return None
+        path = data.get("path")
+        body = data.get("lines")
+        number = data.get("line_number")
+        if (not isinstance(path, dict) or not isinstance(path.get("text"), str)
+                or not isinstance(body, dict) or not isinstance(body.get("text"), str)
+                or type(number) is not int or number < 1):
+            return None
+        name = path["text"]
+        if not PATH.fullmatch(name) or name.startswith("-"):
+            return None
+        matches.append((name, f"{name}:{number}:{body['text'].rstrip(chr(10))}\n"))
+    return matches if saw_summary else None
 
 
 def _groups(output: str, kind: str) -> OrderedDict[str, list[str]] | None:
     lines = output.splitlines(keepends=True)
     if len(lines) < MIN_LINES or len(lines) > 20000:
         return None
-    parsed = []
-    for line in lines:
-        content = line.rstrip("\r\n")
-        if kind == "search":
-            match = HIT.fullmatch(content)
-            if not match or not match.group(3):
-                return None
-            path = match.group(1)
-        else:
-            path = content
-        if not PATH.fullmatch(path) or path.startswith("-"):
+    if kind == "search_json":
+        parsed = _json_matches(output)
+        if parsed is None:
             return None
-        parsed.append((path, line))
+    else:
+        parsed = []
+        for line in lines:
+            content = line.rstrip("\r\n")
+            if kind == "search":
+                match = HIT.fullmatch(content)
+                if not match or not match.group(3):
+                    return None
+                path = match.group(1)
+            else:
+                path = content
+            if not PATH.fullmatch(path) or path.startswith("-"):
+                return None
+            parsed.append((path, line))
     # Use directory buckets for broad output; preserve the original line order within each bucket.
     for depth in (4, 3, 2, 1, 0):
         groups: OrderedDict[str, list[str]] = OrderedDict()
@@ -151,14 +191,29 @@ def _groups(output: str, kind: str) -> OrderedDict[str, list[str]] | None:
     return None
 
 
-def _representatives(lines: list[str]) -> list[str]:
+def _representatives(lines: list[str], task: str = "") -> list[str]:
     last = len(lines) - 1
     positions = (0, last // 4, last // 2, (last * 3) // 4, last)
-    return list(dict.fromkeys(lines[index] for index in positions))
+    chosen = list(dict.fromkeys(positions))
+    terms = task_terms(task)
+    if terms:
+        scores = [len(terms & task_terms(line)) for line in lines]
+        if max(scores) > min(scores):
+            best_by_file = {}
+            for index, line in enumerate(lines):
+                match = HIT_PATH.match(line)
+                path = match.group(1) if match else line.strip()
+                if path not in best_by_file or scores[index] > scores[best_by_file[path]]:
+                    best_by_file[path] = index
+            ranked = sorted(best_by_file.values(), key=lambda index: (-scores[index], index))
+            for slot, best in zip((2, 1, 3), ranked[:3]):
+                if scores[best] > 0 and best not in chosen:
+                    chosen[slot] = best
+    return [lines[index] for index in sorted(set(chosen))]
 
 
-def _sample(lines: list[str]) -> str:
-    return " | ".join(line.strip()[:80] for line in _representatives(lines))[:420]
+def _sample(lines: list[str], task: str = "") -> str:
+    return " | ".join(line.strip()[:80] for line in _representatives(lines, task))[:420]
 
 
 def _choice_questions(groups: OrderedDict[str, list[str]]) -> dict:
@@ -233,7 +288,7 @@ def decide_search_listing(
     if not hint:
         return result("skip", "missing_task", size)
     state = {"kind": kind, "task": hint, "groups": [
-        {"id": f"group_{index}", "path": path[:160], "count": len(lines), "sample": _sample(lines)}
+        {"id": f"group_{index}", "path": path[:160], "count": len(lines), "sample": _sample(lines, hint)}
         for index, (path, lines) in enumerate(groups.items())
     ]}
     questions = _choice_questions(groups)
@@ -255,19 +310,21 @@ def decide_search_listing(
         return result("keep", "storage_unavailable", size)
     try:
         original_path = "[replay: original retained in fixture]" if simulate else str(_output_path(storage, event))
-        pieces = [f"[Codex Jev {kind}: {len(output.splitlines())} entries in {len(groups)} groups.]\n"]
+        pieces = [f"[Codex Jev {kind}: {sum(map(len, groups.values()))} entries in {len(groups)} groups.]\n"]
+        if kind == "search_json":
+            pieces.append("[Ripgrep JSON matches shown as path:line:text; full JSON remains in the original.]\n")
         omitted = 0
         for (path, lines), choice in zip(groups.items(), decisions):
             if choice == "retain":
                 pieces.extend(lines)
             elif choice == "summarize":
-                examples = _representatives(lines)
+                examples = _representatives(lines, hint)
                 pieces.append(f"[{path}: {len(lines)} entries, {len(lines) - len(examples)} omitted]\n")
                 pieces.extend(examples)
                 omitted += len(lines) - len(examples)
             else:
                 omitted += len(lines)
-        pieces.append(f"\n[{omitted} entries omitted; full original: {original_path}]\nRead that file if exact lines are needed.\n")
+        pieces.append(f"\n[{omitted} omitted; partial evidence. Full original: {original_path}]\n")
         feedback = "".join(pieces)
         if len(feedback) > MAX_FEEDBACK_CHARS or len(feedback) >= size * 0.7 or size - len(feedback) < 1024:
             return result("keep", "insufficient_reduction", size)

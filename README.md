@@ -8,9 +8,9 @@ Codex Jev trims large tool results before Codex reads them. It uses Jev to decid
 
 | Selectable integration | What Codex gets |
 | --- | --- |
-| Output filter | A shorter excerpt of repetitive tool output. |
+| Output filter | Selected verbatim evidence and original line references from repetitive output. |
 | Test/build logs | Failures and completion summaries without routine pass and progress lines. |
-| Search/listing | Relevant matches and representative file paths from broad results. |
+| Search/listing | Relevant matches and file leads from broad results, including `rg --json`. |
 
 All integrations start off. The button in the Codex composer selects them and shows Jev health and recent outcomes. The composer images show synthetic activity from the current control.
 
@@ -22,6 +22,8 @@ Selecting a Jev integration without a key opens **Connect Jev** over the Codex s
 
 Each Jev request gets a private JSON receipt under `PLUGIN_DATA/logs/YYYY-MM-DD-<session-hash>/`. Its filename includes the UTC time. The receipt records the original and visible result, request, answer, decision, and chunk position. Logs have a 50 MB default limit; the oldest files are removed first. Set 1–9999 MB in **Log retention**, or select **Never delete logs** to disable cleanup. The limit applies to session logs and receipts; originals referenced by shortened tool output stay under `PLUGIN_DATA/outputs/` until removed separately.
 
+The output filter checks all eligible text before shortening it. It keeps selected source text with original line numbers and an omission map. It marks any long excerpt that is truncated. Test/build filtering recognizes Go JSON test events and Cargo JSON build events when those formats are present. Search/listing can read ripgrep JSON matches and keeps a path to the exact original. [Integration design](docs/architecture/design_integrations.md) explains the fail-open boundaries. A [quality replay tool](scripts/evaluate_quality.py) checks labeled evidence and paired task outcomes and can propose stricter cutoffs; it never changes settings automatically.
+
 <img src="docs/images/jev-onboarding.png" width="520" alt="Connect Jev API key setup with a solid backdrop, Save and Skip buttons, and a TypeSafe API key link">
 
 <img src="docs/images/jev-missing-key.png" width="340" alt="Compact Jev tooltip with a Connect button when no API key is saved">
@@ -30,7 +32,7 @@ Each Jev request gets a private JSON receipt under `PLUGIN_DATA/logs/YYYY-MM-DD-
 
 ## Measured results
 
-A [live hook benchmark](docs/benchmarks/benchmark_live_2026-09-26.md) ran the three integrations over real command output with 30 Jev calls. Token counts use `o200k_base`.
+A [dated live hook benchmark](docs/benchmarks/benchmark_live_2026-09-26.md) ran the earlier implementation over real command output with 30 Jev calls. It is historical evidence, not a measurement of the current evidence-selection changes. Token counts use `o200k_base`.
 
 | Integration | Replaced results | Model-visible tokens saved | Reduction on replaced results |
 | --- | ---: | ---: | ---: |
@@ -56,4 +58,4 @@ Build the [VS Code control VSIX](vscode-control/README.md) and install `codex-je
 - [Installation](docs/setup/setup_installation.md), [credentials](docs/setup/setup_credentials.md), and [migration](docs/setup/setup_migration.md)
 - [Integration design](docs/architecture/design_integrations.md) and [data handling](docs/architecture/design_data.md)
 - [VS Code control](docs/architecture/design_vscode.md)
-- [Benchmarks](docs/benchmarks/benchmark_live_2026-09-26.md), [test map](tests/README.md), and [verification](docs/development/development_verification.md)
+- [Benchmarks](docs/benchmarks/benchmark_live_2026-09-26.md), [current offline verification](docs/benchmarks/benchmark_offline_2026-09-27.md), [test map](tests/README.md), and [verification](docs/development/development_verification.md)

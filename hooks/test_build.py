@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
 import re
 import shlex
 import time
@@ -106,6 +107,45 @@ def _has_completion(lines: list[str]) -> bool:
     return any(pattern.search(_clean(line)) for line in lines for pattern in COMPLETION)
 
 
+def _structured_partition(lines: list[str], command: str) -> tuple[list[str], list[str], bool] | None:
+    """Use explicit Go/Cargo event types without guessing from human text."""
+    try:
+        args = shlex.split(command)
+    except ValueError:
+        return None
+    go_json = args[:2] == ["go", "test"] and "-json" in args
+    cargo_json = args[:2] == ["cargo", "build"] and any(
+        arg == "--message-format=json" or arg.startswith("--message-format=json,") for arg in args)
+    if not (go_json or cargo_json):
+        return None
+    omitted, retained = [], []
+    completed = False
+    for line in lines:
+        try:
+            row = json.loads(line)
+        except ValueError:
+            return None
+        if not isinstance(row, dict):
+            return None
+        if go_json:
+            action = row.get("Action")
+            if not isinstance(action, str):
+                return None
+            completed |= action in {"pass", "fail", "skip"} and not row.get("Test")
+            routine = (action == "pass" and isinstance(row.get("Test"), str))
+            if action == "output" and isinstance(row.get("Output"), str):
+                routine = bool(re.fullmatch(
+                    r"(?:=== RUN\s+\S+|--- PASS: \S+ \([0-9.]+s\))\r?\n?", row["Output"]))
+        else:
+            reason = row.get("reason")
+            if not isinstance(reason, str):
+                return None
+            completed |= reason == "build-finished"
+            routine = reason == "compiler-artifact" and not row.get("executable")
+        (omitted if routine else retained).append(line)
+    return omitted, retained, completed
+
+
 def jev_approves_omission(scores: dict[str, float | bool | None], config: Config | None = None) -> bool:
     # Candidate lines have already matched pass/progress formats; Jev judges
     # whether this run gives those otherwise routine lines special value.
@@ -148,13 +188,20 @@ def decide_test_build(
     if SENSITIVE.search(output) or SENSITIVE.search(event["tool_input"]["command"]):
         return result("skip", "sensitive", size)
     lines = output.splitlines(keepends=True)
-    if not _has_completion(lines):
+    command = event["tool_input"]["command"]
+    structured = _structured_partition(lines, command)
+    if structured is not None:
+        omitted, retained_lines, completed = structured
+    else:
+        completed = _has_completion(lines)
+        omitted = [line for line in lines if _routine(line, kind)]
+        retained_lines = [line for line in lines if not _routine(line, kind)]
+    if not completed:
         return result("skip", "no_completion", size)
-    omitted = [line for line in lines if _routine(line, kind)]
     routine_count = len(omitted)
     if routine_count < MIN_ROUTINE_LINES:
         return result("skip", "few_routine_lines", size)
-    retained = "".join(line for line in lines if not _routine(line, kind)).rstrip("\r\n")
+    retained = "".join(retained_lines).rstrip("\r\n")
     try:
         original_path = "[replay: original retained in fixture]" if simulate else (
             str(_output_path(storage, event)) if storage is not None else ""
@@ -175,7 +222,7 @@ def decide_test_build(
         return result("skip", "no_evaluator", size)
     state = {
         "kind": kind,
-        "command": event["tool_input"]["command"][:400],
+        "command": command[:400],
         "omitted_count": routine_count,
         "omitted_sample": sample("".join(omitted), min(config.sample_chars, 6000)),
         "retained_sample": sample(retained, min(config.sample_chars, 4000)),
