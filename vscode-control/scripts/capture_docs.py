@@ -33,7 +33,7 @@ def main() -> None:
             result = subprocess.run([
                 str(edge), '--headless', '--disable-gpu', '--no-first-run',
                 '--no-default-browser-check', '--disable-extensions',
-                '--hide-scrollbars', '--force-device-scale-factor=1',
+                '--hide-scrollbars', '--force-device-scale-factor=2',
                 '--virtual-time-budget=950', f'--window-size={width},{height}',
                 f'--user-data-dir={windows_path(profile / state)}',
                 '--dump-dom', f'--screenshot={windows_path(output)}', address + '?demo=' + state,
@@ -96,7 +96,7 @@ def main() -> None:
             result = subprocess.run([
                 str(edge), '--headless', '--disable-gpu', '--no-first-run',
                 '--no-default-browser-check', '--disable-extensions',
-                '--hide-scrollbars', '--force-device-scale-factor=1',
+                '--hide-scrollbars', '--force-device-scale-factor=2',
                 '--virtual-time-budget=950', '--window-size=1040,800',
                 f'--user-data-dir={windows_path(profile / (basename + "-profile"))}',
                 '--dump-dom', f'--screenshot={windows_path(output)}',
