@@ -25,13 +25,15 @@ Use `update` to refresh an already patched installation, or `restore` with the s
 
 ## Use it
 
-Select integrations in the composer menu. An empty selection turns Jev off. When an integration is enabled without a key, **Connect Jev** covers the Codex side window with a solid backdrop and asks for a typesafe.ai API key. A link below Save and Skip opens typesafe.ai. Test and save the key there, or choose **Skip for now** to return to Codex; **Connect Jev…** in the Jev menu or **Connect** in the compact missing-key tooltip reopens it. The setup card stacks its buttons when the side window is narrow. Open **Codex settings → Jev**, below **Voice**, to test or replace the key, see lifetime usage, open the decision log in Explorer, change the mode, and adjust each hook's Jev cutoffs with sliders or number fields. Output and test/build filtering require a confident Jev Choice answer in addition to the three safety probabilities. The saved key is never sent back to the webview. **Filter** shortens approved results; **Monitor** records decisions while keeping full output. The stored mode values remain `replace` and `observe` for compatibility. A selection or cutoff change applies when the next tool result completes. A new plugin installation or hook-code change requires a new Codex thread.
+Select integrations in the composer menu. An empty selection turns Jev off. When an integration is enabled without a key, **Connect Jev** covers the Codex side window with a solid backdrop and asks for a typesafe.ai API key. A link below Save and Skip opens typesafe.ai. Test and save the key there, or choose **Skip for now** to return to Codex; **Connect Jev…** in the Jev menu or **Connect** in the compact missing-key tooltip reopens it. The setup card stacks its buttons when the side window is narrow.
+
+Open **Codex settings → Jev**, below **Voice**, to test or replace the key, see lifetime usage, open the decision log in Explorer, change the mode, and adjust each hook's Jev cutoffs with sliders or percentage fields. Enter a whole number with or without `%`; the field shows `%` after it loses focus. **Reset defaults** loads the default mode and cutoffs into the form. Select **Save settings** to apply them. Reset does not change the API key or integration selections. Output and test/build filtering require a confident Jev Choice answer in addition to the three safety probabilities. The saved key is never sent back to the webview. **Filter** shortens approved results; **Monitor** previews decisions in the logs while leaving tool output unchanged. The stored mode values remain `replace` and `observe` for compatibility. A selection or cutoff change applies when the next tool result completes. A new plugin installation or hook-code change requires a new Codex thread.
 
 ![Connect Jev setup overlay in the Codex side window with Skip for now](../docs/images/jev-onboarding.png)
 
 ![Compact Jev missing-key tooltip](../docs/images/jev-missing-key.png)
 
-![Illustrative Jev settings with lifetime statistics, Open logs, and confidence cutoffs with sliders](../docs/images/jev-settings.png)
+![Illustrative Jev settings with visible sliders, percentage fields, and Reset defaults](../docs/images/jev-settings.png)
 
 ## Verify
 

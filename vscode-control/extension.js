@@ -6,7 +6,7 @@ const vscode = require("vscode");
 const {
   checkHealth, decisionSummary, defaultDataDirectory, estimateTokensSaved,
   isJevOutcome, outcomeLine, readConfig, readEventOffset, readEventsSince, savedCharacters,
-  readApiKey, readLifetimeStats, writeApiKey, writeMode, writeSelection, writeThresholds, completeThresholds,
+  readApiKey, readLifetimeStats, writeApiKey, writeMode, writeSelection, writeThresholds, completeThresholds, DEFAULT_THRESHOLDS,
 } = require("./core");
 
 function emptyStats() {
@@ -210,7 +210,8 @@ function activate(context) {
         let hasKey = false;
         try { await readApiKey(directory); hasKey = true; } catch { /* no usable key */ }
         const lifetime = await readLifetimeStats(directory);
-        return { action: "ready", config: { ...config, thresholds: completeThresholds(config.thresholds) }, hasKey, lifetime };
+        return { action: "ready", config: { ...config, thresholds: completeThresholds(config.thresholds) },
+          defaults: { mode: "replace", thresholds: DEFAULT_THRESHOLDS }, hasKey, lifetime };
       }
       if (request.action === "settingsOpenLogs") {
         const log = path.join(directory, "events.jsonl");

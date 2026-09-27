@@ -32,6 +32,7 @@
   let pending = null;
   let hasKey = false;
   let busy = false;
+  let defaults = null;
 
   function visible(element) {
     const rect = element.getBoundingClientRect();
@@ -103,6 +104,7 @@
     if (!panel) return;
     panel.querySelector("#codex-jev-settings-test").disabled = value;
     panel.querySelector("#codex-jev-settings-save").disabled = value;
+    panel.querySelector("#codex-jev-settings-reset").disabled = value || !defaults;
     panel.querySelector("#codex-jev-settings-open-logs").disabled = value;
   }
 
@@ -119,17 +121,37 @@
     panel.querySelector("#codex-jev-settings-lifetime-time").textContent = formatDuration(stats.averageMs);
   }
 
+  function parsePercentage(value) {
+    const match = /^(\d{1,3})\s*%?$/.exec(value.trim());
+    const number = match ? Number(match[1]) : NaN;
+    return Number.isInteger(number) && number <= 100 ? number : null;
+  }
+
+  function setThresholds(thresholds) {
+    for (const [hook, , fields] of sections) {
+      for (const [name] of fields) {
+        const value = thresholds?.[hook]?.[name];
+        const input = panel.querySelector(`#codex-jev-settings-${hook}-${name}`);
+        const slider = panel.querySelector(`#codex-jev-settings-${hook}-${name}-slider`);
+        input.value = value === undefined ? "" : `${value}%`;
+        slider.value = value === undefined ? "0" : String(value);
+        slider.style.setProperty("--fill", `${slider.value}%`);
+      }
+    }
+  }
+
   function thresholdValues() {
     const values = {};
     for (const [hook, , fields] of sections) {
       values[hook] = {};
       for (const [name] of fields) {
         const input = panel.querySelector(`#codex-jev-settings-${hook}-${name}`);
-        if (!input.checkValidity() || !/^\d+$/.test(input.value.trim())) {
+        const value = parsePercentage(input.value);
+        if (value === null) {
           input.focus();
           throw new Error("Enter whole percentages from 0 to 100.");
         }
-        values[hook][name] = Number(input.value);
+        values[hook][name] = value;
       }
     }
     return values;
@@ -159,13 +181,17 @@
       #codex-jev-settings-panel .field label { max-width: 540px; }
       #codex-jev-settings-panel small { display: block; margin-top: 3px; }
       #codex-jev-settings-panel input, #codex-jev-settings-panel select { background: var(--vscode-input-background, #181818); color: var(--vscode-input-foreground, #ddd); border: 1px solid var(--vscode-input-border, #555); border-radius: 9px; padding: 7px 9px; font: inherit; }
-      #codex-jev-settings-panel input[type=number] { width: 76px; flex: none; }
-      #codex-jev-settings-panel input[type=range] { width: 100%; min-width: 0; flex: 1; padding: 0; border: 0; background: transparent; accent-color: var(--vscode-button-background, #83bcf7); cursor: pointer; }
+      #codex-jev-settings-panel .percent-input { width: 76px; flex: none; text-align: right; font-variant-numeric: tabular-nums; }
+      #codex-jev-settings-panel input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; min-width: 0; flex: 1; height: 6px; padding: 0; border: 0; border-radius: 999px; background: linear-gradient(to right, var(--vscode-button-background, #3287ac) 0 var(--fill, 0%), var(--vscode-input-border, #555) var(--fill, 0%) 100%); cursor: pointer; }
+      #codex-jev-settings-panel input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 16px; height: 16px; border: 2px solid var(--vscode-editor-background, #181818); border-radius: 50%; background: var(--vscode-button-background, #3287ac); box-shadow: 0 0 0 1px var(--vscode-button-background, #3287ac); }
+      #codex-jev-settings-panel input[type=range]::-moz-range-thumb { width: 12px; height: 12px; border: 2px solid var(--vscode-editor-background, #181818); border-radius: 50%; background: var(--vscode-button-background, #3287ac); }
       #codex-jev-settings-panel input[type=password] { width: min(100%, 340px); }
       #codex-jev-settings-panel button { min-height: 36px; padding: 7px 12px; border: 1px solid var(--vscode-contrastBorder, #555); border-radius: 10px; background: var(--vscode-button-secondaryBackground, #282828); color: var(--vscode-button-secondaryForeground, #e5e5e5); font: inherit; cursor: pointer; }
       #codex-jev-settings-panel button:hover { background: var(--vscode-button-secondaryHoverBackground, #363636); }
       #codex-jev-settings-panel button.primary { border-color: transparent; background: #ececec; color: #202020; }
       #codex-jev-settings-panel button.primary:hover { background: #d6d6d6; }
+      #codex-jev-settings-panel button.subtle { border-color: var(--vscode-panel-border, #3b3b3b); background: transparent; color: var(--vscode-descriptionForeground, #999); }
+      #codex-jev-settings-panel button.subtle:hover { background: var(--vscode-button-secondaryHoverBackground, #363636); color: var(--vscode-foreground, #d0d0d0); }
       #codex-jev-settings-panel button:focus-visible, #codex-jev-settings-panel select:focus-visible, #codex-jev-settings-panel input:focus-visible { outline: 2px solid var(--vscode-focusBorder, #83bcf7); outline-offset: 2px; }
       #codex-jev-settings-panel button:disabled { opacity: .55; cursor: default; }
       #codex-jev-settings-panel .actions { display: flex; align-items: center; gap: 12px; margin-top: 16px; }
@@ -175,12 +201,12 @@
       #codex-jev-settings-message { min-height: 22px; margin-top: 12px; }
       @media (max-width: 650px) { #codex-jev-settings-panel .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } #codex-jev-settings-panel .field { display: block; } #codex-jev-settings-panel input, #codex-jev-settings-panel select { margin-top: 8px; } }
       @container (max-width: 520px) { #codex-jev-settings-panel .threshold-field { display: grid; grid-template-columns: minmax(0, 1fr); gap: 7px; } #codex-jev-settings-panel .threshold-controls { width: 100%; } }
-      @container (max-width: 320px) { #codex-jev-settings-panel .threshold-controls { gap: 8px; } #codex-jev-settings-panel input[type=number] { width: 68px; } }
+      @container (max-width: 320px) { #codex-jev-settings-panel .threshold-controls { gap: 8px; } #codex-jev-settings-panel .percent-input { width: 68px; } }
     `;
     document.head.append(style);
     panel = document.createElement("div");
     panel.id = "codex-jev-settings-panel";
-    panel.innerHTML = `<div class="header"><h1>Jev</h1><button id="codex-jev-settings-open-logs" type="button">Open logs</button></div><section aria-label="Lifetime activity"><h2>Lifetime</h2><div class="metrics"><div class="metric"><strong id="codex-jev-settings-lifetime-tokens">—</strong><span>Estimated tokens saved</span></div><div class="metric"><strong id="codex-jev-settings-lifetime-replaced">—</strong><span>Results shortened</span></div><div class="metric"><strong id="codex-jev-settings-lifetime-calls">—</strong><span>Jev checks</span></div><div class="metric"><strong id="codex-jev-settings-lifetime-time">—</strong><span>Avg. decision time</span></div></div></section><section><h2>API key</h2><div class="field"><label for="codex-jev-settings-key">API key</label><input id="codex-jev-settings-key" type="password" autocomplete="off" spellcheck="false" maxlength="4096"></div><div class="actions"><button id="codex-jev-settings-test" type="button">Test API key</button><span id="codex-jev-settings-test-status" role="status" aria-live="polite"></span></div></section><section><h2>Behavior</h2><div class="field"><label for="codex-jev-settings-mode">Mode<small>Monitor keeps output · Filter shortens it.</small></label><select id="codex-jev-settings-mode"><option value="observe">Monitor</option><option value="replace">Filter</option></select></div><div id="codex-jev-settings-thresholds"></div></section><div class="actions"><button id="codex-jev-settings-save" type="button" class="primary">Save settings</button></div><p id="codex-jev-settings-message" role="status" aria-live="polite"></p>`;
+    panel.innerHTML = `<div class="header"><h1>Jev</h1><button id="codex-jev-settings-open-logs" type="button">Open logs</button></div><section aria-label="Lifetime activity"><h2>Lifetime</h2><div class="metrics"><div class="metric"><strong id="codex-jev-settings-lifetime-tokens">—</strong><span>Estimated tokens saved</span></div><div class="metric"><strong id="codex-jev-settings-lifetime-replaced">—</strong><span>Results shortened</span></div><div class="metric"><strong id="codex-jev-settings-lifetime-calls">—</strong><span>Jev checks</span></div><div class="metric"><strong id="codex-jev-settings-lifetime-time">—</strong><span>Avg. decision time</span></div></div></section><section><h2>API key</h2><div class="field"><label for="codex-jev-settings-key">API key</label><input id="codex-jev-settings-key" type="password" autocomplete="off" spellcheck="false" maxlength="4096"></div><div class="actions"><button id="codex-jev-settings-test" type="button">Test API key</button><span id="codex-jev-settings-test-status" role="status" aria-live="polite"></span></div></section><section><h2>Behavior</h2><div class="field"><label for="codex-jev-settings-mode">Mode<small>Monitor previews Jev's decisions in the logs while leaving tool output unchanged. Filter shortens approved results.</small></label><select id="codex-jev-settings-mode"><option value="observe">Monitor</option><option value="replace">Filter</option></select></div><div id="codex-jev-settings-thresholds"></div></section><div class="actions"><button id="codex-jev-settings-save" type="button" class="primary">Save settings</button><button id="codex-jev-settings-reset" type="button" class="subtle" title="Restore the default mode and cutoffs in this form. Save to apply." disabled>Reset defaults</button></div><p id="codex-jev-settings-message" role="status" aria-live="polite"></p>`;
     const thresholds = panel.querySelector("#codex-jev-settings-thresholds");
     for (const [hook, heading, fields] of sections) {
       const title = document.createElement("h2");
@@ -192,15 +218,15 @@
         row.className = "field";
         const caption = document.createElement("label");
         caption.htmlFor = id;
-        caption.textContent = `${label} (%)`;
+        caption.textContent = label;
         caption.title = help;
         const input = document.createElement("input");
         input.id = id;
-        input.type = "number";
-        input.min = "0";
-        input.max = "100";
-        input.step = "1";
+        input.type = "text";
+        input.inputMode = "numeric";
+        input.className = "percent-input";
         input.required = true;
+        input.setAttribute("aria-label", `${heading}: ${label} (percent)`);
         input.title = help;
         row.classList.add("threshold-field");
         const controls = document.createElement("div");
@@ -213,11 +239,21 @@
         slider.step = "1";
         slider.title = help;
         slider.setAttribute("aria-label", `${heading}: ${label} slider`);
-        slider.addEventListener("input", () => { input.value = slider.value; });
+        slider.addEventListener("input", () => {
+          input.value = `${slider.value}%`;
+          slider.style.setProperty("--fill", `${slider.value}%`);
+        });
         input.addEventListener("input", () => {
-          if (input.value !== "" && Number.isInteger(Number(input.value)) && Number(input.value) >= 0 && Number(input.value) <= 100) {
-            slider.value = input.value;
+          const value = parsePercentage(input.value);
+          if (value !== null) {
+            slider.value = String(value);
+            slider.style.setProperty("--fill", `${value}%`);
           }
+        });
+        input.addEventListener("blur", () => {
+          const value = parsePercentage(input.value);
+          if (value === null) showMessage("Enter whole percentages from 0 to 100.", "error");
+          input.value = value === null ? `${input.value.trim().replace(/\s*%\s*$/, "")}%` : `${value}%`;
         });
         controls.append(slider, input);
         row.append(caption, controls);
@@ -235,6 +271,12 @@
       if (request("settingsOpenLogs")) { setBusy(true); showMessage(""); }
     });
     panel.querySelector("#codex-jev-settings-key").addEventListener("input", () => showTest(""));
+    panel.querySelector("#codex-jev-settings-reset").addEventListener("click", () => {
+      if (busy || !defaults) return;
+      panel.querySelector("#codex-jev-settings-mode").value = defaults.mode;
+      setThresholds(defaults.thresholds);
+      showMessage("Defaults ready. Save settings to apply.");
+    });
     panel.querySelector("#codex-jev-settings-save").addEventListener("click", () => {
       if (busy) return;
       try {
@@ -261,16 +303,12 @@
     }
     if (action === "settingsRead" && reply.action === "ready") {
       hasKey = Boolean(reply.hasKey);
+      defaults = reply.defaults || null;
+      setBusy(false);
       panel.querySelector("#codex-jev-settings-key").placeholder = hasKey ? "••••••••" : "Enter API key";
       showLifetime(reply.lifetime);
       panel.querySelector("#codex-jev-settings-mode").value = reply.config?.mode || "replace";
-      for (const [hook, , fields] of sections) {
-        for (const [name] of fields) {
-          const value = reply.config?.thresholds?.[hook]?.[name] ?? "";
-          panel.querySelector(`#codex-jev-settings-${hook}-${name}`).value = value;
-          panel.querySelector(`#codex-jev-settings-${hook}-${name}-slider`).value = value;
-        }
-      }
+      setThresholds(reply.config?.thresholds);
     } else if (action === "settingsTest" && reply.action === "tested") {
       if (reply.result?.ok) showTest("OK", "ok");
       else {

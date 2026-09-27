@@ -30,10 +30,12 @@
     let calls = 0, activeViewId = null, freshView = false;
     window.__jevHarnessLastAction = "";
     window.__jevHarnessSettingsRead = 0;
+    window.__jevHarnessLastSettingsSave = null;
     window.acquireVsCodeApi = () => ({ postMessage(request) {
       calls += 1;
       window.__jevHarnessLastAction = request.action;
       if (request.action === "settingsRead") window.__jevHarnessSettingsRead += 1;
+      if (request.action === "settingsSave") window.__jevHarnessLastSettingsSave = request;
       if (activeViewId && activeViewId !== request.viewId) freshView = true;
       activeViewId = request.viewId;
       if (request.action === "setSelection") {
@@ -50,6 +52,9 @@
       if (keySaved) { needsKey = false; health = { ok: true, model: "jev-1.13.0" }; }
       const settings = request.action === "settingsRead" ? { action: "ready", hasKey: true,
         lifetime: { calls: 126, completed: 124, replaced: 41, estimatedTokensSaved: 87320, averageMs: 487 },
+        defaults: { mode: "replace", thresholds: { output: { routine_min: 90, exact_max: 12, unique_max: 10, confidence_min: 70 },
+          test_build: { routine_min: 90, exact_max: 20, unique_max: 20, confidence_min: 70 }, search_listing: {
+            summarize_probability_min: 78, summarize_confidence_min: 70, drop_probability_min: 92, drop_confidence_min: 85 } } },
         config: { mode: "replace", thresholds: { output: { routine_min: 90, exact_max: 20, unique_max: 30, confidence_min: 70 },
           test_build: { routine_min: 85, exact_max: 25, unique_max: 35, confidence_min: 70 }, search_listing: {
             summarize_probability_min: 78, summarize_confidence_min: 70, drop_probability_min: 92, drop_confidence_min: 85 } } } } :
@@ -322,6 +327,9 @@
       check(settingsScreen.querySelector("#codex-jev-settings-mode").options[0].textContent === "Monitor" &&
         settingsScreen.querySelector("#codex-jev-settings-mode").options[1].textContent === "Filter" &&
         settingsScreen.querySelector("#codex-jev-settings-mode").value === "replace", "mode names preserve config values");
+      check(settingsScreen.querySelector('label[for="codex-jev-settings-mode"] small').textContent.includes("leaving tool output unchanged") &&
+        settingsScreen.querySelector('label[for="codex-jev-settings-mode"] small').textContent.includes("logs"),
+        "Monitor explains the preview behavior");
       const openLogs = settingsScreen.querySelector("#codex-jev-settings-open-logs");
       check(getComputedStyle(openLogs).borderRadius === "10px" &&
         getComputedStyle(openLogs).borderTopWidth === "1px", "Codex-sized button corners and border");
@@ -329,20 +337,53 @@
       await until(() => window.__jevHarnessLastAction === "settingsOpenLogs", "Open logs routes through host bridge");
       await until(() => !openLogs.disabled, "Open logs request completes");
       await until(() => settingsScreen.querySelector("main").style.display === "none", "Voice content hidden on Jev page");
-      check(settingsScreen.querySelector("#codex-jev-settings-output-routine_min").value === "90", "threshold loaded");
-      check(settingsScreen.querySelector("#codex-jev-settings-output-confidence_min").value === "70" &&
-        settingsScreen.querySelector("#codex-jev-settings-test_build-confidence_min").value === "70",
+      check(settingsScreen.querySelector("#codex-jev-settings-output-routine_min").value === "90%", "threshold loaded with percent sign");
+      check(settingsScreen.querySelector("#codex-jev-settings-output-confidence_min").value === "70%" &&
+        settingsScreen.querySelector("#codex-jev-settings-test_build-confidence_min").value === "70%",
         "confidence thresholds loaded for both output filters");
       const routineNumber = settingsScreen.querySelector("#codex-jev-settings-output-routine_min");
       const routineSlider = settingsScreen.querySelector("#codex-jev-settings-output-routine_min-slider");
+      check(!settingsScreen.querySelector('label[for="codex-jev-settings-output-routine_min"]').textContent.includes("(%)") &&
+        getComputedStyle(routineSlider).backgroundImage.includes("linear-gradient"),
+        "percent sign moves into the field and slider track is painted");
       routineSlider.value = "82";
       routineSlider.dispatchEvent(new Event("input", { bubbles: true }));
-      check(routineNumber.value === "82", "slider updates the number field");
+      check(routineNumber.value === "82%" && routineSlider.style.getPropertyValue("--fill") === "82%",
+        "slider updates the percentage and track");
       routineNumber.value = "91";
       routineNumber.dispatchEvent(new Event("input", { bubbles: true }));
       check(routineSlider.value === "91", "number field updates the slider");
-      routineNumber.value = "90";
+      routineNumber.focus();
+      routineNumber.blur();
+      check(routineNumber.value === "91%", "blur restores percent sign after entering a bare number");
+      routineNumber.value = "88%";
       routineNumber.dispatchEvent(new Event("input", { bubbles: true }));
+      check(routineSlider.value === "88", "number field accepts an entered percent sign");
+      routineNumber.focus();
+      routineNumber.blur();
+      check(routineNumber.value === "88%", "blur keeps one percent sign");
+      settingsScreen.querySelector("#codex-jev-settings-mode").value = "observe";
+      const reset = settingsScreen.querySelector("#codex-jev-settings-reset");
+      const keyField = settingsScreen.querySelector("#codex-jev-settings-key");
+      keyField.value = "unsaved-key";
+      check(!reset.disabled && getComputedStyle(reset).color !== getComputedStyle(settingsScreen.querySelector("#codex-jev-settings-save")).color,
+        "reset is available with a subdued style");
+      routineNumber.value = "101%";
+      routineNumber.focus();
+      routineNumber.blur();
+      settingsScreen.querySelector("#codex-jev-settings-save").click();
+      check(window.__jevHarnessLastSettingsSave === null &&
+        settingsScreen.querySelector("#codex-jev-settings-message").textContent.includes("0 to 100"),
+        "out-of-range percentages cannot be saved");
+      reset.click();
+      check(settingsScreen.querySelector("#codex-jev-settings-mode").value === "replace" &&
+        settingsScreen.querySelector("#codex-jev-settings-output-exact_max").value === "12%" &&
+        settingsScreen.querySelector("#codex-jev-settings-test_build-routine_min").value === "90%" &&
+        routineNumber.value === "90%" && routineSlider.value === "90" && keyField.value === "unsaved-key" &&
+        settingsScreen.querySelector("#codex-jev-settings-message").textContent.includes("Save settings to apply") &&
+        window.__jevHarnessLastSettingsSave === null,
+        "reset stages default mode and cutoffs without changing the key or saving");
+      keyField.value = "";
       const settingsContent = settingsScreen.querySelector(".settings-content");
       settingsContent.style.width = "320px";
       settingsContent.style.right = "auto";
@@ -357,6 +398,10 @@
       await until(() => settingsScreen.querySelector("#codex-jev-settings-test-status").textContent === "OK", "saved key test result");
       settingsScreen.querySelector("#codex-jev-settings-save").click();
       await until(() => settingsScreen.querySelector("#codex-jev-settings-message").textContent === "Settings saved.", "settings saved inline");
+      check(window.__jevHarnessLastSettingsSave.mode === "replace" &&
+        window.__jevHarnessLastSettingsSave.thresholds.output.exact_max === 12 &&
+        window.__jevHarnessLastSettingsSave.thresholds.output.routine_min === 90,
+        "save submits reset percentages as numbers");
       settingsScreen.querySelector('button[aria-label="General"]').click();
       check(settingsScreen.querySelector("main").style.display !== "none" &&
         !settingsScreen.querySelector("#codex-jev-settings-panel"), "native settings return after navigation");

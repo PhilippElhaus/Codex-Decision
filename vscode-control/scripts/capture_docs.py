@@ -27,7 +27,7 @@ def main() -> None:
             ('unavailable', 'jev-unavailable.png', 620, 280),
             ('missing-key', 'jev-missing-key.png', 340, 260),
             ('onboarding', 'jev-onboarding.png', 520, 720),
-            ('settings', 'jev-settings.png', 1040, 800),
+            ('settings', 'jev-settings.png', 1040, 1320),
         ]
         for state, name, width, height in captures:
             output = IMAGES / name

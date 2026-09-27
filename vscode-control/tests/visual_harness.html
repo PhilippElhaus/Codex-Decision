@@ -42,6 +42,9 @@
     window.acquireVsCodeApi = () => ({ postMessage(request) {
       const settings = request.action === "settingsRead" ? { action: "ready", hasKey: false,
         lifetime: { calls: 126, completed: 124, replaced: 41, estimatedTokensSaved: 87320, averageMs: 487 },
+        defaults: { mode: "replace", thresholds: { output: { routine_min: 90, exact_max: 12, unique_max: 10, confidence_min: 70 },
+          test_build: { routine_min: 90, exact_max: 20, unique_max: 20, confidence_min: 70 }, search_listing: {
+            summarize_probability_min: 78, summarize_confidence_min: 70, drop_probability_min: 92, drop_confidence_min: 85 } } },
         config: { mode: "replace", thresholds: { output: { routine_min: 90, exact_max: 20, unique_max: 30, confidence_min: 70 },
           test_build: { routine_min: 85, exact_max: 25, unique_max: 35, confidence_min: 70 }, search_listing: {
             summarize_probability_min: 78, summarize_confidence_min: 70, drop_probability_min: 92, drop_confidence_min: 85 } } } } :

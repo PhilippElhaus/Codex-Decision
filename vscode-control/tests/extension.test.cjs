@@ -126,6 +126,7 @@ test("composer bridge selects integrations and reports view-scoped activity with
     assert.equal(ready.action, "ready");
     assert.equal(ready.hasKey, false);
     assert.equal(ready.config.thresholds.output.routine_min, 90);
+    assert.deepEqual(ready.defaults, { mode: "replace", thresholds: core.DEFAULT_THRESHOLDS });
     assert.equal(ready.lifetime.calls, 1);
     assert.equal(ready.lifetime.replaced, 1);
     assert.equal(ready.lifetime.estimatedTokensSaved, 2652);
@@ -145,6 +146,7 @@ test("composer bridge selects integrations and reports view-scoped activity with
     assert.equal(JSON.stringify(savedSettings).includes("new-test-key-123"), false);
     const readyAfterSave = (await bridge({ action: "settingsRead" })).settings;
     assert.equal(readyAfterSave.hasKey, true);
+    assert.equal(readyAfterSave.defaults.thresholds.output.routine_min, 90);
     assert.equal(JSON.stringify(readyAfterSave).includes("new-test-key-123"), false);
     const tested = (await bridge({ action: "settingsTest", key: "" })).settings;
     assert.equal(suppliedKey, null);
