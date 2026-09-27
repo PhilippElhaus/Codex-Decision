@@ -16,10 +16,17 @@
     .divider { height: 34px; border-left: 1px solid #303030; }
     .context { color: #989898; }
     .send { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 50%; background: #c5c5c5; color: #202020; font-size: 21px; margin-left: 3px; }
-    .codex-top { display: none; padding: 18px 24px; color: #aaa; }
-    .codex-top strong { display: block; margin-bottom: 22px; color: #ddd; font-size: 19px; }
-    .codex-top span { display: block; margin-top: 14px; }
-    body[data-demo="onboarding"] .codex-top { display: block; }
+    .codex-login { display: none; position: fixed; inset: 0; background: #111214; color: #f4f4f4; }
+    .codex-login header { padding: 22px 30px; font-size: 21px; font-weight: 650; }
+    .codex-login main { position: absolute; top: 48%; left: 24%; width: min(320px, calc(100% - 32px)); transform: translate(-50%, -50%); text-align: center; }
+    .codex-login h1 { margin: 0 0 15px; font-size: 34px; font-weight: 650; }
+    .codex-login p { margin: 0 0 32px; color: #b0b0b0; font-size: 16px; }
+    .codex-login button { display: block; width: 100%; height: 42px; margin-top: 11px; border: 1px solid #3d3f42; border-radius: 9px; background: #242628; color: #f4f4f4; font: inherit; }
+    body[data-demo="onboarding"] .codex-login { display: block; }
+    body[data-demo="onboarding"] .composer { display: none; }
+    body[data-demo="onboarding"] #codex-jev-connect { justify-content: flex-end; padding-right: 28px; background: #11121477; backdrop-filter: blur(1px); }
+    body[data-demo="onboarding"] #codex-jev-connect-card { margin: auto 0 auto auto; }
+    body[data-demo="onboarding"] #codex-jev-connect-art { display: none; }
     .settings-screen { display: none; position: fixed; inset: 0; z-index: 10; background: #181818; color: #d2d2d2; }
     body[data-demo="settings"] .settings-screen { display: block; }
     body[data-demo="settings"] .composer { display: none; }
@@ -69,7 +76,7 @@
   <script src="../../vscode-control/webview/jev-settings.js"></script>
 </head>
 <body>
-  <div class="codex-top"><strong>Codex</strong>Chats<span>Recent conversations</span><span>Start a new chat</span></div>
+  <div class="codex-login" aria-hidden="true"><header>Codex</header><main><h1>Welcome to Codex</h1><p>Sign in to continue</p><button>Sign in with ChatGPT</button><button>Use an API key</button></main></div>
   <div class="composer">
     <div class="prompt">Ask for follow-up changes</div>
     <div class="toolbar">
@@ -80,7 +87,7 @@
       <span class="send">↑</span>
     </div>
   </div>
-  <div class="settings-screen"><nav class="settings-nav" aria-label="Settings"><strong>Settings</strong><div class="settings-items"><div class="settings-item"><button aria-label="General">General</button></div><div class="settings-item"><button aria-label="Voice" aria-current="page"><svg aria-hidden="true" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5" fill="currentColor"/></svg><span>Voice</span></button></div><div class="settings-item"><button aria-label="Configuration">Configuration</button></div><div class="settings-item"><button aria-label="Personalization">Personalization</button></div><div class="settings-item"><button aria-label="Usage &amp; billing">Usage &amp; billing</button></div><div class="settings-item"><button aria-label="MCP servers">MCP servers</button></div><div class="settings-item"><button aria-label="Hooks">Hooks</button></div><div class="settings-item"><button aria-label="Plugins">Plugins</button></div></div></nav><div class="settings-content"><main><h1>Voice</h1><p>Voice settings</p></main></div></div>
+  <div class="settings-screen"><nav class="settings-nav" aria-label="Settings"><strong>Settings</strong><div class="settings-items"><div class="settings-item"><button aria-label="General">General</button></div><div class="settings-item"><button aria-label="Voice" aria-current="page"><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5.5" y="1.5" width="5" height="9" rx="2.5"/><path d="M3 7.5a5 5 0 0 0 10 0M8 12.5v2M5.5 14.5h5"/></svg><span>Voice</span></button></div><div class="settings-item"><button aria-label="Configuration">Configuration</button></div><div class="settings-item"><button aria-label="Personalization">Personalization</button></div><div class="settings-item"><button aria-label="Usage &amp; billing">Usage &amp; billing</button></div><div class="settings-item"><button aria-label="MCP servers">MCP servers</button></div><div class="settings-item"><button aria-label="Hooks">Hooks</button></div><div class="settings-item"><button aria-label="Plugins">Plugins</button></div></div></nav><div class="settings-content"><main><h1>Voice</h1><p>Voice settings</p></main></div></div>
   <script>
     const api = acquireVsCodeApi();
     document.body.dataset.demo = demo;

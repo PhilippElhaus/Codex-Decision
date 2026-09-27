@@ -33,8 +33,6 @@ Open **Codex settings → Jev**, below **Voice**, to test or replace the key, se
 
 ![Connect Jev API key prompt with Test, Save, Skip, and the TypeSafe key link](../docs/images/jev-connect.png)
 
-![Compact Jev missing-key tooltip](../docs/images/jev-missing-key.png)
-
 ![Jev settings page with lifetime activity, log retention, API key, and mode controls](../docs/images/jev-settings-overview.png)
 
 ![Jev settings page with decision method checkboxes and output and test/build cutoff sliders](../docs/images/jev-settings-filters.png)
@@ -51,4 +49,4 @@ python3 -m unittest discover -s tests/integration -p 'test_*.py' -v
 python3 vscode-control/scripts/browser_smoke.py
 ```
 
-The Node suite also covers settings and log edge cases and a large decision log. The browser smoke test runs the real composer control, key overlay, and settings form against a synthetic VS Code bridge. [Visual harness](../tests/browser/visual_harness.html) is the source for the illustrative screenshots. `vscode-control/scripts/capture_docs.py` captures example state without a key. See the [full test map](../tests/README.md).
+The Node suite also covers settings and log edge cases and a large decision log. The browser smoke test runs the real composer control, key overlay, and settings form against a synthetic VS Code bridge. [Visual harness](../tests/browser/visual_harness.html) is the source for the illustrative screenshots. `vscode-control/scripts/capture_docs.py` uses Edge and Pillow to capture example state without a key. See the [full test map](../tests/README.md).

@@ -2,64 +2,58 @@
 
 <img src="assets/logo.png" width="56" alt="Codex Jev logo">
 
-Codex Jev trims large tool results before Codex reads them. It uses Jev to decide which repetitive lines can be omitted, keeps the exact original for recovery, and leaves uncertain results intact.
+Codex Jev shortens noisy tool results before Codex reads them. It keeps selected evidence and a path to the exact original. Uncertain results stay intact.
 
-## Integrations
+## Measured impact
 
-| Selectable integration | What Codex gets |
-| --- | --- |
-| Output filter | Selected verbatim evidence and original line references from repetitive output. |
-| Test/build logs | Failures and completion summaries without routine pass and progress lines. |
-| Search/listing | Relevant matches and file leads from broad results, including `rg --json`. |
+A [live hook benchmark from 2026-09-26](docs/benchmarks/benchmark_live_2026-09-26.md) used 36 real command results and 30 Jev calls. The measurements cover an earlier filter implementation; [current evidence-selection changes](docs/benchmarks/benchmark_offline_2026-09-27.md) have offline verification.
 
-All integrations start off. The button in the Codex composer selects them and shows Jev health and recent outcomes. The composer images show synthetic activity from the current control.
-
-<img src="docs/images/jev-menu.png" width="620" alt="Jev integrations selector in the Codex composer">
-
-## Settings
-
-Selecting a Jev integration without a key opens **Connect Jev** over the Codex side window. Its solid backdrop hides the current chats, and a link below the buttons opens the typesafe.ai homepage in the system browser. You can test and save the key in Connect Jev, or choose **Skip for now** and reopen setup from the Jev menu or the compact missing-key tooltip. Open **Codex settings → Jev**, below **Voice**, to test or replace the key, view lifetime savings and activity, open the session logs in Explorer, or change the integration cutoffs with visible sliders and percentage fields. Short descriptions under the filter headings explain what each one trims. Enter a whole percentage with or without `%`; the field adds `%` when it loses focus. Out-of-range values restore the last valid slider value. The saved key mask matches its length without sending the key to the webview. **Never delete logs** saves immediately and disables the MB limit. **Reset defaults**, at the right of the action row, stages the default mode, cutoffs, decision methods, and 50 MB log limit until you select **Save settings**. It leaves the API key and integration selections intact. Output and test/build use Noul and Choice by default; search/listing uses Choice. Disable a method with its checkbox. A filter with all methods off leaves output unchanged. Score is not used by these filters. **Monitor** previews decisions in the logs and leaves tool output unchanged. **Filter** shortens approved results. Changes apply to the next tool result. The captures show example state and contain no key.
-
-Each Jev request gets a private JSON receipt under `PLUGIN_DATA/logs/YYYY-MM-DD-<session-hash>/`. Its filename uses UTC `HH-MM-SS-NNN-<filter>.json`, with a sequence number for receipts created in the same second. The receipt records the original and visible result, request, answer, decision, and chunk position. Logs have a 50 MB default limit; the oldest files are removed first. Set 1–9999 MB in **Log retention**, or select **Never delete logs** to disable cleanup. The limit applies to session logs and receipts; originals referenced by shortened tool output stay under `PLUGIN_DATA/outputs/` until removed separately.
-
-The output filter checks all eligible text before shortening it. It keeps selected source text with original line numbers and an omission map. It marks any long excerpt that is truncated. Test/build filtering recognizes Go JSON test events and Cargo JSON build events when those formats are present. Search/listing can read ripgrep JSON matches and keeps a path to the exact original. [Integration design](docs/architecture/design_integrations.md) explains the fail-open boundaries. A [quality replay tool](scripts/evaluate_quality.py) checks labeled evidence and paired task outcomes and can propose stricter cutoffs; it never changes settings automatically.
-
-<img src="docs/images/jev-connect.png" width="520" alt="Connect Jev API key prompt with Test, Save, Skip, and the TypeSafe key link">
-
-<img src="docs/images/jev-missing-key.png" width="340" alt="Compact Jev tooltip with a Connect button when no API key is saved">
-
-<img src="docs/images/jev-settings-overview.png" width="850" alt="Jev settings page with lifetime activity, log retention, API key, and mode controls">
-
-<img src="docs/images/jev-settings-filters.png" width="850" alt="Jev settings page with decision method checkboxes and output and test/build cutoff sliders">
-
-The [full settings capture](docs/images/jev-settings.png) includes the search/listing cutoffs and Save settings action.
-
-## Measured results
-
-A [dated live hook benchmark](docs/benchmarks/benchmark_live_2026-09-26.md) ran the earlier implementation over real command output with 30 Jev calls. It is historical evidence, not a measurement of the current evidence-selection changes. Token counts use `o200k_base`.
-
-| Integration | Replaced results | Model-visible tokens saved | Reduction on replaced results |
+| Integration | Results shortened | Model-visible tokens saved | Reduction on shortened results |
 | --- | ---: | ---: | ---: |
 | Output filter | 9 | 48,886 | 95.3% |
-| Test/build logs | 12 | 13,475 | **90.0%** |
+| Test/build logs | 12 | 13,475 | 90.0% |
 | Search/listing | 3 | 8,346 | 71.3% |
+| **Total** | **24** | **70,707** | — |
 
-Across all 36 results, including oversized inputs that the hook deliberately skipped, the integrations saved **70,707 model-visible tokens**. These are tool-output measurements, not billed-token or full-task savings. Jev kept all six search-hit outputs when it was uncertain.
+Counts use `o200k_base` on tool text. They are not billed-token or full-task savings. Jev kept six search-hit results when uncertain; six other results were skipped by local checks.
 
-<img src="docs/images/jev-tooltip.png" width="620" alt="Jev activity and savings shown in the Codex composer">
+## What it filters
 
-## Quick install
+| Integration | Kept in Codex's context |
+| --- | --- |
+| Output filter | Relevant source lines, original line numbers, and an omission map. |
+| Test/build logs | Failures and summaries instead of routine pass and progress lines. |
+| Search/listing | Relevant matches and file leads from broad results, including `rg --json`. |
+
+All three start disabled. **Monitor** records decisions without changing output. **Filter** shortens approved results. A shortened result links to its saved original. Eligible text reaches [TypeSafe AI's Jev API](docs/architecture/design_data.md); keep sensitive output outside these filters.
+
+<img src="docs/images/jev-menu.png" width="620" alt="Jev integration selector in the Codex composer">
+
+## Setup and settings
+
+1. [Install the plugin](docs/setup/setup_installation.md). The optional [VS Code control](vscode-control/README.md) adds the composer menu and settings page.
+2. Enable an integration. **Connect Jev** asks for a typesafe.ai API key; test and save it there. Do not enter the key in chat.
+3. Open **Codex settings → Jev** to select Monitor or Filter, adjust cutoffs, test or replace the key, and open logs. Changes apply to the next tool result.
+
+<img src="docs/images/jev-connect.png" width="900" alt="Illustrative Connect Jev API key screen beside the Codex sign-in view; example state with no key">
+
+<img src="docs/images/jev-settings-overview.png" width="850" alt="Jev settings page showing activity, log retention, API key, and mode">
+
+<img src="docs/images/jev-settings-filters.png" width="850" alt="Jev settings page showing filter methods and cutoffs">
+
+The captures use synthetic state and contain no key. The [full settings capture](docs/images/jev-settings.png) shows all three integrations.
+
+## Install
 
 ```bash
 codex plugin marketplace add https://github.com/PhilippElhaus/Codex-Jev
 codex plugin add codex-jev@codex-jev
 ```
 
-Build the [VS Code control VSIX](vscode-control/README.md) and install `codex-jev-control-0.2.17.vsix`. Set `codexJev.dataDirectory` to the plugin data directory, and apply the version-pinned composer patch. Enable an integration to open key setup when no key is saved. Start a new Codex thread.
+The bundled `jev-output` skill helps configure the filters and check shortened evidence. The [public directory submission](docs/submission/README.md) is prepared separately. The VS Code control requires a [version-pinned Codex patch](vscode-control/README.md).
 
-## Documentation
+## More detail
 
-- [Installation](docs/setup/setup_installation.md), [credentials](docs/setup/setup_credentials.md), and [migration](docs/setup/setup_migration.md)
-- [Integration design](docs/architecture/design_integrations.md) and [data handling](docs/architecture/design_data.md)
-- [VS Code control](docs/architecture/design_vscode.md)
-- [Benchmarks](docs/benchmarks/benchmark_live_2026-09-26.md), [current offline verification](docs/benchmarks/benchmark_offline_2026-09-27.md), [test map](tests/README.md), and [verification](docs/development/development_verification.md)
+- [Key setup](docs/setup/setup_credentials.md) and [data handling](docs/architecture/design_data.md)
+- [Integration design](docs/architecture/design_integrations.md) and [verification](docs/development/development_verification.md)
+- [Benchmark methods](docs/benchmarks/benchmark_live_2026-09-26.md) and [test map](tests/README.md)

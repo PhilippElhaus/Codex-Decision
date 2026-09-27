@@ -8,6 +8,8 @@ import subprocess
 import tempfile
 from urllib.parse import quote
 
+from PIL import Image
+
 from windows_browser import browser_environment, remove_profile, windows_path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -25,8 +27,7 @@ def main() -> None:
             ('menu', 'jev-menu.png', 620, 340),
             ('tooltip', 'jev-tooltip.png', 620, 280),
             ('unavailable', 'jev-unavailable.png', 620, 280),
-            ('missing-key', 'jev-missing-key.png', 340, 260),
-            ('onboarding', 'jev-onboarding.png', 520, 720),
+            ('onboarding', 'jev-connect.png', 950, 610),
             ('settings', 'jev-settings.png', 1040, 1650),
         ]
         for state, name, width, height in captures:
@@ -56,6 +57,15 @@ def main() -> None:
                                         '>Filter</option>' not in result.stdout):
                 raise RuntimeError('Jev settings were not rendered in Codex settings')
             print(f'{name}: {output.stat().st_size} bytes; layout={layout}')
+        settings = Image.open(IMAGES / 'jev-settings.png')
+        if settings.size != (2080, 3300):
+            raise RuntimeError(f'Unexpected settings capture size: {settings.size}')
+        for name, box in (
+            ('jev-settings-overview.png', (0, 0, 2080, 1250)),
+            ('jev-settings-filters.png', (0, 1240, 2080, 2550)),
+        ):
+            settings.crop(box).save(IMAGES / name, optimize=True)
+            print(f'{name}: {box}')
     finally:
         remove_profile(profile, 'jev-docs-')
 

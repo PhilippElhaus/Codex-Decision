@@ -167,23 +167,23 @@
       #codex-jev-connect-art pre { position: absolute; top: 50%; left: 50%; margin: 0; color: #bdc9d3; opacity: .18; font: 12px/18px monospace; letter-spacing: 2px; white-space: pre; animation: codex-jev-art-drift 14s ease-in-out infinite alternate; }
       @keyframes codex-jev-art-drift { from { transform: translate(-52%, -51%) rotate(-2deg); } to { transform: translate(-48%, -49%) rotate(2deg); } }
       @media (prefers-reduced-motion: reduce) { #codex-jev-connect-art pre { animation: none; transform: translate(-50%, -50%); } }
-      #codex-jev-connect-card { position: relative; width: min(100%, 460px); min-width: 0; margin: auto; padding: 28px; border: 1px solid var(--vscode-panel-border, #3c3c3c); border-radius: 12px; background: var(--vscode-editor-background, #1b1b1b); box-shadow: 0 20px 60px #0008; }
-      #codex-jev-connect-heading { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
-      #codex-jev-connect h1 { margin: 0; font-size: clamp(28px, 5vw, 36px); line-height: 1.2; }
-      #codex-jev-connect-icon { width: 38px; height: 38px; object-fit: contain; flex: none; }
-      #codex-jev-connect p { margin: 0 0 28px; color: var(--vscode-descriptionForeground, #999); font-size: 14px; line-height: 1.5; }
+      #codex-jev-connect-card { position: relative; width: min(100%, 440px); min-width: 0; margin: auto; padding: 24px; border: 1px solid var(--vscode-panel-border, #3c3c3c); border-radius: 12px; background: var(--vscode-editor-background, #1b1b1b); box-shadow: 0 20px 60px #0008; }
+      #codex-jev-connect-heading { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
+      #codex-jev-connect h1 { margin: 0; font-size: clamp(26px, 5vw, 32px); line-height: 1.2; }
+      #codex-jev-connect-icon { width: 34px; height: 34px; object-fit: contain; flex: none; }
+      #codex-jev-connect p { margin: 0 0 22px; color: var(--vscode-descriptionForeground, #999); font-size: 14px; line-height: 1.5; }
       #codex-jev-connect label { display: block; margin-bottom: 6px; font-size: 14px; }
-      #codex-jev-key { width: 100%; height: 42px; padding: 8px 10px; border: 1px solid var(--vscode-input-border, #555); border-radius: 9px; outline: none; background: var(--vscode-input-background, #202020); color: var(--vscode-input-foreground, #ddd); font: inherit; }
+      #codex-jev-key { width: 100%; height: 40px; padding: 8px 10px; border: 1px solid var(--vscode-input-border, #555); border-radius: 8px; outline: none; background: var(--vscode-input-background, #202020); color: var(--vscode-input-foreground, #ddd); font: inherit; }
       #codex-jev-key:focus { border-color: var(--vscode-focusBorder, #e4a900); }
-      #codex-jev-connect-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
-      #codex-jev-connect button { min-height: 36px; padding: 7px 13px; border: 1px solid var(--vscode-contrastBorder, #707070); border-radius: 10px; background: var(--vscode-button-secondaryBackground, #262626); color: var(--vscode-button-secondaryForeground, #ddd); font: inherit; cursor: pointer; }
+      #codex-jev-connect-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+      #codex-jev-connect button { min-height: 34px; padding: 6px 12px; border: 1px solid var(--vscode-contrastBorder, #707070); border-radius: 8px; background: var(--vscode-button-secondaryBackground, #262626); color: var(--vscode-button-secondaryForeground, #ddd); font: inherit; cursor: pointer; }
       #codex-jev-connect button:hover { background: var(--vscode-button-secondaryHoverBackground, #353535); }
       #codex-jev-connect button:focus-visible { outline: 2px solid var(--vscode-focusBorder, #83bcf7); outline-offset: 2px; }
       #codex-jev-connect button:disabled { opacity: .55; cursor: default; }
-      #codex-jev-connect-footer { display: flex; align-items: center; gap: 10px; margin-top: 18px; }
+      #codex-jev-connect-footer { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
       #codex-jev-connect-footer button { white-space: nowrap; }
       #codex-jev-skip-key { margin-left: auto; }
-      #codex-jev-connect-link { margin: 18px 0 0 !important; text-align: center; font-size: 12px !important; }
+      #codex-jev-connect-link { margin: 16px 0 0 !important; text-align: center; font-size: 12px !important; }
       #codex-jev-connect-link a { color: var(--vscode-textLink-foreground, #83bcf7); text-decoration: none; }
       #codex-jev-connect-link a:hover { text-decoration: underline; }
       #codex-jev-connect-link a:focus-visible { outline: 2px solid var(--vscode-focusBorder, #83bcf7); outline-offset: 2px; }

@@ -2,6 +2,7 @@
 
 import json
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -49,6 +50,31 @@ class OutputEvidenceTests(unittest.TestCase):
         self.assertTrue(all(piece.endswith("\n") for piece in chunks))
         self.assertTrue(all(len(json.dumps(piece, ensure_ascii=False).encode()) <= jev.CHUNK_JSON_BYTES
                             for piece in chunks))
+
+    def test_unicode_crlf_and_final_unterminated_line_survive_replacement(self):
+        output = "".join(f"Processing item {i:04d} 🧪\r\n" for i in range(1200)) + "Completed: 1200 ☃"
+        samples = []
+        with tempfile.TemporaryDirectory(prefix="jev-unicode-output-", dir="/tmp") as directory:
+            result = jev.decide(
+                event("build", output), jev.Config(enabled=True),
+                lambda state, _: samples.append(state["output_sample"]) or GOOD,
+                storage=Path(directory),
+            )
+            self.assertEqual(result.status, "replace")
+            self.assertGreater(len(samples), 1)
+            self.assertEqual("".join(samples), output)
+            original = Path(re.search(r"Full original: ([^\n]+)", result.hook_output["reason"]).group(1))
+            self.assertEqual(original.read_bytes(), output.encode("utf-8"))
+            self.assertIn("Completed: 1200 ☃", result.hook_output["reason"])
+
+    def test_unencodable_text_keeps_original_without_jev_call(self):
+        output = "".join(f"Processing item {i:04d}\n" for i in range(400)) + "\ud800"
+        result = jev.decide(
+            event("build", output), jev.Config(enabled=True),
+            lambda *_: self.fail("Unencodable text must not reach Jev"), simulate=True,
+        )
+        self.assertEqual((result.status, result.reason), ("keep", "evaluator_unavailable"))
+        self.assertIsNone(result.hook_output)
 
     def test_chunk_veto_stops_later_waves(self):
         output = "".join(f"Processing item {i:05d}\n" for i in range(18000))

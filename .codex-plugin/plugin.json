@@ -1,6 +1,6 @@
 {
   "name": "codex-jev",
-  "version": "0.2.7+codex.20260927171359",
+  "version": "0.3.0",
   "description": "Jev-gated filtering for repetitive output, test/build logs, and broad search/listing results.",
   "author": {
     "name": "Philipp Elhaus",
@@ -15,24 +15,24 @@
     "hooks",
     "context"
   ],
+  "skills": "./skills/",
   "interface": {
     "displayName": "Codex Jev",
-    "shortDescription": "Filter large tool results before they enter context.",
-    "longDescription": "Codex Jev offers three selectable PostToolUse filters for repetitive output, routine test/build logs, and broad search or file listings. Jev judges bounded inputs and can check large output in multiple chunks; replacement preserves a recoverable exact original. A companion VS Code control shows connection health and recent actions.",
+    "shortDescription": "Trim repetitive tool output",
+    "longDescription": "Codex Jev adds three optional local PostToolUse filters for repetitive command output, routine test/build logs, and broad search or file listings. It sends bounded portions of eligible results to TypeSafe AI's Jev API for decisions. Uncertain results remain intact, and every shortened result points to an exact local original. Filters start disabled and require a TypeSafe API key and trust in the bundled hook. The included skill helps configure Jev and verify shortened evidence. The optional VS Code control and version-pinned composer patch are installed separately from the plugin package. Local hook execution is unavailable on surfaces without its scripts and runtime.",
     "developerName": "Philipp Elhaus",
-    "category": "Productivity",
+    "category": "Developer Tools",
     "capabilities": [
-      "Lifecycle hooks"
+      "Local lifecycle hooks",
+      "Tool-output evidence review"
     ],
-    "websiteURL": "https://philippelhaus.github.io/",
-    "defaultPrompt": "Explain Codex Jev's replacement decisions and safety gates.",
+    "websiteURL": "https://github.com/PhilippElhaus/Codex-Jev",
+    "defaultPrompt": [
+      "Help me set up Codex Jev for test logs.",
+      "Check whether this Jev-shortened result kept the evidence I need."
+    ],
     "brandColor": "#69AFF3",
     "logo": "./assets/logo.png",
-    "composerIcon": "./assets/icon.png",
-    "screenshots": [
-      "./docs/images/jev-menu.png",
-      "./docs/images/jev-settings-overview.png",
-      "./docs/images/jev-connect.png"
-    ]
+    "composerIcon": "./assets/icon.png"
   }
 }
