@@ -2,7 +2,7 @@
   "name": "codex-jev-control",
   "displayName": "Codex Jev Control",
   "description": "Jev integration controls inside the Codex composer",
-  "version": "0.2.13",
+  "version": "0.2.14",
   "publisher": "elhaus-labs",
   "license": "MIT",
   "icon": "icon.png",
@@ -29,7 +29,7 @@
           "enum": ["replace", "observe"],
           "default": "replace",
           "scope": "application",
-          "description": "Jev output mode. Replacement is active when the hook is selected; observe only records decisions and keeps full output."
+          "description": "Filter shortens approved output. Monitor records decisions and keeps full output. Stored values remain replace and observe."
         }
       }
     }

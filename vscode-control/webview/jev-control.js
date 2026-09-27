@@ -147,7 +147,7 @@
       #codex-jev-health-row { display: flex; align-items: center; gap: 5px; min-height: 20px; }
       #codex-jev-health-row strong { color: #fff; white-space: nowrap; }
       #codex-jev-health-reason { display: none; color: #e99490; margin: 0; min-width: 0; }
-      #codex-jev-retry { display: none; margin-left: auto; padding: 2px 6px; border: 1px solid #666; border-radius: 5px; background: #383838; color: #eee; font: inherit; cursor: pointer; }
+      #codex-jev-retry { display: none; margin-left: auto; padding: 2px 7px; border: 1px solid #666; border-radius: 8px; background: #383838; color: #eee; font: inherit; cursor: pointer; }
       #codex-jev-retry:hover { background: #484848; }
       #codex-jev-retry:disabled { opacity: .6; cursor: default; }
       #codex-jev-retry:focus-visible { outline: 2px solid #83bcf7; outline-offset: 2px; }
@@ -172,10 +172,10 @@
       #codex-jev-connect-icon { width: 38px; height: 38px; object-fit: contain; flex: none; }
       #codex-jev-connect p { margin: 0 0 28px; color: var(--vscode-descriptionForeground, #999); font-size: 14px; line-height: 1.5; }
       #codex-jev-connect label { display: block; margin-bottom: 6px; font-size: 14px; }
-      #codex-jev-key { width: 100%; height: 42px; padding: 8px 10px; border: 1px solid var(--vscode-input-border, #555); border-radius: 5px; outline: none; background: var(--vscode-input-background, #202020); color: var(--vscode-input-foreground, #ddd); font: inherit; }
+      #codex-jev-key { width: 100%; height: 42px; padding: 8px 10px; border: 1px solid var(--vscode-input-border, #555); border-radius: 9px; outline: none; background: var(--vscode-input-background, #202020); color: var(--vscode-input-foreground, #ddd); font: inherit; }
       #codex-jev-key:focus { border-color: var(--vscode-focusBorder, #e4a900); }
       #codex-jev-connect-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
-      #codex-jev-connect button { min-height: 36px; padding: 7px 13px; border: 1px solid var(--vscode-contrastBorder, #707070); border-radius: 5px; background: var(--vscode-button-secondaryBackground, #262626); color: var(--vscode-button-secondaryForeground, #ddd); font: inherit; cursor: pointer; }
+      #codex-jev-connect button { min-height: 36px; padding: 7px 13px; border: 1px solid var(--vscode-contrastBorder, #707070); border-radius: 10px; background: var(--vscode-button-secondaryBackground, #262626); color: var(--vscode-button-secondaryForeground, #ddd); font: inherit; cursor: pointer; }
       #codex-jev-connect button:hover { background: var(--vscode-button-secondaryHoverBackground, #353535); }
       #codex-jev-connect button:focus-visible { outline: 2px solid var(--vscode-focusBorder, #83bcf7); outline-offset: 2px; }
       #codex-jev-connect button:disabled { opacity: .55; cursor: default; }
@@ -196,7 +196,7 @@
     root = document.createElement("div");
     root.id = "codex-jev";
     root.innerHTML = `
-      <button id="codex-jev-button" type="button" aria-label="Jev integrations" aria-expanded="false" aria-controls="codex-jev-menu"><span id="codex-jev-dot"></span><span id="codex-jev-label">jev</span><span id="codex-jev-observe">OBS</span></button>
+      <button id="codex-jev-button" type="button" aria-label="Jev integrations" aria-expanded="false" aria-controls="codex-jev-menu"><span id="codex-jev-dot"></span><span id="codex-jev-label">jev</span><span id="codex-jev-observe">MON</span></button>
       <div id="codex-jev-tip" role="group" aria-label="Jev status"><div id="codex-jev-health-row"><strong></strong><span id="codex-jev-health-reason"></span><button id="codex-jev-retry" type="button">Retry</button></div><span id="codex-jev-mode"></span><h3 id="codex-jev-session-heading">This session</h3><div id="codex-jev-stats"></div><div id="codex-jev-tokens"></div><h3 id="codex-jev-history-heading">Recent Actions</h3><ol id="codex-jev-history"></ol><p id="codex-jev-empty">None yet</p></div>
       <div id="codex-jev-menu" role="group" aria-label="Jev integrations" data-open="false"><h2>Jev integrations</h2><button id="codex-jev-option" class="codex-jev-option" type="button" role="checkbox" aria-checked="false"><span class="codex-jev-check"></span><span><strong>Output filter</strong><small>Check repetitive tool output with Jev</small></span></button><button id="codex-jev-test-build" class="codex-jev-option" type="button" role="checkbox" aria-checked="false"><span class="codex-jev-check"></span><span><strong>Test/build logs</strong><small>Jev checks routine lines before trimming</small></span></button><button id="codex-jev-search-listing" class="codex-jev-option" type="button" role="checkbox" aria-checked="false"><span class="codex-jev-check"></span><span><strong>Search/listing</strong><small>Jev trims broad search and file lists</small></span></button><button id="codex-jev-open-connect" class="codex-jev-option" type="button">Connect Jev…</button><p>Select none to turn Jev off.</p></div>`;
     document.body.appendChild(root);
@@ -303,7 +303,7 @@
     retry.disabled = Boolean(retryRequestId);
     retry.textContent = needsSetup ? "Connect" : retryRequestId ? "Checking…" : "Retry";
     root.querySelector("#codex-jev-mode").textContent = state.enabled ?
-      `${[state.outputEnabled && "output", state.testBuildEnabled && "test/build", state.searchListingEnabled && "search/listing"].filter(Boolean).join(" + ")}${state.mode === "observe" ? " · observe" : ""}` : "No integrations selected. Click to choose.";
+      `${[state.outputEnabled && "output", state.testBuildEnabled && "test/build", state.searchListingEnabled && "search/listing"].filter(Boolean).join(" + ")}${state.mode === "observe" ? " · monitor" : ""}` : "No integrations selected. Click to choose.";
     const stats = state.stats || {};
     const completed = Number(stats.completed) || 0;
     const average = completed ? formatDuration((Number(stats.elapsedMs) || 0) / completed) : "—";

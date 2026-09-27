@@ -49,11 +49,13 @@
       const keySaved = request.action === "saveApiKey";
       if (keySaved) { needsKey = false; health = { ok: true, model: "jev-1.13.0" }; }
       const settings = request.action === "settingsRead" ? { action: "ready", hasKey: true,
+        lifetime: { calls: 126, completed: 124, replaced: 41, estimatedTokensSaved: 87320, averageMs: 487 },
         config: { mode: "replace", thresholds: { output: { routine_min: 90, exact_max: 20, unique_max: 30 },
           test_build: { routine_min: 85, exact_max: 25, unique_max: 35 }, search_listing: {
             summarize_probability_min: 78, summarize_confidence_min: 70, drop_probability_min: 92, drop_confidence_min: 85 } } } } :
         request.action === "settingsSave" ? { action: "saved", hasKey: true } :
-          request.action === "settingsTest" ? { action: "tested", result: { ok: true, model: "jev-1.13.0" } } : undefined;
+          request.action === "settingsTest" ? { action: "tested", result: { ok: true, model: "jev-1.13.0" } } :
+            request.action === "settingsOpenLogs" ? { action: "openedLogs" } : undefined;
       queueMicrotask(() => window.dispatchEvent(new MessageEvent("message", { data: {
         type: "codex-jev-reply", id: request.id,
         status: { enabled: outputEnabled || testBuildEnabled || searchListingEnabled, outputEnabled, testBuildEnabled, searchListingEnabled, needsKey, keyTest, keySaved, settings, health, busy, mode, recent: freshView ? "No decision recorded yet" : history[0],
@@ -218,7 +220,7 @@
       check(getComputedStyle(observeBadge).display === "none", "replacement mode has no observe badge");
       mode = "observe";
       await until(() => root.dataset.observe === "true", "observe mode arrives from settings");
-      check(getComputedStyle(observeBadge).display !== "none" && observeBadge.textContent === "OBS", "observe badge visible");
+      check(getComputedStyle(observeBadge).display !== "none" && observeBadge.textContent === "MON", "monitor badge visible");
       check(button.style.color === "rgb(135, 205, 164)", "observe mode preserves health color");
       document.documentElement.style.width = `${paneWidth - 80}px`;
       composer.style.width = `${wideWidth - (gap - fullWidth + 4)}px`;
@@ -310,8 +312,22 @@
       check(jevSettings.querySelector('img[src$="jev-icon.png"]'), "Jev navigation uses the probability icon");
       jevSettings.click();
       await until(() => settingsScreen.querySelector("#codex-jev-settings-panel") &&
-        settingsScreen.querySelector("#codex-jev-settings-key-state").textContent === "An API key is saved.", "Jev settings render inline");
+        settingsScreen.querySelector("#codex-jev-settings-lifetime-tokens").textContent === "~87,320", "Jev settings render lifetime totals inline");
       check(window.__jevHarnessSettingsRead === 1, "settings load through host bridge");
+      check(settingsScreen.querySelector("#codex-jev-settings-lifetime-calls").textContent === "126" &&
+        settingsScreen.querySelector("#codex-jev-settings-lifetime-time").textContent === "487 ms", "lifetime metrics loaded");
+      check(!settingsScreen.textContent.includes("Changes apply to the next tool result") &&
+        !settingsScreen.textContent.includes("An API key is saved") &&
+        !settingsScreen.textContent.includes("The saved key is masked"), "no noisy settings copy");
+      check(settingsScreen.querySelector("#codex-jev-settings-mode").options[0].textContent === "Monitor" &&
+        settingsScreen.querySelector("#codex-jev-settings-mode").options[1].textContent === "Filter" &&
+        settingsScreen.querySelector("#codex-jev-settings-mode").value === "replace", "mode names preserve config values");
+      const openLogs = settingsScreen.querySelector("#codex-jev-settings-open-logs");
+      check(getComputedStyle(openLogs).borderRadius === "10px" &&
+        getComputedStyle(openLogs).borderTopWidth === "1px", "Codex-sized button corners and border");
+      openLogs.click();
+      await until(() => window.__jevHarnessLastAction === "settingsOpenLogs", "Open logs routes through host bridge");
+      await until(() => !openLogs.disabled, "Open logs request completes");
       await until(() => settingsScreen.querySelector("main").style.display === "none", "Voice content hidden on Jev page");
       check(settingsScreen.querySelector("#codex-jev-settings-output-routine_min").value === "90", "threshold loaded");
       settingsScreen.querySelector("#codex-jev-settings-test").click();

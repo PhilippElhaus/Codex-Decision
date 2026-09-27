@@ -7,7 +7,7 @@ const path = require("node:path");
 const test = require("node:test");
 const {
   activitySummary, checkHealth, completeThresholds, decisionSummary, estimateTokensSaved, formatDuration, outcomeLine, parseHealthOutput, readApiKey, readConfig,
-  readEventOffset, readEventsSince, readLatestEvent, readRecentOutcomes, writeApiKey, writeEnabled, writeMode, writeSelection, writeThresholds,
+  readEventOffset, readEventsSince, readLatestEvent, readLifetimeStats, readRecentOutcomes, writeApiKey, writeEnabled, writeMode, writeSelection, writeThresholds,
 } = require("../core");
 
 test("settings thresholds round trip and reject invalid percentages", async () => {
@@ -130,6 +130,26 @@ test("recent decision is read from a bounded log tail", async () => {
   } finally {
     await fs.rm(directory, { recursive: true, force: true });
   }
+});
+
+test("lifetime activity scans retained decisions across sessions", async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-lifetime-test-"));
+  try {
+    assert.deepEqual(await readLifetimeStats(directory), { calls: 0, completed: 0, replaced: 0,
+      savedChars: 0, estimatedTokensSaved: 0, averageMs: 0 });
+    const rows = [
+      { status: "calling", reason: "jev_request" },
+      { status: "replace", reason: "jev_replace", original_chars: 10000, capsule_chars: 2000, elapsed_ms: 400 },
+      { status: "skip", reason: "small", original_chars: 10, elapsed_ms: 0 },
+      { status: "calling", reason: "jev_request" },
+      { status: "candidate", reason: "observe", original_chars: 12000, capsule_chars: 0, elapsed_ms: 600 },
+      { status: "keep", reason: "jev_keep", original_chars: 8000, elapsed_ms: 200 },
+      { status: "replace", reason: "jev_replace", original_chars: 9000, capsule_chars: null, elapsed_ms: 100 },
+    ];
+    await fs.writeFile(path.join(directory, "events.jsonl"), rows.map((row) => JSON.stringify(row)).join("\n") + "\nnot-json\n");
+    assert.deepEqual(await readLifetimeStats(directory), { calls: 2, completed: 4, replaced: 2,
+      savedChars: 8000, estimatedTokensSaved: 2000, averageMs: 325 });
+  } finally { await fs.rm(directory, { recursive: true, force: true }); }
 });
 
 test("summary keeps three signals and missing capsule sizes do not imply savings", () => {

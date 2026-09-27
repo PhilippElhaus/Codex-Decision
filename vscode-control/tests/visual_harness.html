@@ -40,7 +40,8 @@
       "replaced · test/build · 6,367 chars · -95%",
     ];
     window.acquireVsCodeApi = () => ({ postMessage(request) {
-      const settings = request.action === "settingsRead" ? { action: "ready", hasKey: true,
+      const settings = request.action === "settingsRead" ? { action: "ready", hasKey: false,
+        lifetime: { calls: 126, completed: 124, replaced: 41, estimatedTokensSaved: 87320, averageMs: 487 },
         config: { mode: "replace", thresholds: { output: { routine_min: 90, exact_max: 20, unique_max: 30 },
           test_build: { routine_min: 85, exact_max: 25, unique_max: 35 }, search_listing: {
             summarize_probability_min: 78, summarize_confidence_min: 70, drop_probability_min: 92, drop_confidence_min: 85 } } } } :
@@ -87,7 +88,7 @@
       else if (demo !== "composer" && demo !== "onboarding" && demo !== "settings") document.getElementById("codex-jev-tip").style.display = "block";
       if (demo === "settings") {
         document.querySelector('[data-codex-jev-settings="true"]')?.click();
-        setTimeout(() => document.getElementById("codex-jev-settings-test")?.click(), 150);
+        document.querySelector('[data-codex-jev-settings="true"] img')?.setAttribute("src", "../icon.png");
       }
       const anchor = document.querySelector(".access").getBoundingClientRect();
       const button = document.getElementById("codex-jev-button").getBoundingClientRect();

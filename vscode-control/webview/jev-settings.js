@@ -101,6 +101,20 @@
     if (!panel) return;
     panel.querySelector("#codex-jev-settings-test").disabled = value;
     panel.querySelector("#codex-jev-settings-save").disabled = value;
+    panel.querySelector("#codex-jev-settings-open-logs").disabled = value;
+  }
+
+  function formatDuration(milliseconds) {
+    if (!milliseconds) return "—";
+    return milliseconds < 1000 ? `${milliseconds} ms` : `${(milliseconds / 1000).toFixed(1)} s`;
+  }
+
+  function showLifetime(stats = {}) {
+    const count = (value) => (Number.isSafeInteger(value) && value >= 0 ? value : 0).toLocaleString("en-US");
+    panel.querySelector("#codex-jev-settings-lifetime-tokens").textContent = `~${count(stats.estimatedTokensSaved)}`;
+    panel.querySelector("#codex-jev-settings-lifetime-replaced").textContent = count(stats.replaced);
+    panel.querySelector("#codex-jev-settings-lifetime-calls").textContent = count(stats.calls);
+    panel.querySelector("#codex-jev-settings-lifetime-time").textContent = formatDuration(stats.averageMs);
   }
 
   function thresholdValues() {
@@ -128,29 +142,37 @@
       nav[aria-label="Settings"]:has([data-codex-jev-settings="true"][aria-selected="true"]) button[aria-label="Voice"] { background: transparent !important; }
       #codex-jev-settings-panel { box-sizing: border-box; width: 100%; max-width: 740px; margin: 0 auto; padding: 28px 24px 56px; color: var(--vscode-foreground, #d0d0d0); font: 13px var(--vscode-font-family, sans-serif); }
       #codex-jev-settings-panel * { box-sizing: border-box; }
-      #codex-jev-settings-panel h1 { font-size: 24px; margin: 0 0 12px; }
-      #codex-jev-settings-panel h2 { font-size: 17px; margin: 28px 0 12px; padding-bottom: 8px; border-bottom: 1px solid var(--vscode-panel-border, #333); }
+      #codex-jev-settings-panel .header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+      #codex-jev-settings-panel h1 { font-size: 24px; margin: 0; }
+      #codex-jev-settings-panel h2 { font-size: 17px; margin: 26px 0 12px; padding-bottom: 8px; border-bottom: 1px solid var(--vscode-panel-border, #333); }
+      #codex-jev-settings-panel .metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 9px; }
+      #codex-jev-settings-panel .metric { min-width: 0; padding: 13px; border: 1px solid var(--vscode-panel-border, #3b3b3b); border-radius: 10px; background: #ffffff06; }
+      #codex-jev-settings-panel .metric strong { display: block; font-size: 20px; font-weight: 650; line-height: 1.2; font-variant-numeric: tabular-nums; }
+      #codex-jev-settings-panel .metric span { display: block; margin-top: 5px; color: var(--vscode-descriptionForeground, #999); font-size: 11px; line-height: 1.3; }
       #codex-jev-settings-panel p, #codex-jev-settings-panel small { color: var(--vscode-descriptionForeground, #999); line-height: 1.5; }
       #codex-jev-settings-panel .field { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 11px 0; }
       #codex-jev-settings-panel .field label { max-width: 540px; }
       #codex-jev-settings-panel small { display: block; margin-top: 3px; }
-      #codex-jev-settings-panel input, #codex-jev-settings-panel select { background: var(--vscode-input-background, #181818); color: var(--vscode-input-foreground, #ddd); border: 1px solid var(--vscode-input-border, #555); border-radius: 4px; padding: 7px 9px; font: inherit; }
+      #codex-jev-settings-panel input, #codex-jev-settings-panel select { background: var(--vscode-input-background, #181818); color: var(--vscode-input-foreground, #ddd); border: 1px solid var(--vscode-input-border, #555); border-radius: 9px; padding: 7px 9px; font: inherit; }
       #codex-jev-settings-panel input[type=number] { width: 76px; }
       #codex-jev-settings-panel input[type=password] { width: min(100%, 340px); }
-      #codex-jev-settings-panel button { padding: 8px 14px; border: 1px solid transparent; border-radius: 4px; background: var(--vscode-button-background, #0e639c); color: var(--vscode-button-foreground, #fff); font: inherit; cursor: pointer; }
-      #codex-jev-settings-panel button.secondary { border-color: var(--vscode-contrastBorder, #707070); background: var(--vscode-button-secondaryBackground, #252525); color: var(--vscode-button-secondaryForeground, #ccc); }
+      #codex-jev-settings-panel button { min-height: 36px; padding: 7px 12px; border: 1px solid var(--vscode-contrastBorder, #555); border-radius: 10px; background: var(--vscode-button-secondaryBackground, #282828); color: var(--vscode-button-secondaryForeground, #e5e5e5); font: inherit; cursor: pointer; }
+      #codex-jev-settings-panel button:hover { background: var(--vscode-button-secondaryHoverBackground, #363636); }
+      #codex-jev-settings-panel button.primary { border-color: transparent; background: #ececec; color: #202020; }
+      #codex-jev-settings-panel button.primary:hover { background: #d6d6d6; }
+      #codex-jev-settings-panel button:focus-visible, #codex-jev-settings-panel select:focus-visible, #codex-jev-settings-panel input:focus-visible { outline: 2px solid var(--vscode-focusBorder, #83bcf7); outline-offset: 2px; }
       #codex-jev-settings-panel button:disabled { opacity: .55; cursor: default; }
       #codex-jev-settings-panel .actions { display: flex; align-items: center; gap: 12px; margin-top: 16px; }
       #codex-jev-settings-test-status { font-size: 12px; font-weight: 600; }
       #codex-jev-settings-panel .ok { color: var(--vscode-testing-iconPassed, #4ec97f); }
       #codex-jev-settings-panel .error { color: var(--vscode-errorForeground, #f48771); }
       #codex-jev-settings-message { min-height: 22px; margin-top: 12px; }
-      @media (max-width: 650px) { #codex-jev-settings-panel .field { display: block; } #codex-jev-settings-panel input, #codex-jev-settings-panel select { margin-top: 8px; } }
+      @media (max-width: 650px) { #codex-jev-settings-panel .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } #codex-jev-settings-panel .field { display: block; } #codex-jev-settings-panel input, #codex-jev-settings-panel select { margin-top: 8px; } }
     `;
     document.head.append(style);
     panel = document.createElement("div");
     panel.id = "codex-jev-settings-panel";
-    panel.innerHTML = `<h1>Jev</h1><p>Changes apply to the next tool result. Jev keeps the full result whenever a safety check fails.</p><section><h2>API key</h2><p id="codex-jev-settings-key-state">Checking saved key…</p><div class="field"><label for="codex-jev-settings-key">API key<small id="codex-jev-settings-key-help">Enter a key to connect Jev.</small></label><input id="codex-jev-settings-key" type="password" autocomplete="off" spellcheck="false" maxlength="4096"></div><div class="actions"><button id="codex-jev-settings-test" type="button" class="secondary">Test API key</button><span id="codex-jev-settings-test-status" role="status" aria-live="polite"></span></div></section><section><h2>Behavior</h2><div class="field"><label for="codex-jev-settings-mode">Mode<small>Observe records decisions; replace shortens approved results.</small></label><select id="codex-jev-settings-mode"><option value="replace">Replace</option><option value="observe">Observe</option></select></div><div id="codex-jev-settings-thresholds"></div></section><div class="actions"><button id="codex-jev-settings-save" type="button">Save settings</button></div><p id="codex-jev-settings-message" role="status" aria-live="polite"></p>`;
+    panel.innerHTML = `<div class="header"><h1>Jev</h1><button id="codex-jev-settings-open-logs" type="button">Open logs</button></div><section aria-label="Lifetime activity"><h2>Lifetime</h2><div class="metrics"><div class="metric"><strong id="codex-jev-settings-lifetime-tokens">—</strong><span>Estimated tokens saved</span></div><div class="metric"><strong id="codex-jev-settings-lifetime-replaced">—</strong><span>Results shortened</span></div><div class="metric"><strong id="codex-jev-settings-lifetime-calls">—</strong><span>Jev checks</span></div><div class="metric"><strong id="codex-jev-settings-lifetime-time">—</strong><span>Avg. decision time</span></div></div></section><section><h2>API key</h2><div class="field"><label for="codex-jev-settings-key">API key</label><input id="codex-jev-settings-key" type="password" autocomplete="off" spellcheck="false" maxlength="4096"></div><div class="actions"><button id="codex-jev-settings-test" type="button">Test API key</button><span id="codex-jev-settings-test-status" role="status" aria-live="polite"></span></div></section><section><h2>Behavior</h2><div class="field"><label for="codex-jev-settings-mode">Mode<small>Monitor keeps output · Filter shortens it.</small></label><select id="codex-jev-settings-mode"><option value="observe">Monitor</option><option value="replace">Filter</option></select></div><div id="codex-jev-settings-thresholds"></div></section><div class="actions"><button id="codex-jev-settings-save" type="button" class="primary">Save settings</button></div><p id="codex-jev-settings-message" role="status" aria-live="polite"></p>`;
     const thresholds = panel.querySelector("#codex-jev-settings-thresholds");
     for (const [hook, heading, fields] of sections) {
       const title = document.createElement("h2");
@@ -163,9 +185,7 @@
         const caption = document.createElement("label");
         caption.htmlFor = id;
         caption.textContent = `${label} (%)`;
-        const note = document.createElement("small");
-        note.textContent = help;
-        caption.append(note);
+        caption.title = help;
         const input = document.createElement("input");
         input.id = id;
         input.type = "number";
@@ -173,6 +193,7 @@
         input.max = "100";
         input.step = "1";
         input.required = true;
+        input.title = help;
         row.append(caption, input);
         thresholds.append(row);
       }
@@ -182,6 +203,10 @@
       const key = panel.querySelector("#codex-jev-settings-key").value.trim();
       if (!key && !hasKey) { showTest("Missing", "error"); return; }
       if (request("settingsTest", { key })) { setBusy(true); showTest("Checking…"); showMessage(""); }
+    });
+    panel.querySelector("#codex-jev-settings-open-logs").addEventListener("click", () => {
+      if (busy) return;
+      if (request("settingsOpenLogs")) { setBusy(true); showMessage(""); }
     });
     panel.querySelector("#codex-jev-settings-key").addEventListener("input", () => showTest(""));
     panel.querySelector("#codex-jev-settings-save").addEventListener("click", () => {
@@ -210,11 +235,8 @@
     }
     if (action === "settingsRead" && reply.action === "ready") {
       hasKey = Boolean(reply.hasKey);
-      panel.querySelector("#codex-jev-settings-key").placeholder = hasKey ? "********" : "";
-      panel.querySelector("#codex-jev-settings-key-state").textContent = hasKey ? "An API key is saved." : "No API key is saved.";
-      panel.querySelector("#codex-jev-settings-key-help").textContent = hasKey
-        ? "The saved key is masked. Enter a different key to replace it, or leave this field empty to keep it."
-        : "Enter your Jev API key. It is stored in the plugin data directory.";
+      panel.querySelector("#codex-jev-settings-key").placeholder = hasKey ? "••••••••" : "Enter API key";
+      showLifetime(reply.lifetime);
       panel.querySelector("#codex-jev-settings-mode").value = reply.config?.mode || "replace";
       for (const [hook, , fields] of sections) {
         for (const [name] of fields) {
@@ -233,8 +255,7 @@
     } else if (action === "settingsSave" && reply.action === "saved") {
       hasKey = true;
       panel.querySelector("#codex-jev-settings-key").value = "";
-      panel.querySelector("#codex-jev-settings-key").placeholder = "********";
-      panel.querySelector("#codex-jev-settings-key-state").textContent = "An API key is saved.";
+      panel.querySelector("#codex-jev-settings-key").placeholder = "••••••••";
       showMessage("Settings saved.", "ok");
     }
   }

@@ -51,8 +51,9 @@ def main() -> None:
             if state == 'onboarding' and 'id="codex-jev-connect"' not in result.stdout:
                 raise RuntimeError('Connect Jev overlay was not rendered')
             if state == 'settings' and ('id="codex-jev-settings-panel"' not in result.stdout or
-                                        'id="codex-jev-settings-test-status"' not in result.stdout or
-                                        '>OK</span>' not in result.stdout):
+                                        'id="codex-jev-settings-lifetime-tokens"' not in result.stdout or
+                                        '~87,320' not in result.stdout or
+                                        '>Filter</option>' not in result.stdout):
                 raise RuntimeError('Jev settings were not rendered in Codex settings')
             print(f'{name}: {output.stat().st_size} bytes; layout={layout}')
     finally:

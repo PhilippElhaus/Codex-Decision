@@ -6,6 +6,6 @@ The full serialized Jev request is capped at 28,000 UTF-8 bytes, below Jev's 32k
 
 For eligible requests, the hook reads `JEV_API_KEY` from private `PLUGIN_DATA/.env` and sends it in an HTTPS Authorization header. The key does not enter tool text or decision logs. See [key setup](../setup/setup_credentials.md).
 
-Before replacement, the hook saves the exact result at `PLUGIN_DATA/outputs/<session-hash>/<call-hash>.txt` with owner-only permissions. The shorter text gives Codex that path. `PLUGIN_DATA/events.jsonl` stores decision metadata, not raw output. Saved originals stay until you remove them. Keep the plugin data directory private.
+Before replacement, the hook saves the exact result at `PLUGIN_DATA/outputs/<session-hash>/<call-hash>.txt` with owner-only permissions. The shorter text gives Codex that path. `PLUGIN_DATA/events.jsonl` stores decision metadata, not raw output. The settings page totals retained events across sessions, including Jev checks, shortened results, estimated tokens saved, and average decision time. Its token estimate uses removed characters divided by four; it is not a billed-token count. Saved originals stay until you remove them. Keep the plugin data directory private.
 
 Hosted web search does not pass through this hook. A nested JavaScript tool call gives the original result to its script. Jev saves model-visible tokens only when the raw tool text would reach Codex. The VS Code control estimates reduction from character counts; it does not report billed tokens.

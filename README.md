@@ -18,13 +18,13 @@ All integrations start off. The button in the Codex composer selects them and sh
 
 ## Settings
 
-Selecting a Jev integration without a key opens **Connect Jev** over the Codex side window. Its solid backdrop hides the current chats, and a link below the buttons opens typesafe.ai for a key. You can test and save the key there, or choose **Skip for now** and reopen setup from the Jev menu or the compact missing-key tooltip. Open **Codex settings → Jev**, below **Voice**, to test or replace a saved key. The saved key appears as `********`. The page also controls `observe`, `replace`, and the cutoffs for each integration. Changes apply to the next tool result. The captures show example state and contain no key.
+Selecting a Jev integration without a key opens **Connect Jev** over the Codex side window. Its solid backdrop hides the current chats, and a link below the buttons opens typesafe.ai for a key. You can test and save the key there, or choose **Skip for now** and reopen setup from the Jev menu or the compact missing-key tooltip. Open **Codex settings → Jev**, below **Voice**, to test or replace the key, view lifetime savings and activity, open the decision log in Explorer, or change the integration cutoffs. **Monitor** records decisions and keeps full output; **Filter** shortens approved results. Changes apply to the next tool result. The captures show example state and contain no key.
 
 <img src="docs/images/jev-onboarding.png" width="520" alt="Connect Jev API key setup with a solid backdrop, Save and Skip buttons, and a TypeSafe API key link">
 
 <img src="docs/images/jev-missing-key.png" width="340" alt="Compact Jev tooltip with a Connect button when no API key is saved">
 
-<img src="docs/images/jev-settings.png" width="900" alt="Illustrative Codex settings with Jev below Voice and a masked API key, behavior mode, and cutoffs">
+<img src="docs/images/jev-settings.png" width="900" alt="Illustrative Jev settings with lifetime statistics, Open logs, API key entry, Filter mode, and cutoffs">
 
 ## Measured results
 
@@ -47,7 +47,7 @@ codex plugin marketplace add https://github.com/PhilippElhaus/Codex-Jev
 codex plugin add codex-jev@codex-jev
 ```
 
-Build the [VS Code control VSIX](vscode-control/README.md) and install `codex-jev-control-0.2.13.vsix`. Set `codexJev.dataDirectory` to the plugin data directory, and apply the version-pinned composer patch. Enable an integration to open key setup when no key is saved. Start a new Codex thread.
+Build the [VS Code control VSIX](vscode-control/README.md) and install `codex-jev-control-0.2.14.vsix`. Set `codexJev.dataDirectory` to the plugin data directory, and apply the version-pinned composer patch. Enable an integration to open key setup when no key is saved. Start a new Codex thread.
 
 ## Documentation
 

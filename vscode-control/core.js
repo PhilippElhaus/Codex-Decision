@@ -1,6 +1,8 @@
 "use strict";
 
 const fs = require("node:fs/promises");
+const { constants } = require("node:fs");
+const readline = require("node:readline");
 const path = require("node:path");
 const { execFile } = require("node:child_process");
 const { promisify } = require("node:util");
@@ -226,10 +228,50 @@ async function readEventsSince(directory, offset) {
   }
 }
 
+async function readLifetimeStats(directory) {
+  const totals = { calls: 0, completed: 0, replaced: 0, savedChars: 0,
+    estimatedTokensSaved: 0, averageMs: 0 };
+  const filename = path.join(directory, "events.jsonl");
+  let file;
+  try {
+    const details = await fs.lstat(filename);
+    if (!details.isFile() || details.isSymbolicLink()) throw new Error("Unsafe Jev decision log");
+    file = await fs.open(filename, constants.O_RDONLY | (constants.O_NOFOLLOW || 0));
+  } catch (error) {
+    if (error.code === "ENOENT") return totals;
+    throw error;
+  }
+  let timed = 0;
+  let elapsedMs = 0;
+  const lines = readline.createInterface({ input: file.createReadStream({ encoding: "utf8", autoClose: false }), crlfDelay: Infinity });
+  try {
+    for await (const line of lines) {
+      if (line.length > 8192) continue;
+      const event = parseLogLine(line);
+      if (!event) continue;
+      if (event.status === "calling") totals.calls += 1;
+      if (!isJevOutcome(event)) continue;
+      totals.completed += 1;
+      if (event.status === "replace") totals.replaced += 1;
+      totals.savedChars += savedCharacters(event);
+      if (Number.isFinite(event.elapsed_ms) && event.elapsed_ms > 0) {
+        timed += 1;
+        elapsedMs += event.elapsed_ms;
+      }
+    }
+  } finally {
+    lines.close();
+    await file.close();
+  }
+  totals.estimatedTokensSaved = estimateTokensSaved(totals.savedChars);
+  totals.averageMs = timed ? Math.round(elapsedMs / timed) : 0;
+  return totals;
+}
+
 function outcomeLine(event) {
   const action = event.status === "replace" ? "replaced" :
     event.status === "candidate" ? "candidate" : "kept";
-  const mode = event.reason === "observe" ? " (observe)" : "";
+  const mode = event.reason === "observe" ? " (monitor)" : "";
   const savedChars = savedCharacters(event);
   const saved = savedChars > 0
     ? ` · -${Math.round(100 * savedChars / event.original_chars)}%`
@@ -392,6 +434,6 @@ async function writeApiKey(directory, key) {
 module.exports = {
   activitySummary, checkHealth, completeThresholds, DEFAULT_THRESHOLDS, decisionSummary, defaultDataDirectory, estimateTokensSaved, formatDuration,
   isInformativeEvent, isJevOutcome, outcomeLine, parseHealthOutput, readConfig,
-  readApiKey, readEventOffset, readEventsSince, readLatestEvent, readRecentOutcomes,
+  readApiKey, readEventOffset, readEventsSince, readLatestEvent, readLifetimeStats, readRecentOutcomes,
   savedCharacters, writeApiKey, writeEnabled, writeMode, writeSelection, writeThresholds,
 };

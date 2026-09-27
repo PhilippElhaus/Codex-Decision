@@ -98,7 +98,7 @@ def patched_image_asset(original: bytes) -> bytes:
 BRIDGE = (
     'let a=e.onDidReceiveMessage(u=>{'
     'if(u&&u.type==="codex-jev"){'
-    'if(!["status","setSelection","retryConnection","testApiKey","saveApiKey","settingsRead","settingsTest","settingsSave"].includes(u.action))return;'
+    'if(!["status","setSelection","retryConnection","testApiKey","saveApiKey","settingsRead","settingsTest","settingsSave","settingsOpenLogs"].includes(u.action))return;'
     'if(u.action==="setSelection"&&typeof u.enabled!=="boolean")return;'
     'if(u.action==="setSelection"&&!(["output","test_build","search_listing"].includes(u.feature)))return;'
     'if(["testApiKey","saveApiKey","settingsTest","settingsSave"].includes(u.action)&&(typeof u.key!=="string"||u.key.length>4096))return;'

@@ -23,6 +23,7 @@ test("composer bridge selects integrations and reports view-scoped activity with
   let health = { ok: true, model: "jev-1.13.0" };
   let probes = 0;
   let suppliedKey;
+  let revealed;
   let configListener;
   const fake = {
     window: {
@@ -30,8 +31,11 @@ test("composer bridge selects integrations and reports view-scoped activity with
       showInformationMessage: () => {},
       createWebviewPanel: () => { throw new Error("Jev settings must stay in Codex settings"); },
     },
-    Uri: { joinPath: () => ({}) }, ViewColumn: { Active: 1 }, ConfigurationTarget: { Global: 1 },
-    commands: { registerCommand(name, callback) { commands.set(name, callback); return { dispose() {} }; } },
+    Uri: { joinPath: () => ({}), file: (filename) => ({ fsPath: filename }) }, ViewColumn: { Active: 1 }, ConfigurationTarget: { Global: 1 },
+    commands: {
+      registerCommand(name, callback) { commands.set(name, callback); return { dispose() {} }; },
+      async executeCommand(name, uri) { revealed = { name, path: uri.fsPath }; },
+    },
     workspace: {
       getConfiguration: () => ({ get: (key) => key === "dataDirectory" ? directory : key === "mode" ? mode : "",
         update: async (key, value) => { if (key === "mode") mode = value; } }),
@@ -122,7 +126,12 @@ test("composer bridge selects integrations and reports view-scoped activity with
     assert.equal(ready.action, "ready");
     assert.equal(ready.hasKey, false);
     assert.equal(ready.config.thresholds.output.routine_min, 90);
+    assert.equal(ready.lifetime.calls, 1);
+    assert.equal(ready.lifetime.replaced, 1);
+    assert.equal(ready.lifetime.estimatedTokensSaved, 2652);
     assert.equal(JSON.stringify(ready).includes("JEV_API_KEY"), false);
+    assert.equal((await bridge({ action: "settingsOpenLogs" })).settings.action, "openedLogs");
+    assert.deepEqual(revealed, { name: "revealFileInOS", path: path.join(directory, "events.jsonl") });
     const missing = (await bridge({ action: "settingsSave", mode: "replace", key: "",
       thresholds: { output: { routine_min: 90 } } })).settings;
     assert.equal(missing.action, "error");

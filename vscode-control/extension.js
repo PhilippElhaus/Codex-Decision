@@ -1,11 +1,12 @@
 "use strict";
 
 const path = require("node:path");
+const fs = require("node:fs/promises");
 const vscode = require("vscode");
 const {
   checkHealth, decisionSummary, defaultDataDirectory, estimateTokensSaved,
   isJevOutcome, outcomeLine, readConfig, readEventOffset, readEventsSince, savedCharacters,
-  readApiKey, writeApiKey, writeMode, writeSelection, writeThresholds, completeThresholds,
+  readApiKey, readLifetimeStats, writeApiKey, writeMode, writeSelection, writeThresholds, completeThresholds,
 } = require("./core");
 
 function emptyStats() {
@@ -208,7 +209,25 @@ function activate(context) {
         const config = await readConfig(directory);
         let hasKey = false;
         try { await readApiKey(directory); hasKey = true; } catch { /* no usable key */ }
-        return { action: "ready", config: { ...config, thresholds: completeThresholds(config.thresholds) }, hasKey };
+        const lifetime = await readLifetimeStats(directory);
+        return { action: "ready", config: { ...config, thresholds: completeThresholds(config.thresholds) }, hasKey, lifetime };
+      }
+      if (request.action === "settingsOpenLogs") {
+        const log = path.join(directory, "events.jsonl");
+        let target = directory;
+        try {
+          const details = await fs.lstat(log);
+          if (!details.isFile() || details.isSymbolicLink()) throw new Error("Unsafe Jev decision log");
+          target = log;
+        } catch (error) {
+          if (error.code !== "ENOENT") throw error;
+        }
+        if (target === directory) {
+          const details = await fs.lstat(directory);
+          if (!details.isDirectory() || details.isSymbolicLink()) throw new Error("Unsafe Jev data directory");
+        }
+        await vscode.commands.executeCommand("revealFileInOS", vscode.Uri.file(target));
+        return { action: "openedLogs" };
       }
       if (request.action === "settingsTest") {
         const key = typeof request.key === "string" && request.key ? request.key : null;
@@ -241,7 +260,7 @@ function activate(context) {
 
   context.subscriptions.push(vscode.commands.registerCommand("codexJev.bridge", async (request) => {
     await enterView(request?.viewId);
-    if (["settingsRead", "settingsTest", "settingsSave"].includes(request?.action)) {
+    if (["settingsRead", "settingsTest", "settingsSave", "settingsOpenLogs"].includes(request?.action)) {
       return { ...snapshot(), settings: await settingsReply(request) };
     }
     if (request?.action === "testApiKey") {
