@@ -24,11 +24,15 @@ Each Jev request gets a private JSON receipt under `PLUGIN_DATA/logs/YYYY-MM-DD-
 
 The output filter checks all eligible text before shortening it. It keeps selected source text with original line numbers and an omission map. It marks any long excerpt that is truncated. Test/build filtering recognizes Go JSON test events and Cargo JSON build events when those formats are present. Search/listing can read ripgrep JSON matches and keeps a path to the exact original. [Integration design](docs/architecture/design_integrations.md) explains the fail-open boundaries. A [quality replay tool](scripts/evaluate_quality.py) checks labeled evidence and paired task outcomes and can propose stricter cutoffs; it never changes settings automatically.
 
-<img src="docs/images/jev-onboarding.png" width="520" alt="Connect Jev API key setup with a solid backdrop, Save and Skip buttons, and a TypeSafe API key link">
+<img src="docs/images/jev-connect.png" width="520" alt="Connect Jev API key prompt with Test, Save, Skip, and the TypeSafe key link">
 
 <img src="docs/images/jev-missing-key.png" width="340" alt="Compact Jev tooltip with a Connect button when no API key is saved">
 
-<img src="docs/images/jev-settings.png" width="900" alt="Illustrative Jev settings with log retention, slider tracks, percentage fields, and right aligned Reset defaults">
+<img src="docs/images/jev-settings-overview.png" width="850" alt="Jev settings page with lifetime activity, log retention, API key, and mode controls">
+
+<img src="docs/images/jev-settings-filters.png" width="850" alt="Jev settings page with decision method checkboxes and output and test/build cutoff sliders">
+
+The [full settings capture](docs/images/jev-settings.png) includes the search/listing cutoffs and Save settings action.
 
 ## Measured results
 

@@ -31,11 +31,15 @@ Open **Codex settings → Jev**, below **Voice**, to test or replace the key, se
 
 **Open logs** opens `PLUGIN_DATA/logs/` in the system file manager after the first session log exists. Before that, it opens `PLUGIN_DATA/`. Each dated session folder contains one JSON receipt for each Jev request, including each chunk request. The receipt contains exact original and visible output and the request, answer, mode, cutoffs, and decision. Its filename uses UTC `HH-MM-SS-NNN-<filter>.json`; `NNN` distinguishes receipts created in the same second. Logs and receipts are private because they can contain tool output. The oldest managed log files are deleted when the saved limit is exceeded, beginning with the next Jev event. The aggregate activity index is bounded to 1 MiB while retention is enabled. Lifetime counters live in `PLUGIN_DATA/stats.json` and survive log cleanup. Exact originals referenced in shortened results live separately under `PLUGIN_DATA/outputs/` and are outside the log limit. Existing root `events.jsonl` files remain as legacy data; the first new event imports their counters.
 
-![Connect Jev setup overlay in the Codex side window with Skip for now](../docs/images/jev-onboarding.png)
+![Connect Jev API key prompt with Test, Save, Skip, and the TypeSafe key link](../docs/images/jev-connect.png)
 
 ![Compact Jev missing-key tooltip](../docs/images/jev-missing-key.png)
 
-![Illustrative Jev settings with log retention, visible sliders, percentage fields, and Reset defaults on the right](../docs/images/jev-settings.png)
+![Jev settings page with lifetime activity, log retention, API key, and mode controls](../docs/images/jev-settings-overview.png)
+
+![Jev settings page with decision method checkboxes and output and test/build cutoff sliders](../docs/images/jev-settings-filters.png)
+
+The [full settings capture](../docs/images/jev-settings.png) also shows search/listing cutoffs and Save settings.
 
 ## Verify
 
