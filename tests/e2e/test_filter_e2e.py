@@ -155,7 +155,7 @@ class CommandHookEndToEndTests(unittest.TestCase):
         return [json.loads(row) for row in (self.data / "logs/events.jsonl").read_text().splitlines()]
 
     def receipts(self):
-        return [json.loads(path.read_text()) for path in sorted((self.data / "logs").glob("*/receipt-*.json"))]
+        return [json.loads(path.read_text()) for path in sorted((self.data / "logs").glob("*/*-*.json"))]
 
     def test_three_routes_batch_once_save_exact_original_and_preserve_diagnostics(self):
         fixtures = [

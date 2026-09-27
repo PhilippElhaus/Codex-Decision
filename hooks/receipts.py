@@ -22,6 +22,8 @@ except ImportError:  # Windows hook process
 DEFAULT_LOG_LIMIT_MB = 50
 MAX_LOG_LIMIT_MB = 9999
 INDEX_LIMIT_BYTES = 1_048_576
+RECEIPT_FILTERS = ("output", "test_build", "search_listing")
+RECEIPT_NAME = re.compile(r"\d{2}-\d{2}-\d{2}-(\d{3,})-(?:output|test_build|search_listing)\.json")
 
 
 def _private_directory(path: Path) -> None:
@@ -54,12 +56,12 @@ def _locked(storage: Path):
         os.close(fd)
 
 
-def _session_path(root: Path, event: dict) -> Path:
+def _session_path(root: Path, event: dict, clock: datetime | None = None) -> Path:
     session = event.get("session_id") if isinstance(event, dict) else None
     if not isinstance(session, str) or not session or len(session) > 256:
         session = str(event.get("tool_use_id", uuid.uuid4().hex)) if isinstance(event, dict) else uuid.uuid4().hex
     abbreviation = hashlib.sha256(session.encode()).hexdigest()[:10]
-    date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    date = (clock or datetime.now(timezone.utc)).strftime("%Y-%m-%d")
     path = root / f"{date}-{abbreviation}"
     _private_directory(path)
     return path
@@ -122,8 +124,16 @@ def _managed_files(root: Path):
         for child in session.iterdir():
             if child.is_symlink() or not child.is_file():
                 continue
-            if child.name == "events.jsonl" or (child.name.startswith("receipt-") and child.suffix == ".json"):
+            if (child.name == "events.jsonl" or RECEIPT_NAME.fullmatch(child.name)
+                    or (child.name.startswith("receipt-") and child.suffix == ".json")):
                 yield child
+
+
+def _next_receipt_sequence(session: Path, time: str) -> int:
+    prefix = f"{time}-"
+    return 1 + max((int(match.group(1)) for child in session.iterdir()
+                    if child.name.startswith(prefix)
+                    if (match := RECEIPT_NAME.fullmatch(child.name))), default=0)
 
 
 def _prune(root: Path, limit_mb: int, never_delete: bool) -> None:
@@ -201,14 +211,18 @@ def write_receipts(storage: Path, event: dict, result, calls: list[dict], filter
                    settings: dict | None = None, original_output: str | None = None) -> None:
     if not calls:
         return
+    if filter_name not in RECEIPT_FILTERS:
+        raise ValueError("unsupported Jev receipt filter")
     original = original_output if isinstance(original_output, str) else event.get("tool_response")
     if not isinstance(original, str):
         raise ValueError("unsupported Jev receipt output")
     visible = result.hook_output["reason"] if result.hook_output else original
-    clock = datetime.now(timezone.utc)
-    now = clock.isoformat(timespec="microseconds")
     with _locked(storage) as root:
-        session = _session_path(root, event)
+        clock = datetime.now(timezone.utc)
+        now = clock.isoformat(timespec="microseconds")
+        session = _session_path(root, event, clock)
+        time = clock.strftime("%H-%M-%S")
+        sequence = _next_receipt_sequence(session, time)
         for index, call in enumerate(calls, 1):
             receipt = {
                 "version": 1, "at": now, "session_id": event.get("session_id"),
@@ -223,7 +237,8 @@ def write_receipts(storage: Path, event: dict, result, calls: list[dict], filter
                 "jev_answer": call.get("answer"), "jev_raw_answer": call.get("raw_answer"),
                 "jev_error": call.get("error"),
             }
-            name = f"receipt-{clock.strftime('%H-%M-%S')}.{clock.microsecond:06d}-{index:03d}-{uuid.uuid4().hex[:8]}.json"
+            name = f"{time}-{sequence:03d}-{filter_name}.json"
             path = session / name
             _create_private(path, (json.dumps(receipt, ensure_ascii=False, indent=2) + "\n").encode("utf-8"))
+            sequence += 1
         _prune(root, limit_mb, never_delete)

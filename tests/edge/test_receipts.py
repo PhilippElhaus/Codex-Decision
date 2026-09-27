@@ -3,12 +3,14 @@
 from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 import re
 import stat
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "hooks"))
@@ -29,7 +31,7 @@ class ReceiptTests(unittest.TestCase):
         self.root = Path(self.temp.name)
 
     def files(self):
-        return sorted((self.root / "logs").glob("*/receipt-*.json"))
+        return sorted((self.root / "logs").glob("*/*-output.json"))
 
     def test_one_private_timestamped_file_per_call(self):
         item = event()
@@ -42,8 +44,9 @@ class ReceiptTests(unittest.TestCase):
         files = self.files()
         self.assertEqual(len(files), 3)
         self.assertRegex(files[0].parent.name, r"^\d{4}-\d{2}-\d{2}-[0-9a-f]{10}$")
-        self.assertTrue(all(re.fullmatch(r"receipt-\d{2}-\d{2}-\d{2}\.\d{6}-\d{3}-[0-9a-f]{8}\.json",
+        self.assertTrue(all(re.fullmatch(r"\d{2}-\d{2}-\d{2}-\d{3}-output\.json",
                                          path.name) for path in files))
+        self.assertEqual([path.name.split("-")[3] for path in files], ["001", "002", "003"])
         self.assertEqual([json.loads(path.read_text())["call_index"] for path in files], [1, 2, 3])
         self.assertTrue(all(json.loads(path.read_text())["initial_output"] == "Original ☃\n" and
                             json.loads(path.read_text())["visible_output"] == "Short ☃\n" and
@@ -53,6 +56,43 @@ class ReceiptTests(unittest.TestCase):
         if sys.platform != "win32":
             self.assertTrue(all(stat.S_IMODE(path.stat().st_mode) == 0o600 for path in files))
             self.assertEqual(stat.S_IMODE(files[0].parent.stat().st_mode), 0o700)
+
+    def test_same_second_sequence_is_shared_across_filters(self):
+        fixed = datetime(2026, 9, 27, 15, 47, 9, tzinfo=timezone.utc)
+        result = Result("keep", "jev_keep", 10)
+        with patch("receipts.datetime") as clock:
+            clock.now.return_value = fixed
+            write_receipts(self.root, event(), result,
+                           [{"state": {}}, {"state": {}}], "output")
+            write_receipts(self.root, event(), result,
+                           [{"state": {}}], "test_build")
+        names = sorted(path.name for path in (self.root / "logs").glob("*/*.json"))
+        self.assertEqual(names, ["15-47-09-001-output.json", "15-47-09-002-output.json",
+                                 "15-47-09-003-test_build.json"])
+
+    def test_parallel_receipts_get_unique_same_second_names(self):
+        fixed = datetime(2026, 9, 27, 15, 47, 9, tzinfo=timezone.utc)
+        result = Result("keep", "jev_keep", 10)
+        with patch("receipts.datetime") as clock:
+            clock.now.return_value = fixed
+            with ThreadPoolExecutor(max_workers=8) as pool:
+                list(pool.map(lambda _: write_receipts(self.root, event(), result,
+                                                       [{"state": {}}], "output"), range(32)))
+        names = sorted(path.name for path in self.files())
+        self.assertEqual(names, [f"15-47-09-{index:03d}-output.json" for index in range(1, 33)])
+
+    def test_old_receipt_name_remains_managed(self):
+        logs = self.root / "logs"
+        logs.mkdir(mode=0o700)
+        session = logs / "2026-09-27-aaaaaaaaaa"
+        session.mkdir(mode=0o700)
+        old = session / "receipt-15-47-09.698045-001-c2841103.json"
+        old.write_text("x" * 600_000)
+        output = "y" * 300_000
+        write_receipts(self.root, event(output=output), Result("keep", "jev_keep", len(output)),
+                       [{"state": {}}], "output", 1)
+        self.assertFalse(old.exists())
+        self.assertEqual(len(self.files()), 1)
 
     def test_oldest_receipt_is_removed_at_one_mb(self):
         large = "x" * 340_000

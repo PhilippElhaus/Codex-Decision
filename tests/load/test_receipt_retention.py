@@ -25,8 +25,8 @@ class ReceiptLoadTests(unittest.TestCase):
                          "tool_response": output}
                 write_receipts(root, event, result, [{"state": {"output_sample": "sample"}}], "output")
                 if index == 0:
-                    first = next((root / "logs").glob("*/receipt-*.json"))
-            receipts = list((root / "logs").glob("*/receipt-*.json"))
+                    first = next((root / "logs").glob("*/*-output.json"))
+            receipts = list((root / "logs").glob("*/*-output.json"))
             total = sum(path.stat().st_size for path in receipts)
             self.assertLessEqual(total, 50_000_000)
             self.assertLess(len(receipts), 38)
