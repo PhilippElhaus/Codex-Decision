@@ -9,6 +9,7 @@ class LatestDecisionProvider {
   constructor(extensionUri, dataDirectory) {
     this.extensionUri = extensionUri;
     this.dataDirectory = dataDirectory;
+    this.startedAt = Date.now();
     this.view = null;
     this.timer = null;
     this.pending = null;
@@ -60,7 +61,7 @@ class LatestDecisionProvider {
       try {
         const directory = this.dataDirectory();
         const decision = await readLatestPanelDecision(directory);
-        message = { type: "decision", decision };
+        message = { type: "decision", decision: decision && Date.parse(decision.at) >= this.startedAt ? decision : null };
       } catch (error) {
         message = { type: "decision", decision: null,
           error: /dataDirectory/.test(error.message) ? "Set the Jev data directory in VS Code settings." :

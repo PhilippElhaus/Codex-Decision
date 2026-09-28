@@ -38,6 +38,12 @@ test("panel refreshes only the latest decision while visible", async () => {
   } finally {
     Module._load = originalLoad;
   }
+  const oldId = "0".repeat(32);
+  const make = (id, status, at) => ({ version: 1, id, at,
+    filter: "output", status, call_index: 1, call_count: 1,
+    choices: [{ name: "filter_decision", selected: "keep", probabilities: { filter: .2, keep: .8 } }], checks: [],
+    recent: [{ id, theme: "output_keep", elapsed_ms: 24 }] });
+  await fs.writeFile(filename, JSON.stringify(make(oldId, "keep", new Date(Date.now() - 10_000).toISOString())));
   const provider = new LatestDecisionProvider({}, () => directory);
   const view = {
     visible: true,
@@ -56,22 +62,20 @@ test("panel refreshes only the latest decision while visible", async () => {
     onReady({ type: "ready" });
     await provider.refresh();
     assert.equal(messages.at(-1).decision, null);
-    const make = (id, status) => ({ version: 1, id, at: "2026-09-28T12:34:56Z",
-      filter: "output", status, call_index: 1, call_count: 1,
-      choices: [{ name: "filter_decision", selected: "keep", probabilities: { filter: .2, keep: .8 } }], checks: [] });
-    await fs.writeFile(filename, JSON.stringify(make("a".repeat(32), "keep")));
+    const newAt = new Date(provider.startedAt + 1000).toISOString();
+    await fs.writeFile(filename, JSON.stringify(make("a".repeat(32), "keep", newAt)));
     await provider.refresh();
     assert.equal(messages.at(-1).decision.status, "keep");
     const count = messages.length;
     await provider.refresh();
     assert.equal(messages.length, count);
-    await fs.writeFile(filename, JSON.stringify(make("b".repeat(32), "replace")));
+    await fs.writeFile(filename, JSON.stringify(make("b".repeat(32), "replace", newAt)));
     await provider.refresh();
     assert.equal(messages.at(-1).decision.id, "b".repeat(32));
     assert.equal(messages.at(-1).decision.status, "replace");
     view.visible = false;
     onVisibility();
-    await fs.writeFile(filename, JSON.stringify(make("c".repeat(32), "keep")));
+    await fs.writeFile(filename, JSON.stringify(make("c".repeat(32), "keep", newAt)));
     await provider.refresh();
     assert.equal(messages.at(-1).decision.id, "b".repeat(32));
     view.visible = true;
