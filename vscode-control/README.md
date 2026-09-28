@@ -33,7 +33,7 @@ Open **Codex settings → Jev**, below **Voice**, to test or replace the key, se
 
 ![Connect Jev API key prompt with Test, Save, Skip, and the TypeSafe key link](../docs/images/jev-connect.png)
 
-![Jev settings page with lifetime activity, log retention, API key, and mode controls](../docs/images/jev-settings-overview.png)
+![Jev settings page with lifetime activity, API key, log retention, and mode controls](../docs/images/jev-settings-overview.png)
 
 ![Jev settings page with decision method checkboxes and output and test/build cutoff sliders](../docs/images/jev-settings-filters.png)
 

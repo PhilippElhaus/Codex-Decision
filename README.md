@@ -37,7 +37,7 @@ All three start disabled. **Monitor** records decisions without changing output.
 
 <img src="docs/images/jev-connect.png" width="900" alt="Illustrative Connect Jev API key screen beside the Codex sign-in view; example state with no key">
 
-<img src="docs/images/jev-settings-overview.png" width="850" alt="Jev settings page showing activity, log retention, API key, and mode">
+<img src="docs/images/jev-settings-overview.png" width="850" alt="Jev settings page showing activity, API key, log retention, and mode">
 
 <img src="docs/images/jev-settings-filters.png" width="850" alt="Jev settings page showing filter methods and cutoffs">
 
