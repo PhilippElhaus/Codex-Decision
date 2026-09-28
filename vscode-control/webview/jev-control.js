@@ -141,22 +141,23 @@
       #codex-jev-menu p { margin: 5px 0 0; padding: 9px 10px 4px; border-top: 1px solid var(--vscode-menu-separatorBackground, #ffffff1a); color: var(--vscode-descriptionForeground, #999); font-size: 11px; }
       #codex-jev-tip { display: none; width: min(420px, calc(100vw - 24px)); padding: 11px 13px; border: 1px solid #454545; border-radius: 11px; background: #292929; color: #dedede; pointer-events: auto; font-size: 12px; line-height: 1.45; white-space: normal; }
       #codex-jev-tip[data-needs-key="true"] { width: min(252px, calc(100vw - 24px)); padding: 9px 11px; }
-      #codex-jev-tip[data-needs-key="true"] #codex-jev-mode, #codex-jev-tip[data-needs-key="true"] #codex-jev-session-heading, #codex-jev-tip[data-needs-key="true"] #codex-jev-stats, #codex-jev-tip[data-needs-key="true"] #codex-jev-tokens, #codex-jev-tip[data-needs-key="true"] #codex-jev-history-heading, #codex-jev-tip[data-needs-key="true"] #codex-jev-history, #codex-jev-tip[data-needs-key="true"] #codex-jev-empty { display: none !important; }
+      #codex-jev-tip[data-needs-key="true"] #codex-jev-session-heading, #codex-jev-tip[data-needs-key="true"] #codex-jev-stats, #codex-jev-tip[data-needs-key="true"] #codex-jev-tokens, #codex-jev-tip[data-needs-key="true"] #codex-jev-history-heading, #codex-jev-tip[data-needs-key="true"] #codex-jev-history, #codex-jev-tip[data-needs-key="true"] #codex-jev-empty { display: none !important; }
       #codex-jev-tip::after { content: ""; position: absolute; top: 100%; left: 0; right: 0; height: 10px; }
       #codex-jev:hover #codex-jev-tip, #codex-jev:focus-within #codex-jev-tip { display: block; }
       #codex-jev[data-menu="true"] #codex-jev-tip { display: none; }
       #codex-jev-health-row { display: flex; align-items: center; gap: 5px; min-height: 20px; }
+      #codex-jev-health-row[hidden] { display: none; }
       #codex-jev-health-row strong { color: #fff; white-space: nowrap; }
       #codex-jev-health-reason { display: none; color: #e99490; margin: 0; min-width: 0; }
       #codex-jev-retry { display: none; margin-left: auto; padding: 2px 7px; border: 1px solid #666; border-radius: 8px; background: #383838; color: #eee; font: inherit; cursor: pointer; }
       #codex-jev-retry:hover { background: #484848; }
       #codex-jev-retry:disabled { opacity: .6; cursor: default; }
       #codex-jev-retry:focus-visible { outline: 2px solid #83bcf7; outline-offset: 2px; }
-      #codex-jev-tip span { display: block; color: #aaa; margin-top: 3px; }
       #codex-jev-tip #codex-jev-health-reason { color: #e99490; margin: 0; }
       #codex-jev-stats { color: #d4d4d4; }
       #codex-jev-tokens { margin-top: 3px; color: #d4d4d4; }
       #codex-jev-tip h3 { margin: 10px 0 4px; color: #aaa; font-size: 11px; font-weight: 650; letter-spacing: .04em; }
+      #codex-jev-health-row[hidden] + #codex-jev-session-heading { margin-top: 0; }
       #codex-jev-history { margin: 0; padding-left: 18px; color: #d4d4d4; }
       #codex-jev-history li { margin-top: 3px; }
       #codex-jev-history strong { font-weight: 700; color: #fff; }
@@ -200,7 +201,7 @@
     root.id = "codex-jev";
     root.innerHTML = `
       <button id="codex-jev-button" type="button" aria-label="Jev integrations" aria-expanded="false" aria-controls="codex-jev-menu"><span id="codex-jev-dot"></span><span id="codex-jev-label">jev</span><span id="codex-jev-observe">MON</span></button>
-      <div id="codex-jev-tip" role="group" aria-label="Jev status"><div id="codex-jev-health-row"><strong></strong><span id="codex-jev-health-reason"></span><button id="codex-jev-retry" type="button">Retry</button></div><span id="codex-jev-mode"></span><h3 id="codex-jev-session-heading">This session</h3><div id="codex-jev-stats"></div><div id="codex-jev-tokens"></div><h3 id="codex-jev-history-heading">Recent Actions</h3><ol id="codex-jev-history"></ol><p id="codex-jev-empty">None yet</p></div>
+      <div id="codex-jev-tip" role="group" aria-label="Jev activity"><div id="codex-jev-health-row"><strong></strong><span id="codex-jev-health-reason"></span><button id="codex-jev-retry" type="button">Retry</button></div><h3 id="codex-jev-session-heading">This session</h3><div id="codex-jev-stats"></div><div id="codex-jev-tokens"></div><h3 id="codex-jev-history-heading">Recent Actions</h3><ol id="codex-jev-history"></ol><p id="codex-jev-empty">None yet</p></div>
       <div id="codex-jev-menu" role="group" aria-label="Jev integrations" data-open="false"><h2>Jev integrations</h2><button id="codex-jev-option" class="codex-jev-option" type="button" role="checkbox" aria-checked="false"><span class="codex-jev-check"></span><span><strong>Output filter</strong><small>Check repetitive tool output with Jev</small></span></button><button id="codex-jev-test-build" class="codex-jev-option" type="button" role="checkbox" aria-checked="false"><span class="codex-jev-check"></span><span><strong>Test/build logs</strong><small>Jev checks routine lines before trimming</small></span></button><button id="codex-jev-search-listing" class="codex-jev-option" type="button" role="checkbox" aria-checked="false"><span class="codex-jev-check"></span><span><strong>Search/listing</strong><small>Jev trims broad search and file lists</small></span></button><button id="codex-jev-open-connect" class="codex-jev-option" type="button">Connect Jev…</button><p>Select none to turn Jev off.</p></div>`;
     document.body.appendChild(root);
     setup = document.createElement("div");
@@ -301,7 +302,9 @@
     const status = !state.enabled ? "Jev off" : needsSetup ? "API key needed" : state.health?.ok === true ? "Jev connected" :
       state.health?.ok === false ? "Jev unavailable" : "Checking Jev connection";
     root.querySelector("#codex-jev-tip").dataset.needsKey = String(needsSetup);
-    root.querySelector("#codex-jev-health-row strong").textContent = status;
+    const healthRow = root.querySelector("#codex-jev-health-row");
+    healthRow.hidden = state.enabled && !needsSetup && state.health?.ok === true;
+    healthRow.querySelector("strong").textContent = healthRow.hidden ? "" : status;
     const unavailable = state.enabled && (state.health?.ok === false || needsSetup);
     const reason = root.querySelector("#codex-jev-health-reason");
     reason.textContent = unavailable && !needsSetup ? `· ${healthReason(state.health.reason)}` : "";
@@ -310,8 +313,6 @@
     retry.style.display = unavailable ? "inline-block" : "none";
     retry.disabled = Boolean(retryRequestId);
     retry.textContent = needsSetup ? "Connect" : retryRequestId ? "Checking…" : "Retry";
-    root.querySelector("#codex-jev-mode").textContent = state.enabled ?
-      `${[state.outputEnabled && "output", state.testBuildEnabled && "test/build", state.searchListingEnabled && "search/listing"].filter(Boolean).join(" + ")}${state.mode === "observe" ? " · monitor" : ""}` : "No integrations selected. Click to choose.";
     const stats = state.stats || {};
     const completed = Number(stats.completed) || 0;
     const average = completed ? formatDuration((Number(stats.elapsedMs) || 0) / completed) : "—";
