@@ -8,7 +8,7 @@ Build the VSIX from this checkout, then run:
 
 ```bash
 npx @vscode/vsce package --no-dependencies
-code --install-extension codex-jev-control-0.2.18.vsix --force
+code --install-extension codex-jev-control-0.2.19.vsix --force
 ```
 
 Set `codexJev.dataDirectory` to the installed plugin's absolute `PLUGIN_DATA` path (on Windows, a `\\wsl.localhost\<distro>\...` path for a WSL installation). `CODEX_JEV_DATA_DIRECTORY` is an alternative. The extension has no machine-specific default. It reads `PLUGIN_DATA/.env` to probe API health. During first setup, the entered key travels through the local Codex webview bridge to the extension; it is not sent as chat text. See [key setup](../docs/setup/setup_credentials.md).

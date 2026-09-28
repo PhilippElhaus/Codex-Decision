@@ -128,9 +128,9 @@
       const buttonStyle = getComputedStyle(button);
       const modelStyle = getComputedStyle(document.querySelector(".model"));
       check(buttonStyle.borderTopWidth === "0px" && buttonStyle.borderRadius === modelStyle.borderRadius &&
-        buttonStyle.backgroundColor === modelStyle.backgroundColor &&
+        buttonStyle.backgroundColor === "rgba(0, 0, 0, 0)" &&
         Math.abs(button.getBoundingClientRect().height - document.querySelector(".model").getBoundingClientRect().height) <= 1,
-        "Jev button matches the model pill without a border");
+        "Jev button has a transparent resting surface and matches model height");
       const modelControl = document.querySelector(".model");
       const accessControl = document.querySelector(".access");
       for (const height of [30, 38, 34]) {
@@ -232,8 +232,9 @@
       check(getComputedStyle(menu).backgroundColor === "rgb(37, 37, 37)", "menu follows VS Code theme");
       document.documentElement.style.removeProperty("--vscode-menu-background");
       check(getComputedStyle(button).borderTopWidth === "0px" &&
-        getComputedStyle(button).borderTopStyle === "none",
-        "expanded Jev pill remains borderless");
+        getComputedStyle(button).borderTopStyle === "none" &&
+        getComputedStyle(button).backgroundColor === "rgba(0, 0, 0, 0)",
+        "expanded Jev button stays transparent away from hover");
       option.click();
       await pause(50);
       check(option.getAttribute("aria-checked") === "true", "hook selected");

@@ -118,13 +118,13 @@
     style.textContent = `
       #codex-jev { position: fixed; z-index: 2147483600; display: none; font-family: inherit; }
       #codex-jev * { box-sizing: border-box; }
-      #codex-jev-button { display: inline-flex; align-items: center; gap: 7px; height: var(--codex-jev-button-height, 34px); min-height: 0; max-height: var(--codex-jev-button-height, 34px); padding: 0 12px; border: 0; border-radius: 999px; background: #303030; color: #9a9a9a; font-family: inherit; font-size: 14px; font-weight: 600; line-height: 18px; cursor: pointer; transition: color 220ms ease-in-out, background-color 220ms ease-in-out; }
+      #codex-jev-button { display: inline-flex; align-items: center; gap: 7px; height: var(--codex-jev-button-height, 34px); min-height: 0; max-height: var(--codex-jev-button-height, 34px); padding: 0 12px; border: 0; border-radius: 999px; background: transparent; color: #9a9a9a; font-family: inherit; font-size: 14px; font-weight: 600; line-height: 18px; cursor: pointer; transition: color 220ms ease-in-out, background-color 220ms ease-in-out; }
       #codex-jev[data-compact="true"] #codex-jev-button { gap: 0; padding: 0 4px; }
       #codex-jev[data-compact="true"] #codex-jev-label { display: none; }
       #codex-jev-observe { display: none; margin-left: 2px; padding: 1px 3px; border: 1px solid #9a9a9a77; border-radius: 3px; color: #bdbdbd; font-size: 9px; font-weight: 700; line-height: 12px; letter-spacing: .04em; }
       #codex-jev[data-observe="true"] #codex-jev-observe { display: inline-block; }
       #codex-jev[data-compact="true"] #codex-jev-observe { display: none; }
-      #codex-jev-button:hover, #codex-jev-button[aria-expanded="true"] { background: #3a3a3a; }
+      #codex-jev-button:hover { background: #303030; }
       #codex-jev-button:focus-visible, .codex-jev-option:focus-visible { outline: 2px solid #83bcf7; outline-offset: 2px; }
       #codex-jev-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 15%, transparent); transition: box-shadow 220ms ease-in-out; }
       #codex-jev-menu, #codex-jev-tip { position: absolute; bottom: calc(100% + 9px); right: 0; box-shadow: 0 12px 30px #0009; }
