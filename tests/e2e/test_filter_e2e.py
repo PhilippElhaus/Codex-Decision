@@ -183,6 +183,13 @@ class CommandHookEndToEndTests(unittest.TestCase):
         self.assertTrue(all(call["auth_ok"] for call in calls))
         self.assertEqual([len(call["questions"]) for call in calls], [4, 4, 2])
         self.assertTrue(all(len(json.dumps(call["state"])) < 20_000 for call in calls))
+        panel_text = (self.data / "logs/latest-decision.json").read_text()
+        panel = json.loads(panel_text)
+        self.assertEqual([row["theme"] for row in panel["recent"]],
+                         ["output_filter", "build_filter", "search_mixed"])
+        self.assertTrue(all(isinstance(row["elapsed_ms"], int) and row["elapsed_ms"] >= 0
+                            for row in panel["recent"]))
+        self.assertNotIn("Compiling module", panel_text)
         receipts = self.receipts()
         self.assertEqual(len(receipts), len(calls))
         for receipt, (name, item) in zip(receipts, fixtures):

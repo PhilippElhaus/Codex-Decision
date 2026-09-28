@@ -57,6 +57,73 @@ class ReceiptTests(unittest.TestCase):
             self.assertTrue(all(stat.S_IMODE(path.stat().st_mode) == 0o600 for path in files))
             self.assertEqual(stat.S_IMODE(files[0].parent.stat().st_mode), 0o700)
 
+    def test_latest_panel_snapshot_keeps_five_bounded_decision_summaries(self):
+        private_text = "first evaluated line\nsecond evaluated line\nthird evaluated line\nfourth evaluated line\nfifth evaluated line\nsixth omitted line"
+        answer = {
+            "filter_decision": {"type": "choice", "choice": "filter",
+                                "probabilities": {"filter": .84, "keep": .16}},
+            "routine_noise": {"type": "noul", "noul": .91},
+        }
+        write_receipts(self.root, event(output=private_text), Result("replace", "jev_replace"),
+                       [{"state": {"output_sample": private_text}, "raw_answer": {
+                           "filter_decision": {"type": "choice", "choice": "keep",
+                                               "probabilities": {"filter": .01, "keep": .99}}},
+                         "elapsed_ms": 18},
+                        {"state": {"output_sample": private_text}, "raw_answer": answer,
+                         "elapsed_ms": 42}], "output")
+        panel_file = self.root / "logs/latest-decision.json"
+        panel = json.loads(panel_file.read_text())
+        self.assertEqual([(row["theme"], row["elapsed_ms"]) for row in panel["recent"]],
+                         [("output_keep", 18), ("output_filter", 42)])
+        self.assertNotIn("evaluated line", panel_file.read_text())
+        self.assertNotIn("preview", panel)
+        self.assertEqual(panel["choices"], [{"name": "filter_decision", "selected": "filter",
+                                             "probabilities": {"filter": .84, "keep": .16}}])
+        self.assertEqual(panel["checks"], [{"name": "routine_noise", "probability": .91}])
+        self.assertEqual((panel["call_index"], panel["call_count"]), (2, 2))
+        first_id = panel["id"]
+        write_receipts(self.root, event(output="next"), Result("keep", "jev_keep"),
+                       [{"state": {}, "raw_answer": {"group_0": {"type": "choice", "choice": "retain",
+                           "probabilities": {"retain": .7, "summarize": .2, "drop": .1}}},
+                         "elapsed_ms": 95}], "search_listing")
+        newer = json.loads(panel_file.read_text())
+        self.assertNotEqual(newer["id"], first_id)
+        self.assertEqual(newer["filter"], "search_listing")
+        self.assertEqual(len(newer["choices"]), 1)
+        self.assertEqual(newer["checks"], [])
+        self.assertEqual(newer["recent"][-1]["theme"], "search_retain")
+        self.assertEqual(newer["recent"][-1]["elapsed_ms"], 95)
+        self.assertEqual(len(newer["recent"]), 3)
+        for index in range(4):
+            write_receipts(self.root, event(output=f"later {index}"), Result("keep", "jev_keep"),
+                           [{"state": {}, "elapsed_ms": index + 1}], "test_build")
+        final = json.loads(panel_file.read_text())
+        self.assertEqual(len(final["recent"]), 5)
+        self.assertNotIn(panel["recent"][0]["id"], [row["id"] for row in final["recent"]])
+        self.assertEqual(final["recent"][-1]["theme"], "build_evaluated")
+        if sys.platform != "win32":
+            self.assertEqual(stat.S_IMODE(panel_file.stat().st_mode), 0o600)
+
+    def test_panel_history_classifies_noul_and_mixed_search_choices(self):
+        result = Result("keep", "jev_keep")
+        write_receipts(self.root, event(output="unrelated first line"), result,
+                       [{"state": {"omitted_sample": "test_one ... ok"},
+                         "raw_answer": {"routine_noise": {"type": "noul", "noul": .8}},
+                         "elapsed_ms": 27}],
+                       "test_build")
+        panel = json.loads((self.root / "logs/latest-decision.json").read_text())
+        self.assertEqual(panel["recent"][-1]["theme"], "build_noul")
+        write_receipts(self.root, event(output="unrelated first line"), result,
+                       [{"state": {"groups": [{"sample": "src/a.py:1:match"}]},
+                         "raw_answer": {"group_0": {"type": "choice", "choice": "retain"},
+                                        "group_1": {"type": "choice", "choice": "drop"}},
+                         "elapsed_ms": 83}],
+                       "search_listing")
+        panel = json.loads((self.root / "logs/latest-decision.json").read_text())
+        self.assertEqual(panel["recent"][-1]["theme"], "search_mixed")
+        self.assertEqual(panel["recent"][-1]["elapsed_ms"], 83)
+        self.assertNotIn("src/a.py", json.dumps(panel))
+
     def test_same_second_sequence_is_shared_across_filters(self):
         fixed = datetime(2026, 9, 27, 15, 47, 9, tzinfo=timezone.utc)
         result = Result("keep", "jev_keep", 10)

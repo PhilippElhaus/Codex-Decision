@@ -24,6 +24,7 @@ test("composer bridge selects integrations and reports view-scoped activity with
   let probes = 0;
   let suppliedKey;
   let openedExternal;
+  let executedCommand;
   let browserAvailable = true;
   let configListener;
   const fake = {
@@ -31,12 +32,13 @@ test("composer bridge selects integrations and reports view-scoped activity with
       createStatusBarItem: () => { throw new Error("Status bar item must not be created"); },
       showInformationMessage: () => {},
       createWebviewPanel: () => { throw new Error("Jev settings must stay in Codex settings"); },
+      registerWebviewViewProvider: () => ({ dispose() {} }),
     },
     Uri: { joinPath: () => ({}), file: (filename) => ({ fsPath: filename }), parse: (uri) => ({ toString: () => uri }) }, ViewColumn: { Active: 1 }, ConfigurationTarget: { Global: 1 },
     env: { openExternal: async (uri) => { openedExternal = uri.fsPath || uri.toString(); return browserAvailable; } },
     commands: {
       registerCommand(name, callback) { commands.set(name, callback); return { dispose() {} }; },
-      async executeCommand() {},
+      async executeCommand(command) { executedCommand = command; },
     },
     workspace: {
       getConfiguration: () => ({ get: (key) => key === "dataDirectory" ? directory : key === "mode" ? mode : "",
@@ -62,6 +64,8 @@ test("composer bridge selects integrations and reports view-scoped activity with
   const context = { subscriptions: [], extensionUri: {} };
   try {
     extension.activate(context);
+    await commands.get("codexJev.showLatestDecision")();
+    assert.equal(executedCommand, "codexJevDecision.focus");
     assert.equal(commands.has("codexJev.selectHooks"), false);
     const bridge = commands.get("codexJev.bridge");
     assert.equal((await bridge({ action: "status", viewId: "view-one" })).enabled, false);

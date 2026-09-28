@@ -3,6 +3,7 @@
 const path = require("node:path");
 const fs = require("node:fs/promises");
 const vscode = require("vscode");
+const { LatestDecisionProvider, VIEW_ID } = require("./panel");
 const {
   checkHealth, decisionSummary, defaultDataDirectory, estimateTokensSaved,
   isJevOutcome, outcomeLine, readConfig, readEventOffset, readEventsSince, savedCharacters,
@@ -28,6 +29,11 @@ function activate(context) {
     }
     return directory;
   };
+  const decisionPanel = new LatestDecisionProvider(context.extensionUri, dataDirectory);
+  context.subscriptions.push(vscode.window.registerWebviewViewProvider(VIEW_ID, decisionPanel));
+  context.subscriptions.push(decisionPanel);
+  context.subscriptions.push(vscode.commands.registerCommand("codexJev.showLatestDecision", () =>
+    vscode.commands.executeCommand(`${VIEW_ID}.focus`)));
   const snapshot = () => ({
     enabled: state.enabled,
     outputEnabled: state.outputEnabled,

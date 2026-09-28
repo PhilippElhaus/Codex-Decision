@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Jev panel harness</title>
+  <link rel="stylesheet" href="../../vscode-control/webview/jev-panel.css">
+  <style>
+    body { --vscode-foreground: #d4d4d4; --vscode-descriptionForeground: #969696;
+      --vscode-panel-background: #181818; --vscode-editor-background: #181818;
+      --vscode-sideBar-background: #202020; --vscode-panel-border: #343434;
+      --vscode-charts-blue: #74a9ca; --vscode-charts-orange: #d79567;
+      --vscode-charts-green: #8bbca1; --vscode-editor-font-family: "Cascadia Code", Consolas, monospace;
+      --vscode-font-family: "Segoe UI", sans-serif; }
+  </style>
+  <script>window.acquireVsCodeApi = () => ({ postMessage() {} });</script>
+  <script>
+    window.requestAnimationFrame = (callback) => window.setTimeout(() => callback(performance.now()), 16);
+    window.cancelAnimationFrame = (timer) => window.clearTimeout(timer);
+  </script>
+</head>
+<body>
+  <main id="app" aria-live="polite"></main>
+  <script src="../../vscode-control/webview/jev-panel.js"></script>
+  <script>
+    const decision = {
+      id: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", at: "2026-09-28T12:34:56Z", filter: "test_build",
+      status: "keep", call_index: 1, call_count: 1,
+      choices: [{ name: "filter_decision", selected: "filter",
+        probabilities: { filter: .94, keep: .06 } }],
+      checks: [{ name: "routine_noise", probability: .92 },
+        { name: "needs_exact_text", probability: .14 },
+        { name: "one_off_value", probability: .24 }],
+      recent: [
+        { id: "1".repeat(32), theme: "output_keep", elapsed_ms: 29 },
+        { id: "2".repeat(32), theme: "output_filter", elapsed_ms: 42 },
+        { id: "3".repeat(32), theme: "search_retain", elapsed_ms: 54 },
+        { id: "4".repeat(32), theme: "build_keep", elapsed_ms: 61 },
+        { id: "a".repeat(32), theme: "build_filter", elapsed_ms: 73 },
+      ],
+    };
+    const send = (value) => window.dispatchEvent(new MessageEvent("message", {
+      data: { type: "decision", decision: value },
+    }));
+    document.documentElement.dataset.reducedMotion =
+      String(window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+    const positions = () => [".history-card", ".choice-card", ".checks-card"].map((selector) => {
+      const box = document.querySelector(selector).getBoundingClientRect();
+      return [box.x, box.y, box.width, box.height].map(Math.round).join(",");
+    }).join("|");
+    send(decision);
+    document.documentElement.dataset.testBuildTitle =
+      document.querySelector(".choice-card h2").textContent;
+    const filledCounts = () => [...document.querySelectorAll(".decision-card:not(.inactive) .bar-row")]
+      .map((row) => row.querySelectorAll(".cell.filled").length);
+    setTimeout(() => { document.documentElement.dataset.midPercent =
+      getComputedStyle(document.querySelector(".bar-percent")).opacity;
+      document.documentElement.dataset.midFilled = filledCounts().join(","); }, 350);
+    setTimeout(() => { document.documentElement.dataset.fadePercent =
+      getComputedStyle(document.querySelector(".bar-percent")).opacity; }, 885);
+    setTimeout(() => { document.documentElement.dataset.finalPercent =
+      getComputedStyle(document.querySelector(".bar-percent")).opacity;
+      document.documentElement.dataset.finalFilled = filledCounts().join(","); }, 1000);
+    let initialPositions;
+    setTimeout(() => { initialPositions = positions(); }, 1100);
+    const next = { ...decision, id: "b".repeat(32), checks: [],
+      recent: [...decision.recent.slice(1),
+        { id: "b".repeat(32), theme: "output_noul", elapsed_ms: 86 }] };
+    setTimeout(() => send(next), 1200);
+    setTimeout(() => { document.documentElement.dataset.historyMoving =
+      String(getComputedStyle(document.querySelector(".history-row.latest")).transform !== "none"); }, 1260);
+    setTimeout(() => { document.documentElement.dataset.choiceOnlyStable =
+      String(initialPositions === positions());
+      document.documentElement.dataset.noulInactive =
+        String(document.querySelector(".checks-card").classList.contains("inactive"));
+      document.documentElement.dataset.oldestShifted =
+        String(document.querySelector(".history-row:first-child").textContent.includes("42 ms")); }, 2250);
+    setTimeout(() => send({ ...decision, id: "c".repeat(32), choices: [],
+      recent: [...next.recent.slice(1),
+        { id: "c".repeat(32), theme: "search_drop", elapsed_ms: 97 }] }), 2300);
+    setTimeout(() => { document.documentElement.dataset.noulOnlyStable =
+      String(initialPositions === positions());
+      document.documentElement.dataset.choiceInactive =
+        String(document.querySelector(".choice-card").classList.contains("inactive"));
+      document.documentElement.dataset.historyRows =
+        String(document.querySelectorAll(".history-row").length);
+      document.documentElement.dataset.newestAtBottom =
+        String(document.querySelector(".history-row:last-child").textContent.includes("97 ms"));
+      document.title = "JEV_PANEL_READY"; }, 3350);
+  </script>
+</body>
+</html>

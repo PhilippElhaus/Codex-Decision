@@ -25,7 +25,7 @@ class SubmissionArchiveTests(unittest.TestCase):
     def test_zip_contains_installable_hook_and_no_private_or_ui_files(self):
         with redirect_stdout(io.StringIO()):
             builder.main()
-        archive_path = ROOT / ".local/submission/codex-jev-0.3.0.zip"
+        archive_path = ROOT / ".local/submission/codex-jev-0.3.1.zip"
         self.assertLess(archive_path.stat().st_size, 100_000_000)
         with tempfile.TemporaryDirectory(prefix="jev-submission-test-", dir="/tmp") as directory:
             destination = Path(directory)

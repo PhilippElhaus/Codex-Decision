@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import sys
+import time
 
 from jev import Config, DEFAULT_DECISION_METHODS, DEFAULT_THRESHOLDS, Result, append_log, capture_request, decide, extract_text, jev_choice_request, jev_request, jev_test_build_request, load_api_key
 from receipts import write_receipts
@@ -51,16 +52,18 @@ def main() -> None:
                 except (OSError, ValueError):
                     pass
                 call = {"state": state}
+                started = time.perf_counter()
                 try:
                     with capture_request(call):
                         answer = jev_test_build_request(state, settings, load_api_key(data_dir))
                     call["answer"] = answer
-                    calls.append(call)
                     return answer
                 except Exception as error:
                     call["error"] = type(error).__name__
-                    calls.append(call)
                     raise
+                finally:
+                    call["elapsed_ms"] = round((time.perf_counter() - started) * 1000)
+                    calls.append(call)
 
             outcome = decide_test_build(event, config, evaluator=evaluate_test_build, storage=data_dir)
             finish(outcome, "test_build")
@@ -73,16 +76,18 @@ def main() -> None:
                 except (OSError, ValueError):
                     pass
                 call = {"state": state, "questions": questions}
+                started = time.perf_counter()
                 try:
                     with capture_request(call):
                         answer = jev_choice_request(state, questions, settings, load_api_key(data_dir))
                     call["answer"] = answer
-                    calls.append(call)
                     return answer
                 except Exception as error:
                     call["error"] = type(error).__name__
-                    calls.append(call)
                     raise
+                finally:
+                    call["elapsed_ms"] = round((time.perf_counter() - started) * 1000)
+                    calls.append(call)
 
             outcome = decide_search_listing(event, config, evaluator=evaluate_search, storage=data_dir)
             finish(outcome, "search_listing")
@@ -97,16 +102,18 @@ def main() -> None:
             except (OSError, ValueError):
                 pass
             call = {"state": state}
+            started = time.perf_counter()
             try:
                 with capture_request(call):
                     answer = jev_request(state, settings, load_api_key(data_dir))
                 call["answer"] = answer
-                calls.append(call)
                 return answer
             except Exception as error:
                 call["error"] = type(error).__name__
-                calls.append(call)
                 raise
+            finally:
+                call["elapsed_ms"] = round((time.perf_counter() - started) * 1000)
+                calls.append(call)
 
         outcome = decide(event, config, evaluator=evaluate, storage=data_dir)
         finish(outcome, "output")

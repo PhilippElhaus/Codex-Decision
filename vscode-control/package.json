@@ -1,8 +1,8 @@
 {
   "name": "codex-jev-control",
   "displayName": "Codex Jev Control",
-  "description": "Jev integration controls inside the Codex composer",
-  "version": "0.2.19",
+  "description": "Jev integration controls and live decision panel for VS Code",
+  "version": "0.2.30",
   "publisher": "elhaus-labs",
   "license": "MIT",
   "icon": "icon.png",
@@ -11,11 +11,22 @@
   "main": "./extension.js",
   "engines": { "vscode": "^1.96.2" },
   "extensionKind": ["ui"],
-  "activationEvents": ["onStartupFinished", "onCommand:codexJev.bridge"],
+  "activationEvents": ["onStartupFinished", "onCommand:codexJev.bridge", "onView:codexJevDecision"],
   "contributes": {
     "commands": [
-      { "command": "codexJev.checkConnection", "title": "Jev: Check API and Key" }
+      { "command": "codexJev.checkConnection", "title": "Jev: Check API and Key" },
+      { "command": "codexJev.showLatestDecision", "title": "Jev: Show Latest Decision" }
     ],
+    "viewsContainers": {
+      "panel": [
+        { "id": "codexJevDecisionPanel", "title": "Jev", "icon": "media/jev-panel.svg" }
+      ]
+    },
+    "views": {
+      "codexJevDecisionPanel": [
+        { "id": "codexJevDecision", "name": "Latest decision", "type": "webview", "visibility": "visible" }
+      ]
+    },
     "configuration": {
       "title": "Codex Jev Control",
       "properties": {

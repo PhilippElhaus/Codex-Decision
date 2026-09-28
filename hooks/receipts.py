@@ -6,6 +6,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -24,6 +25,98 @@ MAX_LOG_LIMIT_MB = 9999
 INDEX_LIMIT_BYTES = 1_048_576
 RECEIPT_FILTERS = ("output", "test_build", "search_listing")
 RECEIPT_NAME = re.compile(r"\d{2}-\d{2}-\d{2}-(\d{3,})-(?:output|test_build|search_listing)\.json")
+PANEL_CHOICES = {"filter_decision": ("filter", "keep")}
+PANEL_CHECKS = ("routine_noise", "needs_exact_text", "one_off_value")
+PANEL_HISTORY_LIMIT = 5
+PANEL_THEMES = {"output_filter", "output_keep", "output_noul", "output_evaluated",
+                "build_filter", "build_keep", "build_noul", "build_evaluated",
+                "search_retain", "search_summarize", "search_drop", "search_mixed",
+                "search_evaluated"}
+
+
+def _panel_probability(value: object) -> float | None:
+    if type(value) not in (int, float) or not math.isfinite(value) or not 0 <= value <= 1:
+        return None
+    return float(value)
+
+
+def _panel_theme(call: dict, filter_name: str) -> str:
+    raw = call.get("raw_answer")
+    raw = raw if isinstance(raw, dict) else {}
+    if filter_name == "search_listing":
+        selected = {answer.get("choice") for name, answer in raw.items()
+                    if re.fullmatch(r"group_\d+", name) and isinstance(answer, dict)
+                    and answer.get("type") == "choice"
+                    and answer.get("choice") in ("retain", "summarize", "drop")}
+        if len(selected) == 1:
+            return f"search_{next(iter(selected))}"
+        return "search_mixed" if selected else "search_evaluated"
+    prefix = "build" if filter_name == "test_build" else "output"
+    answer = raw.get("filter_decision")
+    if isinstance(answer, dict) and answer.get("type") == "choice" and answer.get("choice") in ("filter", "keep"):
+        return f"{prefix}_{answer['choice']}"
+    if any(isinstance(raw.get(name), dict) and raw[name].get("type") == "noul" for name in PANEL_CHECKS):
+        return f"{prefix}_noul"
+    return f"{prefix}_evaluated"
+
+
+def _panel_history(path: Path) -> list[dict]:
+    try:
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+        fd = os.open(path, flags)
+    except OSError:
+        return []
+    try:
+        details = os.fstat(fd)
+        if not stat.S_ISREG(details.st_mode) or details.st_size > 16_384:
+            return []
+        with os.fdopen(fd, "rb", closefd=False) as file:
+            previous = json.loads(file.read(16_385))
+    except (ValueError, UnicodeError):
+        return []
+    finally:
+        os.close(fd)
+    rows = previous.get("recent") if isinstance(previous, dict) else None
+    if not isinstance(rows, list):
+        return []
+    return [row for row in rows[-PANEL_HISTORY_LIMIT:]
+            if isinstance(row, dict) and isinstance(row.get("id"), str)
+            and re.fullmatch(r"[a-f0-9]{32}", row["id"])
+            and row.get("theme") in PANEL_THEMES
+            and type(row.get("elapsed_ms")) in (int, float)
+            and math.isfinite(row["elapsed_ms"]) and 0 <= row["elapsed_ms"] <= 3_600_000]
+
+
+def _panel_decision(call: dict, result, filter_name: str, at: str, count: int) -> dict:
+    """Keep bounded Jev labels and probabilities for the latest request."""
+    raw = call.get("raw_answer")
+    raw = raw if isinstance(raw, dict) else {}
+    choices = []
+    allowed = {**PANEL_CHOICES, **{f"group_{index}": ("retain", "summarize", "drop")
+                                         for index in range(12)}}
+    for name, options in allowed.items():
+        answer = raw.get(name)
+        if not isinstance(answer, dict) or answer.get("type") != "choice":
+            continue
+        values = answer.get("probabilities")
+        if (answer.get("choice") not in options or not isinstance(values, dict)
+                or set(values) != set(options)):
+            continue
+        probabilities = {option: _panel_probability(values[option]) for option in options}
+        if any(value is None for value in probabilities.values()) or not 0.97 <= sum(probabilities.values()) <= 1.03:
+            continue
+        choices.append({"name": name, "selected": answer["choice"], "probabilities": probabilities})
+    checks = []
+    scores = result.scores if isinstance(result.scores, dict) else {}
+    for name in PANEL_CHECKS:
+        answer = raw.get(name)
+        value = answer.get("noul") if isinstance(answer, dict) and answer.get("type") == "noul" else scores.get(name)
+        probability = _panel_probability(value)
+        if probability is not None:
+            checks.append({"name": name, "probability": probability})
+    return {"version": 1, "id": uuid.uuid4().hex, "at": at, "filter": filter_name,
+            "status": result.status, "call_index": count, "call_count": count,
+            "choices": choices, "checks": checks}
 
 
 def _private_directory(path: Path) -> None:
@@ -241,4 +334,15 @@ def write_receipts(storage: Path, event: dict, result, calls: list[dict], filter
             path = session / name
             _create_private(path, (json.dumps(receipt, ensure_ascii=False, indent=2) + "\n").encode("utf-8"))
             sequence += 1
+        history = _panel_history(root / "latest-decision.json")
+        for call in calls:
+            elapsed = call.get("elapsed_ms")
+            if type(elapsed) not in (int, float) or not math.isfinite(elapsed) or elapsed < 0:
+                elapsed = result.elapsed_ms if len(calls) == 1 else 0
+            history.append({"id": uuid.uuid4().hex, "theme": _panel_theme(call, filter_name),
+                            "elapsed_ms": min(3_600_000, round(elapsed))})
+        snapshot = _panel_decision(calls[-1], result, filter_name, now, len(calls))
+        snapshot["id"] = history[-1]["id"]
+        snapshot["recent"] = history[-PANEL_HISTORY_LIMIT:]
+        _replace_private(root / "latest-decision.json", (json.dumps(snapshot, separators=(",", ":")) + "\n").encode("utf-8"))
         _prune(root, limit_mb, never_delete)

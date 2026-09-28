@@ -15,7 +15,7 @@ The command writes the ZIP under the ignored `.local/submission/` directory and 
 | Field | Prepared value |
 | --- | --- |
 | Package name | `codex-jev` |
-| Version | `0.3.0` |
+| Version | `0.3.1` |
 | Plugin name | Codex Jev |
 | Short description | Trim repetitive tool output |
 | Category | Developer Tools |
