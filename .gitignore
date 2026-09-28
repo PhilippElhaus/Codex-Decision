@@ -3,6 +3,7 @@ __pycache__/
 .pytest_cache/
 .coverage
 .local/
+/.migration/
 AGENTS.md
 *.dpapi
 credential-source.json

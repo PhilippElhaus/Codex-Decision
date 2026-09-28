@@ -19,7 +19,8 @@ def main() -> None:
         target = windows_path(ROOT.parent / 'tests/browser/browser_harness.html').replace('\\', '/')
         address = 'file:///' + quote(target, safe='/:')
         reports = []
-        for width, motion in ((360, 'reduce'), (720, 'no-preference'), (1200, 'reduce')):
+        for width, motion in ((360, 'reduce'), (720, 'no-preference'), (1200, 'reduce'),
+                              (2800, 'no-preference')):
             result = subprocess.run([
                 str(edge), '--headless', '--disable-gpu', '--no-first-run',
                 '--no-default-browser-check', '--disable-extensions',

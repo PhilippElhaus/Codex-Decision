@@ -397,23 +397,26 @@
       .filter(({ rect }) => rect.left > anchor.rect.right &&
         Math.min(rect.bottom, anchor.rect.bottom) - Math.max(rect.top, anchor.rect.top) >
         Math.min(rect.height, anchor.rect.height) / 2);
-    const named = rightButtons.find(({ element }) => /\b(GPT|Codex|model)\b/i.test(controlName(element)));
-    if (named) return named;
+    const modelRank = (name) => /\bGPT\b/i.test(name) ? 3 : /\bmodel\b/i.test(name) ? 2 :
+      /\bCodex\b/i.test(name) ? 1 : 0;
+    const byModelRank = (a, b) => modelRank(controlName(b.element)) - modelRank(controlName(a.element)) ||
+      b.rect.left - a.rect.left;
+    const namedButtons = rightButtons.filter(({ element }) => modelRank(controlName(element)) > 0);
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
     let node;
-    let nearest = null;
+    const namedText = [];
     while ((node = walker.nextNode())) {
       const label = node.textContent.trim();
-      if (!label || /^(Full access|Workspace write|Read-only)$/i.test(label) ||
-          /^(IDE context|Context)$/i.test(label) || root?.contains(node)) continue;
+      if (!modelRank(label) || root?.contains(node)) continue;
       const element = node.parentElement?.closest('button,[role="button"]') || node.parentElement;
       const rect = visibleRect(element);
-      if (!rect || rect.left <= anchor.rect.right || rect.left >= (nearest?.rect.left ?? window.innerWidth)) continue;
+      if (!rect || rect.left <= anchor.rect.right) continue;
       const overlap = Math.min(rect.bottom, anchor.rect.bottom) - Math.max(rect.top, anchor.rect.top);
       if (overlap < Math.min(rect.height, anchor.rect.height) / 2) continue;
-      nearest = { element, rect };
+      namedText.push({ element, rect });
     }
-    return nearest || rightButtons.sort((a, b) => a.rect.left - b.rect.left)[0] || null;
+    return [...namedButtons, ...namedText].sort(byModelRank)[0] ||
+      rightButtons.sort((a, b) => a.rect.left - b.rect.left)[0] || null;
   }
 
   function commonAncestor(first, second) {
@@ -483,7 +486,10 @@
     observeLayout(anchor, model || anchor);
     const leftEdge = anchor.rect.right + 7;
     const modelEdge = model && model.rect.left > anchor.rect.right ? model.rect.left : Infinity;
-    const nextEdge = Math.min(modelEdge, nextToolbarEdge(anchor, toolbarScope(anchor, model)));
+    // Decorative text and SVGs may sit between the access and model controls.
+    // Once the model is known, it alone defines the right edge for Jev.
+    const nextEdge = Number.isFinite(modelEdge) ? modelEdge :
+      nextToolbarEdge(anchor, toolbarScope(anchor, model));
     const rightEdge = Number.isFinite(nextEdge) ? nextEdge - 8 : leftEdge;
     const available = rightEdge - leftEdge;
     const button = item.querySelector("#codex-jev-button");

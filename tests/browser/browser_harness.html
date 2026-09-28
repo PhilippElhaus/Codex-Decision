@@ -144,6 +144,44 @@
       const rect = () => button.getBoundingClientRect();
       const docked = () => model().left - rect().right;
       check(rect().left > anchor().right && docked() >= 7 && docked() <= 10, "right-docked placement");
+      if (innerWidth >= 1600) {
+        const toolbar = document.querySelector(".toolbar");
+        const decoration = document.createElement("span");
+        decoration.textContent = "status";
+        decoration.style.cssText = "position:absolute;left:380px;top:8px";
+        toolbar.append(decoration);
+        const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        icon.setAttribute("width", "20");
+        icon.setAttribute("height", "20");
+        icon.style.cssText = "position:absolute;left:460px;top:8px";
+        toolbar.append(icon);
+        await pause(40);
+        check(root.dataset.compact === "false" && docked() >= 7 && docked() <= 10,
+          "wide composer keeps full Jev control beside the model despite decorative content");
+        check(getComputedStyle(label).display !== "none" && rect().left > innerWidth / 2,
+          "wide composer shows the full control on the right");
+        document.documentElement.style.width = "500px";
+        composer.style.width = "380px";
+        await until(() => root.dataset.compact === "true", "wide composer compacts at a narrow pane width");
+        document.documentElement.style.width = "";
+        composer.style.width = "";
+        await until(() => root.dataset.compact === "false" && docked() >= 7 && docked() <= 10,
+          "expanded composer restores full right-docked Jev control");
+        const decoy = document.createElement("span");
+        decoy.textContent = "Codex";
+        decoy.setAttribute("role", "button");
+        decoy.style.cssText = "position:absolute;left:540px;top:8px";
+        toolbar.insertBefore(decoy, modelControl);
+        modelControl.removeAttribute("role");
+        window.dispatchEvent(new Event("resize"));
+        await pause(40);
+        check(root.dataset.compact === "false" && docked() >= 7 && docked() <= 10,
+          "wide composer prefers model text over an unrelated Codex button");
+        modelControl.setAttribute("role", "button");
+        decoy.remove();
+        decoration.remove();
+        icon.remove();
+      }
       const wideWidth = composer.getBoundingClientRect().width;
       const paneWidth = document.documentElement.getBoundingClientRect().width;
       const gap = model().left - anchor().right - 15;
