@@ -12,6 +12,10 @@
       --vscode-charts-blue: #74a9ca; --vscode-charts-orange: #d79567;
       --vscode-charts-green: #8bbca1; --vscode-editor-font-family: "Cascadia Code", Consolas, monospace;
       --vscode-font-family: "Segoe UI", sans-serif; }
+    body.light { --vscode-foreground: #242424; --vscode-descriptionForeground: #616161;
+      --vscode-panel-background: #ffffff; --vscode-editor-background: #ffffff;
+      --vscode-sideBar-background: #f6f6f6; --vscode-panel-border: #d4d4d4;
+      --vscode-charts-blue: #2867a8; --vscode-charts-orange: #a75a19; }
   </style>
   <script>window.acquireVsCodeApi = () => ({ postMessage() {} });</script>
   <script>
@@ -20,6 +24,7 @@
   </script>
 </head>
 <body>
+  <script>if (location.search.includes("light")) document.body.classList.add("light");</script>
   <main id="app" aria-live="polite"></main>
   <script src="../../vscode-control/webview/jev-panel.js"></script>
   <script>
@@ -32,11 +37,11 @@
         { name: "needs_exact_text", probability: .14 },
         { name: "one_off_value", probability: .24 }],
       recent: [
-        { id: "1".repeat(32), theme: "output_keep", elapsed_ms: 29 },
-        { id: "2".repeat(32), theme: "output_filter", elapsed_ms: 42 },
-        { id: "3".repeat(32), theme: "search_retain", elapsed_ms: 54 },
-        { id: "4".repeat(32), theme: "build_keep", elapsed_ms: 61 },
-        { id: "a".repeat(32), theme: "build_filter", elapsed_ms: 73 },
+        { id: "1".repeat(32), theme: "output_keep", elapsed_ms: 4 },
+        { id: "2".repeat(32), theme: "output_filter", elapsed_ms: 999 },
+        { id: "3".repeat(32), theme: "search_retain", elapsed_ms: 1000 },
+        { id: "4".repeat(32), theme: "build_keep", elapsed_ms: 2550 },
+        { id: "a".repeat(32), theme: "build_filter", elapsed_ms: 18750 },
       ],
     };
     const send = (value) => window.dispatchEvent(new MessageEvent("message", {
@@ -51,6 +56,15 @@
     send(decision);
     document.documentElement.dataset.testBuildTitle =
       document.querySelector(".choice-card h2").textContent;
+    document.documentElement.dataset.initialTimes =
+      [...document.querySelectorAll(".history-time")].map((node) => node.textContent).join(",");
+    document.documentElement.dataset.initialLabelsCapitalized =
+      String([...document.querySelectorAll(".history-theme")].every((node) => /^[A-Z]/.test(node.textContent)));
+    document.documentElement.dataset.timeColor =
+      getComputedStyle(document.querySelector(".history-time")).color;
+    document.documentElement.dataset.labelColor =
+      getComputedStyle(document.querySelector(".history-theme")).color;
+    document.documentElement.dataset.backgroundColor = getComputedStyle(document.body).backgroundColor;
     const filledCounts = () => [...document.querySelectorAll(".decision-card:not(.inactive) .bar-row")]
       .map((row) => row.querySelectorAll(".cell.filled").length);
     setTimeout(() => { document.documentElement.dataset.midPercent =
@@ -74,7 +88,7 @@
       document.documentElement.dataset.noulInactive =
         String(document.querySelector(".checks-card").classList.contains("inactive"));
       document.documentElement.dataset.oldestShifted =
-        String(document.querySelector(".history-row:first-child").textContent.includes("42 ms")); }, 2250);
+        String(document.querySelector(".history-row:first-child").textContent.includes("999ms")); }, 2250);
     setTimeout(() => send({ ...decision, id: "c".repeat(32), choices: [],
       recent: [...next.recent.slice(1),
         { id: "c".repeat(32), theme: "search_drop", elapsed_ms: 97 }] }), 2300);
@@ -85,7 +99,7 @@
       document.documentElement.dataset.historyRows =
         String(document.querySelectorAll(".history-row").length);
       document.documentElement.dataset.newestAtBottom =
-        String(document.querySelector(".history-row:last-child").textContent.includes("97 ms"));
+        String(document.querySelector(".history-row:last-child").textContent.includes("97ms"));
       document.title = "JEV_PANEL_READY"; }, 3350);
   </script>
 </body>

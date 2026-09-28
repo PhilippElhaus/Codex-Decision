@@ -26,12 +26,12 @@ h2 { min-width: 0; margin: 0; overflow: hidden; white-space: nowrap; text-overfl
 .placeholder-track { opacity: .5; }
 .bracket { flex: none; opacity: .65; }
 .empty p { color: var(--vscode-descriptionForeground); font-size: 12px; }
-.history-card { grid-column: 1 / -1; min-width: 0; height: calc(5 * 1.55em); padding: 0 2px; overflow: hidden; color: var(--vscode-descriptionForeground); font: 12px/1.55 var(--vscode-editor-font-family, monospace); }
+.history-card { grid-column: 1 / -1; min-width: 0; height: calc(5 * 1.55em); padding: 0 2px; overflow: hidden; color: var(--vscode-foreground); font: 12px/1.55 var(--vscode-editor-font-family, monospace); }
 .history-lines { display: grid; grid-template-rows: repeat(5, minmax(0, 1fr)); height: 100%; overflow: hidden; }
 .history-row { display: flex; align-items: center; gap: 16px; min-width: 0; overflow: hidden; background: var(--vscode-panel-background, var(--vscode-editor-background)); }
 .history-row.latest { color: var(--vscode-foreground); font-weight: 650; }
 .history-theme { flex: 1 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.history-time { flex: none; min-width: 54px; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.history-time { flex: none; min-width: 68px; text-align: right; white-space: nowrap; color: var(--vscode-descriptionForeground, color-mix(in srgb, var(--vscode-foreground) 70%, var(--vscode-panel-background, var(--vscode-editor-background)) 30%)); font-variant-numeric: tabular-nums; }
 .empty { display: grid; min-height: 180px; place-content: center; text-align: center; }
 .empty-glyph { color: var(--vscode-charts-blue, #70a6ca); font: 14px var(--vscode-editor-font-family, monospace); letter-spacing: .3em; }
 .empty h1 { margin-top: 13px; }

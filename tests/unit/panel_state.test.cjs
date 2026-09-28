@@ -32,6 +32,12 @@ test("panel state accepts only fixed labels and bounded probability values", () 
     { id: "a".repeat(32), theme: "output_filter", elapsed_ms: -1 },
   ] }), /history/);
   assert.throws(() => parsePanelDecision({ ...snapshot, recent: [
+    { id: "a".repeat(32), theme: "output_filter", elapsed_ms: 4.92 },
+  ] }), /history/);
+  assert.throws(() => parsePanelDecision({ ...snapshot, recent: [
+    { id: "a".repeat(32), theme: "output_filter", elapsed_ms: 3_600_001 },
+  ] }), /history/);
+  assert.throws(() => parsePanelDecision({ ...snapshot, recent: [
     { id: "b".repeat(32), theme: "output_filter", elapsed_ms: 48 },
   ] }), /history/);
 });

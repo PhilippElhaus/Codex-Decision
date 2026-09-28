@@ -14,8 +14,8 @@ For Windows VS Code, build the companion VSIX from WSL, then install it:
 ```bash
 cd vscode-control
 mkdir -p ../.local/submission
-npx @vscode/vsce package --no-dependencies --out ../.local/submission/codex-jev-control-0.2.30.vsix
-code --install-extension "$(wslpath -w ../.local/submission/codex-jev-control-0.2.30.vsix)" --force
+npx @vscode/vsce package --no-dependencies --out ../.local/submission/codex-jev-control-0.2.31.vsix
+code --install-extension "$(wslpath -w ../.local/submission/codex-jev-control-0.2.31.vsix)" --force
 ```
 
 Set `codexJev.dataDirectory` to the installed plugin's absolute `PLUGIN_DATA` directory. Enabling an integration opens key setup if no key is saved. The [credential setup](setup_credentials.md) explains that directory and the Jev key. Apply the [version-pinned Codex composer patch](../../vscode-control/README.md#install-the-companion-extension).

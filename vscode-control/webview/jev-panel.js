@@ -44,6 +44,11 @@
     return parent;
   }
 
+  function formatElapsed(value) {
+    if (!Number.isSafeInteger(value) || value < 0 || value > 3_600_000) return "—";
+    return value < 1000 ? `${value}ms` : `${(value / 1000).toFixed(2)}s`;
+  }
+
   function showEmpty(message) {
     currentDecision = "";
     currentId = null;
@@ -131,10 +136,12 @@
       const item = padded[index];
       const row = element("div", `history-row${index === 4 && item ? " latest" : ""}`);
       if (item) {
-        const theme = `${decision.demo ? "[DEMO] " : ""}${themes[item.theme]}`;
+        const summary = themes[item.theme] || "Jev decision";
+        const theme = `${decision.demo ? "[DEMO] " : ""}${summary[0].toUpperCase()}${summary.slice(1)}`;
+        const duration = formatElapsed(item.elapsed_ms);
         append(row, element("span", "history-theme", theme),
-          element("span", "history-time", `${item.elapsed_ms} ms`));
-        row.title = `${theme} · ${item.elapsed_ms} ms`;
+          element("span", "history-time", duration));
+        row.title = `${theme} · ${duration}`;
         if (newDecision && previousRecent.length) {
           const former = prior.findIndex((entry) => entry?.id === item.id);
           if (former >= 0 && former !== index) {
