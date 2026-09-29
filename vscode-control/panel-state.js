@@ -71,6 +71,8 @@ function parseLineDecision(value) {
   const identifier = /^[a-f0-9]{32}$/;
   const lineIdentifier = /^[a-f0-9]{32}-\d+$/;
   const actions = new Set(["keep", "omit", "keep_unjudged"]);
+  const reasons = new Set(["protected", "budget_unjudged", "below_omit_cutoff", "exact_text",
+    "task_relevant", "confident_omission", "representative", "last_line"]);
   const integer = (number, limit = 2_000_000) => Number.isSafeInteger(number) && number >= 0 && number <= limit;
   if (!identifier.test(value.id) || typeof value.at !== "string" || !Number.isFinite(Date.parse(value.at)) ||
       !FILTERS.has(value.filter) || !new Set(["processing", "keep", "candidate", "replace"]).has(value.status) ||
@@ -84,11 +86,15 @@ function parseLineDecision(value) {
         typeof row.excerpt !== "string" || row.excerpt.length > 240 ||
         typeof row.summary !== "string" || row.summary.length > 120 || !actions.has(row.action) ||
         !Number.isFinite(row.can_omit) || row.can_omit < 0 || row.can_omit > 1 ||
-        !Number.isFinite(row.exact_needed) || row.exact_needed < 0 || row.exact_needed > 1) {
+        !Number.isFinite(row.exact_needed) || row.exact_needed < 0 || row.exact_needed > 1 ||
+        (row.task_relevant != null && (typeof row.task_relevant !== "number" ||
+          !Number.isFinite(row.task_relevant) || row.task_relevant < 0 || row.task_relevant > 1)) ||
+        (row.reason !== undefined && !reasons.has(row.reason))) {
       throw new Error("Invalid Jev line row");
     }
     return { id: row.id, line: row.line, excerpt: row.excerpt, summary: row.summary,
-      action: row.action, can_omit: row.can_omit, exact_needed: row.exact_needed };
+      action: row.action, reason: row.reason ?? null, can_omit: row.can_omit,
+      exact_needed: row.exact_needed, task_relevant: row.task_relevant ?? null };
   };
   const recent = value.recent.map(parseLine);
   const latest = parseLine(value.latest);

@@ -3,7 +3,8 @@
 use chrono::Utc;
 use codex_jev::{
     apply_probabilities, pack_batches, parse_probabilities, protect_neighbors, render,
-    source_lines, Action, BatchRecord, LinePolicy, SourceLine, MAX_REQUEST_BYTES,
+    source_lines, Action, BatchRecord, LinePolicy, SearchRelevancePolicy, SourceLine,
+    MAX_REQUEST_BYTES,
 };
 use regex::Regex;
 use serde_json::{json, Value};
@@ -27,6 +28,7 @@ struct Config {
     timeout: f64,
     allow_mcp_replacement: bool,
     policy: BTreeMap<String, LinePolicy>,
+    search_relevance: SearchRelevancePolicy,
     log_limit_mb: u64,
     never_delete_logs: bool,
 }
@@ -106,6 +108,15 @@ fn config(data_dir: &Path) -> Result<Option<Config>, String> {
         }
         policy.insert(route.to_owned(), item);
     }
+    let search_relevance: SearchRelevancePolicy = serde_json::from_value(
+        raw.get("search_relevance")
+            .cloned()
+            .unwrap_or_else(|| json!({})),
+    )
+    .map_err(|_| "invalid search relevance policy")?;
+    if !search_relevance.valid() {
+        return Err("invalid search relevance threshold".into());
+    }
     let log_limit_mb = raw
         .get("log_limit_mb")
         .and_then(Value::as_u64)
@@ -127,6 +138,7 @@ fn config(data_dir: &Path) -> Result<Option<Config>, String> {
             .and_then(Value::as_bool)
             .unwrap_or(false),
         policy,
+        search_relevance,
         log_limit_mb,
         never_delete_logs: raw
             .get("never_delete_logs")
@@ -479,16 +491,19 @@ fn apply_route_structure(route: &str, command: &str, lines: &mut [SourceLine]) -
                 if kind != "match" {
                     line.eligible = false;
                     line.protected_reason = Some("jsonl_structure".into());
-                } else if row
-                    .pointer("/data/path/text")
-                    .and_then(Value::as_str)
-                    .is_none()
-                    || row
-                        .pointer("/data/lines/text")
-                        .and_then(Value::as_str)
-                        .is_none()
-                {
-                    return false;
+                } else {
+                    let Some(path) = row.pointer("/data/path/text").and_then(Value::as_str) else {
+                        return false;
+                    };
+                    let Some(text) = row.pointer("/data/lines/text").and_then(Value::as_str) else {
+                        return false;
+                    };
+                    let number = row
+                        .pointer("/data/line_number")
+                        .and_then(Value::as_u64)
+                        .unwrap_or(0);
+                    line.model_text =
+                        format!("{path}:{number}:{}", text.trim_end_matches(['\r', '\n']));
                 }
             } else if command.contains("--files") || command.contains("ls-files") {
                 if line.model_text.is_empty() || line.model_text.chars().any(char::is_control) {
@@ -684,17 +699,25 @@ fn line_snapshot(
             .collect();
         let item = json!({"id":format!("{receipt_id}-{}", line.number),"line":line.number,"excerpt":excerpt,
             "summary":format!("{} · line {}", route.replace('_', "/"),line.number),
-            "action":decision.action,"can_omit":decision.p_can_omit,"exact_needed":decision.p_exact_needed});
+            "action":decision.action,"reason":decision.reason,"can_omit":decision.p_can_omit,
+            "exact_needed":decision.p_exact_needed,"task_relevant":decision.p_task_relevant});
         recent.push(item.clone());
         latest = item;
     }
     if recent.len() > 5 {
         recent.drain(..recent.len() - 5);
     }
+    let unjudged = lines
+        .iter()
+        .zip(decisions)
+        .filter(|(line, decision)| {
+            line.eligible && line.protected_reason.is_none() && decision.batch_id.is_none()
+        })
+        .count();
     json!({"version":2,"id":snapshot_id,"receipt_id":receipt_id,"at":Utc::now().to_rfc3339(),
         "filter":route,"status":status,"latest":latest,"recent":recent,
         "totals":{"seen":seen,"judged":judged,"kept":seen-omitted,"omitted":omitted,
-            "protected":protected,"unjudged":seen-judged,"requests":requests},
+            "protected":protected,"unjudged":unjudged,"requests":requests},
         "batch_elapsed_ms":batch_elapsed_ms})
 }
 
@@ -843,12 +866,34 @@ fn record(
         .iter()
         .filter(|row| row.protected_reason.is_some())
         .count();
+    let unjudged = lines
+        .iter()
+        .zip(decisions)
+        .filter(|(line, decision)| {
+            line.eligible && line.protected_reason.is_none() && decision.batch_id.is_none()
+        })
+        .count();
+    let relevance_judged = decisions
+        .iter()
+        .filter(|row| row.p_task_relevant.is_some())
+        .count();
+    let below_omit_cutoff = decisions
+        .iter()
+        .filter(|row| row.reason == "below_omit_cutoff")
+        .count();
+    let relevance_kept = decisions
+        .iter()
+        .filter(|row| row.reason == "task_relevant")
+        .count();
     let summary = json!({"version":2,"id":id,"at":now.to_rfc3339(),"filter":route,"status":status,
         "reason":if config.mode == "observe" { "observe" } else { "line_policy" },
         "tool":event.get("tool_name"),"capsule_chars":visible.chars().count(),
         "elapsed_ms":batches.iter().map(|batch| batch.elapsed_ms).sum::<u64>(),
         "source_sha256":original_hash,"lines_seen":seen,"lines_judged":judged,"lines_kept":seen-omitted,
-        "lines_omitted":omitted,"lines_protected":protected,"lines_unjudged":seen-judged,
+        "lines_omitted":omitted,"lines_protected":protected,"lines_unjudged":unjudged,
+        "lines_relevance_judged":relevance_judged,"lines_below_omit_cutoff":below_omit_cutoff,
+        "lines_relevance_kept":relevance_kept,"search_relevance_guard":config.search_relevance.guard_enabled,
+        "line_policy":config.policy[route],"search_relevance_policy":config.search_relevance,
         "requests":batches.len(),"original_chars":source.chars().count(),"visible_chars":visible.chars().count()});
     let receipt = json!({"version":2,"manifest":summary,"tool":event.get("tool_name"),
         "tool_input":event.get("tool_input"),"initial_output":source,
@@ -910,7 +955,10 @@ fn record(
         ("linesKept", (seen - omitted) as u64),
         ("linesOmitted", omitted as u64),
         ("linesProtected", protected as u64),
-        ("linesUnjudged", (seen - judged) as u64),
+        ("linesUnjudged", unjudged as u64),
+        ("linesRelevanceJudged", relevance_judged as u64),
+        ("linesBelowOmitCutoff", below_omit_cutoff as u64),
+        ("linesRelevanceKept", relevance_kept as u64),
     ] {
         stats[key] = json!(stats
             .get(key)
@@ -1078,8 +1126,8 @@ fn execute() -> Result<Value, String> {
         let before = Instant::now();
         let response = evaluate(&batch.request, &api_key, config.timeout)?;
         let parsed = parse_probabilities(&batch, &response)?;
-        for (number, (omit, exact)) in parsed {
-            probabilities.insert(number, (omit, exact, batch.id));
+        for (number, (omit, exact, relevant)) in parsed {
+            probabilities.insert(number, (omit, exact, relevant, batch.id));
         }
         records.push(BatchRecord {
             id: batch.id,
@@ -1088,7 +1136,12 @@ fn execute() -> Result<Value, String> {
             response,
             elapsed_ms: before.elapsed().as_millis().min(u128::from(u64::MAX)) as u64,
         });
-        let partial = apply_probabilities(&lines, &probabilities, &config.policy[route]);
+        let partial = apply_probabilities(
+            &lines,
+            &probabilities,
+            &config.policy[route],
+            &config.search_relevance,
+        );
         progress.publish(
             route,
             &lines,
@@ -1097,7 +1150,12 @@ fn execute() -> Result<Value, String> {
             records.last().unwrap().elapsed_ms,
         )?;
     }
-    let decisions = apply_probabilities(&lines, &probabilities, &config.policy[route]);
+    let decisions = apply_probabilities(
+        &lines,
+        &probabilities,
+        &config.policy[route],
+        &config.search_relevance,
+    );
     let omitted = decisions
         .iter()
         .filter(|row| row.action == Action::Omit)
@@ -1175,6 +1233,7 @@ mod tests {
             timeout: 3.0,
             allow_mcp_replacement: false,
             policy: BTreeMap::new(),
+            search_relevance: SearchRelevancePolicy::default(),
             log_limit_mb: 50,
             never_delete_logs: false,
         }
@@ -1277,8 +1336,9 @@ mod tests {
         let lines = source_lines("Compiling module\nDone\n");
         let judged = apply_probabilities(
             &lines,
-            &BTreeMap::from([(1, (0.98, 0.02, 1))]),
+            &BTreeMap::from([(1, (0.98, 0.02, None, 1))]),
             &LinePolicy::default(),
+            &SearchRelevancePolicy::default(),
         );
         let path = data.join("logs/latest-decision.json");
         {

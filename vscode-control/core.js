@@ -24,11 +24,25 @@ const DEFAULT_LINE_POLICY = Object.freeze({
   test_build: { omit_min: 95, exact_max: 5 },
   search_listing: { omit_min: 95, exact_max: 5 },
 });
+const DEFAULT_SEARCH_RELEVANCE = Object.freeze({ guard_enabled: false, relevant_max: 5 });
 const CONFIG_KEYS = new Set([
   "enabled", "test_build_enabled", "search_listing_enabled", "precompact_enabled", "mode", "min_chars", "max_chars", "sample_chars",
   "timeout_seconds", "model", "allow_mcp_replacement", "thresholds",
-  "log_limit_mb", "never_delete_logs", "decision_methods", "schema_version", "line_policy",
+  "log_limit_mb", "never_delete_logs", "decision_methods", "schema_version", "line_policy", "search_relevance",
 ]);
+
+function completeSearchRelevance(value = {}) {
+  if (!value || typeof value !== "object" || Array.isArray(value) ||
+      Object.keys(value).some((key) => !Object.hasOwn(DEFAULT_SEARCH_RELEVANCE, key))) {
+    throw new Error("Invalid search relevance policy");
+  }
+  const policy = { ...DEFAULT_SEARCH_RELEVANCE, ...value };
+  if (typeof policy.guard_enabled !== "boolean" || !Number.isInteger(policy.relevant_max) ||
+      policy.relevant_max < 0 || policy.relevant_max > 100) {
+    throw new Error("Invalid search relevance policy");
+  }
+  return policy;
+}
 
 function completeLinePolicy(value = {}) {
   if (!value || typeof value !== "object" || Array.isArray(value) ||
@@ -108,7 +122,10 @@ async function readConfig(directory) {
         (merged.schema_version !== undefined && merged.schema_version !== 2)) {
       throw new Error("Invalid Jev config");
     }
-    if (merged.schema_version === 2) completeLinePolicy(merged.line_policy);
+    if (merged.schema_version === 2) {
+      completeLinePolicy(merged.line_policy);
+      completeSearchRelevance(merged.search_relevance);
+    }
     else { completeThresholds(merged.thresholds); completeDecisionMethods(merged.decision_methods); }
     const { precompact_enabled: _legacy, ...current } = raw;
     return { enabled: false, test_build_enabled: false, search_listing_enabled: false, mode: "replace", ...current };
@@ -122,7 +139,8 @@ async function writeConfig(directory, updates) {
   const old = await readConfig(directory);
   const { thresholds: _thresholds, decision_methods: _methods, ...retained } = old;
   const config = { ...retained, ...updates, schema_version: 2,
-    line_policy: completeLinePolicy(updates.line_policy ?? old.line_policy) };
+    line_policy: completeLinePolicy(updates.line_policy ?? old.line_policy),
+    search_relevance: completeSearchRelevance(updates.search_relevance ?? old.search_relevance) };
   await fs.mkdir(directory, { recursive: true, mode: 0o700 });
   if ((await fs.lstat(directory)).isSymbolicLink()) throw new Error("Plugin data directory is a link");
   const target = path.join(directory, "config.json");
@@ -162,12 +180,13 @@ async function writeMode(directory, mode) {
   return writeConfig(directory, { mode });
 }
 
-async function writeSettings(directory, mode, linePolicy, limitMb, neverDelete) {
+async function writeSettings(directory, mode, linePolicy, limitMb, neverDelete, searchRelevance = DEFAULT_SEARCH_RELEVANCE) {
   if (!["replace", "observe"].includes(mode)) throw new TypeError("invalid Jev mode");
   if (!Number.isInteger(limitMb) || limitMb < 1 || limitMb > 9999 || typeof neverDelete !== "boolean") {
     throw new TypeError("Log retention must be 1 to 9999 MB");
   }
   return writeConfig(directory, { mode, line_policy: completeLinePolicy(linePolicy),
+    search_relevance: completeSearchRelevance(searchRelevance),
     log_limit_mb: limitMb, never_delete_logs: neverDelete });
 }
 
@@ -218,6 +237,11 @@ function parseLogLine(line) {
       capsule_chars: typeof row.capsule_chars === "number" && Number.isFinite(row.capsule_chars)
         ? row.capsule_chars : null,
       elapsed_ms: Number(row.elapsed_ms) || 0,
+      lines_judged: Number.isSafeInteger(row.lines_judged) && row.lines_judged >= 0 ? row.lines_judged : null,
+      lines_relevance_judged: Number.isSafeInteger(row.lines_relevance_judged) && row.lines_relevance_judged >= 0
+        ? row.lines_relevance_judged : null,
+      lines_relevance_kept: Number.isSafeInteger(row.lines_relevance_kept) && row.lines_relevance_kept >= 0
+        ? row.lines_relevance_kept : null,
     };
   } catch { return null; }
 }
@@ -312,7 +336,8 @@ async function readEventsSince(directory, offset) {
 async function readLifetimeStats(directory) {
   const totals = { calls: 0, completed: 0, replaced: 0, savedChars: 0,
     estimatedTokensSaved: 0, averageMs: 0, linesSeen: 0, linesJudged: 0,
-    linesKept: 0, linesOmitted: 0, linesProtected: 0, linesUnjudged: 0 };
+    linesKept: 0, linesOmitted: 0, linesProtected: 0, linesUnjudged: 0,
+    linesRelevanceJudged: 0, linesBelowOmitCutoff: 0, linesRelevanceKept: 0 };
   const statsFile = path.join(directory, "stats.json");
   try {
     const details = await fs.lstat(statsFile);
@@ -322,7 +347,7 @@ async function readLifetimeStats(directory) {
       if (!Number.isSafeInteger(stats[key]) || stats[key] < 0) throw new Error("Invalid Jev stats file");
     }
     const lineStats = Object.fromEntries(["linesSeen", "linesJudged", "linesKept", "linesOmitted",
-      "linesProtected", "linesUnjudged"].map((key) => {
+      "linesProtected", "linesUnjudged", "linesRelevanceJudged", "linesBelowOmitCutoff", "linesRelevanceKept"].map((key) => {
       const value = stats[key] ?? 0;
       if (!Number.isSafeInteger(value) || value < 0) throw new Error("Invalid Jev line stats");
       return [key, value];
@@ -380,7 +405,9 @@ function outcomeLine(event) {
     : "";
   const source = event.filter === "test_build" ? "test/build" :
     event.filter === "search_listing" ? "search/listing" : (event.tool || "tool");
-  return `${action}${mode} · ${source} · ${event.original_chars.toLocaleString()} chars${saved}`;
+  const rated = event.filter === "search_listing" && event.lines_relevance_judged !== null &&
+    event.lines_relevance_judged !== undefined ? ` · ${event.lines_relevance_judged} search lines rated` : "";
+  return `${action}${mode} · ${source} · ${event.original_chars.toLocaleString()} chars${rated}${saved}`;
 }
 
 function savedCharacters(event) {
@@ -536,6 +563,7 @@ async function writeApiKey(directory, key) {
 module.exports = {
   activitySummary, checkHealth, completeThresholds, completeDecisionMethods, DEFAULT_THRESHOLDS, DEFAULT_DECISION_METHODS,
   completeLinePolicy, DEFAULT_LINE_POLICY,
+  completeSearchRelevance, DEFAULT_SEARCH_RELEVANCE,
   decisionSummary, defaultDataDirectory, estimateTokensSaved, formatDuration,
   isInformativeEvent, isJevOutcome, outcomeLine, parseHealthOutput, readConfig,
   readApiKey, readEventOffset, readEventsSince, readLatestEvent, readLifetimeStats, readRecentOutcomes,

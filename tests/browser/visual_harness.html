@@ -51,11 +51,14 @@
     const history = ["judged 42 lines · omitted 29 · test/build"];
     window.acquireVsCodeApi = () => ({ postMessage(request) {
       const settings = request.action === "settingsRead" ? { action: "ready", hasKey: true, keyLength: 32,
-        lifetime: { calls: 126, completed: 124, replaced: 41, linesJudged: 87320, linesOmitted: 915, averageMs: 487 },
+        lifetime: { calls: 126, completed: 124, replaced: 41, linesJudged: 87320, linesOmitted: 915,
+          linesProtected: 1420, linesRelevanceJudged: 6200, averageMs: 487 },
         defaults: { mode: "replace", line_policy: {
           output: { omit_min: 95, exact_max: 5 }, test_build: { omit_min: 95, exact_max: 5 },
-          search_listing: { omit_min: 95, exact_max: 5 } } },
+          search_listing: { omit_min: 95, exact_max: 5 } },
+          search_relevance: { guard_enabled: false, relevant_max: 5 } },
         config: { mode: "replace", log_limit_mb: 50, never_delete_logs: true,
+          search_relevance: { guard_enabled: false, relevant_max: 5 },
           line_policy: { output: { omit_min: 90, exact_max: 10 },
             test_build: { omit_min: 95, exact_max: 5 }, search_listing: { omit_min: 97, exact_max: 3 } } } } :
         request.action === "settingsTest" ? { action: "tested", result: { ok: true, model: "jev-1.13.0" } } : undefined;

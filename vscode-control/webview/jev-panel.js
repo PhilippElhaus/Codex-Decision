@@ -158,17 +158,22 @@
     const latest = decision.latest;
     const detail = element("section", "line-detail");
     const action = latest.action === "omit" ? "Omitted" : "Kept";
+    const reasons = { below_omit_cutoff: "below omit cutoff", exact_text: "exact text",
+      task_relevant: "task relevant", confident_omission: "confident omit",
+      representative: "repeated sample", last_line: "final line" };
+    const reason = reasons[latest.reason] ? ` · ${reasons[latest.reason]}` : "";
     append(detail,
       append(element("div", "line-detail-title"),
         element("span", "card-kicker", `LINE ${latest.line} · ${decision.filter.replace("_", "/")}`),
-        element("strong", `line-action ${latest.action}`, action)),
+        element("strong", `line-action ${latest.action}`, action + reason)),
       element("div", "line-excerpt", latest.excerpt || "(empty source line)"),
-      element("div", "line-totals", `${decision.status === "processing" ? "Checking · " : ""}${decision.totals.judged} judged · ${decision.totals.omitted} omitted · ${decision.totals.protected} protected · ${decision.totals.unjudged} unjudged${decision.batch_elapsed_ms === null ? "" : ` · ${formatElapsed(decision.batch_elapsed_ms)} batch`}`));
+      element("div", "line-totals", `${decision.status === "processing" ? "Checking · " : ""}${decision.totals.judged} judged · ${decision.totals.omitted} omitted · ${decision.totals.protected} protected locally · ${decision.totals.unjudged} pending${decision.batch_elapsed_ms === null ? "" : ` · ${formatElapsed(decision.batch_elapsed_ms)} batch`}`));
     const animations = [];
     const signals = element("section", "line-signals");
     append(signals, element("span", "card-kicker", "NOUL / THIS LINE"));
     bar(signals, "Can omit", latest.can_omit, latest.action === "omit", animations);
     bar(signals, "Exact text needed", latest.exact_needed, false, animations);
+    bar(signals, "Task relevant", latest.task_relevant, false, animations);
     append(container, detail, signals);
     app.replaceChildren(container);
     if (moving.length) {

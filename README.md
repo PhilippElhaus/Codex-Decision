@@ -6,11 +6,11 @@ Codex Jev uses a Rust PostToolUse hook to judge eligible output one physical lin
 
 ## How it works
 
-The hook sends bounded batches of eligible lines to Jev. Each line receives two independent Noul probabilities: **Can omit?** and **Exact text needed?** With the default policy, a line can be removed only when those probabilities reach at least 95% and at most 5%, respectively. Code also protects diagnostics, completion totals, nearby context, and unjudged lines. If a request fails validation, Codex sees the full result.
+The hook sends bounded batches of eligible lines to Jev. Each judged line receives two independent Noul probabilities: **Can omit?** and **Exact text needed?** Search results also receive **Task relevant?**. With the default policy, a line can be removed only when the first two probabilities reach at least 95% and at most 5%, respectively. The search relevance guard starts in preview mode and can be enabled to keep potentially useful matches. Code protects diagnostics, completion totals, nearby context, and unjudged lines before asking Jev. If a request fails validation, Codex sees the full result.
 
 The optional **Jev** panel beside Output and Terminal shows five recent judged lines, the latest source excerpt, and animated full-block probability bars. It stays empty until a real decision arrives.
 
-<img src="docs/images/jev-panel.png" width="1000" alt="Jev panel rendered from the current extension webview with synthetic line judgments and two probability bars">
+<img src="docs/images/jev-panel.png" width="1000" alt="Jev panel rendered from the current extension webview with synthetic line judgments and search relevance probability bars">
 
 ## What it filters
 
@@ -34,7 +34,7 @@ All three start disabled. **Monitor** records decisions without changing output.
 
 <img src="docs/images/jev-settings-overview.png" width="850" alt="Jev settings page showing line counts, API key, log retention, and Monitor or Filter mode">
 
-<img src="docs/images/jev-settings-filters.png" width="850" alt="Jev settings showing per-line Can omit and Exact text needed thresholds for all three integrations">
+<img src="docs/images/jev-settings-filters.png" width="850" alt="Jev settings showing per-line omission thresholds and the optional search relevance guard">
 
 These captures render the current webview code with synthetic, key-free state.
 

@@ -6,10 +6,11 @@ const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
 const {
-  activitySummary, checkHealth, completeLinePolicy, decisionSummary, estimateTokensSaved, formatDuration, outcomeLine, parseHealthOutput, readApiKey, readConfig,
+  activitySummary, checkHealth, completeLinePolicy, completeSearchRelevance, DEFAULT_SEARCH_RELEVANCE, decisionSummary, estimateTokensSaved, formatDuration, outcomeLine, parseHealthOutput, readApiKey, readConfig,
   readEventOffset, readEventsSince, readLatestEvent, readLifetimeStats, readRecentOutcomes, writeApiKey, writeEnabled, writeMode, writeSelection, writeSettings, writeNeverDeleteLogs,
 } = require("../../vscode-control/core");
-const withV2 = (config) => ({ ...config, schema_version: 2, line_policy: completeLinePolicy() });
+const withV2 = (config) => ({ ...config, schema_version: 2, line_policy: completeLinePolicy(),
+  search_relevance: DEFAULT_SEARCH_RELEVANCE });
 
 test("line policy round trips and rejects invalid percentages", async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-settings-test-"));
@@ -22,6 +23,20 @@ test("line policy round trips and rejects invalid percentages", async () => {
     await assert.rejects(writeSettings(directory, "replace", { output: { omit_min: 101 } }, 50, false), /percentages/);
     await assert.rejects(writeSettings(directory, "replace", { output: { typo: 80 } }, 50, false), /Invalid Jev line policy/);
     assert.deepEqual((await readConfig(directory)).line_policy, next);
+  } finally { await fs.rm(directory, { recursive: true, force: true }); }
+});
+
+test("search relevance preview and guard settings persist without changing other routes", async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-relevance-test-"));
+  try {
+    const policy = completeSearchRelevance({ guard_enabled: true, relevant_max: 7 });
+    await writeSettings(directory, "replace", {}, 50, false, policy);
+    assert.deepEqual((await readConfig(directory)).search_relevance, policy);
+    await writeSelection(directory, false, false, true);
+    assert.deepEqual((await readConfig(directory)).search_relevance, policy);
+    await assert.rejects(writeSettings(directory, "replace", {}, 50, false,
+      { guard_enabled: true, relevant_max: 101 }), /relevance policy/);
+    assert.deepEqual((await readConfig(directory)).search_relevance, policy);
   } finally { await fs.rm(directory, { recursive: true, force: true }); }
 });
 
@@ -63,7 +78,7 @@ test("never delete can save alone without changing draft settings or needing a k
     assert.deepEqual({ ...(await readConfig(directory)) }, {
       enabled: false, test_build_enabled: false, search_listing_enabled: false,
       mode: "observe", schema_version: 2, line_policy: completeLinePolicy({ output: { omit_min: 96 } }),
-      log_limit_mb: 75, never_delete_logs: true,
+      search_relevance: DEFAULT_SEARCH_RELEVANCE, log_limit_mb: 75, never_delete_logs: true,
     });
     await assert.rejects(writeNeverDeleteLogs(directory, "true"), /boolean/);
     assert.equal((await readConfig(directory)).never_delete_logs, true);
@@ -90,6 +105,7 @@ test("session activity index and cumulative stats take precedence over legacy lo
     assert.deepEqual(await readLifetimeStats(directory), {
       calls: 3, completed: 3, replaced: 1, savedChars: 900, estimatedTokensSaved: 225, averageMs: 200,
       linesSeen: 0, linesJudged: 0, linesKept: 0, linesOmitted: 0, linesProtected: 0, linesUnjudged: 0,
+      linesRelevanceJudged: 0, linesBelowOmitCutoff: 0, linesRelevanceKept: 0,
     });
   } finally { await fs.rm(directory, { recursive: true, force: true }); }
 });
@@ -209,7 +225,8 @@ test("lifetime activity scans retained decisions across sessions", async () => {
   try {
     assert.deepEqual(await readLifetimeStats(directory), { calls: 0, completed: 0, replaced: 0,
       savedChars: 0, estimatedTokensSaved: 0, averageMs: 0,
-      linesSeen: 0, linesJudged: 0, linesKept: 0, linesOmitted: 0, linesProtected: 0, linesUnjudged: 0 });
+      linesSeen: 0, linesJudged: 0, linesKept: 0, linesOmitted: 0, linesProtected: 0, linesUnjudged: 0,
+      linesRelevanceJudged: 0, linesBelowOmitCutoff: 0, linesRelevanceKept: 0 });
     const rows = [
       { status: "calling", reason: "jev_request" },
       { status: "replace", reason: "jev_replace", original_chars: 10000, capsule_chars: 2000, elapsed_ms: 400 },
@@ -222,7 +239,8 @@ test("lifetime activity scans retained decisions across sessions", async () => {
     await fs.writeFile(path.join(directory, "events.jsonl"), rows.map((row) => JSON.stringify(row)).join("\n") + "\nnot-json\n");
     assert.deepEqual(await readLifetimeStats(directory), { calls: 2, completed: 4, replaced: 2,
       savedChars: 8000, estimatedTokensSaved: 2000, averageMs: 325,
-      linesSeen: 0, linesJudged: 0, linesKept: 0, linesOmitted: 0, linesProtected: 0, linesUnjudged: 0 });
+      linesSeen: 0, linesJudged: 0, linesKept: 0, linesOmitted: 0, linesProtected: 0, linesUnjudged: 0,
+      linesRelevanceJudged: 0, linesBelowOmitCutoff: 0, linesRelevanceKept: 0 });
   } finally { await fs.rm(directory, { recursive: true, force: true }); }
 });
 

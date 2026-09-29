@@ -27,16 +27,17 @@
   <main id="app" aria-live="polite"></main>
   <script src="../../vscode-control/webview/jev-panel.js"></script>
   <script>
-    const row = (id, line, excerpt, action, canOmit, exactNeeded) => ({
+    const row = (id, line, excerpt, action, canOmit, exactNeeded, taskRelevant, reason) => ({
       id: `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-${id}`, line, excerpt,
-      summary: `test/build · line ${line}`, action, can_omit: canOmit, exact_needed: exactNeeded,
+      summary: `search/listing · line ${line}`, action, reason,
+      can_omit: canOmit, exact_needed: exactNeeded, task_relevant: taskRelevant,
     });
     const decision = {
       version: 2, id: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", at: "2026-09-29T12:34:56Z",
-      filter: "test_build", status: "candidate", batch_elapsed_ms: 86,
-      recent: [row(1, 1, "Compiling alpha", "omit", .98, .02),
-        row(2, 2, "Compiling beta", "omit", .97, .01),
-        row(3, 3, "Version 7.42.19", "keep", .05, .99)],
+      filter: "search_listing", status: "candidate", batch_elapsed_ms: 86,
+      recent: [row(1, 1, "src/archive.rs:12:routine helper", "omit", .98, .02, .01, "confident_omission"),
+        row(2, 2, "src/other.rs:34:unrelated symbol", "omit", .97, .01, .03, "confident_omission"),
+        row(3, 3, "src/config.rs:48:required value", "keep", .98, .01, .94, "task_relevant")],
       totals: { seen: 3, judged: 3, kept: 1, omitted: 2, protected: 0, unjudged: 0, requests: 1 },
     };
     decision.latest = decision.recent.at(-1);
@@ -57,12 +58,12 @@
     setTimeout(() => { report.finalFilled = document.querySelectorAll(".cell.filled").length;
       report.finalPercentOpacity = getComputedStyle(document.querySelector(".bar-percent")).opacity;
       report.positions = positions();
-      const nextRow = row(4, 4, "BUILD SUCCESSFUL", "keep", .01, .99);
+      const nextRow = row(4, 4, "src/config.rs:72:related setting", "keep", .21, .85, .91, "exact_text");
       send({ ...decision, id: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         latest: nextRow, recent: [...decision.recent, nextRow],
         totals: { ...decision.totals, seen: 4, judged: 4, kept: 2 } }); }, 1100);
     setTimeout(() => {
-      report.newestAtBottom = document.querySelector(".history-row:last-child").textContent.includes("BUILD SUCCESSFUL");
+      report.newestAtBottom = document.querySelector(".history-row:last-child").textContent.includes("related setting");
       report.positionsStable = report.positions === positions();
       report.fullBlockBars = [...document.querySelectorAll(".cell.filled")].every((node) => node.textContent === "█");
       document.body.dataset.report = JSON.stringify(report);

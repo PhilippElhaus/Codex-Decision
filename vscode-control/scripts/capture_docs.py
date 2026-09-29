@@ -56,6 +56,8 @@ def main() -> None:
                                         '87,320' not in result.stdout or
                                         'Can omit, minimum' not in result.stdout or
                                         'Exact text needed, maximum' not in result.stdout or
+                                        'Task relevance, maximum for omission' not in result.stdout or
+                                        'Use task relevance to guard search lines' not in result.stdout or
                                         '>Filter</option>' not in result.stdout):
                 raise RuntimeError('Jev settings were not rendered in Codex settings')
             print(f'{name}: {output.stat().st_size} bytes; layout={layout}')
@@ -64,7 +66,7 @@ def main() -> None:
             raise RuntimeError(f'Unexpected settings capture size: {settings.size}')
         for name, box in (
             ('jev-settings-overview.png', (0, 0, 2080, 1250)),
-            ('jev-settings-filters.png', (0, 1240, 2080, 2550)),
+            ('jev-settings-filters.png', (0, 1240, 2080, 2850)),
         ):
             settings.crop(box).save(IMAGES / name, optimize=True)
             print(f'{name}: {box}')
@@ -82,7 +84,7 @@ def main() -> None:
             if result.returncode != 0 or not output.is_file() or 'JEV_LINE_PANEL_READY' not in result.stdout:
                 raise RuntimeError(f'Could not capture the current {state} line-level Jev panel')
             with Image.open(output) as captured:
-                captured.crop((0, 0, captured.width, min(captured.height, 520))).save(output, optimize=True)
+                captured.crop((0, 0, captured.width, min(captured.height, 630))).save(output, optimize=True)
             output.chmod(0o644)
             print(f'{output.name}: {output.stat().st_size} bytes')
         with Image.open(panel) as dark, Image.open(light_panel) as light:

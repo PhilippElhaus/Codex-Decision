@@ -1,6 +1,19 @@
 # Tests
 
-Run tests from the repository root. The default checks use synthetic Jev replies and temporary data outside `D:\`. They do not need an API key.
+Run tests from the repository root. The current Rust hook and VS Code control checks use synthetic Jev replies and temporary data outside `D:\`. They do not need an API key. The Python suites below exercise retained legacy code and are not the release gate for the Rust hook.
+
+## Current release checks
+
+```bash
+CARGO_TARGET_DIR="$HOME/.cache/codex-jev/cargo-target" cargo test -p codex-jev
+npm test --prefix vscode-control
+python3 vscode-control/scripts/browser_smoke.py
+python3 vscode-control/scripts/capture_docs.py
+```
+
+Rust process tests cover exact bytes, protected-line batching, three search Noul answers, receipt/panel/stat propagation, and offline gate trials. Node tests cover the settings bridge and panel snapshot. The browser harness renders the real settings and panel code using synthetic, key-free state.
+
+## Legacy suites
 
 | Directory | Purpose | Main coverage |
 | --- | --- | --- |
@@ -34,6 +47,6 @@ The browser smoke test runs the composer webview scripts with a synthetic VS Cod
 
 The mock benchmark checks all three routes. Its result is a test fixture, not a live performance claim. The dated live benchmark in `docs/benchmarks/` is separate from the offline suite.
 
-Use `python3 scripts/evaluate_quality.py reviewed-cases.jsonl` for a labeled replay. Each JSONL row needs `route`, `original`, `visible`, `safe_to_shorten`, and the route's `scores` or `answer`. Add `required` fragments that must remain visible. Paired `baseline_task_success` and `filtered_task_success` booleans record full-task outcomes. The tool reports missing evidence and can suggest stricter cutoffs only from a sufficiently large held-out slice. It does not read private receipts by itself or change settings.
+For the current Rust hook, use `jevctl evaluate-quality --cases <private-cases.json>` with reviewed receipts and required line numbers. It reports per-route and per-split evidence loss and offline gate trials without changing settings. The historical Python evaluator accepts a different JSONL format and does not replay current Rust receipts.
 
 When changing a cutoff or mode, run the defaults contract and boundary tests. When changing hook routing, run the process-level tests and browser smoke test. When changing the pinned Codex patch, run the patch and rollback tests before installation.

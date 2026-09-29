@@ -30,6 +30,28 @@ impl LinePolicy {
     }
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default, deny_unknown_fields)]
+pub struct SearchRelevancePolicy {
+    pub guard_enabled: bool,
+    pub relevant_max: u8,
+}
+
+impl Default for SearchRelevancePolicy {
+    fn default() -> Self {
+        Self {
+            guard_enabled: false,
+            relevant_max: 5,
+        }
+    }
+}
+
+impl SearchRelevancePolicy {
+    pub fn valid(&self) -> bool {
+        self.relevant_max <= 100
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SourceLine {
     pub number: usize,
@@ -51,7 +73,9 @@ pub struct LineDecision {
     pub number: usize,
     pub p_can_omit: Option<f64>,
     pub p_exact_needed: Option<f64>,
+    pub p_task_relevant: Option<f64>,
     pub action: Action,
+    pub reason: String,
     pub protected_reason: Option<String>,
     pub batch_id: Option<usize>,
 }
@@ -86,6 +110,8 @@ pub struct Judged {
     pub decisions: Vec<LineDecision>,
     pub batches: Vec<BatchRecord>,
 }
+
+pub type LineProbabilities = (f64, f64, Option<f64>, usize);
 
 pub fn source_lines(source: &str) -> Vec<SourceLine> {
     let mut lines = Vec::new();
@@ -240,6 +266,12 @@ fn request(
             "instructions":format!("Is the exact text or value of `state.lines[{index}].text` needed to understand or verify this result for `state.task`?"),
             "criteria":{"true":"Its exact content may be needed for action or verification.",
                 "false":"No unique fact or exact value in this line is needed."}}));
+        if route == "search_listing" {
+            questions.insert(format!("relevant_{number}"), json!({"type":"noul",
+                "instructions":format!("Does `state.lines[{index}].text` contain a result that helps answer `state.task`, including a relevant path, match, or value?"),
+                "criteria":{"true":"This result is useful evidence for the current task, even if its wording differs from the query.",
+                    "false":"This result does not help answer the current task."}}));
+        }
     }
     json!({"model":model, "state":{"task":task,"command":command,"route":route,
         "policy":"Keep diagnostics, results, unique values, and context needed for the task.",
@@ -255,11 +287,10 @@ pub fn pack_batches(
 ) -> Vec<Batch> {
     let mut batches = Vec::new();
     let mut current = Vec::new();
-    for line in lines.iter().filter(|line| {
-        line.eligible
-            && line.protected_reason.as_deref() != Some("blank")
-            && line.protected_reason.as_deref() != Some("long_line")
-    }) {
+    for line in lines
+        .iter()
+        .filter(|line| line.eligible && line.protected_reason.is_none())
+    {
         let mut proposed = current.clone();
         proposed.push(line.number);
         let oversized = proposed.len() > MAX_TARGETS_PER_BATCH
@@ -297,15 +328,26 @@ pub fn pack_batches(
 pub fn parse_probabilities(
     batch: &Batch,
     response: &Value,
-) -> Result<BTreeMap<usize, (f64, f64)>, String> {
+) -> Result<BTreeMap<usize, (f64, f64, Option<f64>)>, String> {
     let answers = response
         .get("answers")
         .and_then(Value::as_object)
         .ok_or("missing answers")?;
+    let search = batch
+        .request
+        .pointer("/state/route")
+        .and_then(Value::as_str)
+        == Some("search_listing");
     let expected: HashSet<String> = batch
         .target_numbers
         .iter()
-        .flat_map(|number| [format!("omit_{number}"), format!("exact_{number}")])
+        .flat_map(|number| {
+            let mut ids = vec![format!("omit_{number}"), format!("exact_{number}")];
+            if search {
+                ids.push(format!("relevant_{number}"));
+            }
+            ids
+        })
         .collect();
     if answers.keys().cloned().collect::<HashSet<_>>() != expected {
         return Err("answer ids do not match".into());
@@ -328,40 +370,62 @@ pub fn parse_probabilities(
             }
             Ok(value)
         };
-        result.insert(*number, (read("omit")?, read("exact")?));
+        result.insert(
+            *number,
+            (
+                read("omit")?,
+                read("exact")?,
+                if search {
+                    Some(read("relevant")?)
+                } else {
+                    None
+                },
+            ),
+        );
     }
     Ok(result)
 }
 
 pub fn apply_probabilities(
     lines: &[SourceLine],
-    probabilities: &BTreeMap<usize, (f64, f64, usize)>,
+    probabilities: &BTreeMap<usize, LineProbabilities>,
     policy: &LinePolicy,
+    relevance: &SearchRelevancePolicy,
 ) -> Vec<LineDecision> {
     let mut decisions: Vec<LineDecision> = lines
         .iter()
         .map(|line| {
             let judged = probabilities.get(&line.number);
-            let (omit, exact, batch) = judged
-                .map(|(omit, exact, batch)| (Some(*omit), Some(*exact), Some(*batch)))
-                .unwrap_or((None, None, None));
-            let action = if let Some((p_omit, p_exact, _)) = judged {
-                if line.protected_reason.is_none()
-                    && *p_omit >= f64::from(policy.omit_min) / 100.0
-                    && *p_exact <= f64::from(policy.exact_max) / 100.0
+            let (omit, exact, relevant, batch) = judged
+                .map(|(omit, exact, relevant, batch)| {
+                    (Some(*omit), Some(*exact), *relevant, Some(*batch))
+                })
+                .unwrap_or((None, None, None, None));
+            let (action, reason) = if line.protected_reason.is_some() || !line.eligible {
+                (Action::KeepUnjudged, "protected")
+            } else if let Some((p_omit, p_exact, p_relevant, _)) = judged {
+                if *p_omit < f64::from(policy.omit_min) / 100.0 {
+                    (Action::Keep, "below_omit_cutoff")
+                } else if *p_exact > f64::from(policy.exact_max) / 100.0 {
+                    (Action::Keep, "exact_text")
+                } else if relevance.guard_enabled
+                    && p_relevant
+                        .is_some_and(|value| value > f64::from(relevance.relevant_max) / 100.0)
                 {
-                    Action::Omit
+                    (Action::Keep, "task_relevant")
                 } else {
-                    Action::Keep
+                    (Action::Omit, "confident_omission")
                 }
             } else {
-                Action::KeepUnjudged
+                (Action::KeepUnjudged, "budget_unjudged")
             };
             LineDecision {
                 number: line.number,
                 p_can_omit: omit,
                 p_exact_needed: exact,
+                p_task_relevant: relevant,
                 action,
+                reason: reason.into(),
                 protected_reason: line.protected_reason.clone(),
                 batch_id: batch,
             }
@@ -384,12 +448,14 @@ pub fn apply_probabilities(
             && seen.insert(line.model_text.clone())
         {
             decision.action = Action::Keep;
+            decision.reason = "representative".into();
             decision.protected_reason = Some("representative".into());
         }
     }
     if let Some(last) = decisions.last_mut() {
         if last.action == Action::Omit {
             last.action = Action::Keep;
+            last.reason = "last_line".into();
             last.protected_reason = Some("last_line".into());
         }
     }
@@ -469,11 +535,16 @@ mod tests {
         let mut lines = source_lines(source);
         lines[0].protected_reason = Some("fixture_evidence".into());
         let probs = BTreeMap::from([
-            (1, (0.99, 0.01, 1)),
-            (2, (0.99, 0.01, 1)),
-            (3, (0.99, 0.01, 1)),
+            (1, (0.99, 0.01, None, 1)),
+            (2, (0.99, 0.01, None, 1)),
+            (3, (0.99, 0.01, None, 1)),
         ]);
-        let decisions = apply_probabilities(&lines, &probs, &LinePolicy::default());
+        let decisions = apply_probabilities(
+            &lines,
+            &probs,
+            &LinePolicy::default(),
+            &SearchRelevancePolicy::default(),
+        );
         assert!(render(source, &lines, &decisions, "/private/original").contains("one\r\n"));
         assert_eq!(decisions.last().unwrap().action, Action::Keep);
     }
@@ -506,12 +577,91 @@ mod tests {
         let mut lines = source_lines(source);
         protect_neighbors(&mut lines);
         let probabilities = (1..=lines.len())
-            .map(|number| (number, (0.99, 0.01, 1)))
+            .map(|number| (number, (0.99, 0.01, None, 1)))
             .collect();
-        let decisions = apply_probabilities(&lines, &probabilities, &LinePolicy::default());
+        let decisions = apply_probabilities(
+            &lines,
+            &probabilities,
+            &LinePolicy::default(),
+            &SearchRelevancePolicy::default(),
+        );
         let visible = render(source, &lines, &decisions, "/private/original");
         assert!(visible.contains("error: expected true\r\n  at src/main.rs:12\r\n"));
         assert!(visible.contains("Compiling alpha\r\n"));
         assert!(visible.ends_with("Done\r\n"));
+    }
+
+    #[test]
+    fn protected_lines_are_context_but_not_jev_targets() {
+        let mut lines = source_lines("error: build failed\nnearby evidence\nroutine progress\n");
+        protect_neighbors(&mut lines);
+        let batches = pack_batches(
+            "output",
+            "Find the failure",
+            "cargo build",
+            &lines,
+            "jev-latest",
+        );
+        let targets: Vec<usize> = batches
+            .iter()
+            .flat_map(|batch| batch.target_numbers.iter().copied())
+            .collect();
+        assert!(!targets.contains(&1));
+        assert!(!targets.contains(&2));
+        assert!(batches.iter().all(|batch| batch.request["state"]["lines"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|row| row["text"] != "error: build failed")));
+    }
+
+    #[test]
+    fn search_relevance_is_independent_and_only_guards_when_enabled() {
+        let mut lines = source_lines("src/irrelevant.rs:12:unrelated symbol\nsrc/evidence.rs:8:needed value\nsearch completed\n");
+        lines[2].protected_reason = Some("completion".into());
+        let batch = pack_batches(
+            "search_listing",
+            "Find the needed value",
+            "rg -n value src",
+            &lines,
+            "jev-latest",
+        )
+        .remove(0);
+        assert_eq!(batch.request["questions"].as_object().unwrap().len(), 6);
+        let answers = json!({"answers":{
+            "omit_1":{"type":"noul","noul":0.99},"exact_1":{"type":"noul","noul":0.01},"relevant_1":{"type":"noul","noul":0.01},
+            "omit_2":{"type":"noul","noul":0.99},"exact_2":{"type":"noul","noul":0.01},"relevant_2":{"type":"noul","noul":0.91}
+        }});
+        let parsed = parse_probabilities(&batch, &answers).unwrap();
+        assert_eq!(parsed[&2].2, Some(0.91));
+        let probabilities = parsed
+            .into_iter()
+            .map(|(number, (omit, exact, relevant))| (number, (omit, exact, relevant, 1)))
+            .collect();
+        let preview = apply_probabilities(
+            &lines,
+            &probabilities,
+            &LinePolicy::default(),
+            &SearchRelevancePolicy::default(),
+        );
+        assert_eq!(preview[1].reason, "confident_omission");
+        let guarded = apply_probabilities(
+            &lines,
+            &probabilities,
+            &LinePolicy::default(),
+            &SearchRelevancePolicy {
+                guard_enabled: true,
+                relevant_max: 5,
+            },
+        );
+        assert_eq!(guarded[0].action, Action::Omit);
+        assert_eq!(guarded[1].action, Action::Keep);
+        assert_eq!(guarded[1].reason, "task_relevant");
+        let mut missing = answers;
+        missing["answers"]
+            .as_object_mut()
+            .unwrap()
+            .remove("relevant_2");
+        assert!(parse_probabilities(&batch, &missing).is_err());
     }
 }

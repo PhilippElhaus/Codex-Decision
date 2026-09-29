@@ -60,6 +60,10 @@ test("panel reads the current snapshot and rejects linked files", async () => {
     assert.equal((await readLatestPanelDecision(directory)).latest.line, 12);
     assert.equal(parsePanelDecision({ ...version2, status: "processing" }).status, "processing");
     assert.throws(() => parsePanelDecision({ ...version2, latest: { ...latest, can_omit: 1.2 } }), /line row/);
+    const searchLine = { ...latest, task_relevant: 0.84, reason: "task_relevant" };
+    const searchPanel = { ...version2, filter: "search_listing", latest: searchLine, recent: [searchLine] };
+    assert.equal(parsePanelDecision(searchPanel).latest.task_relevant, 0.84);
+    assert.throws(() => parsePanelDecision({ ...searchPanel, latest: { ...searchLine, task_relevant: 1.2 } }), /line row/);
     await fs.rename(filename, path.join(directory, "owned.json"));
     await fs.symlink(path.join(directory, "owned.json"), filename);
     await assert.rejects(readLatestPanelDecision(directory), /Unsafe/);

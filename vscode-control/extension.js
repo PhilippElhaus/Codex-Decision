@@ -8,7 +8,7 @@ const {
   checkHealth, decisionSummary, defaultDataDirectory, estimateTokensSaved,
   isJevOutcome, outcomeLine, readConfig, readEventOffset, readEventsSince, savedCharacters,
   readApiKey, readLifetimeStats, writeApiKey, writeMode, writeSelection, writeSettings, writeNeverDeleteLogs,
-  completeLinePolicy, DEFAULT_LINE_POLICY,
+  completeLinePolicy, DEFAULT_LINE_POLICY, completeSearchRelevance, DEFAULT_SEARCH_RELEVANCE,
 } = require("./core");
 
 function emptyStats() {
@@ -218,8 +218,9 @@ function activate(context) {
         try { keyLength = (await readApiKey(directory)).length; } catch { /* no usable key */ }
         const lifetime = await readLifetimeStats(directory);
         return { action: "ready", config: { ...config, line_policy: completeLinePolicy(config.line_policy),
+          search_relevance: completeSearchRelevance(config.search_relevance),
           log_limit_mb: config.log_limit_mb ?? 50, never_delete_logs: config.never_delete_logs ?? false },
-          defaults: { mode: "replace", line_policy: DEFAULT_LINE_POLICY,
+          defaults: { mode: "replace", line_policy: DEFAULT_LINE_POLICY, search_relevance: DEFAULT_SEARCH_RELEVANCE,
             log_limit_mb: 50, never_delete_logs: false },
           hasKey: keyLength > 0, keyLength, lifetime };
       }
@@ -257,8 +258,9 @@ function activate(context) {
           catch { throw new Error("Enter an API key before saving."); }
         }
         const linePolicy = completeLinePolicy(request.linePolicy);
+        const searchRelevance = completeSearchRelevance(request.searchRelevance);
         const task = selectionQueue.then(async () => {
-          await writeSettings(directory, request.mode, linePolicy, request.logLimitMb, request.neverDeleteLogs);
+          await writeSettings(directory, request.mode, linePolicy, request.logLimitMb, request.neverDeleteLogs, searchRelevance);
           await settings().update("mode", request.mode, vscode.ConfigurationTarget.Global);
           if (request.key) await writeApiKey(directory, request.key);
           await sync();

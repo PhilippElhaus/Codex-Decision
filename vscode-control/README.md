@@ -7,8 +7,8 @@ This optional extension adds the **Jev** bottom panel, three integration toggles
 From this directory in WSL:
 
 ```bash
-npx @vscode/vsce package --no-dependencies --out ../.local/submission/codex-jev-control-0.3.0.vsix
-code --install-extension "$(wslpath -w ../.local/submission/codex-jev-control-0.3.0.vsix)" --force
+npx @vscode/vsce package --no-dependencies --out ../.local/submission/codex-jev-control-0.4.0.vsix
+code --install-extension "$(wslpath -w ../.local/submission/codex-jev-control-0.4.0.vsix)" --force
 ```
 
 The composer control requires a separately installed, version-pinned local patch for Codex extension `26.917.62051`. The patch verifies exact host hashes and keeps rollback files outside this repository:
@@ -23,9 +23,9 @@ Use `apply` for the first installation or `restore` to roll back. The patch util
 
 ## Use
 
-The **Jev** tab appears beside Output and Terminal. Hide it from its tab menu and reopen it with **View → Open View… → Jev: Latest decision**. VS Code does not expose a contribution point for a direct custom entry in its top-level View menu. The panel stays empty until a version 2 line decision arrives. It shows five recent judged source lines, the latest actual excerpt, result totals, and two independent Noul probabilities. Rows stay fixed in place as new lines arrive; full-block `█` bars fill over 800 ms and percentages fade in. The panel snapshot contains only bounded excerpts, not the full output.
+The **Jev** tab appears beside Output and Terminal. Hide it from its tab menu and reopen it with **View → Open View… → Jev: Latest decision**. VS Code does not expose a contribution point for a direct custom entry in its top-level View menu. The panel stays empty until a version 2 line decision arrives. It shows five recent judged source lines, the latest actual excerpt, result totals, two independent Noul probabilities, and a third task-relevance probability for search. Rows stay fixed in place as new lines arrive; full-block `█` bars fill over 800 ms and percentages fade in. The panel snapshot contains only bounded excerpts, not the full output.
 
-In **Codex settings → Jev**, choose Monitor or Filter and set the `Can omit` minimum and `Exact text needed` maximum for each route. Monitor records line judgments while returning the full output. Filter may shorten an output only when every omitted line passes its own thresholds and local evidence protections. Changes apply to the next tool result. A private receipt stores the original once; batch records store requests and answers. **Open logs** opens the private log directory. Saved originals live separately under `PLUGIN_DATA/outputs/`.
+In **Codex settings → Jev**, choose Monitor or Filter and set the `Can omit` minimum and `Exact text needed` maximum for each route. Search relevance is always rated and shown; its optional keep guard starts disabled. Monitor records line judgments while returning the full output. Filter may shorten an output only when every omitted line passes its own thresholds and local evidence protections. Changes apply to the next tool result. A private receipt stores the original once; batch records store requests and answers. **Open logs** opens the private log directory. Saved originals live separately under `PLUGIN_DATA/outputs/`.
 
 ## Verify
 

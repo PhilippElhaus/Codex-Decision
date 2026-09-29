@@ -1,8 +1,9 @@
 //! Local configuration and offline inspection for the Rust Jev hook.
 
+use codex_jev::{apply_probabilities, source_lines, Action, LinePolicy, SearchRelevancePolicy};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -56,6 +57,10 @@ fn migrate(data_dir: &Path) -> Result<(), String> {
         "output":{"omit_min":95,"exact_max":5},
         "test_build":{"omit_min":95,"exact_max":5},
         "search_listing":{"omit_min":95,"exact_max":5}}),
+    );
+    config.insert(
+        "search_relevance".into(),
+        json!({"guard_enabled":false,"relevant_max":5}),
     );
     let rollback = data_dir.join(format!(
         "config.v1.{}.json",
@@ -275,8 +280,79 @@ fn evaluate_case(receipt: &Value, required: &[usize]) -> Result<Value, String> {
     Ok(
         json!({"required":labels.len(),"omitted":omitted.len(),"false_omissions":false_omissions,
         "saved_chars":if status == "replace" { original.saturating_sub(visible) } else { 0 },
-        "lines_seen":seen,"lines_judged":manifest.get("lines_judged")}),
+        "lines_seen":seen,"lines_judged":manifest.get("lines_judged"),
+        "lines_protected":manifest.get("lines_protected"),
+        "lines_relevance_judged":manifest.get("lines_relevance_judged"),
+        "elapsed_ms":manifest.get("elapsed_ms"),
+        "route":manifest.get("filter").and_then(Value::as_str).unwrap_or("output")}),
     )
+}
+
+fn replay_gate(
+    receipt: &Value,
+    required: &[usize],
+    omit_min: u8,
+    exact_max: u8,
+    guard_enabled: bool,
+) -> Result<Option<Value>, String> {
+    let Some(source) = receipt.get("initial_output").and_then(Value::as_str) else {
+        return Ok(None);
+    };
+    let Some(recorded) = receipt.get("decisions").and_then(Value::as_array) else {
+        return Ok(None);
+    };
+    let mut lines = source_lines(source);
+    if lines.len() != recorded.len() {
+        return Ok(None);
+    }
+    let mut probabilities = BTreeMap::new();
+    for (index, (line, row)) in lines.iter_mut().zip(recorded).enumerate() {
+        if row.get("number").and_then(Value::as_u64) != Some((index + 1) as u64) {
+            return Err("line order mismatch".into());
+        }
+        let protection = row.get("protected_reason").and_then(Value::as_str);
+        line.protected_reason = protection
+            .filter(|reason| !matches!(*reason, "representative" | "last_line"))
+            .map(str::to_owned);
+        line.eligible = protection != Some("jsonl_structure");
+        let Some(omit) = row.get("p_can_omit").and_then(Value::as_f64) else {
+            continue;
+        };
+        let Some(exact) = row.get("p_exact_needed").and_then(Value::as_f64) else {
+            continue;
+        };
+        let relevant = row.get("p_task_relevant").and_then(Value::as_f64);
+        if !omit.is_finite()
+            || !(0.0..=1.0).contains(&omit)
+            || !exact.is_finite()
+            || !(0.0..=1.0).contains(&exact)
+            || relevant.is_some_and(|value| !value.is_finite() || !(0.0..=1.0).contains(&value))
+        {
+            return Err("invalid recorded probability".into());
+        }
+        if guard_enabled && relevant.is_none() {
+            return Ok(None);
+        }
+        probabilities.insert(index + 1, (omit, exact, relevant, 1));
+    }
+    let policy = LinePolicy {
+        omit_min,
+        exact_max,
+    };
+    let relevance = SearchRelevancePolicy {
+        guard_enabled,
+        relevant_max: 5,
+    };
+    let decisions = apply_probabilities(&lines, &probabilities, &policy, &relevance);
+    let omitted: HashSet<usize> = decisions
+        .iter()
+        .filter(|row| row.action == Action::Omit)
+        .map(|row| row.number)
+        .collect();
+    Ok(Some(
+        json!({"omitted":omitted.len(),"false_omissions":required.iter()
+        .filter(|number| omitted.contains(number)).count(),"required":required.len()}),
+    ))
 }
 
 fn evaluate_quality(cases_path: &Path) -> Result<(), String> {
@@ -323,6 +399,22 @@ fn evaluate_quality(cases_path: &Path) -> Result<(), String> {
         let mut outcome = evaluate_case(&receipt, &required)?;
         outcome["split"] = json!(split);
         outcome["case"] = json!(row.get("id").and_then(Value::as_str).unwrap_or("unnamed"));
+        let route = outcome["route"].as_str().unwrap_or("output");
+        let mut trials = serde_json::Map::new();
+        for (name, omit_min, exact_max, guard) in [
+            ("default_95_5", 95, 5, false),
+            ("strict_98_2", 98, 2, false),
+            ("strict_99_1", 99, 1, false),
+            ("relevance_guard_95_5", 95, 5, true),
+        ] {
+            if guard && route != "search_listing" {
+                continue;
+            }
+            if let Some(trial) = replay_gate(&receipt, &required, omit_min, exact_max, guard)? {
+                trials.insert(name.into(), trial);
+            }
+        }
+        outcome["gate_trials"] = Value::Object(trials);
         if let Some(solved) = row.get("task_solved").and_then(Value::as_bool) {
             outcome["task_solved"] = json!(solved);
         }
@@ -386,14 +478,71 @@ fn evaluate_quality(cases_path: &Path) -> Result<(), String> {
             .iter()
             .map(|row| row["saved_chars"].as_u64().unwrap())
             .sum::<u64>();
-        groups.insert(split.into(), json!({"cases":selected.len(),"false_omissions":false_omissions,
+        let required = selected
+            .iter()
+            .map(|row| row["required"].as_u64().unwrap_or(0))
+            .sum::<u64>();
+        groups.insert(split.into(), json!({"cases":selected.len(),"required_lines":required,
+            "false_omissions":false_omissions,
+            "false_omission_rate":if required > 0 { Some(false_omissions as f64 / required as f64) } else { None },
             "saved_chars":saved_chars,"task_solved":selected.iter().filter(|row| row["task_solved"] == true).count(),
             "task_outcomes_labeled":selected.iter().filter(|row| row.get("task_solved").is_some()).count(),
             "baseline_task_solved":selected.iter().filter(|row| row["baseline_task_solved"] == true).count(),
             "billed_input_tokens":selected.iter().filter_map(|row| row.get("billed_input_tokens").and_then(Value::as_u64)).sum::<u64>(),
             "billed_output_tokens":selected.iter().filter_map(|row| row.get("billed_output_tokens").and_then(Value::as_u64)).sum::<u64>()}));
     }
-    println!("{}", json!({"version":1,"groups":groups,"cases":evaluated}));
+    let mut by_route = serde_json::Map::new();
+    for route in ["output", "test_build", "search_listing"] {
+        let mut splits = serde_json::Map::new();
+        for split in ["train", "holdout", "unspecified"] {
+            let selected: Vec<&Value> = evaluated
+                .iter()
+                .filter(|row| row["route"] == route && row["split"] == split)
+                .collect();
+            if selected.is_empty() {
+                continue;
+            }
+            let required = selected
+                .iter()
+                .map(|row| row["required"].as_u64().unwrap_or(0))
+                .sum::<u64>();
+            let lost = selected
+                .iter()
+                .map(|row| row["false_omissions"].as_array().map_or(0, Vec::len))
+                .sum::<usize>();
+            let mut trials = serde_json::Map::new();
+            for name in [
+                "default_95_5",
+                "strict_98_2",
+                "strict_99_1",
+                "relevance_guard_95_5",
+            ] {
+                let rows: Vec<&Value> = selected
+                    .iter()
+                    .filter_map(|row| row["gate_trials"].get(name))
+                    .collect();
+                if rows.is_empty() {
+                    continue;
+                }
+                trials.insert(name.into(), json!({"cases":rows.len(),
+                    "omitted_lines":rows.iter().map(|row| row["omitted"].as_u64().unwrap_or(0)).sum::<u64>(),
+                    "required_lines_lost":rows.iter().map(|row| row["false_omissions"].as_u64().unwrap_or(0)).sum::<u64>()}));
+            }
+            splits.insert(split.into(), json!({"cases":selected.len(),"required_lines":required,
+                "required_lines_lost":lost,"false_omission_rate":if required > 0 { Some(lost as f64 / required as f64) } else { None },
+                "saved_chars":selected.iter().map(|row| row["saved_chars"].as_u64().unwrap_or(0)).sum::<u64>(),
+                "relevance_judgments":selected.iter().map(|row| row["lines_relevance_judged"].as_u64().unwrap_or(0)).sum::<u64>(),
+                "elapsed_ms":selected.iter().map(|row| row["elapsed_ms"].as_u64().unwrap_or(0)).sum::<u64>(),
+                "gate_trials":trials}));
+        }
+        if !splits.is_empty() {
+            by_route.insert(route.into(), Value::Object(splits));
+        }
+    }
+    println!(
+        "{}",
+        json!({"version":2,"groups":groups,"by_route":by_route,"cases":evaluated})
+    );
     Ok(())
 }
 
@@ -442,5 +591,19 @@ mod tests {
         assert_eq!(result["false_omissions"], json!([2]));
         assert_eq!(result["saved_chars"], 55);
         assert!(evaluate_case(&receipt, &[4]).is_err());
+    }
+
+    #[test]
+    fn offline_gate_trials_show_when_relevance_preserves_required_evidence() {
+        let receipt = json!({"version":2,"initial_output":"src/a:1:important\nsrc/b:2:routine\nfinished\n",
+            "decisions":[
+                {"number":1,"protected_reason":null,"p_can_omit":0.99,"p_exact_needed":0.01,"p_task_relevant":0.91},
+                {"number":2,"protected_reason":null,"p_can_omit":0.99,"p_exact_needed":0.01,"p_task_relevant":0.01},
+                {"number":3,"protected_reason":"last_line","p_can_omit":0.99,"p_exact_needed":0.01,"p_task_relevant":0.01}]});
+        let preview = replay_gate(&receipt, &[1], 95, 5, false).unwrap().unwrap();
+        let guarded = replay_gate(&receipt, &[1], 95, 5, true).unwrap().unwrap();
+        assert_eq!(preview["false_omissions"], 1);
+        assert_eq!(guarded["false_omissions"], 0);
+        assert_eq!(guarded["omitted"], 1);
     }
 }

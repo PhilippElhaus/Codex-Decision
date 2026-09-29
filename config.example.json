@@ -11,6 +11,7 @@
   "allow_mcp_replacement": false,
   "log_limit_mb": 50,
   "never_delete_logs": false,
+  "search_relevance": {"guard_enabled": false, "relevant_max": 5},
   "line_policy": {
     "output": {"omit_min": 95, "exact_max": 5},
     "test_build": {"omit_min": 95, "exact_max": 5},

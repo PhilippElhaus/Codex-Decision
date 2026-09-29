@@ -139,6 +139,7 @@ test("composer bridge selects integrations and reports view-scoped activity with
     assert.equal(ready.keyLength, 0);
     assert.equal(ready.config.line_policy.output.omit_min, 95);
     assert.deepEqual(ready.defaults, { mode: "replace", line_policy: core.DEFAULT_LINE_POLICY,
+      search_relevance: core.DEFAULT_SEARCH_RELEVANCE,
       log_limit_mb: 50, never_delete_logs: false });
     assert.equal(ready.config.log_limit_mb, 50);
     assert.equal(ready.lifetime.calls, 1);
