@@ -224,7 +224,7 @@
       #codex-jev-settings-panel .log-retention { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
       #codex-jev-settings-panel .log-retention label { display: inline-flex; align-items: center; gap: 6px; }
       #codex-jev-settings-panel .relevance-controls { margin: 15px 0 8px; padding: 12px 0 0; border-top: 1px solid var(--vscode-panel-border, #333); }
-      #codex-jev-settings-panel .relevance-controls label { display: inline-flex; align-items: center; gap: 8px; }
+      #codex-jev-settings-panel .relevance-controls > label { display: flex; align-items: center; gap: 8px; }
       #codex-jev-settings-panel .relevance-controls .field label { display: block; }
       #codex-jev-settings-panel input[type=checkbox] { -webkit-appearance: none; appearance: none; display: inline-grid; place-content: center; width: 16px; height: 16px; flex: none; margin: 0; padding: 0; border: 1px solid var(--vscode-checkbox-border, #777); border-radius: 3px; background: var(--vscode-checkbox-background, #3c3c3c); color: var(--vscode-checkbox-foreground, #fff); cursor: pointer; }
       #codex-jev-settings-panel input[type=checkbox]::after { content: ""; display: none; width: 8px; height: 5px; border: solid currentColor; border-width: 0 0 2px 2px; transform: translateY(-1px) rotate(-45deg); }

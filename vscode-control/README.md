@@ -7,8 +7,8 @@ This optional extension adds the **Jev** bottom panel, three integration toggles
 From this directory in WSL:
 
 ```bash
-npx @vscode/vsce package --no-dependencies --out ../.local/submission/codex-jev-control-0.5.0.vsix
-code --install-extension "$(wslpath -w ../.local/submission/codex-jev-control-0.5.0.vsix)" --force
+npx @vscode/vsce package --no-dependencies --out ../.local/submission/codex-jev-control-0.5.1.vsix
+code --install-extension "$(wslpath -w ../.local/submission/codex-jev-control-0.5.1.vsix)" --force
 ```
 
 The composer control requires a separately installed, version-pinned local patch for Codex extension `26.917.62051`. The patch verifies exact host hashes and keeps rollback files outside this repository:

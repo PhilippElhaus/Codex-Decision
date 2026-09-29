@@ -420,6 +420,30 @@
       check(!settingsScreen.querySelector(".method-controls") &&
         !settingsScreen.querySelector("#codex-jev-settings-output-routine_min"),
         "coarse decision methods and cutoffs are absent");
+      const relevanceGuard = settingsScreen.querySelector("#codex-jev-settings-relevance-guard");
+      const relevanceLabel = relevanceGuard.closest("label");
+      const relevanceHelp = relevanceLabel.nextElementSibling;
+      const relevanceText = document.createRange();
+      relevanceText.selectNodeContents(relevanceLabel.lastChild);
+      const relevanceLayout = () => ({
+        labelTop: relevanceLabel.getBoundingClientRect().top,
+        labelHeight: relevanceLabel.getBoundingClientRect().height,
+        checkboxTop: relevanceGuard.getBoundingClientRect().top,
+        checkboxHeight: relevanceGuard.getBoundingClientRect().height,
+        containerHeight: relevanceLabel.parentElement.getBoundingClientRect().height,
+        textTop: relevanceText.getBoundingClientRect().top,
+        textHeight: relevanceText.getBoundingClientRect().height,
+        helpTop: relevanceHelp.getBoundingClientRect().top,
+      });
+      const relevanceBefore = relevanceLayout();
+      relevanceGuard.click();
+      const relevanceAfter = relevanceLayout();
+      check(Object.keys(relevanceBefore).every((key) => Math.abs(relevanceBefore[key] - relevanceAfter[key]) < 0.5),
+        `relevance checkbox keeps its text line fixed: ${JSON.stringify({ relevanceBefore, relevanceAfter })}`);
+      relevanceGuard.click();
+      const relevanceReset = relevanceLayout();
+      check(Object.keys(relevanceBefore).every((key) => Math.abs(relevanceBefore[key] - relevanceReset[key]) < 0.5),
+        "relevance checkbox keeps its line fixed when cleared");
       routineSlider.value = "82";
       routineSlider.dispatchEvent(new Event("input", { bubbles: true }));
       check(routineNumber.value === "82%" && routineSlider.style.getPropertyValue("--fill") === "82%",
