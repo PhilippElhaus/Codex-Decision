@@ -8,7 +8,7 @@ npm test --prefix vscode-control
 python3 vscode-control/scripts/browser_smoke.py
 ```
 
-The Rust suite checks exact UTF-8 line spans, bounded and unique targets, protected-line batching, search relevance, invalid Jev answers, offline gate trials, and fail-open process behavior. The browser harnesses render the actual composer and panel code. The ignored live Rust test makes a real call using a private key file and synthetic output; it writes only to a temporary data directory:
+The Rust suite checks exact UTF-8 line spans, bounded and unique targets, protected-line batching, search relevance, invalid Jev answers, offline gate trials, and fail-open process behavior. The browser harnesses render the actual composer and panel code. The ignored live Rust test makes output and search calls using a private key file and synthetic results, including the third search Noul; it writes only to a temporary data directory:
 
 ```bash
 CODEX_JEV_LIVE_KEY_FILE=<private-PLUGIN_DATA>/.env \

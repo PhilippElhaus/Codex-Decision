@@ -247,7 +247,7 @@ fn live_line_request_records_valid_independent_answers() {
         "tool_input":{"command":"echo build"},"tool_response":source});
     let binary = std::env::var("CODEX_JEV_HOOK_BIN")
         .unwrap_or_else(|_| env!("CARGO_BIN_EXE_jev-hook").into());
-    let mut child = Command::new(binary)
+    let mut child = Command::new(&binary)
         .env("PLUGIN_DATA", &data)
         .env_remove("CODEX_JEV_TEST_ENDPOINT")
         .stdin(Stdio::piped())
@@ -271,6 +271,47 @@ fn live_line_request_records_valid_independent_answers() {
     let snapshot: Value =
         serde_json::from_slice(&fs::read(data.join("logs/latest-decision.json")).unwrap()).unwrap();
     assert_eq!(snapshot["version"], 2);
-    assert_eq!(snapshot["totals"]["judged"], 42);
+    assert_eq!(snapshot["totals"]["seen"], 42);
+    assert_eq!(snapshot["totals"]["judged"], 40);
+    assert_eq!(snapshot["totals"]["protected"], 2);
     assert!(snapshot["totals"]["requests"].as_u64().unwrap() >= 1);
+
+    fs::write(data.join("config.json"), json!({"schema_version":2,"enabled":false,
+        "test_build_enabled":false,"search_listing_enabled":true,"mode":"observe",
+        "min_chars":1024,"max_chars":2000000,"model":"jev-1.13.0","timeout_seconds":4.0,
+        "search_relevance":{"guard_enabled":false,"relevant_max":5},
+        "line_policy":{"output":{"omit_min":95,"exact_max":5},
+          "test_build":{"omit_min":95,"exact_max":5},"search_listing":{"omit_min":95,"exact_max":5}}}).to_string()).unwrap();
+    fs::write(&transcript, json!({"type":"response_item","payload":{"role":"user",
+        "content":[{"type":"input_text","text":"Find the timeout setting relevant to client retries."}]}}).to_string()+"\n").unwrap();
+    let search_source = (0..25).map(|index| format!(
+        "src/settings_{index:02}.rs:{}:setting timeout_{index:02} controls client retries and routing behavior\n", index + 1
+    )).collect::<String>();
+    let search_event = json!({"hook_event_name":"PostToolUse","tool_name":"Bash",
+        "session_id":"live-fixture-session","tool_use_id":"live-search-call","transcript_path":transcript,
+        "tool_input":{"command":"rg -n 'setting' src"},"tool_response":search_source});
+    let mut search_child = Command::new(&binary)
+        .env("PLUGIN_DATA", &data)
+        .env_remove("CODEX_JEV_TEST_ENDPOINT")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    search_child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(search_event.to_string().as_bytes())
+        .unwrap();
+    let search_output = search_child.wait_with_output().unwrap();
+    assert!(search_output.status.success());
+    assert!(search_output.stderr.is_empty());
+    let search_snapshot: Value =
+        serde_json::from_slice(&fs::read(data.join("logs/latest-decision.json")).unwrap()).unwrap();
+    assert_eq!(search_snapshot["filter"], "search_listing");
+    assert_eq!(search_snapshot["totals"]["judged"], 25);
+    assert!(search_snapshot["latest"]["task_relevant"].is_number());
+    let stats: Value = serde_json::from_slice(&fs::read(data.join("stats.json")).unwrap()).unwrap();
+    assert_eq!(stats["linesRelevanceJudged"], 25);
 }
