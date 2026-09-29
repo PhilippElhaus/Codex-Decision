@@ -25,8 +25,8 @@ def main() -> None:
         address = 'file:///' + quote(target, safe='/:')
         captures = [
             ('menu', 'jev-menu.png', 620, 340),
-            ('tooltip', 'jev-tooltip.png', 620, 280),
-            ('unavailable', 'jev-unavailable.png', 620, 280),
+            ('tooltip', 'jev-tooltip.png', 900, 280),
+            ('unavailable', 'jev-unavailable.png', 900, 280),
             ('onboarding', 'jev-connect.png', 950, 610),
             ('settings', 'jev-settings.png', 1040, 1650),
         ]

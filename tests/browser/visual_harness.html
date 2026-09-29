@@ -10,13 +10,17 @@
     .toolbar { position: absolute; left: 24px; right: 24px; bottom: 15px; height: 36px; display: flex; align-items: center; gap: 12px; white-space: nowrap; }
     .toolbar button { border: 0; background: none; color: inherit; font: inherit; padding: 0; }
     .plus { font-size: 27px; color: #c9c9c9; line-height: 1; }
-    .access { color: #d6b900 !important; font-size: 16px !important; }
-    .shield { display: inline-block; margin-right: 9px; border: 2px solid #d6b900; border-radius: 7px 7px 9px 9px; width: 18px; height: 20px; line-height: 17px; font-size: 13px; text-align: center; }
+    .access { display: inline-flex; align-items: center; gap: 8px; flex: none; color: #d6b900 !important; font-size: 16px !important; }
+    .shield { display: block; width: 20px; height: 22px; }
     .model { box-sizing: border-box; margin-left: auto; color: #bebebe !important; font-size: 16px !important; height: 36px; padding: 5px 13px !important; border-radius: 999px; }
     .model:hover { background: #303030 !important; }
     .divider { height: 34px; border-left: 1px solid #303030; }
-    .context { color: #989898; }
-    .send { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 50%; background: #c5c5c5; color: #202020; font-size: 21px; margin-left: 3px; }
+    .context { display: inline-flex; align-items: center; gap: 7px; color: #989898; font-size: 15px; }
+    .context svg { width: 18px; height: 18px; }
+    .mic { display: grid; place-items: center; width: 22px; height: 30px; flex: none; color: #c3c3c3; }
+    .mic svg { width: 20px; height: 20px; }
+    .send { display: grid; place-items: center; flex: none; width: 42px; height: 42px; border-radius: 50%; background: #c5c5c5; color: #202020; margin-left: 3px; }
+    .send svg { width: 23px; height: 23px; }
     .codex-login { display: none; position: fixed; inset: 0; background: #111214; color: #f4f4f4; }
     .codex-login header { padding: 22px 30px; font-size: 21px; font-weight: 650; }
     .codex-login main { position: absolute; top: 48%; left: 24%; width: min(320px, calc(100% - 32px)); transform: translate(-50%, -50%); text-align: center; }
@@ -78,13 +82,38 @@
     <div class="prompt">Ask for follow-up changes</div>
     <div class="toolbar">
       <span class="plus">+</span>
-      <button class="access"><span class="shield">!</span>Full access</button>
+      <button class="access"><svg class="shield" aria-hidden="true" viewBox="0 0 20 22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 1.6 17 4.5v5.7c0 5-3.2 7.5-7 10-3.8-2.5-7-5-7-10V4.5z"/><path d="M10 6.1v5.6m0 3.1h.01"/></svg><span>Full access</span></button>
       <button class="model">GPT-6 Sol Extra High&nbsp;⌄</button>
-      <span class="divider"></span><span class="context">✧&nbsp; IDE context</span>
-      <span class="send">↑</span>
+      <span class="divider"></span><span class="context"><svg aria-hidden="true" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="m3 3 6 12 1.6-4.6L15 9 3 3Zm11-5v3m-6 0 2 2m7 0-2 2m3 4h-3"/></svg>IDE context</span>
+      <span class="mic" aria-label="Microphone"><svg aria-hidden="true" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2" width="6" height="11" rx="3"/><path d="M4.5 9.5a5.5 5.5 0 0 0 11 0M10 15v3m-3.5 0h7"/></svg></span>
+      <span class="send" aria-label="Send prompt"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V4m-6.5 6.5L12 4l6.5 6.5"/></svg></span>
     </div>
   </div>
-  <div class="settings-screen"><nav class="settings-nav" aria-label="Settings"><strong>Settings</strong><div class="settings-items"><div class="settings-item"><button aria-label="General">General</button></div><div class="settings-item"><button aria-label="Voice" aria-current="page"><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5.5" y="1.5" width="5" height="9" rx="2.5"/><path d="M3 7.5a5 5 0 0 0 10 0M8 12.5v2M5.5 14.5h5"/></svg><span>Voice</span></button></div><div class="settings-item"><button aria-label="Configuration">Configuration</button></div><div class="settings-item"><button aria-label="Personalization">Personalization</button></div><div class="settings-item"><button aria-label="Usage &amp; billing">Usage &amp; billing</button></div><div class="settings-item"><button aria-label="MCP servers">MCP servers</button></div><div class="settings-item"><button aria-label="Hooks">Hooks</button></div><div class="settings-item"><button aria-label="Plugins">Plugins</button></div></div></nav><div class="settings-content"><main><h1>Voice</h1><p>Voice settings</p></main></div></div>
+  <div class="settings-screen">
+    <svg xmlns="http://www.w3.org/2000/svg" style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true">
+      <symbol id="settings-general" viewBox="0 0 16 16"><path d="M2 4h5m3 0h4M2 8h2m3 0h7M2 12h8m3 0h1"/><circle cx="8.5" cy="4" r="1.5"/><circle cx="5.5" cy="8" r="1.5"/><circle cx="11.5" cy="12" r="1.5"/></symbol>
+      <symbol id="settings-configuration" viewBox="0 0 16 16"><path d="m5.5 3-4 5 4 5m5-10 4 5-4 5M9 2 7 14"/></symbol>
+      <symbol id="settings-personalization" viewBox="0 0 16 16"><path d="m8 1.5 1.4 4.3L14 7.5 9.4 9.2 8 13.5 6.6 9.2 2 7.5l4.6-1.7L8 1.5ZM12.5 12l.5 1.4 1.5.6-1.5.6-.5 1.4-.5-1.4-1.5-.6 1.5-.6.5-1.4Z"/></symbol>
+      <symbol id="settings-usage" viewBox="0 0 16 16"><rect x="1.5" y="3" width="13" height="10" rx="1.5"/><path d="M1.5 6h13M4 10h3"/></symbol>
+      <symbol id="settings-mcp" viewBox="0 0 16 16"><rect x="1.5" y="1.5" width="4" height="4" rx=".7"/><rect x="10.5" y="1.5" width="4" height="4" rx=".7"/><rect x="6" y="10.5" width="4" height="4" rx=".7"/><path d="M3.5 5.5v2.2H8v2.8m4.5-5v2.2H8"/></symbol>
+      <symbol id="settings-hooks" viewBox="0 0 16 16"><path d="M8 1.5v8a3 3 0 1 0 3 3"/><path d="m5.5 4 2.5-2.5L10.5 4"/></symbol>
+      <symbol id="settings-plugins" viewBox="0 0 16 16"><path d="M2 2h5v5H2zM9 2h5v5H9zM2 9h5v5H2zM9 9h5v5H9z"/></symbol>
+    </svg>
+    <nav class="settings-nav" aria-label="Settings">
+      <strong>Settings</strong>
+      <div class="settings-items">
+        <div class="settings-item"><button aria-label="General"><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><use href="#settings-general"/></svg><span>General</span></button></div>
+        <div class="settings-item"><button aria-label="Voice" aria-current="page"><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5.5" y="1.5" width="5" height="9" rx="2.5"/><path d="M3 7.5a5 5 0 0 0 10 0M8 12.5v2M5.5 14.5h5"/></svg><span>Voice</span></button></div>
+        <div class="settings-item"><button aria-label="Configuration"><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><use href="#settings-configuration"/></svg><span>Configuration</span></button></div>
+        <div class="settings-item"><button aria-label="Personalization"><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><use href="#settings-personalization"/></svg><span>Personalization</span></button></div>
+        <div class="settings-item"><button aria-label="Usage &amp; billing"><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><use href="#settings-usage"/></svg><span>Usage &amp; billing</span></button></div>
+        <div class="settings-item"><button aria-label="MCP servers"><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><use href="#settings-mcp"/></svg><span>MCP servers</span></button></div>
+        <div class="settings-item"><button aria-label="Hooks"><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><use href="#settings-hooks"/></svg><span>Hooks</span></button></div>
+        <div class="settings-item"><button aria-label="Plugins"><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><use href="#settings-plugins"/></svg><span>Plugins</span></button></div>
+      </div>
+    </nav>
+    <div class="settings-content"><main><h1>Voice</h1><p>Voice settings</p></main></div>
+  </div>
   <script>
     const api = acquireVsCodeApi();
     document.body.dataset.demo = demo;
