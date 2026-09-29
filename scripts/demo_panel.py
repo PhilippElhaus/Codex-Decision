@@ -20,49 +20,32 @@ sys.path.insert(0, str(ROOT / "hooks"))
 from receipts import _locked, _replace_private  # noqa: E402
 
 
-def choice(name: str, selected: str, **probabilities: float) -> dict:
-    return {"name": name, "selected": selected, "probabilities": probabilities}
-
-
-def checks(routine: float, exact: float, unique: float) -> list[dict]:
-    return [
-        {"name": "routine_noise", "probability": routine},
-        {"name": "needs_exact_text", "probability": exact},
-        {"name": "one_off_value", "probability": unique},
-    ]
-
-
 SCENES = (
-    ("Output · Choice + Noul", "output", "replace",
-     [choice("filter_decision", "filter", filter=.88, keep=.12)], checks(.91, .12, .08), "output_filter"),
-    ("Output · Choice only", "output", "keep",
-     [choice("filter_decision", "keep", filter=.19, keep=.81)], [], "output_keep"),
-    ("Output · Noul only", "output", "keep", [], checks(.28, .84, .76), "output_noul"),
-    ("Test/build · Choice + Noul", "test_build", "replace",
-     [choice("filter_decision", "filter", filter=.94, keep=.06)], checks(.93, .14, .11), "build_filter"),
-    ("Test/build · Choice only", "test_build", "keep",
-     [choice("filter_decision", "keep", filter=.23, keep=.77)], [], "build_keep"),
-    ("Test/build · Noul only", "test_build", "keep", [], checks(.34, .89, .71), "build_noul"),
-    ("Search · retain", "search_listing", "keep",
-     [choice("group_0", "retain", retain=.79, summarize=.16, drop=.05)], [], "search_retain"),
-    ("Search · summarize", "search_listing", "replace",
-     [choice("group_0", "summarize", retain=.13, summarize=.78, drop=.09)], [], "search_summarize"),
-    ("Search · drop", "search_listing", "replace",
-     [choice("group_0", "drop", retain=.03, summarize=.07, drop=.90)], [], "search_drop"),
+    ("Output · omit routine progress", "output", "Compiling demo module 17", "omit", .98, .02),
+    ("Output · keep version string", "output", "Version 7.42.19", "keep", .08, .97),
+    ("Test/build · omit passing case", "test_build", "PASS demo_test_017", "omit", .99, .01),
+    ("Test/build · keep failure", "test_build", "FAIL demo_test_018: expected 2, got 3", "keep", .01, .99),
+    ("Search · omit unrelated match", "search_listing", "src/demo.rs:91: unrelated sample", "omit", .97, .02),
+    ("Search · keep relevant match", "search_listing", "src/jev.rs:42: line_policy", "keep", .04, .96),
 )
 
 
 def snapshot(scene: tuple, history: list[dict], sequence: int) -> bytes:
-    _, filter_name, status, choices, signals, theme = scene
+    _, filter_name, excerpt, action, can_omit, exact_needed = scene
     decision_id = uuid.uuid4().hex
-    history.append({"id": decision_id, "theme": theme, "elapsed_ms": 18 + (sequence * 17) % 210})
-    row = {"version": 1, "id": decision_id, "demo": True,
-           "at": datetime.now(timezone.utc).isoformat(),
-           "filter": filter_name, "status": status,
-           "call_index": 1, "call_count": 1,
-           "choices": choices, "checks": signals,
-           "recent": history[-5:]}
+    line = {"id": f"{decision_id}-{sequence}", "line": sequence,
+            "excerpt": f"[DEMO] {excerpt}", "summary": "Synthetic line",
+            "action": action, "can_omit": can_omit, "exact_needed": exact_needed}
+    history.append(line)
     history[:] = history[-5:]
+    row = {"version": 2, "id": decision_id, "demo": True,
+           "at": datetime.now(timezone.utc).isoformat(),
+           "filter": filter_name, "status": "replace" if action == "omit" else "keep",
+           "batch_elapsed_ms": 18 + (sequence * 17) % 210,
+           "latest": line, "recent": history,
+           "totals": {"seen": 1, "judged": 1, "kept": int(action == "keep"),
+                      "omitted": int(action == "omit"), "protected": 0,
+                      "unjudged": 0, "requests": 1}}
     return json.dumps(row, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
 
 

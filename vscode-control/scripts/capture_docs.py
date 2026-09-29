@@ -1,4 +1,4 @@
-"""Capture synthetic, key-free Jev UI screenshots with Windows Edge."""
+"""Capture the real Jev webviews with synthetic, key-free example state."""
 
 from pathlib import Path
 from html import unescape
@@ -53,7 +53,9 @@ def main() -> None:
                 raise RuntimeError('Connect Jev overlay was not rendered')
             if state == 'settings' and ('id="codex-jev-settings-panel"' not in result.stdout or
                                         'id="codex-jev-settings-lifetime-tokens"' not in result.stdout or
-                                        '~87,320' not in result.stdout or
+                                        '87,320' not in result.stdout or
+                                        'Can omit, minimum' not in result.stdout or
+                                        'Exact text needed, maximum' not in result.stdout or
                                         '>Filter</option>' not in result.stdout):
                 raise RuntimeError('Jev settings were not rendered in Codex settings')
             print(f'{name}: {output.stat().st_size} bytes; layout={layout}')
@@ -66,6 +68,28 @@ def main() -> None:
         ):
             settings.crop(box).save(IMAGES / name, optimize=True)
             print(f'{name}: {box}')
+        panel = IMAGES / 'jev-panel.png'
+        light_panel = IMAGES / 'jev-panel-light.png'
+        panel_address = 'file:///' + quote(windows_path(ROOT.parent / 'tests/browser/jev_panel_harness.html').replace('\\', '/'), safe='/:')
+        for state, output, suffix in (('dark', panel, ''), ('light', light_panel, '?light')):
+            result = subprocess.run([
+                str(edge), '--headless', '--disable-gpu', '--no-first-run',
+                '--no-default-browser-check', '--disable-extensions', '--hide-scrollbars',
+                '--force-device-scale-factor=2', '--virtual-time-budget=2500',
+                '--window-size=800,460', f'--user-data-dir={windows_path(profile / ("panel-" + state))}',
+                '--dump-dom', f'--screenshot={windows_path(output)}', panel_address + suffix,
+            ], capture_output=True, text=True, timeout=30, check=False)
+            if result.returncode != 0 or not output.is_file() or 'JEV_LINE_PANEL_READY' not in result.stdout:
+                raise RuntimeError(f'Could not capture the current {state} line-level Jev panel')
+            with Image.open(output) as captured:
+                captured.crop((0, 0, captured.width, min(captured.height, 520))).save(output, optimize=True)
+            output.chmod(0o644)
+            print(f'{output.name}: {output.stat().st_size} bytes')
+        with Image.open(panel) as dark, Image.open(light_panel) as light:
+            comparison = Image.new('RGB', (dark.width, dark.height + light.height + 20), 'white')
+            comparison.paste(dark.convert('RGB'), (0, 0))
+            comparison.paste(light.convert('RGB'), (0, dark.height + 20))
+            comparison.save(IMAGES / 'jev-panel-themes.png', optimize=True)
     finally:
         remove_profile(profile, 'jev-docs-')
 

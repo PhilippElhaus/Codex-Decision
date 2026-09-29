@@ -34,4 +34,4 @@ npm test
 python3 scripts/browser_smoke.py
 ```
 
-The panel's synthetic [browser harness](../tests/browser/jev_panel_harness.html) renders the real webview code in dark and light colors. Existing documentation screenshots predate the line-level controls and should be recaptured before publication.
+The panel's synthetic [browser harness](../tests/browser/jev_panel_harness.html) renders the real webview code in dark and light colors. The [documentation captures](../docs/images/) use the current webview code and synthetic, key-free state.

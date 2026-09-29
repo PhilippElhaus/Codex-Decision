@@ -2,20 +2,15 @@
 
 <img src="assets/logo.png" width="56" alt="Codex Jev logo">
 
-Codex Jev asks Jev to judge eligible output one physical line at a time. It keeps exact source text for retained lines and a path to the full original. Uncertain results stay intact.
+Codex Jev uses a Rust PostToolUse hook to judge eligible output one physical line at a time. It keeps exact source text for retained lines and a path to the full original. Uncertain results stay intact.
 
-## Measured impact
+## How it works
 
-A [live hook benchmark from 2026-09-26](docs/benchmarks/benchmark_live_2026-09-26.md) used 36 real command results and 30 Jev calls. It measured the earlier coarse implementation, not this line-level release. Its numbers remain historical context.
+The hook sends bounded batches of eligible lines to Jev. Each line receives two independent Noul probabilities: **Can omit?** and **Exact text needed?** With the default policy, a line can be removed only when those probabilities reach at least 95% and at most 5%, respectively. Code also protects diagnostics, completion totals, nearby context, and unjudged lines. If a request fails validation, Codex sees the full result.
 
-| Integration | Results shortened | Model-visible tokens saved | Reduction on shortened results |
-| --- | ---: | ---: | ---: |
-| Output filter | 9 | 48,886 | 95.3% |
-| Test/build logs | 12 | 13,475 | 90.0% |
-| Search/listing | 3 | 8,346 | 71.3% |
-| **Total** | **24** | **70,707** | — |
+The optional **Jev** panel beside Output and Terminal shows five recent judged lines, the latest source excerpt, and animated full-block probability bars. It stays empty until a real decision arrives.
 
-Counts use `o200k_base` on tool text. They are not billed-token or full-task savings. Jev kept six search-hit results when uncertain; six other results were skipped by local checks.
+<img src="docs/images/jev-panel.png" width="1000" alt="Jev panel rendered from the current extension webview with synthetic line judgments and two probability bars">
 
 ## What it filters
 
@@ -37,9 +32,11 @@ All three start disabled. **Monitor** records decisions without changing output.
 
 <img src="docs/images/jev-connect.png" width="900" alt="Illustrative Connect Jev API key screen beside the Codex sign-in view; example state with no key">
 
-<img src="docs/images/jev-settings-overview.png" width="850" alt="Jev settings page showing activity, API key, log retention, and mode">
+<img src="docs/images/jev-settings-overview.png" width="850" alt="Jev settings page showing line counts, API key, log retention, and Monitor or Filter mode">
 
-The existing captures use synthetic state and contain no key; the settings screenshots predate the line-level controls.
+<img src="docs/images/jev-settings-filters.png" width="850" alt="Jev settings showing per-line Can omit and Exact text needed thresholds for all three integrations">
+
+These captures render the current webview code with synthetic, key-free state.
 
 ## Install
 
@@ -54,4 +51,4 @@ The bundled Linux x86_64 Rust hook needs no Python at runtime. The `jev-output` 
 
 - [Key setup](docs/setup/setup_credentials.md) and [data handling](docs/architecture/design_data.md)
 - [Integration design](docs/architecture/design_integrations.md) and [verification](docs/development/development_verification.md)
-- [Benchmark methods](docs/benchmarks/benchmark_live_2026-09-26.md) and [test map](tests/README.md)
+- [Test map](tests/README.md). The [2026-09-26 benchmark](docs/benchmarks/benchmark_live_2026-09-26.md) measured a previous implementation and does not measure this release.

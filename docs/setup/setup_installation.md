@@ -1,6 +1,6 @@
 # Install Codex Jev
 
-The line-level release is local in this checkout. Build and package it on Linux x86_64:
+On Linux x86_64, download the plugin ZIP and companion VSIX from the [v0.4.0 release](https://github.com/PhilippElhaus/Codex-Jev/releases/tag/v0.4.0), or build the plugin from source:
 
 ```bash
 ./scripts/build_submission.sh

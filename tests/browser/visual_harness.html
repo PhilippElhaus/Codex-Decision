@@ -44,20 +44,16 @@
   <script>
     document.documentElement.style.setProperty("--screenshot-offset", `${Math.max(0, outerHeight - innerHeight)}px`);
     const demo = new URLSearchParams(location.search).get("demo") || "tooltip";
-    const history = [
-      "replaced · test/build · 6,367 chars · -95%",
-    ];
+    const history = ["judged 42 lines · omitted 29 · test/build"];
     window.acquireVsCodeApi = () => ({ postMessage(request) {
       const settings = request.action === "settingsRead" ? { action: "ready", hasKey: true, keyLength: 32,
-        lifetime: { calls: 126, completed: 124, replaced: 41, estimatedTokensSaved: 87320, averageMs: 487 },
-        defaults: { mode: "replace", thresholds: { output: { routine_min: 90, exact_max: 12, unique_max: 10, confidence_min: 70 },
-          test_build: { routine_min: 90, exact_max: 20, unique_max: 20, confidence_min: 70 }, search_listing: {
-            summarize_probability_min: 78, summarize_confidence_min: 70, drop_probability_min: 92, drop_confidence_min: 85 } } },
+        lifetime: { calls: 126, completed: 124, replaced: 41, linesJudged: 87320, linesOmitted: 915, averageMs: 487 },
+        defaults: { mode: "replace", line_policy: {
+          output: { omit_min: 95, exact_max: 5 }, test_build: { omit_min: 95, exact_max: 5 },
+          search_listing: { omit_min: 95, exact_max: 5 } } },
         config: { mode: "replace", log_limit_mb: 50, never_delete_logs: true,
-          decision_methods: { output: { noul: true, choice: true }, test_build: { noul: true, choice: true }, search_listing: { choice: true } },
-          thresholds: { output: { routine_min: 90, exact_max: 20, unique_max: 30, confidence_min: 70 },
-          test_build: { routine_min: 85, exact_max: 25, unique_max: 35, confidence_min: 70 }, search_listing: {
-            summarize_probability_min: 78, summarize_confidence_min: 70, drop_probability_min: 92, drop_confidence_min: 85 } } } } :
+          line_policy: { output: { omit_min: 90, exact_max: 10 },
+            test_build: { omit_min: 95, exact_max: 5 }, search_listing: { omit_min: 97, exact_max: 3 } } } } :
         request.action === "settingsTest" ? { action: "tested", result: { ok: true, model: "jev-1.13.0" } } : undefined;
       queueMicrotask(() => window.dispatchEvent(new MessageEvent("message", { data: {
         type: "codex-jev-reply", id: request.id,
@@ -67,7 +63,7 @@
           health: demo === "onboarding" || demo === "missing-key" ? { ok: false, reason: "JEV_KEY_MISSING" } :
             demo === "unavailable" ? { ok: false, reason: "JEV_TIMEOUT" } : { ok: true, model: "jev-1.13.0" },
           busy: demo === "pulse", mode: "replace", recent: history[0], history,
-          stats: { calls: 1, candidates: 0, kept: 0, replaced: 1, checkedChars: 6367, savedChars: 6058, estimatedTokensSaved: 1515, elapsedMs: 1263, completed: 1 },
+          stats: { calls: 1, candidates: 1, kept: 0, replaced: 1, checkedChars: 6367, savedChars: 6058, estimatedTokensSaved: 1515, elapsedMs: 1263, completed: 1 },
           settings,
         },
       } })));
