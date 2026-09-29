@@ -127,7 +127,7 @@ async function readConfig(directory) {
       completeSearchRelevance(merged.search_relevance);
     }
     else { completeThresholds(merged.thresholds); completeDecisionMethods(merged.decision_methods); }
-    const { precompact_enabled: _legacy, ...current } = raw;
+    const { precompact_enabled: _legacy, sample_chars: _sampleChars, ...current } = raw;
     return { enabled: false, test_build_enabled: false, search_listing_enabled: false, mode: "replace", ...current };
   } catch (error) {
     if (error.code === "ENOENT") return { enabled: false, test_build_enabled: false, search_listing_enabled: false, mode: "replace" };

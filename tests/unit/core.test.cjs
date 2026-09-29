@@ -177,6 +177,23 @@ test("legacy PreCompact selection is retired without enabling search/listing", a
   }
 });
 
+test("legacy sampling setting is removed when a selection saves", async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-control-test-"));
+  try {
+    await fs.writeFile(path.join(directory, "config.json"), JSON.stringify({
+      enabled: true, test_build_enabled: true, search_listing_enabled: false,
+      sample_chars: 12000,
+    }));
+    const saved = await writeSelection(directory, true, true, false);
+    assert.equal(saved.schema_version, 2);
+    assert.equal(saved.enabled, true);
+    assert.equal(saved.test_build_enabled, true);
+    assert.equal(Object.hasOwn(saved, "sample_chars"), false);
+    const persisted = JSON.parse(await fs.readFile(path.join(directory, "config.json")));
+    assert.equal(Object.hasOwn(persisted, "sample_chars"), false);
+  } finally { await fs.rm(directory, { recursive: true, force: true }); }
+});
+
 test("invalid config and linked target fail without changing a hook selection", async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-control-test-"));
   try {

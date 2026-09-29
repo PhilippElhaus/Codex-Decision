@@ -50,6 +50,7 @@ fn migrate(data_dir: &Path) -> Result<(), String> {
     config.remove("thresholds");
     config.remove("decision_methods");
     config.remove("precompact_enabled");
+    config.remove("sample_chars");
     config.insert("schema_version".into(), json!(2));
     config.insert(
         "line_policy".into(),
