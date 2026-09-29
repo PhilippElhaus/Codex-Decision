@@ -4,7 +4,7 @@
   "test_build_enabled": false,
   "search_listing_enabled": false,
   "mode": "replace",
-  "min_chars": 8192,
+  "min_chars": 256,
   "max_chars": 2000000,
   "timeout_seconds": 3.0,
   "model": "jev-latest",

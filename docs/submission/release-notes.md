@@ -1,7 +1,7 @@
-# Codex Jev 0.5.5 release notes
+# Codex Jev 0.6.0 release notes
 
-The active plugin remains one Rust hook. Three independent switches route output text, recognized test/build commands, and supported direct search/listing commands. The hook makes per-line Noul judgments in bounded batches. A disabled specialized route leaves its result unchanged, even when Output filter is enabled.
+The Rust hook now observes supported local PostToolUse results through a wildcard matcher. It routes direct test/build and search/listing commands, their corresponding local tool actions, and other plain-text local results to the three existing exclusive switches. Quoted search patterns, a leading `cd`, environment prefixes, and simple shell wrappers no longer prevent classification. Command objects with an `output` field can be judged in Monitor mode without replacing their metadata.
 
-This update removes the retired `sample_chars` setting when a version 1 config is migrated or saved through VS Code control 0.4.5. Existing route selections, line policies, private logs, and keys are preserved. The plugin archive includes only nine required files; the Python hook from earlier releases is not included.
+The default eligibility floor is 256 bytes for newly created settings. Existing selections, policies, keys, and logs remain intact. A missing transcript task permits a preview using a bounded tool-input cue, but never replacement. Structured, mixed-media, mutating, ambiguous shell, and sensitive-looking results remain untouched. The line-level Noul policy and saved-original contract are unchanged.
 
-Install the plugin archive and companion VSIX together. Update the version-pinned Codex composer patch, then reload VS Code manually.
+The companion VS Code control is 0.5.0. Install the plugin and VSIX together, update the version-pinned Codex composer patch, then reload VS Code manually. A new thread picks up the updated hook definition after Codex trust review.

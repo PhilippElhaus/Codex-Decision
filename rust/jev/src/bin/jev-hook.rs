@@ -68,12 +68,12 @@ fn config(data_dir: &Path) -> Result<Option<Config>, String> {
     if !matches!(mode.as_str(), "replace" | "observe") {
         return Err("invalid mode".into());
     }
-    let min_chars = raw.get("min_chars").and_then(Value::as_u64).unwrap_or(8192) as usize;
+    let min_chars = raw.get("min_chars").and_then(Value::as_u64).unwrap_or(256) as usize;
     let max_chars = raw
         .get("max_chars")
         .and_then(Value::as_u64)
         .unwrap_or(2_000_000) as usize;
-    if !(1024..=2_000_000).contains(&min_chars) || min_chars > max_chars || max_chars > 2_000_000 {
+    if !(256..=2_000_000).contains(&min_chars) || min_chars > max_chars || max_chars > 2_000_000 {
         return Err("invalid size bounds".into());
     }
     let model = raw
@@ -184,33 +184,174 @@ fn command(event: &Value) -> &str {
     event
         .pointer("/tool_input/command")
         .and_then(Value::as_str)
+        .or_else(|| event.pointer("/tool_input/cmd").and_then(Value::as_str))
         .unwrap_or("")
 }
 
-fn route(event: &Value, config: &Config) -> Option<&'static str> {
-    let tool = event.get("tool_name")?.as_str()?;
-    if tool != "Bash" {
-        return config.output.then_some("output");
+fn shell_tool(tool: &str) -> bool {
+    matches!(tool, "Bash" | "exec_command" | "functions.exec_command")
+}
+
+fn basename(word: &str) -> &str {
+    word.rsplit(['/', '\\']).next().unwrap_or(word)
+}
+
+fn shell_segments(command: &str) -> Option<Vec<&str>> {
+    let mut segments = Vec::new();
+    let mut start = 0;
+    let mut quote = None;
+    let mut escaped = false;
+    let mut chars = command.char_indices().peekable();
+    while let Some((index, ch)) = chars.next() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if ch == '\\' && quote != Some('\'') {
+            escaped = true;
+            continue;
+        }
+        if ch == '\'' && quote != Some('"') {
+            quote = if quote == Some('\'') {
+                None
+            } else {
+                Some('\'')
+            };
+            continue;
+        }
+        if ch == '"' && quote != Some('\'') {
+            quote = if quote == Some('"') { None } else { Some('"') };
+            continue;
+        }
+        if quote != Some('\'')
+            && (ch == '`' || ch == '$' && chars.peek().is_some_and(|(_, next)| *next == '('))
+        {
+            return None;
+        }
+        if quote.is_some() {
+            continue;
+        }
+        match ch {
+            '&' if chars.peek().is_some_and(|(_, next)| *next == '&') => {
+                segments.push(&command[start..index]);
+                start = chars.next()?.0 + 1;
+            }
+            ';' | '&' | '|' | '<' | '>' | '\n' | '\r' => return None,
+            _ => {}
+        }
     }
-    let command = command(event);
-    if command.len() > 4096
-        || command.contains(['\n', '\r', '`', ';', '&', '|', '<', '>'])
-        || command.contains("$(")
-    {
+    if quote.is_some() || escaped {
         return None;
     }
-    let words = shell_words::split(command).ok()?;
-    let executable = words
-        .first()
-        .map(|word| word.rsplit('/').next().unwrap_or(word.as_str()))
-        .unwrap_or("");
-    let action = words.get(1).map(String::as_str).unwrap_or("");
+    segments.push(&command[start..]);
+    Some(segments)
+}
+
+fn assignment(word: &str) -> bool {
+    let Some((name, _)) = word.split_once('=') else {
+        return false;
+    };
+    !name.is_empty()
+        && name
+            .bytes()
+            .next()
+            .is_some_and(|ch| ch.is_ascii_alphabetic() || ch == b'_')
+        && name
+            .bytes()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == b'_')
+}
+
+fn direct_words(command: &str, depth: u8) -> Option<Vec<String>> {
+    if command.len() > 4096 || depth > 2 {
+        return None;
+    }
+    let segments = shell_segments(command)?;
+    let direct = match segments.as_slice() {
+        [single] => *single,
+        [prefix, last]
+            if shell_words::split(prefix)
+                .ok()
+                .is_some_and(|words| words.len() == 2 && basename(&words[0]) == "cd") =>
+        {
+            *last
+        }
+        _ => return None,
+    };
+    let words = shell_words::split(direct).ok()?;
+    let mut start = 0;
+    if words.first().is_some_and(|word| basename(word) == "env") {
+        start = 1;
+        while words.get(start).is_some_and(|word| word.starts_with('-')) {
+            match words[start].as_str() {
+                "--" => {
+                    start += 1;
+                    break;
+                }
+                "-u" | "--unset" => start += 2,
+                _ => return None,
+            }
+        }
+    }
+    while words.get(start).is_some_and(|word| assignment(word)) {
+        start += 1;
+    }
+    let executable = basename(words.get(start)?);
+    if matches!(executable, "bash" | "sh" | "zsh")
+        && matches!(
+            words.get(start + 1).map(String::as_str),
+            Some("-c" | "-lc" | "-ec")
+        )
+        && words.len() == start + 3
+    {
+        return direct_words(&words[start + 2], depth + 1);
+    }
+    Some(words[start..].to_vec())
+}
+
+fn subcommand<'a>(words: &'a [String], executable: &str) -> &'a str {
+    let mut index = 1;
+    if matches!(
+        executable,
+        "git" | "cargo" | "go" | "dotnet" | "gradle" | "gradlew" | "mvn" | "mvnw" | "make"
+    ) {
+        while let Some(word) = words.get(index) {
+            if word == "--" {
+                index += 1;
+                break;
+            }
+            if matches!(
+                word.as_str(),
+                "-C" | "-c"
+                    | "--git-dir"
+                    | "--work-tree"
+                    | "--manifest-path"
+                    | "--target-dir"
+                    | "--package"
+                    | "-p"
+                    | "--features"
+                    | "--project"
+            ) {
+                index += 2;
+            } else if word.starts_with('-') {
+                index += 1;
+            } else {
+                break;
+            }
+        }
+    }
+    words.get(index).map(String::as_str).unwrap_or("")
+}
+
+fn bash_route(command: &str) -> Option<&'static str> {
+    let words = direct_words(command, 0)?;
+    let executable = basename(words.first()?);
+    let action = subcommand(&words, executable);
     let package_action = if matches!(executable, "npm" | "pnpm" | "yarn") {
         let mut index = 1;
         while index < words.len() {
             if matches!(
                 words[index].as_str(),
-                "--prefix" | "--dir" | "--cwd" | "--workspace" | "-C" | "-w"
+                "--prefix" | "--dir" | "--cwd" | "--workspace" | "--filter" | "-C" | "-w"
             ) {
                 index += 2;
             } else if words[index].starts_with('-') {
@@ -230,88 +371,187 @@ fn route(event: &Value, config: &Config) -> Option<&'static str> {
         || matches!(
             executable,
             "cargo" | "go" | "dotnet" | "gradle" | "gradlew" | "mvn" | "mvnw" | "make"
-        ) && matches!(action, "test" | "build" | "package")
+        ) && matches!(
+            action,
+            "test" | "build" | "package" | "check" | "clippy" | "vet"
+        )
         || executable == "cmake" && action == "--build"
-        || matches!(package_action, "test" | "build")
+        || matches!(package_action, "test" | "build" | "check" | "lint")
         || executable == "node" && action == "--test"
         || executable.starts_with("python")
             && words
                 .windows(2)
-                .any(|pair| pair == ["-m", "unittest"] || pair == ["-m", "pytest"]);
+                .any(|pair| pair == ["-m", "unittest"] || pair == ["-m", "pytest"])
+        || executable == "npx" && matches!(action, "vitest" | "jest" | "tsc");
     if build {
-        return config.test_build.then_some("test_build");
+        return Some("test_build");
     }
-    let supported_search = if executable == "rg"
-        && words
+    let search = matches!(executable, "rg" | "grep" | "find" | "fd" | "ls")
+        || executable == "git"
+            && (matches!(action, "ls-files" | "grep" | "status")
+                || matches!(action, "diff" | "show")
+                    && words
+                        .iter()
+                        .any(|word| matches!(word.as_str(), "--stat" | "--name-only")));
+    if search {
+        let search_args = if executable == "git" {
+            let index = words.iter().position(|word| word == action).unwrap_or(0);
+            &words[index + 1..]
+        } else {
+            &words[1..]
+        };
+        let unsafe_flag = search_args.iter().any(|word| {
+            matches!(
+                word.as_str(),
+                "--null"
+                    | "--zero"
+                    | "-0"
+                    | "-z"
+                    | "--multiline"
+                    | "-U"
+                    | "--context"
+                    | "-C"
+                    | "--before-context"
+                    | "-B"
+                    | "--after-context"
+                    | "-A"
+                    | "--only-matching"
+                    | "-o"
+                    | "--replace"
+                    | "-print0"
+            ) || [
+                "--context=",
+                "--before-context=",
+                "--after-context=",
+                "--replace=",
+            ]
             .iter()
-            .any(|word| matches!(word.as_str(), "-n" | "--line-number" | "--json" | "--files"))
-    {
-        true
-    } else {
-        executable == "git" && action == "ls-files"
-    };
-    let unsafe_search = words.iter().any(|word| {
-        matches!(
-            word.as_str(),
-            "--null"
-                | "-0"
-                | "--multiline"
-                | "-U"
-                | "--context"
-                | "-C"
-                | "--before-context"
-                | "-B"
-                | "--after-context"
-                | "-A"
-                | "--only-matching"
-                | "-o"
-                | "--replace"
-                | "-r"
-        )
-    });
-    let search_command = matches!(executable, "rg" | "grep" | "find" | "fd" | "ls")
-        || executable == "git" && matches!(action, "ls-files" | "grep");
-    if search_command {
-        return (supported_search && !unsafe_search && config.search_listing)
-            .then_some("search_listing");
+            .any(|prefix| word.starts_with(prefix))
+                || ["-C", "-A", "-B"]
+                    .iter()
+                    .any(|prefix| word.starts_with(prefix) && word.len() > prefix.len())
+                || executable == "rg" && word.starts_with("-r") && word != "--regexp"
+        });
+        return (!unsafe_flag).then_some("search_listing");
     }
-    config.output.then_some("output")
+    if executable == "git" && matches!(action, "diff" | "show") {
+        return None;
+    }
+    Some("output")
 }
 
-fn task_context(event: &Value) -> String {
+fn tool_route(tool: &str) -> Option<&'static str> {
+    if matches!(
+        tool,
+        "apply_patch" | "functions.exec" | "functions.wait" | "update_plan"
+    ) {
+        return None;
+    }
+    let action = tool
+        .rsplit("__")
+        .next()
+        .unwrap_or(tool)
+        .to_ascii_lowercase();
+    if action.split('_').any(|part| {
+        matches!(
+            part,
+            "secret" | "secrets" | "credential" | "credentials" | "password" | "token" | "key"
+        )
+    }) || [
+        "secret",
+        "credential",
+        "password",
+        "apikey",
+        "api_key",
+        "accesskey",
+    ]
+    .iter()
+    .any(|part| action.contains(part))
+        || [
+            "deploy", "publish", "install", "commit", "push", "merge", "delete", "remove",
+        ]
+        .iter()
+        .any(|verb| action.contains(verb))
+    {
+        return None;
+    }
+    if action.starts_with("run_test")
+        || action.starts_with("execute_test")
+        || matches!(action.as_str(), "test" | "tests")
+        || action.starts_with("build")
+        || action.starts_with("compile")
+        || action.starts_with("lint")
+    {
+        return Some("test_build");
+    }
+    if [
+        "create", "update", "delete", "remove", "write", "edit", "patch", "apply", "send",
+        "publish", "deploy", "install", "commit", "push", "merge", "set", "save", "post", "put",
+        "upload", "execute", "run", "start", "stop", "restart", "move", "rename",
+    ]
+    .iter()
+    .any(|verb| action.starts_with(verb))
+    {
+        return None;
+    }
+    if ["search", "grep", "glob", "find", "list", "lookup", "query"]
+        .iter()
+        .any(|verb| action.starts_with(verb))
+    {
+        return Some("search_listing");
+    }
+    Some("output")
+}
+
+fn route(event: &Value, config: &Config) -> Option<&'static str> {
+    let tool = event.get("tool_name")?.as_str()?;
+    let selected = if shell_tool(tool) {
+        bash_route(command(event))?
+    } else {
+        tool_route(tool)?
+    };
+    match selected {
+        "output" => config.output.then_some(selected),
+        "test_build" => config.test_build.then_some(selected),
+        "search_listing" => config.search_listing.then_some(selected),
+        _ => None,
+    }
+}
+
+fn task_context(event: &Value) -> Result<Option<String>, ()> {
     let Some(path) = event.get("transcript_path").and_then(Value::as_str) else {
-        return String::new();
+        return Ok(None);
     };
     let path = Path::new(path);
     if !path.is_absolute() || path.is_symlink() {
-        return String::new();
+        return Ok(None);
     }
     let Ok(metadata) = fs::metadata(path) else {
-        return String::new();
+        return Ok(None);
     };
     if !metadata.is_file() || metadata.len() > 50_000_000 {
-        return String::new();
+        return Ok(None);
     }
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
         if metadata.uid() != unsafe { libc::geteuid() } {
-            return String::new();
+            return Ok(None);
         }
     }
     let Ok(mut file) = File::open(path) else {
-        return String::new();
+        return Ok(None);
     };
     use std::io::{Seek, SeekFrom};
     if file
         .seek(SeekFrom::End(-(metadata.len().min(65_536) as i64)))
         .is_err()
     {
-        return String::new();
+        return Ok(None);
     }
     let mut bytes = Vec::new();
     if file.take(65_536).read_to_end(&mut bytes).is_err() {
-        return String::new();
+        return Ok(None);
     }
     let tail = String::from_utf8_lossy(&bytes);
     for raw in tail.lines().rev() {
@@ -332,6 +572,9 @@ fn task_context(event: &Value) -> String {
             .filter_map(|part| part.get("text").and_then(Value::as_str))
             .collect::<Vec<_>>()
             .join(" ");
+        if sensitive(&message) {
+            return Err(());
+        }
         let text: String = message
             .split_whitespace()
             .collect::<Vec<_>>()
@@ -339,11 +582,11 @@ fn task_context(event: &Value) -> String {
             .chars()
             .take(500)
             .collect();
-        if !text.is_empty() && !sensitive(&text) {
-            return text;
+        if !text.is_empty() {
+            return Ok(Some(text));
         }
     }
-    String::new()
+    Ok(None)
 }
 
 fn sensitive(text: &str) -> bool {
@@ -358,9 +601,15 @@ fn sensitive(text: &str) -> bool {
         "authorization:",
         "password=",
         "passwd=",
+        "secret=",
+        "token=",
+        "api key",
         "bearer ",
         "sk-",
         "ghp_",
+        ".env",
+        "id_rsa",
+        "credentials.json",
         "/.env",
         "\\.env",
     ]
@@ -368,18 +617,53 @@ fn sensitive(text: &str) -> bool {
     .any(|pattern| lower.contains(pattern))
 }
 
+fn sensitive_input(event: &Value) -> bool {
+    event
+        .get("tool_input")
+        .and_then(|input| serde_json::to_string(input).ok())
+        .is_some_and(|encoded| sensitive(&encoded))
+}
+
+fn fallback_task(event: &Value) -> String {
+    let input = event.get("tool_input");
+    let cue = [
+        "query",
+        "search_query",
+        "pattern",
+        "q",
+        "description",
+        "command",
+        "path",
+    ]
+    .iter()
+    .filter_map(|name| {
+        input
+            .and_then(|value| value.get(*name))
+            .and_then(Value::as_str)
+    })
+    .find(|value| !value.trim().is_empty() && !sensitive(value));
+    let detail = cue
+        .unwrap_or("this tool result")
+        .split_whitespace()
+        .take(60)
+        .collect::<Vec<_>>()
+        .join(" ");
+    format!("Review {detail}. Keep diagnostics, exact values, unique facts, and evidence needed to understand the result.")
+}
+
 fn response_text(event: &Value) -> Option<String> {
-    if event.get("tool_name")?.as_str()? == "Bash" {
-        return event.get("tool_response")?.as_str().map(str::to_owned);
-    }
-    if !event.get("tool_name")?.as_str()?.starts_with("mcp__") {
-        return None;
-    }
+    event.get("tool_name")?.as_str()?;
     let body = event.get("tool_response")?;
+    if let Some(text) = body.as_str() {
+        return Some(text.to_owned());
+    }
     if body.get("isError").and_then(Value::as_bool) == Some(true)
         || body.get("structuredContent").is_some()
     {
         return None;
+    }
+    if let Some(text) = body.get("output").and_then(Value::as_str) {
+        return Some(text.to_owned());
     }
     let content = body.get("content")?.as_array()?;
     if content.is_empty() {
@@ -395,7 +679,40 @@ fn response_text(event: &Value) -> Option<String> {
     Some(result.join("\n"))
 }
 
-fn apply_route_structure(route: &str, command: &str, lines: &mut [SourceLine]) -> bool {
+fn apply_route_structure(route: &str, tool: &str, command: &str, lines: &mut [SourceLine]) -> bool {
+    let words = if shell_tool(tool) {
+        direct_words(command, 0)
+    } else {
+        None
+    };
+    let executable = words
+        .as_ref()
+        .and_then(|words| words.first())
+        .map(|word| basename(word))
+        .unwrap_or("");
+    let action = words
+        .as_ref()
+        .map(|words| subcommand(words, executable))
+        .unwrap_or("");
+    let flag = |needle: &str| {
+        words
+            .as_ref()
+            .is_some_and(|words| words.iter().any(|word| word == needle))
+    };
+    let explicit_json = route == "search_listing" && executable == "rg" && flag("--json")
+        || route == "test_build"
+            && (executable == "go" && action == "test" && flag("-json")
+                || executable == "cargo" && flag("--message-format=json"));
+    let looks_structured = lines
+        .iter()
+        .find(|line| !line.model_text.trim().is_empty())
+        .is_some_and(|line| {
+            let first = line.model_text.trim();
+            matches!(first, "{" | "[") || serde_json::from_str::<Value>(first).is_ok()
+        });
+    if looks_structured && !explicit_json {
+        return false;
+    }
     if route == "test_build" {
         let mut complete = false;
         for line in lines.iter_mut() {
@@ -422,7 +739,7 @@ fn apply_route_structure(route: &str, command: &str, lines: &mut [SourceLine]) -
                 line.protected_reason = Some("completion".into());
                 complete = true;
             }
-            if command.starts_with("go test") && command.contains("-json") {
+            if executable == "go" && action == "test" && flag("-json") {
                 let Ok(row) = serde_json::from_str::<Value>(&line.model_text) else {
                     return false;
                 };
@@ -453,7 +770,7 @@ fn apply_route_structure(route: &str, command: &str, lines: &mut [SourceLine]) -
                     complete = true;
                 }
             }
-            if command.starts_with("cargo ") && command.contains("--message-format=json") {
+            if executable == "cargo" && flag("--message-format=json") {
                 let Ok(row) = serde_json::from_str::<Value>(&line.model_text) else {
                     return false;
                 };
@@ -483,7 +800,11 @@ fn apply_route_structure(route: &str, command: &str, lines: &mut [SourceLine]) -
         }
     }
     if route == "search_listing" {
-        let jsonl = command.contains("--json");
+        let jsonl = executable == "rg" && flag("--json");
+        let numbered = executable == "rg" && (flag("-n") || flag("--line-number"));
+        let paths = executable == "rg" && flag("--files")
+            || executable == "git" && action == "ls-files"
+            || matches!(executable, "find" | "fd" | "ls");
         let match_line = Regex::new(r"^.+:[1-9][0-9]*:.*$").ok();
         for line in lines {
             if jsonl {
@@ -513,15 +834,20 @@ fn apply_route_structure(route: &str, command: &str, lines: &mut [SourceLine]) -
                     line.model_text =
                         format!("{path}:{number}:{}", text.trim_end_matches(['\r', '\n']));
                 }
-            } else if command.contains("--files") || command.contains("ls-files") {
+            } else if paths {
                 if line.model_text.is_empty() || line.model_text.chars().any(char::is_control) {
                     return false;
                 }
-            } else if !match_line
-                .as_ref()
-                .is_some_and(|pattern| pattern.is_match(&line.model_text))
+            } else if numbered
+                && !match_line
+                    .as_ref()
+                    .is_some_and(|pattern| pattern.is_match(&line.model_text))
             {
                 return false;
+            } else if line.model_text.contains('\0') {
+                return false;
+            } else if line.model_text.trim().is_empty() {
+                line.protected_reason = Some("blank".into());
             }
         }
     }
@@ -1092,15 +1418,25 @@ fn execute() -> Result<Value, String> {
         || source.len() > config.max_chars
         || sensitive(&source)
         || sensitive(command(&event))
+        || sensitive_input(&event)
     {
         return Ok(json!({}));
     }
-    let task = task_context(&event);
-    if task.is_empty() {
-        return Ok(json!({}));
-    }
+    let user_task = match task_context(&event) {
+        Ok(task) => task,
+        Err(()) => return Ok(json!({})),
+    };
+    let has_user_task = user_task.is_some();
+    let task = user_task.unwrap_or_else(|| fallback_task(&event));
     let mut lines = source_lines(&source);
-    if lines.is_empty() || !apply_route_structure(route, command(&event), &mut lines) {
+    if lines.is_empty()
+        || !apply_route_structure(
+            route,
+            event["tool_name"].as_str().unwrap_or(""),
+            command(&event),
+            &mut lines,
+        )
+    {
         return Ok(json!({}));
     }
     protect_neighbors(&mut lines);
@@ -1168,7 +1504,14 @@ fn execute() -> Result<Value, String> {
     let feedback = render(&source, &lines, &decisions, &path.to_string_lossy());
     let replace = candidate
         && config.mode == "replace"
-        && (event.get("tool_name").and_then(Value::as_str) == Some("Bash")
+        && has_user_task
+        && (shell_tool(event["tool_name"].as_str().unwrap_or(""))
+            && event["tool_response"].is_string()
+            || !event["tool_name"]
+                .as_str()
+                .unwrap_or("")
+                .starts_with("mcp__")
+                && event["tool_response"].is_string()
             || config.allow_mcp_replacement)
         && feedback.len() + 1024 < source.len()
         && feedback.len() * 10 < source.len() * 7;
@@ -1248,6 +1591,13 @@ mod tests {
             "pytest tests -v",
             "python -m pytest -v",
             "cargo test --workspace",
+            "cargo check --workspace",
+            "cargo --manifest-path Cargo.toml test",
+            "go -C src test ./...",
+            "CARGO_TARGET_DIR=/tmp/jev-target cargo test",
+            "env CI=1 cargo test",
+            "bash -lc 'cargo test --workspace'",
+            "cd src && cargo test",
             "npm --prefix vscode-control test",
             "cmake --build build",
         ] {
@@ -1262,9 +1612,18 @@ mod tests {
         }
         for command in [
             "rg -n pattern src",
+            "rg -n 'foo|bar' src",
+            "rg pattern src",
             "rg --json pattern src",
             "rg --files src",
+            "grep -r pattern src",
+            "find src -type f",
+            "ls -l src",
+            "cd src && rg -n pattern .",
             "git ls-files",
+            "git -C src ls-files",
+            "git grep pattern",
+            "git diff --stat",
         ] {
             assert_eq!(
                 route(
@@ -1313,6 +1672,19 @@ mod tests {
                         route(&json!({"tool_name":"mcp__demo__logs"}), &config),
                         output.then_some("output")
                     );
+                    assert_eq!(
+                        route(&json!({"tool_name":"mcp__files__search"}), &config),
+                        search_listing.then_some("search_listing")
+                    );
+                    assert_eq!(
+                        route(&json!({"tool_name":"Grep"}), &config),
+                        search_listing.then_some("search_listing")
+                    );
+                    assert_eq!(
+                        route(&json!({"tool_name":"Read"}), &config),
+                        output.then_some("output")
+                    );
+                    assert_eq!(route(&json!({"tool_name":"apply_patch"}), &config), None);
                 }
             }
         }
@@ -1322,15 +1694,20 @@ mod tests {
     fn unsupported_or_compound_specialized_commands_do_not_use_output_fallback() {
         let config = enabled();
         for command in [
-            "rg token src",
             "rg -n token src | head",
+            "rg --context=3 token src",
+            "rg -C3 token src",
+            "rg --replace=word token src",
             "rg --json --null token src",
-            "grep token src",
-            "git grep token",
+            "find src -print0",
+            "git ls-files -z",
             "cargo test | tee results.log",
             "npm run test; echo done",
             "cargo test\necho done",
             "cat output.log | head",
+            "cd src && cargo test && echo done",
+            "git diff",
+            "git show HEAD",
         ] {
             assert_eq!(
                 route(
@@ -1344,9 +1721,60 @@ mod tests {
     }
 
     #[test]
+    fn local_text_is_eligible_but_structured_and_action_results_are_not() {
+        let config = enabled();
+        let read = json!({"tool_name":"Read","tool_response":"line one\nline two\n"});
+        assert_eq!(route(&read, &config), Some("output"));
+        assert_eq!(
+            response_text(&read).as_deref(),
+            Some("line one\nline two\n")
+        );
+        let shell = json!({"tool_name":"exec_command","tool_input":{"cmd":"rg -n token src"},
+            "tool_response":{"output":"src/a.rs:12:token\n","exit_code":0}});
+        assert_eq!(route(&shell, &config), Some("search_listing"));
+        assert_eq!(
+            response_text(&shell).as_deref(),
+            Some("src/a.rs:12:token\n")
+        );
+        let search = json!({"tool_name":"mcp__files__search","tool_response":{
+            "content":[{"type":"text","text":"src/main.rs:42:match"}]}});
+        assert_eq!(route(&search, &config), Some("search_listing"));
+        assert_eq!(
+            response_text(&search).as_deref(),
+            Some("src/main.rs:42:match")
+        );
+        for response in [
+            json!({"content":[{"type":"image","data":"sample"}]}),
+            json!({"content":[{"type":"text","text":"sample"}],"structuredContent":{"id":1}}),
+            json!({"content":[{"type":"text","text":"sample"}],"isError":true}),
+        ] {
+            assert!(response_text(
+                &json!({"tool_name":"mcp__files__search","tool_response":response})
+            )
+            .is_none());
+        }
+        for tool in [
+            "apply_patch",
+            "update_plan",
+            "mcp__files__write_file",
+            "mcp__repo__deploy",
+            "mcp__keys__getApiKey",
+            "mcp__repo__buildAndDeploy",
+        ] {
+            assert_eq!(route(&json!({"tool_name":tool}), &config), None, "{tool}");
+        }
+        assert!(sensitive_input(&json!({"tool_input":{"path":".env"}})));
+    }
+
+    #[test]
     fn completion_and_jsonl_structure_are_protected() {
         let mut build = source_lines("test_one PASSED\n40 passed in 2.1s\n");
-        assert!(apply_route_structure("test_build", "pytest -v", &mut build));
+        assert!(apply_route_structure(
+            "test_build",
+            "Bash",
+            "pytest -v",
+            &mut build
+        ));
         assert_eq!(build[1].protected_reason.as_deref(), Some("completion"));
         let source = concat!(
             "{\"type\":\"begin\",\"data\":{}}\n",
@@ -1355,6 +1783,7 @@ mod tests {
         let mut search = source_lines(source);
         assert!(apply_route_structure(
             "search_listing",
+            "Bash",
             "rg --json needle src",
             &mut search
         ));
@@ -1371,6 +1800,7 @@ mod tests {
         ));
         assert!(apply_route_structure(
             "test_build",
+            "Bash",
             "go test -json ./...",
             &mut go
         ));
@@ -1381,6 +1811,7 @@ mod tests {
             "{\"reason\":\"build-finished\",\"success\":false}\n"));
         assert!(apply_route_structure(
             "test_build",
+            "Bash",
             "cargo build --message-format=json",
             &mut cargo
         ));
@@ -1389,6 +1820,14 @@ mod tests {
             Some("diagnostic_json")
         );
         assert_eq!(cargo[1].protected_reason.as_deref(), Some("completion"));
+    }
+
+    #[test]
+    fn unknown_json_text_is_not_filtered_line_by_line() {
+        for route in ["output", "search_listing", "test_build"] {
+            let mut lines = source_lines("{\n  \"items\": [1, 2],\n  \"ok\": true\n}\n");
+            assert!(!apply_route_structure(route, "Read", "", &mut lines));
+        }
     }
 
     #[test]

@@ -101,7 +101,7 @@ async function readConfig(directory) {
   try {
     const raw = JSON.parse(await fs.readFile(path.join(directory, "config.json"), "utf8"));
     const merged = {
-      enabled: false, test_build_enabled: false, search_listing_enabled: false, mode: "replace", min_chars: 8192, max_chars: 2_000_000,
+      enabled: false, test_build_enabled: false, search_listing_enabled: false, mode: "replace", min_chars: 256, max_chars: 2_000_000,
       sample_chars: 12_000, timeout_seconds: 3, model: "jev-latest",
       allow_mcp_replacement: false, log_limit_mb: 50, never_delete_logs: false, ...raw,
     };
@@ -112,7 +112,7 @@ async function readConfig(directory) {
         (raw.precompact_enabled !== undefined && typeof raw.precompact_enabled !== "boolean") ||
         !["observe", "replace"].includes(merged.mode) ||
         !Number.isInteger(merged.min_chars) || !Number.isInteger(merged.max_chars) ||
-        merged.min_chars < 1024 || merged.min_chars > merged.max_chars || merged.max_chars > 2_000_000 ||
+        merged.min_chars < 256 || merged.min_chars > merged.max_chars || merged.max_chars > 2_000_000 ||
         !Number.isInteger(merged.sample_chars) || merged.sample_chars < 1000 || merged.sample_chars > 24_000 ||
         typeof merged.timeout_seconds !== "number" || merged.timeout_seconds < 0.1 || merged.timeout_seconds > 4 ||
         typeof merged.model !== "string" || !/^jev-[\w.-]{1,40}$/.test(merged.model) ||

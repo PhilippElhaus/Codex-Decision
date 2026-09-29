@@ -22,7 +22,7 @@ The optional **Jev** panel beside Output and Terminal shows every judged line in
 
 All three start disabled. **Monitor** records decisions without changing output. **Filter** shortens approved results. A shortened result links to its saved original. Eligible text reaches [TypeSafe AI's Jev API](docs/architecture/design_data.md); keep sensitive output outside these filters.
 
-The switches are independent. Recognized test/build commands use only **Test/build logs**; supported direct `rg` and file-listing commands use only **Search/listing**. Turning either off leaves those results unchanged, even when **Output filter** is on. Output filter handles other eligible tool text. Unsupported or compound specialized commands are left unchanged.
+The hook sees supported local PostToolUse events and classifies their text before checking the switches. Direct shell tests and builds, plus test/build tools, use **Test/build logs**. Direct searches and listings, plus search/listing tools, use **Search/listing**. Other plain text from read, command, and local tools uses **Output filter**. A disabled specialized route leaves its result alone even when Output filter is enabled. Compound shell commands, structured or action results, and sensitive-looking input or output are left alone. A result normally needs at least 256 bytes before Jev is called; filtering additionally needs meaningful savings. Hosted tools that do not emit local PostToolUse events cannot be reached by this hook.
 
 <img src="docs/images/jev-menu.png" width="620" alt="Jev integration selector in the Codex composer">
 

@@ -15,9 +15,9 @@
     ]],
   ];
   const sectionDescriptions = {
-    output: "Other eligible tool text receives two Jev checks per line. Recognized test/build and search/listing commands use only their own switches.",
-    test_build: "When enabled, recognized test/build commands use this policy. Diagnostics and completion evidence stay visible.",
-    search_listing: "When enabled, direct supported rg and git ls-files commands use this policy. Each match or path gets a task-relevance check; structural records stay intact.",
+    output: "Plain text from read and other local tools receives two Jev checks per line. Test/build and search/listing results use their own switches.",
+    test_build: "Recognized test/build commands and text tools use this policy. Diagnostics and completion evidence stay visible.",
+    search_listing: "Search and listing commands or text tools use this policy. Each line also gets a task-relevance check; structured records stay intact.",
   };
   let active = false;
   let openingVoice = false;
