@@ -1,7 +1,7 @@
-# Codex Jev 0.5.2 release notes
+# Codex Jev 0.5.3 release notes
 
-The Rust hook now publishes a bounded version 3 snapshot for the latest completed Jev batch: up to 250 judged source lines, each with its Keep/Omit result, omission probability, exact-text probability, optional search relevance, and a short excerpt. The filtering policy and private receipts are unchanged. The new snapshot contains no API key or full tool output.
+This release remaps the Jev panel's line bars to a visual retention index. Gold kept lines sit near one; blue cut lines sit near zero. The index combines the final action with the underlying omission, exact-text, and optional task-relevance Noul values. It is explicitly labeled as a display index, while the original probabilities remain available on hover. The Rust filtering policy, private receipts, and version 3 snapshot format are unchanged.
 
-VS Code control 0.4.2 shows one 0–1 full-block bar per judged line. All bars grow together over 800 ms, values fade in, and each batch rests for another second. Fast updates coalesce to the newest batch; status updates within the same batch do not restart the animation. Long batches use the panel page scroll. The dark and light captures show the current webview.
+VS Code control 0.4.3 spreads large batches into columns and shows the number kept out of all source lines. The full-block bars visibly grow in parallel over 900 ms even when Windows reports reduced motion; values fade in afterward and the batch rests for another second. The dark and light screenshots show 50 synthetic lines reduced to 3 kept.
 
-Install the plugin archive and VSIX together, then reload VS Code manually and start a new Codex thread to pick up the hook. An existing version-pinned Codex composer patch remains compatible with this control release.
+Install the plugin archive and VSIX together, then reload VS Code manually. An existing version-pinned Codex composer patch remains compatible with this control release.

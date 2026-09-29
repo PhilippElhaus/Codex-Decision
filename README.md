@@ -8,9 +8,9 @@ Codex Jev uses a Rust PostToolUse hook to judge eligible output one physical lin
 
 The hook sends bounded batches of eligible lines to Jev. Each judged line receives two independent Noul probabilities: **Can omit?** and **Exact text needed?** Search results also receive **Task relevant?**. With the default policy, a line can be removed only when the first two probabilities reach at least 95% and at most 5%, respectively. The search relevance guard starts in preview mode and can be enabled to keep potentially useful matches. Code protects diagnostics, completion totals, nearby context, and unjudged lines before asking Jev. If a request fails validation, Codex sees the full result.
 
-The optional **Jev** panel beside Output and Terminal shows every judged line in the latest batch, up to 250, with its Keep/Omit result and a 0–1 omission bar. Bars grow together, then the batch rests for a second before another appears. It stays empty until a real decision arrives.
+The optional **Jev** panel beside Output and Terminal shows every judged line in the latest batch, up to 250. A 0–1 visual retention index puts cut lines near zero in blue and kept lines near one in gold. Dense batches flow into columns, so a result such as 50 lines reduced to 3 kept is visible at a glance. Bars grow together before each batch rests for a second. The panel stays empty until a real decision arrives.
 
-<img src="docs/images/jev-panel.png" width="1000" alt="Jev panel rendered from the current extension webview with synthetic line judgments, Keep and Omit labels, and one omission bar per line">
+<img src="docs/images/jev-panel.png" width="1000" alt="Jev panel rendered from the current extension webview with 50 synthetic source lines across three columns, 3 gold Keep bars near one, and 47 blue Omit markers near zero">
 
 ## What it filters
 

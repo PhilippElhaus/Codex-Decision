@@ -75,6 +75,17 @@ test("panel reads the current snapshot and rejects linked files", async () => {
     assert.ok(Buffer.byteLength(JSON.stringify(version3)) > 16_384);
     await fs.writeFile(filename, JSON.stringify(version3));
     assert.equal((await readLatestPanelDecision(directory)).rows.length, 250);
+    const mixed = { ...version3, batch: { ...version3.batch, target_count: 3 },
+      rows: [
+        { ...rows[0], can_omit: .98, exact_needed: .94, reason: "exact_text" },
+        { ...rows[1], can_omit: .98, exact_needed: .02, task_relevant: .96, reason: "task_relevant" },
+        { ...rows[2], action: "omit", can_omit: .98, exact_needed: .02,
+          task_relevant: .03, reason: "confident_omission" },
+      ], totals: { ...version3.totals, kept: 249, omitted: 1 } };
+    const [exact, relevant, cut] = parsePanelDecision(mixed).rows;
+    assert.ok(exact.retention_index > .95);
+    assert.ok(relevant.retention_index > .95);
+    assert.ok(cut.retention_index < .05);
     assert.equal(parsePanelDecision({ ...version3,
       batch: { ...version3.batch, number: 13, count: 20 },
       totals: { ...version3.totals, requests: 13 } }).batch.number, 13);

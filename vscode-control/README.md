@@ -7,8 +7,8 @@ This optional extension adds the **Jev** bottom panel, three integration toggles
 From this directory in WSL:
 
 ```bash
-npx @vscode/vsce package --no-dependencies --out ../.local/submission/codex-jev-control-0.4.2.vsix
-code --install-extension "$(wslpath -w ../.local/submission/codex-jev-control-0.4.2.vsix)" --force
+npx @vscode/vsce package --no-dependencies --out ../.local/submission/codex-jev-control-0.4.3.vsix
+code --install-extension "$(wslpath -w ../.local/submission/codex-jev-control-0.4.3.vsix)" --force
 ```
 
 The composer control requires a separately installed, version-pinned local patch for Codex extension `26.917.62051`. The patch verifies exact host hashes and keeps rollback files outside this repository:
@@ -23,7 +23,7 @@ Use `apply` for the first installation, `update` after each Jev control upgrade,
 
 ## Use
 
-The **Jev** tab appears beside Output and Terminal. Hide it from its tab menu and reopen it with **View → Open View… → Jev: Latest decision**. VS Code does not expose a contribution point for a direct custom entry in its top-level View menu. The panel stays empty until a version 3 batch decision arrives. It shows up to 250 judged source lines from the latest batch, each with a bounded excerpt, Keep/Omit result, and a 0–1 **Can omit** bar. Hover a row for the exact-text and task-relevance scores and its keep reason. Full-block `█` bars grow together over 800 ms, values fade in, and the batch rests for another second. Rapid updates coalesce to the newest batch. Long batches use the panel's page scroll without a nested scrollbar. The snapshot contains only bounded excerpts, not the full output.
+The **Jev** tab appears beside Output and Terminal. Hide it from its tab menu and reopen it with **View → Open View… → Jev: Latest decision**. VS Code does not expose a contribution point for a direct custom entry in its top-level View menu. The panel stays empty until a version 3 batch decision arrives. It shows up to 250 judged source lines from the latest batch, each with a bounded excerpt, Keep/Omit result, and a 0–1 visual **retention index**. Blue cut rows sit near zero; gold kept rows sit near one. The index is derived locally from the final action and the Noul probabilities; it is not itself a Jev probability. Hover a row for the underlying omission, exact-text, and task-relevance scores and its keep reason. Dense batches flow into columns and the header shows the total kept versus source lines. Full-block `█` bars grow together over 900 ms even when Windows reports reduced motion, values fade in, and the batch rests for another second. Rapid updates coalesce to the newest batch. Long batches use the panel's page scroll without a nested scrollbar. The snapshot contains only bounded excerpts, not the full output.
 
 In **Codex settings → Jev**, choose Monitor or Filter and set the `Can omit` minimum and `Exact text needed` maximum for each route. Search relevance is always rated and shown; its optional keep guard starts disabled. Monitor records line judgments while returning the full output. Filter may shorten an output only when every omitted line passes its own thresholds and local evidence protections. Changes apply to the next tool result. A private receipt stores the original once; batch records store requests and answers. **Open logs** opens the private log directory. Saved originals live separately under `PLUGIN_DATA/outputs/`.
 

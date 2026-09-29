@@ -3,8 +3,8 @@
 (() => {
   const vscode = acquireVsCodeApi();
   const app = document.getElementById("app");
-  const BAR_FILL_MS = 800;
-  const PERCENT_FADE_MS = 170;
+  const BAR_FILL_MS = 900;
+  const PERCENT_FADE_MS = 180;
   const names = {
     filter_decision: "Shorten output?",
     routine_noise: "Routine noise",
@@ -223,7 +223,13 @@
 
   function batchTotals(decision) {
     const totals = decision.totals;
-    return `${decision.status === "processing" ? "Checking · " : ""}${decision.rows.length} lines in this batch · ${totals.judged} judged overall · ${totals.omitted} omitted · ${totals.protected} protected · ${formatElapsed(decision.batch_elapsed_ms)} batch`;
+    return `${totals.omitted} cut · ${decision.rows.length} in batch ${decision.batch.number}/${decision.batch.count} · ${totals.protected} protected · ${formatElapsed(decision.batch_elapsed_ms)}`;
+  }
+
+  function batchTitle(decision) {
+    const totals = decision.totals;
+    return decision.status === "processing" ?
+      `${totals.judged} / ${totals.seen} judged` : `${totals.kept} / ${totals.seen} kept`;
   }
 
   function renderBatchDecision(decision) {
@@ -233,6 +239,8 @@
       currentDecision = serialized;
       const summary = app.querySelector(".batch-summary");
       if (summary) summary.textContent = batchTotals(decision);
+      const title = app.querySelector(".batch-title");
+      if (title) title.textContent = batchTitle(decision);
       return;
     }
     currentDecision = serialized;
@@ -247,13 +255,12 @@
     const header = element("header", "batch-header");
     append(header,
       append(element("div", "batch-heading"),
-        element("span", "card-kicker", `${route.toUpperCase()} · NOUL / CAN OMIT`),
-        element("strong", "batch-title", `Batch ${decision.batch.number} of ${decision.batch.count}`)),
+        element("span", "card-kicker", `${route.toUpperCase()} · RETENTION INDEX`),
+        element("strong", "batch-title", batchTitle(decision))),
       element("div", "batch-summary", batchTotals(decision)),
-      append(element("div", "batch-scale"),
-        element("span", "", "Source line"),
-        element("span", "", "Decision"),
-        element("span", "", "Can omit  0 ───────── 1")));
+      append(element("div", "batch-legend"),
+        element("span", "batch-legend-cut", "0 · cut"),
+        element("span", "batch-legend-keep", "1 · keep")));
     const list = element("div", "batch-list");
     const fills = [];
     const values = [];
@@ -261,17 +268,18 @@
     list.setAttribute("aria-label", "Judged lines in the latest Jev batch");
     list.setAttribute("aria-live", "off");
     for (const row of decision.rows) {
+      const score = row.retention_index;
       const item = element("div", `batch-row ${row.action}`);
       item.setAttribute("role", "listitem");
-      item.setAttribute("aria-label", `Line ${row.line}: ${row.action}. Can omit ${row.can_omit.toFixed(2)}.`);
-      item.title = `Line ${row.line} · ${row.reason.replaceAll("_", " ")} · exact text ${row.exact_needed.toFixed(2)}${row.task_relevant === null ? "" : ` · task relevance ${row.task_relevant.toFixed(2)}`}`;
+      item.setAttribute("aria-label", `Line ${row.line}: ${row.action}. Retention index ${score.toFixed(2)}.`);
+      item.title = `${row.excerpt}\nLine ${row.line} · ${row.reason.replaceAll("_", " ")} · retention index ${score.toFixed(2)} (display only) · Jev can omit ${row.can_omit.toFixed(2)} · exact text ${row.exact_needed.toFixed(2)}${row.task_relevant === null ? "" : ` · task relevance ${row.task_relevant.toFixed(2)}`}`;
       const track = element("div", "batch-bar-track");
       track.setAttribute("aria-hidden", "true");
-      append(track,
-        element("span", "batch-bar-empty", ".".repeat(80)),
-        element("span", "batch-bar-fill", "█".repeat(80)));
-      fills.push({ node: track.querySelector(".batch-bar-fill"), score: row.can_omit });
-      const value = element("span", "batch-value", row.can_omit.toFixed(2));
+      const fill = element("span", "batch-bar-fill", "█".repeat(80));
+      // A single visible block marks near-zero cut scores without changing the label.
+      fills.push({ node: fill, score: row.action === "omit" ? Math.max(score, .04) : score });
+      append(track, element("span", "batch-bar-empty", ".".repeat(80)), fill);
+      const value = element("span", "batch-value", score.toFixed(2));
       values.push(value);
       const action = element("span", "batch-action", row.action);
       const explanation = { task_relevant: "task", exact_text: "exact",
@@ -287,17 +295,18 @@
     }
     append(layout, header, list);
     app.replaceChildren(layout);
-    const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches === true;
-    const duration = reduced ? 0 : BAR_FILL_MS;
-    const started = performance.now();
+    // Start the clock on the first frame, after the zero-width state can paint.
+    // Do not turn this explicit user-requested animation off for reduced motion.
+    let started = null;
     function frame(now) {
+      if (started === null) started = now;
       const elapsed = Math.max(0, now - started);
-      const linear = duration ? Math.min(1, elapsed / duration) : 1;
-      const progress = 1 - (1 - linear) ** 2;
-      for (const fill of fills) fill.node.style.width = `${fill.score * progress * 100}%`;
-      const opacity = duration ? Math.min(1, Math.max(0, (elapsed - duration) / PERCENT_FADE_MS)) : 1;
+      const linear = Math.min(1, elapsed / BAR_FILL_MS);
+      const progress = 1 - (1 - linear) ** 3;
+      for (const fill of fills) fill.node.style.width = `${(fill.score * progress * 100).toFixed(2)}%`;
+      const opacity = Math.min(1, Math.max(0, (elapsed - BAR_FILL_MS) / PERCENT_FADE_MS));
       for (const value of values) value.style.opacity = String(opacity);
-      if (elapsed < duration + (reduced ? 0 : PERCENT_FADE_MS)) animation = requestAnimationFrame(frame);
+      if (elapsed < BAR_FILL_MS + PERCENT_FADE_MS) animation = requestAnimationFrame(frame);
     }
     animation = requestAnimationFrame(frame);
   }

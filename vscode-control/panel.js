@@ -6,8 +6,8 @@ const { readLatestPanelDecision } = require("./panel-state");
 const VIEW_ID = "codexJevDecision";
 const MIN_SETTLED_MS = 1000;
 // Match the line animation in webview/jev-panel.js before accepting a newer snapshot.
-const BAR_FILL_MS = 800;
-const PERCENT_FADE_MS = 170;
+const BAR_FILL_MS = 900;
+const PERCENT_FADE_MS = 180;
 const MIN_DISPLAY_MS = BAR_FILL_MS + PERCENT_FADE_MS + MIN_SETTLED_MS;
 
 class LatestDecisionProvider {

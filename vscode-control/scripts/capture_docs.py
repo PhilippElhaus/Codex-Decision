@@ -73,18 +73,18 @@ def main() -> None:
         panel = IMAGES / 'jev-panel.png'
         light_panel = IMAGES / 'jev-panel-light.png'
         panel_address = 'file:///' + quote(windows_path(ROOT.parent / 'tests/browser/jev_panel_harness.html').replace('\\', '/'), safe='/:')
-        for state, output, suffix in (('dark', panel, ''), ('light', light_panel, '?light')):
+        for state, output, suffix in (('dark', panel, '?fifty&capture'), ('light', light_panel, '?fifty&light&capture')):
             result = subprocess.run([
                 str(edge), '--headless', '--disable-gpu', '--no-first-run',
                 '--no-default-browser-check', '--disable-extensions', '--hide-scrollbars',
-                '--force-device-scale-factor=2', '--virtual-time-budget=2500',
-                '--window-size=800,460', f'--user-data-dir={windows_path(profile / ("panel-" + state))}',
+                '--force-device-scale-factor=1', '--virtual-time-budget=1500',
+                '--window-size=1200,900', f'--user-data-dir={windows_path(profile / ("panel-" + state))}',
                 '--dump-dom', f'--screenshot={windows_path(output)}', panel_address + suffix,
             ], capture_output=True, text=True, timeout=30, check=False)
             if result.returncode != 0 or not output.is_file() or 'JEV_LINE_PANEL_READY' not in result.stdout:
                 raise RuntimeError(f'Could not capture the current {state} line-level Jev panel')
             with Image.open(output) as captured:
-                captured.crop((0, 0, captured.width, min(captured.height, 630))).save(output, optimize=True)
+                captured.crop((0, 0, captured.width, min(captured.height, 900))).save(output, optimize=True)
             output.chmod(0o644)
             print(f'{output.name}: {output.stat().st_size} bytes')
         with Image.open(panel) as dark, Image.open(light_panel) as light:

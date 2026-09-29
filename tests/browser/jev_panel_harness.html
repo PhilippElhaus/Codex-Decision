@@ -20,7 +20,7 @@
   <script>
     window.requestAnimationFrame = (callback) => window.setTimeout(() => callback(performance.now()), 16);
     window.cancelAnimationFrame = (timer) => window.clearTimeout(timer);
-    window.matchMedia = () => ({ matches: false });
+    window.matchMedia = () => ({ matches: true });
   </script>
 </head>
 <body>
@@ -28,10 +28,13 @@
   <main id="app" aria-live="polite"></main>
   <script src="../../vscode-control/webview/jev-panel.js"></script>
   <script>
-    const row = (line, excerpt, action, canOmit, exactNeeded, taskRelevant, reason) => ({
-      line, excerpt, action, reason, can_omit: canOmit,
-      exact_needed: exactNeeded, task_relevant: taskRelevant,
-    });
+    const row = (line, excerpt, action, canOmit, exactNeeded, taskRelevant, reason) => {
+      const resistance = 1 - canOmit;
+      const evidence = Math.max(resistance, exactNeeded, taskRelevant ?? 0);
+      return { line, excerpt, action, reason, can_omit: canOmit,
+        exact_needed: exactNeeded, task_relevant: taskRelevant,
+        retention_index: action === "keep" ? .65 + .35 * evidence : .35 * resistance };
+    };
     const decision = {
       version: 3, id: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       receipt_id: "cccccccccccccccccccccccccccccccc", at: "2026-09-29T12:34:56Z",
@@ -45,15 +48,19 @@
         row(6, "src/driver.rs:84:completion signal", "keep", .09, .88, .83, "exact_text")],
       totals: { seen: 12, judged: 6, kept: 10, omitted: 2, protected: 0, unjudged: 6, requests: 1 },
     };
-    if (new URLSearchParams(location.search).has("dense")) {
-      decision.rows = Array.from({ length: 250 }, (_, index) => row(index + 1,
+    const query = new URLSearchParams(location.search);
+    if (query.has("fifty") || query.has("dense")) {
+      const count = query.has("dense") ? 250 : 50;
+      const kept = new Set(count === 250 ? [21, 74, 126, 181, 230] : [8, 25, 42]);
+      decision.rows = Array.from({ length: count }, (_, index) => row(index + 1,
         `src/synthetic/module_${String(index + 1).padStart(3, "0")}.rs:42:example match in a bounded Jev batch`,
-        index % 5 === 0 ? "omit" : "keep", index % 5 === 0 ? .98 : .22,
-        index % 5 === 0 ? .02 : .64, .11,
-        index % 5 === 0 ? "confident_omission" : "below_omit_cutoff"));
-      decision.batch.target_count = 250;
-      decision.totals = { seen: 500, judged: 250, kept: 450, omitted: 50,
-        protected: 0, unjudged: 250, requests: 1 };
+        kept.has(index + 1) ? "keep" : "omit", .98,
+        kept.has(index + 1) ? .92 : .02, kept.has(index + 1) ? .94 : .03,
+        kept.has(index + 1) ? "task_relevant" : "confident_omission"));
+      decision.batch.target_count = count;
+      decision.batch.count = 1;
+      decision.totals = { seen: count, judged: count, kept: kept.size,
+        omitted: count - kept.size, protected: 0, unjudged: 0, requests: 1 };
     }
     const send = (value) => window.dispatchEvent(new MessageEvent("message", {
       data: { type: "decision", decision: value },
@@ -69,15 +76,20 @@
     report.actualExcerpt = document.querySelector(".batch-excerpt").textContent;
     report.initialWidth = document.querySelector(".batch-bar-fill").getBoundingClientRect().width;
     setTimeout(() => { report.midWidth = document.querySelector(".batch-bar-fill").getBoundingClientRect().width;
+      report.midKeepWidth = document.querySelector(".batch-row.keep .batch-bar-fill").getBoundingClientRect().width;
       report.midPercentOpacity = getComputedStyle(document.querySelector(".batch-value")).opacity; }, 350);
+    if (query.has("capture")) {
+      setTimeout(() => { document.title = "JEV_LINE_PANEL_READY"; }, 1300);
+    } else {
     setTimeout(() => { report.finalWidth = document.querySelector(".batch-bar-fill").getBoundingClientRect().width;
+      report.finalKeepWidth = document.querySelector(".batch-row.keep .batch-bar-fill").getBoundingClientRect().width;
       report.finalPercentOpacity = getComputedStyle(document.querySelector(".batch-value")).opacity;
       report.positions = positions();
       nextDecision = { ...decision, id: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-        batch: { number: 2, count: 2, target_count: 6 },
+        batch: { number: 2, count: 2, target_count: decision.rows.length },
         rows: decision.rows.map((item) => ({ ...item, line: item.line + decision.rows.length })),
         totals: { ...decision.totals, judged: decision.totals.seen, unjudged: 0, requests: 2 } };
-      send(nextDecision); }, 1100);
+      send(nextDecision); }, 1250);
     setTimeout(() => {
       const excerpt = document.querySelector(".batch-excerpt");
       const filled = document.querySelector(".batch-bar-fill");
@@ -86,17 +98,28 @@
       report.sameDecisionDidNotRestart = excerpt === document.querySelector(".batch-excerpt") &&
         filled === document.querySelector(".batch-bar-fill") &&
         width === filled.getBoundingClientRect().width;
-    }, 1650);
+    }, 1800);
     setTimeout(() => {
-      report.newBatchShown = document.querySelector(".batch-title").textContent.includes("Batch 2 of 2");
+      report.newBatchShown = document.querySelector(".batch-summary").textContent.includes("batch 2/2");
       report.keepReasonVisible = [...document.querySelectorAll(".batch-action")].some((node) => node.textContent.includes("task"));
       report.positionsStable = report.positions === positions();
       report.fullBlockBars = [...document.querySelectorAll(".batch-bar-fill")].every((node) => node.textContent.includes("█"));
+      report.parallelGrowth = report.initialWidth === 0 && report.midWidth > 0 && report.midWidth < report.finalWidth &&
+        report.midKeepWidth > 0 && report.midKeepWidth < report.finalKeepWidth;
+      report.fadeAfterGrowth = Number(report.midPercentOpacity) === 0 && Number(report.finalPercentOpacity) > .95;
+      report.columns = getComputedStyle(document.querySelector(".batch-list")).gridTemplateColumns.split(" ").length;
+      report.keepRightCutLeft = Math.min(...[...document.querySelectorAll(".batch-row.keep .batch-value")].map((node) => Number(node.textContent))) >
+        Math.max(...[...document.querySelectorAll(".batch-row.omit .batch-value")].map((node) => Number(node.textContent)));
+      report.keepColor = getComputedStyle(document.querySelector(".batch-row.keep .batch-bar-fill")).color;
+      report.cutColor = getComputedStyle(document.querySelector(".batch-row.omit .batch-bar-fill")).color;
+      report.keptWidth = document.querySelector(".batch-row.keep .batch-bar-fill").getBoundingClientRect().width;
+      report.keptTrackWidth = document.querySelector(".batch-row.keep .batch-bar-track").getBoundingClientRect().width;
       report.noNestedScroll = getComputedStyle(document.querySelector(".batch-list")).overflowY === "visible";
       report.horizontalOverflow = document.documentElement.scrollWidth > document.documentElement.clientWidth + 1;
       document.body.dataset.report = JSON.stringify(report);
       document.title = "JEV_LINE_PANEL_READY";
-    }, 2150);
+    }, 2300);
+    }
   </script>
 </body>
 </html>

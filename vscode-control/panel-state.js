@@ -20,6 +20,16 @@ function probability(value) {
   return value;
 }
 
+// A visual retention index, not a Jev probability. The action separates kept
+// and omitted lines; the original Noul values determine position within each band.
+function retentionIndex(row) {
+  const omissionResistance = 1 - row.can_omit;
+  if (row.action === "omit") return 0.35 * omissionResistance;
+  const keepEvidence = Math.max(omissionResistance, row.exact_needed,
+    row.task_relevant ?? 0);
+  return 0.65 + 0.35 * keepEvidence;
+}
+
 function parseRecent(value, latestId) {
   if (value == null) return [];
   if (!Array.isArray(value) || value.length < 1 || value.length > 5 ||
@@ -104,7 +114,7 @@ function parseBatchDecision(value) {
     if (row.task_relevant != null) probability(row.task_relevant);
     return { line: row.line, excerpt: row.excerpt, action: row.action, reason: row.reason,
       can_omit: row.can_omit, exact_needed: row.exact_needed,
-      task_relevant: row.task_relevant ?? null };
+      task_relevant: row.task_relevant ?? null, retention_index: retentionIndex(row) };
   });
   return { version: 3, id: value.id, receipt_id: value.receipt_id, at: value.at,
     filter: value.filter, status: value.status, batch: { number: batch.number, count: batch.count,

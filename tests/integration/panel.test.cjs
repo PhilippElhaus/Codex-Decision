@@ -51,7 +51,7 @@ test("panel keeps each decision visible through its animation and a one second r
   await fs.writeFile(filename, JSON.stringify(make(oldId, "keep", new Date(Date.now() - 10_000).toISOString())));
   let now = Date.now();
   const provider = new LatestDecisionProvider({}, () => directory, () => now);
-  assert.equal(MIN_DISPLAY_MS, 1970);
+  assert.equal(MIN_DISPLAY_MS, 2080);
   const view = {
     visible: true,
     webview: {

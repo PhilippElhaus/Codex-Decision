@@ -1,6 +1,6 @@
 # Submission status
 
-The 0.5.2 line-level release includes a **Linux x86_64 build** and an optional VS Code control. It is published on GitHub, but has not been submitted to the public plugin directory. Representative reviewed line labels and paired coding-task outcomes are still needed before a public quality claim. Other hook execution platforms also need native binaries.
+The 0.5.3 line-level release includes a **Linux x86_64 build** and an optional VS Code control. It is published on GitHub, but has not been submitted to the public plugin directory. Representative reviewed line labels and paired coding-task outcomes are still needed before a public quality claim. Other hook execution platforms also need native binaries.
 
 Build the archive with `./scripts/build_submission.sh`. It writes an allowlisted ZIP under ignored `.local/submission/`, containing the Rust hook, `jevctl`, skill, manifest, icons, config example, and license. The archive contains no API key, private output, or VSIX. The optional VS Code extension is packaged separately.
 

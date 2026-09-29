@@ -1,6 +1,6 @@
 {
   "name": "codex-jev",
-  "version": "0.5.2+codex.20260929105344",
+  "version": "0.5.3+codex.20260929113407",
   "description": "Per-line Jev filtering for repetitive output, test/build logs, and broad search/listing results.",
   "author": {
     "name": "Philipp Elhaus",
