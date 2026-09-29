@@ -64,6 +64,26 @@ test("panel reads the current snapshot and rejects linked files", async () => {
     const searchPanel = { ...version2, filter: "search_listing", latest: searchLine, recent: [searchLine] };
     assert.equal(parsePanelDecision(searchPanel).latest.task_relevant, 0.84);
     assert.throws(() => parsePanelDecision({ ...searchPanel, latest: { ...searchLine, task_relevant: 1.2 } }), /line row/);
+    const rows = Array.from({ length: 250 }, (_, index) => ({ line: index + 1,
+      excerpt: `Synthetic source line ${index + 1} ${"x".repeat(90)}`, action: "keep",
+      reason: "below_omit_cutoff", can_omit: 0.3, exact_needed: 0.2, task_relevant: null }));
+    const version3 = { version: 3, id: snapshot.id, receipt_id: "b".repeat(32),
+      at: snapshot.at, filter: "search_listing", status: "keep",
+      batch: { number: 1, count: 1, target_count: 250 }, rows,
+      totals: { seen: 250, judged: 250, kept: 250, omitted: 0, protected: 0, unjudged: 0, requests: 1 },
+      batch_elapsed_ms: 48 };
+    assert.ok(Buffer.byteLength(JSON.stringify(version3)) > 16_384);
+    await fs.writeFile(filename, JSON.stringify(version3));
+    assert.equal((await readLatestPanelDecision(directory)).rows.length, 250);
+    assert.equal(parsePanelDecision({ ...version3,
+      batch: { ...version3.batch, number: 13, count: 20 },
+      totals: { ...version3.totals, requests: 13 } }).batch.number, 13);
+    assert.throws(() => parsePanelDecision({ ...version3, rows: [...rows, rows[0]],
+      batch: { ...version3.batch, target_count: 251 } }), /batch decision/);
+    assert.throws(() => parsePanelDecision({ ...version3, rows: rows.map((row, index) =>
+      index === 0 ? { ...row, can_omit: 1.2 } : row) }), /probability/);
+    assert.throws(() => parsePanelDecision({ ...version3, rows: rows.map((row, index) =>
+      index === 1 ? { ...row, line: 1 } : row) }), /batch row/);
     await fs.rename(filename, path.join(directory, "owned.json"));
     await fs.symlink(path.join(directory, "owned.json"), filename);
     await assert.rejects(readLatestPanelDecision(directory), /Unsafe/);

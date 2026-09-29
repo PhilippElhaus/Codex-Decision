@@ -159,7 +159,12 @@ fn writes_one_original_and_line_receipt_for_valid_batches() {
     let logs = data_dir.join("logs");
     let snapshot: Value =
         serde_json::from_slice(&fs::read(logs.join("latest-decision.json")).unwrap()).unwrap();
-    assert_eq!(snapshot["version"], 2);
+    assert_eq!(snapshot["version"], 3);
+    assert!(snapshot["rows"].as_array().unwrap().len() <= 250);
+    assert_eq!(
+        snapshot["rows"].as_array().unwrap().len(),
+        snapshot["batch"]["target_count"].as_u64().unwrap() as usize
+    );
     assert_eq!(snapshot["totals"]["seen"], 120);
     assert_eq!(snapshot["totals"]["judged"], 120);
     assert!(snapshot["totals"]["omitted"].as_u64().unwrap() > 100);
@@ -198,7 +203,11 @@ fn search_relevance_reaches_receipt_panel_and_cumulative_stats() {
     let snapshot: Value =
         serde_json::from_slice(&fs::read(data.join("logs/latest-decision.json")).unwrap()).unwrap();
     assert_eq!(snapshot["filter"], "search_listing");
-    assert!(snapshot["latest"]["task_relevant"].is_number());
+    assert!(snapshot["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|row| row["task_relevant"].is_number()));
     let stats: Value = serde_json::from_slice(&fs::read(data.join("stats.json")).unwrap()).unwrap();
     assert_eq!(stats["linesRelevanceJudged"], 120);
     assert_eq!(stats["linesRelevanceKept"], 1);
@@ -270,7 +279,7 @@ fn live_line_request_records_valid_independent_answers() {
     );
     let snapshot: Value =
         serde_json::from_slice(&fs::read(data.join("logs/latest-decision.json")).unwrap()).unwrap();
-    assert_eq!(snapshot["version"], 2);
+    assert_eq!(snapshot["version"], 3);
     assert_eq!(snapshot["totals"]["seen"], 42);
     assert_eq!(snapshot["totals"]["judged"], 40);
     assert_eq!(snapshot["totals"]["protected"], 2);
@@ -311,7 +320,11 @@ fn live_line_request_records_valid_independent_answers() {
         serde_json::from_slice(&fs::read(data.join("logs/latest-decision.json")).unwrap()).unwrap();
     assert_eq!(search_snapshot["filter"], "search_listing");
     assert_eq!(search_snapshot["totals"]["judged"], 25);
-    assert!(search_snapshot["latest"]["task_relevant"].is_number());
+    assert!(search_snapshot["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|row| row["task_relevant"].is_number()));
     let stats: Value = serde_json::from_slice(&fs::read(data.join("stats.json")).unwrap()).unwrap();
     assert_eq!(stats["linesRelevanceJudged"], 25);
 }

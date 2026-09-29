@@ -3,6 +3,8 @@
 (() => {
   const vscode = acquireVsCodeApi();
   const app = document.getElementById("app");
+  const BAR_FILL_MS = 800;
+  const PERCENT_FADE_MS = 170;
   const names = {
     filter_decision: "Shorten output?",
     routine_noise: "Routine noise",
@@ -47,6 +49,10 @@
   function formatElapsed(value) {
     if (!Number.isSafeInteger(value) || value < 0 || value > 3_600_000) return "—";
     return value < 1000 ? `${value}ms` : `${(value / 1000).toFixed(2)}s`;
+  }
+
+  function lineTotals(decision) {
+    return `${decision.status === "processing" ? "Checking · " : ""}${decision.totals.judged} judged · ${decision.totals.omitted} omitted · ${decision.totals.protected} protected locally · ${decision.totals.unjudged} pending${decision.batch_elapsed_ms === null ? "" : ` · ${formatElapsed(decision.batch_elapsed_ms)} batch`}`;
   }
 
   function showEmpty(message) {
@@ -119,6 +125,12 @@
     const serialized = JSON.stringify(decision);
     if (serialized === currentDecision) return;
     const newDecision = decision.id !== currentId;
+    if (!newDecision) {
+      currentDecision = serialized;
+      const totals = app.querySelector(".line-totals");
+      if (totals) totals.textContent = lineTotals(decision);
+      return;
+    }
     currentDecision = serialized;
     currentId = decision.id;
     cancelAnimationFrame(animation);
@@ -167,7 +179,7 @@
         element("span", "card-kicker", `LINE ${latest.line} · ${decision.filter.replace("_", "/")}`),
         element("strong", `line-action ${latest.action}`, action + reason)),
       element("div", "line-excerpt", latest.excerpt || "(empty source line)"),
-      element("div", "line-totals", `${decision.status === "processing" ? "Checking · " : ""}${decision.totals.judged} judged · ${decision.totals.omitted} omitted · ${decision.totals.protected} protected locally · ${decision.totals.unjudged} pending${decision.batch_elapsed_ms === null ? "" : ` · ${formatElapsed(decision.batch_elapsed_ms)} batch`}`));
+      element("div", "line-totals", lineTotals(decision)));
     const animations = [];
     const signals = element("section", "line-signals");
     append(signals, element("span", "card-kicker", "NOUL / THIS LINE"));
@@ -191,7 +203,7 @@
     currentAnimations = animations;
     currentProgress = 0;
     for (const update of animations) update(0);
-    const duration = newDecision ? 800 : 0;
+    const duration = newDecision ? BAR_FILL_MS : 0;
     if (!duration) {
       currentProgress = 1;
       for (const update of animations) update(1);
@@ -203,13 +215,95 @@
       const elapsed = Math.max(0, now - started);
       currentProgress = Math.min(1, elapsed / duration);
       for (const update of animations) update(currentProgress);
-      show(Math.min(1, Math.max(0, (elapsed - duration) / 170)));
-      if (elapsed < duration + 170) animation = requestAnimationFrame(frame);
+      show(Math.min(1, Math.max(0, (elapsed - duration) / PERCENT_FADE_MS)));
+      if (elapsed < duration + PERCENT_FADE_MS) animation = requestAnimationFrame(frame);
+    }
+    animation = requestAnimationFrame(frame);
+  }
+
+  function batchTotals(decision) {
+    const totals = decision.totals;
+    return `${decision.status === "processing" ? "Checking · " : ""}${decision.rows.length} lines in this batch · ${totals.judged} judged overall · ${totals.omitted} omitted · ${totals.protected} protected · ${formatElapsed(decision.batch_elapsed_ms)} batch`;
+  }
+
+  function renderBatchDecision(decision) {
+    const serialized = JSON.stringify(decision);
+    if (serialized === currentDecision) return;
+    if (decision.id === currentId) {
+      currentDecision = serialized;
+      const summary = app.querySelector(".batch-summary");
+      if (summary) summary.textContent = batchTotals(decision);
+      return;
+    }
+    currentDecision = serialized;
+    currentId = decision.id;
+    cancelAnimationFrame(animation);
+    cancelAnimationFrame(historyAnimation);
+    currentAnimations = [];
+    currentProgress = 1;
+    previousRecent = [];
+    const route = { output: "Output", test_build: "Test/build", search_listing: "Search/listing" }[decision.filter];
+    const layout = element("div", "batch-layout");
+    const header = element("header", "batch-header");
+    append(header,
+      append(element("div", "batch-heading"),
+        element("span", "card-kicker", `${route.toUpperCase()} · NOUL / CAN OMIT`),
+        element("strong", "batch-title", `Batch ${decision.batch.number} of ${decision.batch.count}`)),
+      element("div", "batch-summary", batchTotals(decision)),
+      append(element("div", "batch-scale"),
+        element("span", "", "Source line"),
+        element("span", "", "Decision"),
+        element("span", "", "Can omit  0 ───────── 1")));
+    const list = element("div", "batch-list");
+    const fills = [];
+    const values = [];
+    list.setAttribute("role", "list");
+    list.setAttribute("aria-label", "Judged lines in the latest Jev batch");
+    list.setAttribute("aria-live", "off");
+    for (const row of decision.rows) {
+      const item = element("div", `batch-row ${row.action}`);
+      item.setAttribute("role", "listitem");
+      item.setAttribute("aria-label", `Line ${row.line}: ${row.action}. Can omit ${row.can_omit.toFixed(2)}.`);
+      item.title = `Line ${row.line} · ${row.reason.replaceAll("_", " ")} · exact text ${row.exact_needed.toFixed(2)}${row.task_relevant === null ? "" : ` · task relevance ${row.task_relevant.toFixed(2)}`}`;
+      const track = element("div", "batch-bar-track");
+      track.setAttribute("aria-hidden", "true");
+      append(track,
+        element("span", "batch-bar-empty", ".".repeat(80)),
+        element("span", "batch-bar-fill", "█".repeat(80)));
+      fills.push({ node: track.querySelector(".batch-bar-fill"), score: row.can_omit });
+      const value = element("span", "batch-value", row.can_omit.toFixed(2));
+      values.push(value);
+      const action = element("span", "batch-action", row.action);
+      const explanation = { task_relevant: "task", exact_text: "exact",
+        representative: "sample", last_line: "final" }[row.reason];
+      if (row.action === "keep" && explanation) action.appendChild(element("small", "batch-reason", ` · ${explanation}`));
+      append(item,
+        element("span", "batch-line-number", String(row.line)),
+        element("span", "batch-excerpt", row.excerpt || "(empty line)"),
+        action,
+        track,
+        value);
+      list.appendChild(item);
+    }
+    append(layout, header, list);
+    app.replaceChildren(layout);
+    const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches === true;
+    const duration = reduced ? 0 : BAR_FILL_MS;
+    const started = performance.now();
+    function frame(now) {
+      const elapsed = Math.max(0, now - started);
+      const linear = duration ? Math.min(1, elapsed / duration) : 1;
+      const progress = 1 - (1 - linear) ** 2;
+      for (const fill of fills) fill.node.style.width = `${fill.score * progress * 100}%`;
+      const opacity = duration ? Math.min(1, Math.max(0, (elapsed - duration) / PERCENT_FADE_MS)) : 1;
+      for (const value of values) value.style.opacity = String(opacity);
+      if (elapsed < duration + (reduced ? 0 : PERCENT_FADE_MS)) animation = requestAnimationFrame(frame);
     }
     animation = requestAnimationFrame(frame);
   }
 
   function render(decision) {
+    if (decision.version === 3) { renderBatchDecision(decision); return; }
     if (decision.version === 2) { renderLineDecision(decision); return; }
     const serialized = JSON.stringify(decision);
     if (serialized === currentDecision) return;

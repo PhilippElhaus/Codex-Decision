@@ -2,6 +2,7 @@
 * { box-sizing: border-box; }
 body { margin: 0; padding: 12px 18px 20px; color: var(--vscode-foreground); background: var(--vscode-panel-background, var(--vscode-editor-background)); font-family: var(--vscode-font-family); }
 #app { max-width: 1180px; margin: 0 auto; }
+#app:has(.batch-layout) { max-width: none; }
 .card-kicker { font-family: var(--vscode-editor-font-family, monospace); letter-spacing: .11em; font-size: 10px; }
 h1 { margin: 5px 0 0; font-size: 20px; font-weight: 650; line-height: 1.2; }
 .cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
@@ -45,9 +46,42 @@ h2 { min-width: 0; margin: 0; overflow: hidden; white-space: nowrap; text-overfl
 .line-totals { margin-top: 10px; color: var(--vscode-descriptionForeground); font-size: 11px; }
 .line-signals { display: grid; gap: 4px; }
 .line-signals .bar-row { min-height: 37px; }
+.batch-layout { min-width: 0; }
+.batch-header { position: sticky; top: -12px; z-index: 2; padding: 8px 0 10px; background: var(--vscode-panel-background, var(--vscode-editor-background)); border-bottom: 1px solid var(--vscode-panel-border, #5556); }
+.batch-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.batch-title { font-size: 14px; font-weight: 650; }
+.batch-summary { margin-top: 4px; color: var(--vscode-descriptionForeground); font-size: 11px; }
+.batch-scale, .batch-row { display: grid; grid-template-columns: 4.5ch minmax(0, 1fr) 7em minmax(120px, 240px) 3.5em; gap: 10px; align-items: center; min-width: 0; }
+.batch-scale { margin-top: 10px; color: var(--vscode-descriptionForeground); font: 10px var(--vscode-editor-font-family, monospace); }
+.batch-scale span:nth-child(1) { grid-column: 2; }
+.batch-scale span:nth-child(2) { grid-column: 3; }
+.batch-scale span:nth-child(3) { grid-column: 4 / 6; text-align: right; }
+.batch-row { height: 34px; border-bottom: 1px solid var(--vscode-panel-border, #5553); font: 12px var(--vscode-editor-font-family, monospace); }
+.batch-row:hover { background: var(--vscode-list-hoverBackground, transparent); }
+.batch-line-number, .batch-value { color: var(--vscode-descriptionForeground); font-variant-numeric: tabular-nums; }
+.batch-line-number { text-align: right; }
+.batch-excerpt { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.batch-action { color: var(--vscode-charts-blue, #70a6ca); font-size: 10px; font-weight: 650; text-transform: uppercase; white-space: nowrap; }
+.batch-reason { color: var(--vscode-descriptionForeground); font-size: 9px; font-weight: 400; }
+.batch-row.omit .batch-action { color: var(--vscode-charts-orange, #db945f); }
+.batch-bar-track { position: relative; height: 18px; min-width: 0; overflow: hidden; white-space: nowrap; font: 12px/18px var(--vscode-editor-font-family, Consolas, monospace); }
+.batch-bar-empty { display: block; width: 100%; overflow: hidden; opacity: .38; color: var(--vscode-descriptionForeground); }
+.batch-bar-fill { position: absolute; top: 0; left: 0; display: block; width: 0; overflow: hidden; color: var(--vscode-charts-blue, #70a6ca); }
+.batch-row.omit .batch-bar-fill { color: var(--vscode-charts-orange, #db945f); }
+.batch-value { opacity: 0; text-align: right; }
 .empty { display: grid; min-height: 180px; place-content: center; text-align: center; }
 .empty-glyph { color: var(--vscode-charts-blue, #70a6ca); font: 14px var(--vscode-editor-font-family, monospace); letter-spacing: .3em; }
 .empty h1 { margin-top: 13px; }
 .empty p { max-width: 350px; line-height: 1.5; }
 @media (max-width: 520px) { body { padding: 10px 12px; } .cards { grid-template-columns: 1fr; } .card { padding: 11px; } }
 @media (max-width: 650px) { .line-layout { grid-template-columns: 1fr; } }
+@media (max-width: 750px) {
+  .batch-scale { display: none; }
+  .batch-row { height: 52px; grid-template-columns: 4.5ch minmax(0, 1fr) 3.5em; grid-template-rows: 20px 20px; column-gap: 8px; row-gap: 0; }
+  .batch-line-number { grid-column: 1; grid-row: 1; }
+  .batch-excerpt { grid-column: 2; grid-row: 1; }
+  .batch-action { grid-column: 3; grid-row: 1; }
+  .batch-reason { display: none; }
+  .batch-bar-track { grid-column: 2; grid-row: 2; }
+  .batch-value { grid-column: 3; grid-row: 2; }
+}

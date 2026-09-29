@@ -16,6 +16,8 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 use uuid::Uuid;
 
+const PANEL_SNAPSHOT_MAX_BYTES: usize = 256 * 1024;
+
 #[derive(Clone)]
 struct Config {
     output: bool,
@@ -666,9 +668,9 @@ fn line_snapshot(
     status: &str,
     lines: &[SourceLine],
     decisions: &[codex_jev::LineDecision],
-    history: &[Value],
-    requests: usize,
-    batch_elapsed_ms: Option<u64>,
+    batch: &BatchRecord,
+    batch_number: usize,
+    batch_count: usize,
 ) -> Value {
     let seen = lines.len();
     let judged = decisions
@@ -683,30 +685,29 @@ fn line_snapshot(
         .iter()
         .filter(|row| row.protected_reason.is_some())
         .count();
-    let mut recent = history.to_vec();
-    let mut latest = Value::Null;
-    for (line, decision) in lines.iter().zip(decisions) {
-        if decision.batch_id.is_none() {
-            continue;
-        }
-        let excerpt: String = line
-            .model_text
-            .chars()
-            .scan(0usize, |units, character| {
-                *units += character.len_utf16();
-                (*units <= 240).then_some(character)
-            })
-            .collect();
-        let item = json!({"id":format!("{receipt_id}-{}", line.number),"line":line.number,"excerpt":excerpt,
-            "summary":format!("{} · line {}", route.replace('_', "/"),line.number),
-            "action":decision.action,"reason":decision.reason,"can_omit":decision.p_can_omit,
-            "exact_needed":decision.p_exact_needed,"task_relevant":decision.p_task_relevant});
-        recent.push(item.clone());
-        latest = item;
-    }
-    if recent.len() > 5 {
-        recent.drain(..recent.len() - 5);
-    }
+    let rows: Vec<Value> = batch
+        .target_numbers
+        .iter()
+        .filter_map(|number| {
+            number
+                .checked_sub(1)
+                .and_then(|index| lines.get(index).zip(decisions.get(index)))
+        })
+        .filter(|(_, decision)| decision.batch_id == Some(batch.id))
+        .map(|(line, decision)| {
+            let excerpt: String = line
+                .model_text
+                .chars()
+                .scan(0usize, |units, character| {
+                    *units += character.len_utf16();
+                    (*units <= 120).then_some(character)
+                })
+                .collect();
+            json!({"line":line.number,"excerpt":excerpt,"action":decision.action,
+                "reason":decision.reason,"can_omit":decision.p_can_omit,
+                "exact_needed":decision.p_exact_needed,"task_relevant":decision.p_task_relevant})
+        })
+        .collect();
     let unjudged = lines
         .iter()
         .zip(decisions)
@@ -714,18 +715,18 @@ fn line_snapshot(
             line.eligible && line.protected_reason.is_none() && decision.batch_id.is_none()
         })
         .count();
-    json!({"version":2,"id":snapshot_id,"receipt_id":receipt_id,"at":Utc::now().to_rfc3339(),
-        "filter":route,"status":status,"latest":latest,"recent":recent,
+    json!({"version":3,"id":snapshot_id,"receipt_id":receipt_id,"at":Utc::now().to_rfc3339(),
+        "filter":route,"status":status,"batch":{"number":batch_number,"count":batch_count,
+            "target_count":batch.target_numbers.len()},"rows":rows,
         "totals":{"seen":seen,"judged":judged,"kept":seen-omitted,"omitted":omitted,
-            "protected":protected,"unjudged":unjudged,"requests":requests},
-        "batch_elapsed_ms":batch_elapsed_ms})
+            "protected":protected,"unjudged":unjudged,"requests":batch_number},
+        "batch_elapsed_ms":batch.elapsed_ms})
 }
 
 struct ProgressSnapshot {
     logs: PathBuf,
     receipt_id: String,
     previous: Option<Vec<u8>>,
-    history: Vec<Value>,
     last_snapshot_id: String,
     active: bool,
 }
@@ -739,22 +740,15 @@ impl ProgressSnapshot {
             return Err("linked panel snapshot".into());
         }
         let previous = match fs::read(&path) {
-            Ok(bytes) if bytes.len() <= 16_384 => Some(bytes),
+            Ok(bytes) if bytes.len() <= PANEL_SNAPSHOT_MAX_BYTES => Some(bytes),
             Ok(_) => return Err("panel snapshot too large".into()),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
             Err(_) => return Err("panel snapshot read failed".into()),
         };
-        let history = previous
-            .as_ref()
-            .and_then(|bytes| serde_json::from_slice::<Value>(bytes).ok())
-            .filter(|value| value.get("version").and_then(Value::as_u64) == Some(2))
-            .and_then(|value| value.get("recent").and_then(Value::as_array).cloned())
-            .unwrap_or_default();
         Ok(Self {
             logs,
             receipt_id,
             previous,
-            history,
             last_snapshot_id: String::new(),
             active: false,
         })
@@ -765,8 +759,9 @@ impl ProgressSnapshot {
         route: &str,
         lines: &[SourceLine],
         decisions: &[codex_jev::LineDecision],
-        requests: usize,
-        batch_elapsed_ms: u64,
+        batch: &BatchRecord,
+        batch_number: usize,
+        batch_count: usize,
     ) -> Result<(), String> {
         let _lock = lock_logs(&self.logs)?;
         let id = Uuid::new_v4().simple().to_string();
@@ -777,15 +772,15 @@ impl ProgressSnapshot {
             "processing",
             lines,
             decisions,
-            &self.history,
-            requests,
-            Some(batch_elapsed_ms),
+            batch,
+            batch_number,
+            batch_count,
         );
-        write_private(
-            &self.logs.join("latest-decision.json"),
-            &serde_json::to_vec(&snapshot).map_err(|_| "snapshot encoding")?,
-            true,
-        )?;
+        let bytes = serde_json::to_vec(&snapshot).map_err(|_| "snapshot encoding")?;
+        if bytes.len() > PANEL_SNAPSHOT_MAX_BYTES {
+            return Err("panel snapshot too large".into());
+        }
+        write_private(&self.logs.join("latest-decision.json"), &bytes, true)?;
         self.last_snapshot_id = id;
         self.active = true;
         Ok(())
@@ -833,7 +828,6 @@ fn record(
     config: &Config,
     receipt_id: &str,
     snapshot_id: &str,
-    history: &[Value],
 ) -> Result<(), String> {
     ensure_dir(data_dir)?;
     let logs = data_dir.join("logs");
@@ -912,6 +906,7 @@ fn record(
             false,
         )?;
     }
+    let last_batch = batches.last().ok_or("missing batch")?;
     let snapshot = line_snapshot(
         id,
         snapshot_id,
@@ -919,9 +914,9 @@ fn record(
         status,
         lines,
         decisions,
-        history,
+        last_batch,
         batches.len(),
-        batches.last().map(|batch| batch.elapsed_ms),
+        batches.len(),
     );
     let event_path = logs.join("events.jsonl");
     if event_path.is_symlink() {
@@ -982,11 +977,11 @@ fn record(
         prune(&logs, config.log_limit_mb * 1_000_000);
     }
     // Publish last: a partially written receipt or stats update must never appear as a live result.
-    write_private(
-        &logs.join("latest-decision.json"),
-        &serde_json::to_vec(&snapshot).map_err(|_| "snapshot encoding")?,
-        true,
-    )?;
+    let bytes = serde_json::to_vec(&snapshot).map_err(|_| "snapshot encoding")?;
+    if bytes.len() > PANEL_SNAPSHOT_MAX_BYTES {
+        return Err("panel snapshot too large".into());
+    }
+    write_private(&logs.join("latest-decision.json"), &bytes, true)?;
     Ok(())
 }
 
@@ -1119,6 +1114,7 @@ fn execute() -> Result<Value, String> {
     let started = Instant::now();
     let mut probabilities = BTreeMap::new();
     let mut records = Vec::new();
+    let batch_count = batches.len();
     for batch in batches {
         if started.elapsed() > Duration::from_secs(45) {
             return Err("hook deadline".into());
@@ -1146,8 +1142,9 @@ fn execute() -> Result<Value, String> {
             route,
             &lines,
             &partial,
+            records.last().unwrap(),
             records.len(),
-            records.last().unwrap().elapsed_ms,
+            batch_count,
         )?;
     }
     let decisions = apply_probabilities(
@@ -1200,7 +1197,6 @@ fn execute() -> Result<Value, String> {
         &config,
         &receipt_id,
         &progress.last_snapshot_id,
-        &progress.history,
     )?;
     progress.active = false;
     if replace {
@@ -1341,13 +1337,66 @@ mod tests {
             &SearchRelevancePolicy::default(),
         );
         let path = data.join("logs/latest-decision.json");
+        let batch = BatchRecord {
+            id: 1,
+            target_numbers: vec![1],
+            request: json!({}),
+            response: json!({}),
+            elapsed_ms: 25,
+        };
         {
             let mut progress = ProgressSnapshot::new(&data, "a".repeat(32)).unwrap();
-            progress.publish("output", &lines, &judged, 1, 25).unwrap();
+            progress
+                .publish("output", &lines, &judged, &batch, 1, 1)
+                .unwrap();
             let snapshot: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+            assert_eq!(snapshot["version"], 3);
             assert_eq!(snapshot["status"], "processing");
             assert_eq!(snapshot["totals"]["judged"], 1);
+            assert_eq!(snapshot["rows"][0]["line"], 1);
         }
         assert!(!path.exists());
+    }
+
+    #[test]
+    fn panel_snapshot_contains_a_full_bounded_250_line_batch() {
+        let source = (1..=250)
+            .map(|number| format!("Synthetic line {number:03}: {}\n", "x".repeat(500)))
+            .collect::<String>();
+        let lines = source_lines(&source);
+        let probabilities = (1..=250)
+            .map(|number| (number, (0.5, 0.2, None, 1)))
+            .collect::<BTreeMap<_, _>>();
+        let decisions = apply_probabilities(
+            &lines,
+            &probabilities,
+            &LinePolicy::default(),
+            &SearchRelevancePolicy::default(),
+        );
+        let batch = BatchRecord {
+            id: 1,
+            target_numbers: (1..=250).collect(),
+            request: json!({}),
+            response: json!({}),
+            elapsed_ms: 25,
+        };
+        let snapshot = line_snapshot(
+            &"a".repeat(32),
+            &"b".repeat(32),
+            "output",
+            "keep",
+            &lines,
+            &decisions,
+            &batch,
+            1,
+            1,
+        );
+        assert_eq!(snapshot["rows"].as_array().unwrap().len(), 250);
+        assert!(snapshot["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|row| row["excerpt"].as_str().unwrap().encode_utf16().count() <= 120));
+        assert!(serde_json::to_vec(&snapshot).unwrap().len() <= PANEL_SNAPSHOT_MAX_BYTES);
     }
 }

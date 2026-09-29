@@ -20,6 +20,7 @@
   <script>
     window.requestAnimationFrame = (callback) => window.setTimeout(() => callback(performance.now()), 16);
     window.cancelAnimationFrame = (timer) => window.clearTimeout(timer);
+    window.matchMedia = () => ({ matches: false });
   </script>
 </head>
 <body>
@@ -27,45 +28,72 @@
   <main id="app" aria-live="polite"></main>
   <script src="../../vscode-control/webview/jev-panel.js"></script>
   <script>
-    const row = (id, line, excerpt, action, canOmit, exactNeeded, taskRelevant, reason) => ({
-      id: `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-${id}`, line, excerpt,
-      summary: `search/listing · line ${line}`, action, reason,
-      can_omit: canOmit, exact_needed: exactNeeded, task_relevant: taskRelevant,
+    const row = (line, excerpt, action, canOmit, exactNeeded, taskRelevant, reason) => ({
+      line, excerpt, action, reason, can_omit: canOmit,
+      exact_needed: exactNeeded, task_relevant: taskRelevant,
     });
     const decision = {
-      version: 2, id: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", at: "2026-09-29T12:34:56Z",
+      version: 3, id: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      receipt_id: "cccccccccccccccccccccccccccccccc", at: "2026-09-29T12:34:56Z",
       filter: "search_listing", status: "candidate", batch_elapsed_ms: 86,
-      recent: [row(1, 1, "src/archive.rs:12:routine helper", "omit", .98, .02, .01, "confident_omission"),
-        row(2, 2, "src/other.rs:34:unrelated symbol", "omit", .97, .01, .03, "confident_omission"),
-        row(3, 3, "src/config.rs:48:required value", "keep", .98, .01, .94, "task_relevant")],
-      totals: { seen: 3, judged: 3, kept: 1, omitted: 2, protected: 0, unjudged: 0, requests: 1 },
+      batch: { number: 1, count: 2, target_count: 6 },
+      rows: [row(1, "src/archive.rs:12:routine helper", "omit", .98, .02, .01, "confident_omission"),
+        row(2, "src/other.rs:34:unrelated symbol", "omit", .97, .01, .03, "confident_omission"),
+        row(3, "src/config.rs:48:required value", "keep", .98, .01, .94, "task_relevant"),
+        row(4, "src/auth.rs:72:related setting", "keep", .21, .85, .91, "exact_text"),
+        row(5, "src/test.rs:15:routine fixture", "keep", .18, .12, .77, "below_omit_cutoff"),
+        row(6, "src/driver.rs:84:completion signal", "keep", .09, .88, .83, "exact_text")],
+      totals: { seen: 12, judged: 6, kept: 10, omitted: 2, protected: 0, unjudged: 6, requests: 1 },
     };
-    decision.latest = decision.recent.at(-1);
+    if (new URLSearchParams(location.search).has("dense")) {
+      decision.rows = Array.from({ length: 250 }, (_, index) => row(index + 1,
+        `src/synthetic/module_${String(index + 1).padStart(3, "0")}.rs:42:example match in a bounded Jev batch`,
+        index % 5 === 0 ? "omit" : "keep", index % 5 === 0 ? .98 : .22,
+        index % 5 === 0 ? .02 : .64, .11,
+        index % 5 === 0 ? "confident_omission" : "below_omit_cutoff"));
+      decision.batch.target_count = 250;
+      decision.totals = { seen: 500, judged: 250, kept: 450, omitted: 50,
+        protected: 0, unjudged: 250, requests: 1 };
+    }
     const send = (value) => window.dispatchEvent(new MessageEvent("message", {
       data: { type: "decision", decision: value },
     }));
-    const positions = () => [".line-history", ".line-detail", ".line-signals"].map((selector) => {
+    const positions = () => [".batch-header", ".batch-row:first-child"].map((selector) => {
       const box = document.querySelector(selector).getBoundingClientRect();
       return [box.x, box.y, box.width, box.height].map(Math.round).join(",");
     }).join("|");
     send(decision);
     const report = {};
-    report.initialRows = document.querySelectorAll(".history-row").length;
-    report.actualExcerpt = document.querySelector(".line-excerpt").textContent;
-    report.initialFilled = document.querySelectorAll(".cell.filled").length;
-    setTimeout(() => { report.midFilled = document.querySelectorAll(".cell.filled").length;
-      report.midPercentOpacity = getComputedStyle(document.querySelector(".bar-percent")).opacity; }, 350);
-    setTimeout(() => { report.finalFilled = document.querySelectorAll(".cell.filled").length;
-      report.finalPercentOpacity = getComputedStyle(document.querySelector(".bar-percent")).opacity;
+    let nextDecision;
+    report.initialRows = document.querySelectorAll(".batch-row").length;
+    report.actualExcerpt = document.querySelector(".batch-excerpt").textContent;
+    report.initialWidth = document.querySelector(".batch-bar-fill").getBoundingClientRect().width;
+    setTimeout(() => { report.midWidth = document.querySelector(".batch-bar-fill").getBoundingClientRect().width;
+      report.midPercentOpacity = getComputedStyle(document.querySelector(".batch-value")).opacity; }, 350);
+    setTimeout(() => { report.finalWidth = document.querySelector(".batch-bar-fill").getBoundingClientRect().width;
+      report.finalPercentOpacity = getComputedStyle(document.querySelector(".batch-value")).opacity;
       report.positions = positions();
-      const nextRow = row(4, 4, "src/config.rs:72:related setting", "keep", .21, .85, .91, "exact_text");
-      send({ ...decision, id: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-        latest: nextRow, recent: [...decision.recent, nextRow],
-        totals: { ...decision.totals, seen: 4, judged: 4, kept: 2 } }); }, 1100);
+      nextDecision = { ...decision, id: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        batch: { number: 2, count: 2, target_count: 6 },
+        rows: decision.rows.map((item) => ({ ...item, line: item.line + decision.rows.length })),
+        totals: { ...decision.totals, judged: decision.totals.seen, unjudged: 0, requests: 2 } };
+      send(nextDecision); }, 1100);
     setTimeout(() => {
-      report.newestAtBottom = document.querySelector(".history-row:last-child").textContent.includes("related setting");
+      const excerpt = document.querySelector(".batch-excerpt");
+      const filled = document.querySelector(".batch-bar-fill");
+      const width = filled.getBoundingClientRect().width;
+      send({ ...nextDecision, status: "keep" });
+      report.sameDecisionDidNotRestart = excerpt === document.querySelector(".batch-excerpt") &&
+        filled === document.querySelector(".batch-bar-fill") &&
+        width === filled.getBoundingClientRect().width;
+    }, 1650);
+    setTimeout(() => {
+      report.newBatchShown = document.querySelector(".batch-title").textContent.includes("Batch 2 of 2");
+      report.keepReasonVisible = [...document.querySelectorAll(".batch-action")].some((node) => node.textContent.includes("task"));
       report.positionsStable = report.positions === positions();
-      report.fullBlockBars = [...document.querySelectorAll(".cell.filled")].every((node) => node.textContent === "█");
+      report.fullBlockBars = [...document.querySelectorAll(".batch-bar-fill")].every((node) => node.textContent.includes("█"));
+      report.noNestedScroll = getComputedStyle(document.querySelector(".batch-list")).overflowY === "visible";
+      report.horizontalOverflow = document.documentElement.scrollWidth > document.documentElement.clientWidth + 1;
       document.body.dataset.report = JSON.stringify(report);
       document.title = "JEV_LINE_PANEL_READY";
     }, 2150);

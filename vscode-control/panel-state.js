@@ -35,6 +35,7 @@ function parseRecent(value, latestId) {
 }
 
 function parsePanelDecision(value) {
+  if (value?.version === 3) return parseBatchDecision(value);
   if (value?.version === 2) return parseLineDecision(value);
   if (!value || value.version !== 1 || !/^[a-f0-9]{32}$/.test(value.id) ||
       typeof value.at !== "string" || !Number.isFinite(Date.parse(value.at)) ||
@@ -65,6 +66,49 @@ function parsePanelDecision(value) {
   return { id: value.id, at: value.at, filter: value.filter, status: value.status,
     call_index: value.call_index, call_count: value.call_count, choices, checks,
     recent: parseRecent(value.recent, value.id), demo: value.demo === true };
+}
+
+function parseBatchDecision(value) {
+  const identifier = /^[a-f0-9]{32}$/;
+  const integer = (number, limit = 2_000_000) => Number.isSafeInteger(number) && number >= 0 && number <= limit;
+  const reasons = new Set(["protected", "budget_unjudged", "below_omit_cutoff", "exact_text",
+    "task_relevant", "confident_omission", "representative", "last_line"]);
+  const totals = value.totals;
+  const batch = value.batch;
+  if (!identifier.test(value.id) || !identifier.test(value.receipt_id) ||
+      typeof value.at !== "string" || !Number.isFinite(Date.parse(value.at)) ||
+      !FILTERS.has(value.filter) || !new Set(["processing", "keep", "candidate", "replace"]).has(value.status) ||
+      !batch || !integer(batch.number) || batch.number < 1 ||
+      !integer(batch.count) || batch.count < batch.number ||
+      !integer(batch.target_count, 250) || batch.target_count < 1 ||
+      !Array.isArray(value.rows) || value.rows.length !== batch.target_count ||
+      !totals || ["seen", "judged", "kept", "omitted", "protected", "unjudged", "requests"]
+        .some((name) => !integer(totals[name])) ||
+      totals.judged < value.rows.length || totals.judged > totals.seen ||
+      totals.omitted > totals.judged || totals.kept + totals.omitted !== totals.seen ||
+      totals.requests !== batch.number || !integer(value.batch_elapsed_ms, 3_600_000)) {
+    throw new Error("Invalid Jev batch decision");
+  }
+  let previousLine = 0;
+  const rows = value.rows.map((row) => {
+    if (!row || !integer(row.line) || row.line <= previousLine ||
+        typeof row.excerpt !== "string" || row.excerpt.length > 120 ||
+        !["keep", "omit"].includes(row.action) || !reasons.has(row.reason) ||
+        typeof row.can_omit !== "number" || typeof row.exact_needed !== "number" ||
+        (row.task_relevant != null && typeof row.task_relevant !== "number")) {
+      throw new Error("Invalid Jev batch row");
+    }
+    previousLine = row.line;
+    probability(row.can_omit);
+    probability(row.exact_needed);
+    if (row.task_relevant != null) probability(row.task_relevant);
+    return { line: row.line, excerpt: row.excerpt, action: row.action, reason: row.reason,
+      can_omit: row.can_omit, exact_needed: row.exact_needed,
+      task_relevant: row.task_relevant ?? null };
+  });
+  return { version: 3, id: value.id, receipt_id: value.receipt_id, at: value.at,
+    filter: value.filter, status: value.status, batch: { number: batch.number, count: batch.count,
+      target_count: batch.target_count }, rows, totals, batch_elapsed_ms: value.batch_elapsed_ms };
 }
 
 function parseLineDecision(value) {
@@ -112,14 +156,14 @@ async function readLatestPanelDecision(directory) {
   let file;
   try {
     const details = await fs.lstat(filename);
-    if (!details.isFile() || details.isSymbolicLink() || details.size > 16_384) {
+    if (!details.isFile() || details.isSymbolicLink() || details.size > 256 * 1024) {
       throw new Error("Unsafe Jev panel decision file");
     }
     file = await fs.open(filename, constants.O_RDONLY | (constants.O_NOFOLLOW || 0));
     const opened = await file.stat();
-    if (!opened.isFile() || opened.size > 16_384) throw new Error("Unsafe Jev panel decision file");
+    if (!opened.isFile() || opened.size > 256 * 1024) throw new Error("Unsafe Jev panel decision file");
     const value = JSON.parse(await file.readFile("utf8"));
-    return value.version === 2 ? parsePanelDecision(value) : null;
+    return value.version === 2 || value.version === 3 ? parsePanelDecision(value) : null;
   } catch (error) {
     if (error.code === "ENOENT") return null;
     throw error;

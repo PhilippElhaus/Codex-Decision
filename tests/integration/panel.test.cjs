@@ -16,7 +16,7 @@ test("panel manifest registers a visible view in a valid container", () => {
   assert.equal(view.visibility, "visible");
 });
 
-test("panel refreshes only the latest decision while visible", async () => {
+test("panel keeps each decision visible through its animation and a one second rest", async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-panel-test-"));
   const logs = path.join(directory, "logs");
   await fs.mkdir(logs);
@@ -32,22 +32,26 @@ test("panel refreshes only the latest decision while visible", async () => {
     return originalLoad.call(this, request, parent, isMain);
   };
   let LatestDecisionProvider;
+  let MIN_DISPLAY_MS;
   try {
     delete require.cache[require.resolve("../../vscode-control/panel")];
-    ({ LatestDecisionProvider } = require("../../vscode-control/panel"));
+    ({ LatestDecisionProvider, MIN_DISPLAY_MS } = require("../../vscode-control/panel"));
   } finally {
     Module._load = originalLoad;
   }
   const oldId = "0".repeat(32);
   const make = (id, status, at) => {
-    const latest = { id: `${id}-1`, line: 1, excerpt: "Build finished", summary: "output · line 1",
-      action: "keep", can_omit: .2, exact_needed: .8 };
-    return { version: 2, id, at, filter: "output", status, latest, recent: [latest],
+    const rows = [{ line: 1, excerpt: "Build finished", action: "keep",
+      reason: "below_omit_cutoff", can_omit: .2, exact_needed: .8, task_relevant: null }];
+    return { version: 3, id, receipt_id: "e".repeat(32), at, filter: "output", status,
+      batch: { number: 1, count: 1, target_count: 1 }, rows,
       totals: { seen: 1, judged: 1, kept: 1, omitted: 0, protected: 0, unjudged: 0, requests: 1 },
       batch_elapsed_ms: 24 };
   };
   await fs.writeFile(filename, JSON.stringify(make(oldId, "keep", new Date(Date.now() - 10_000).toISOString())));
-  const provider = new LatestDecisionProvider({}, () => directory);
+  let now = Date.now();
+  const provider = new LatestDecisionProvider({}, () => directory, () => now);
+  assert.equal(MIN_DISPLAY_MS, 1970);
   const view = {
     visible: true,
     webview: {
@@ -74,17 +78,24 @@ test("panel refreshes only the latest decision while visible", async () => {
     assert.equal(messages.length, count);
     await fs.writeFile(filename, JSON.stringify(make("b".repeat(32), "replace", newAt)));
     await provider.refresh();
-    assert.equal(messages.at(-1).decision.id, "b".repeat(32));
+    assert.equal(messages.at(-1).decision.id, "a".repeat(32));
+    await fs.writeFile(filename, JSON.stringify(make("c".repeat(32), "replace", newAt)));
+    now += MIN_DISPLAY_MS - 1;
+    await provider.refresh();
+    assert.equal(messages.at(-1).decision.id, "a".repeat(32));
+    now += 1;
+    await provider.refresh();
+    assert.equal(messages.at(-1).decision.id, "c".repeat(32));
     assert.equal(messages.at(-1).decision.status, "replace");
     view.visible = false;
     onVisibility();
-    await fs.writeFile(filename, JSON.stringify(make("c".repeat(32), "keep", newAt)));
+    await fs.writeFile(filename, JSON.stringify(make("d".repeat(32), "keep", newAt)));
     await provider.refresh();
-    assert.equal(messages.at(-1).decision.id, "b".repeat(32));
+    assert.equal(messages.at(-1).decision.id, "c".repeat(32));
     view.visible = true;
     onVisibility();
     await provider.refresh();
-    assert.equal(messages.at(-1).decision.id, "c".repeat(32));
+    assert.equal(messages.at(-1).decision.id, "d".repeat(32));
   } finally {
     onDispose?.();
     provider.dispose();
