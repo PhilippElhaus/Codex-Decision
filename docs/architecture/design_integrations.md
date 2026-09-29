@@ -4,11 +4,13 @@ The Rust PostToolUse hook has three independently selectable routes. All start d
 
 | Route | Local eligibility and protection | Visible result in Filter mode |
 | --- | --- | --- |
-| Output | Bash text or pure-text MCP result, size bounds, task cue, sensitive-data check; diagnostics and context protected. | Exact kept lines in source order, omission ranges, and saved-original path. |
+| Output | Other eligible Bash text or pure-text MCP result, size bounds, task cue, sensitive-data check; diagnostics and context protected. | Exact kept lines in source order, omission ranges, and saved-original path. |
 | Test/build | Direct recognized test/build command and completion marker; diagnostics, completion totals, and nearby context protected. | Exact kept log lines and omission ranges. |
 | Search/listing | Direct `rg -n`, `rg --json`, `rg --files`, or `git ls-files` command and valid records; JSONL structure protected. | Exact kept match/path records and omission ranges. |
 
 `line_policy` contains `omit_min` and `exact_max` as whole percentages for each route. A line is removable only when `p_can_omit >= omit_min / 100` and `p_exact_needed <= exact_max / 100`, and no protection applies. The defaults are 95 and 5. Search `task_relevant` is always judged and logged; optional `search_relevance.guard_enabled` keeps a line when `p_task_relevant > relevant_max / 100`. Its default is off with a 5% cutoff. It cannot independently authorize omission. Protected lines are excluded as targets, reducing request work; unjudged lines are kept. `observe` records judgments while returning the full output; `replace` saves the original and may return a shorter result when the size and savings checks pass. If any batch fails validation, the hook returns the full result.
+
+Routing identifies recognized test/build and search/listing commands before checking their enable flags. If that route is disabled, the result is left unchanged and no Jev request, decision log, or statistics update is made; it does not fall through to Output. Supported direct search commands are `rg -n`, `rg --json`, `rg --files`, and `git ls-files`. Unsupported `rg`, `grep`, `find`, `fd`, `ls`, and `git grep` commands are also excluded from the generic Output route. Compound test/build and search commands are left unchanged because their output cannot be safely treated as a direct specialized result. Other eligible text can use Output when its switch is on.
 
 [Noul](https://docs.typesafe.ai/primitives/noul) is used because each line needs independent yes/no probabilities. Choice and Score have no deletion role in this release. The old `thresholds` and `decision_methods` fields are removed during version 2 config migration. `jevctl migrate-config --data-dir <PLUGIN_DATA>` keeps enable flags, mode, key, and log policy and saves a private version 1 rollback copy. The VS Code settings page writes only version 2 line policies.
 

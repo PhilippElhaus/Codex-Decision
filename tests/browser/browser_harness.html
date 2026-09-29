@@ -119,6 +119,11 @@
       check(button.style.color === "rgb(154, 154, 154)", "disabled gray");
       check([option, localOption, compactOption].map((item) => item.querySelector("strong").textContent).join("|") ===
         "Output filter|Test/build logs|Search/listing", "three concise integration labels");
+      check(option.querySelector("small").textContent.includes("Other eligible") &&
+        localOption.querySelector("small").textContent.includes("Recognized") &&
+        compactOption.querySelector("small").textContent.includes("Direct rg") &&
+        document.getElementById("codex-jev-menu").textContent.includes("Each switch controls only its own route"),
+        "menu explains exclusive integration scopes");
       check(!document.getElementById("codex-jev-menu").textContent.includes("PostToolUse"), "no repeated hook name");
       const buttonStyle = getComputedStyle(button);
       const modelStyle = getComputedStyle(document.querySelector(".model"));
@@ -409,8 +414,9 @@
       const descriptions = [...settingsScreen.querySelectorAll("#codex-jev-settings-thresholds .section-description")];
       check(descriptions.length === 3 && descriptions.every((item) => item.textContent.length > 20 &&
         getComputedStyle(item).fontSize === "11px") &&
-        descriptions[0].textContent.includes("source line") && descriptions[1].textContent.includes("diagnostics") &&
-        descriptions[2].textContent.includes("path"), "each filter explains line-level checks");
+        descriptions[0].textContent.includes("only their own switches") &&
+        descriptions[1].textContent.includes("Diagnostics") &&
+        descriptions[2].textContent.includes("path"), "settings explain exclusive route policies");
       check(!settingsScreen.querySelector(".method-controls") &&
         !settingsScreen.querySelector("#codex-jev-settings-output-routine_min"),
         "coarse decision methods and cutoffs are absent");

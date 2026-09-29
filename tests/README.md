@@ -11,7 +11,7 @@ python3 vscode-control/scripts/browser_smoke.py
 python3 vscode-control/scripts/capture_docs.py
 ```
 
-Rust process tests cover exact bytes, protected-line batching, three search Noul answers, receipt/panel/stat propagation, and offline gate trials. Node tests cover the settings bridge and panel snapshot. The browser harness renders the real settings and panel code using synthetic, key-free state.
+Rust process tests cover exact bytes, protected-line batching, three search Noul answers, exclusive route selection across all switch combinations, receipt/panel/stat propagation, and offline gate trials. Node tests cover the settings bridge and panel snapshot. The browser harness renders the real settings and panel code using synthetic, key-free state.
 
 ## Legacy suites
 

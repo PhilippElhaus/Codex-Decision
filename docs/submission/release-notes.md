@@ -1,7 +1,7 @@
-# Codex Jev 0.5.3 release notes
+# Codex Jev 0.5.4 release notes
 
-This release remaps the Jev panel's line bars to a visual retention index. Gold kept lines sit near one; blue cut lines sit near zero. The index combines the final action with the underlying omission, exact-text, and optional task-relevance Noul values. It is explicitly labeled as a display index, while the original probabilities remain available on hover. The Rust filtering policy, private receipts, and version 3 snapshot format are unchanged.
+The three integration switches now control separate input routes. A recognized test/build command uses only **Test/build logs**; a supported direct search or file-listing command uses only **Search/listing**. Turning either switch off leaves that result unchanged even when **Output filter** is on. Output filter continues to handle other eligible tool text. Unsupported search/listing commands and compound shell commands remain untouched.
 
-VS Code control 0.4.3 spreads large batches into columns and shows the number kept out of all source lines. The full-block bars visibly grow in parallel over 900 ms even when Windows reports reduced motion; values fade in afterward and the batch rests for another second. The dark and light screenshots show 50 synthetic lines reduced to 3 kept.
+The Rust hook classifies the command before checking which integrations are enabled. Skipped results make no Jev request and do not add a decision, receipt, or statistics count. Per-line Noul judgments, local evidence protections, and the saved-original behavior are unchanged.
 
-Install the plugin archive and VSIX together, then reload VS Code manually. An existing version-pinned Codex composer patch remains compatible with this control release.
+VS Code control 0.4.4 clarifies each switch's scope in the composer menu and settings page. Documentation screenshots show the updated controls. Install the plugin archive and VSIX together, update the version-pinned Codex composer patch, then reload VS Code manually. Existing settings and private logs are preserved.

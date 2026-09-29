@@ -193,8 +193,11 @@ fn route(event: &Value, config: &Config) -> Option<&'static str> {
         return config.output.then_some("output");
     }
     let command = command(event);
-    if command.len() > 4096 || command.contains(['\n', '\r', '`']) || command.contains("$(") {
-        return config.output.then_some("output");
+    if command.len() > 4096
+        || command.contains(['\n', '\r', '`', ';', '&', '|', '<', '>'])
+        || command.contains("$(")
+    {
+        return None;
     }
     let words = shell_words::split(command).ok()?;
     let executable = words
@@ -235,10 +238,10 @@ fn route(event: &Value, config: &Config) -> Option<&'static str> {
             && words
                 .windows(2)
                 .any(|pair| pair == ["-m", "unittest"] || pair == ["-m", "pytest"]);
-    if build && config.test_build {
-        return Some("test_build");
+    if build {
+        return config.test_build.then_some("test_build");
     }
-    let search = if executable == "rg"
+    let supported_search = if executable == "rg"
         && words
             .iter()
             .any(|word| matches!(word.as_str(), "-n" | "--line-number" | "--json" | "--files"))
@@ -265,9 +268,12 @@ fn route(event: &Value, config: &Config) -> Option<&'static str> {
                 | "--replace"
                 | "-r"
         )
-    }) || command.contains([';', '&', '|', '<', '>']);
-    if search && !unsafe_search && config.search_listing {
-        return Some("search_listing");
+    });
+    let search_command = matches!(executable, "rg" | "grep" | "find" | "fd" | "ls")
+        || executable == "git" && matches!(action, "ls-files" | "grep");
+    if search_command {
+        return (supported_search && !unsafe_search && config.search_listing)
+            .then_some("search_listing");
     }
     config.output.then_some("output")
 }
@@ -1266,6 +1272,72 @@ mod tests {
                     &config
                 ),
                 Some("search_listing"),
+                "{command}"
+            );
+        }
+    }
+
+    #[test]
+    fn integration_switches_select_exclusive_routes() {
+        let cases = [
+            ("cargo test --workspace", "test_build"),
+            ("rg -n token src", "search_listing"),
+            ("git ls-files", "search_listing"),
+            ("cat output.log", "output"),
+        ];
+        for output in [false, true] {
+            for test_build in [false, true] {
+                for search_listing in [false, true] {
+                    let config = Config {
+                        output,
+                        test_build,
+                        search_listing,
+                        ..enabled()
+                    };
+                    for (command, expected_route) in cases {
+                        let selected = match expected_route {
+                            "output" => output,
+                            "test_build" => test_build,
+                            _ => search_listing,
+                        };
+                        assert_eq!(
+                            route(
+                                &json!({"tool_name":"Bash","tool_input":{"command":command}}),
+                                &config
+                            ),
+                            selected.then_some(expected_route),
+                            "{command} with output={output}, test_build={test_build}, search_listing={search_listing}"
+                        );
+                    }
+                    assert_eq!(
+                        route(&json!({"tool_name":"mcp__demo__logs"}), &config),
+                        output.then_some("output")
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn unsupported_or_compound_specialized_commands_do_not_use_output_fallback() {
+        let config = enabled();
+        for command in [
+            "rg token src",
+            "rg -n token src | head",
+            "rg --json --null token src",
+            "grep token src",
+            "git grep token",
+            "cargo test | tee results.log",
+            "npm run test; echo done",
+            "cargo test\necho done",
+            "cat output.log | head",
+        ] {
+            assert_eq!(
+                route(
+                    &json!({"tool_name":"Bash","tool_input":{"command":command}}),
+                    &config
+                ),
+                None,
                 "{command}"
             );
         }

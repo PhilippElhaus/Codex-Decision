@@ -15,9 +15,9 @@
     ]],
   ];
   const sectionDescriptions = {
-    output: "Each eligible source line receives two independent Jev checks.",
-    test_build: "Each test or build line is checked; diagnostics and completion evidence stay visible.",
-    search_listing: "Each match or path gets three Jev checks, including task relevance. Structural records stay intact.",
+    output: "Other eligible tool text receives two Jev checks per line. Recognized test/build and search/listing commands use only their own switches.",
+    test_build: "When enabled, recognized test/build commands use this policy. Diagnostics and completion evidence stay visible.",
+    search_listing: "When enabled, direct supported rg and git ls-files commands use this policy. Each match or path gets a task-relevance check; structural records stay intact.",
   };
   let active = false;
   let openingVoice = false;
