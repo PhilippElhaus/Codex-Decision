@@ -7,8 +7,8 @@ This optional extension adds the **Jev** bottom panel, three integration toggles
 From this directory in WSL:
 
 ```bash
-npx @vscode/vsce package --no-dependencies --out ../.local/submission/codex-jev-control-0.4.0.vsix
-code --install-extension "$(wslpath -w ../.local/submission/codex-jev-control-0.4.0.vsix)" --force
+npx @vscode/vsce package --no-dependencies --out ../.local/submission/codex-jev-control-0.4.1.vsix
+code --install-extension "$(wslpath -w ../.local/submission/codex-jev-control-0.4.1.vsix)" --force
 ```
 
 The composer control requires a separately installed, version-pinned local patch for Codex extension `26.917.62051`. The patch verifies exact host hashes and keeps rollback files outside this repository:
@@ -19,7 +19,7 @@ python3 patch_codex_webview.py update \
   --backup '/mnt/c/Users/<user>/AppData/Local/Codex/codex-jev/rollback/26.917.62051'
 ```
 
-Use `apply` for the first installation or `restore` to roll back. The patch utility is still Python; the packaged Jev hook runs as Rust without Python. Let VS Code reload the window after the installation when convenient. A new Codex thread picks up a newly installed plugin hook.
+Use `apply` for the first installation, `update` after each Jev control upgrade, or `restore` to roll back. The settings script runs inside the patched Codex webview, so installing the VSIX alone does not update that page. The patch utility is still Python; the packaged Jev hook runs as Rust without Python. Reload the VS Code window yourself after both updates. A new Codex thread picks up a newly installed plugin hook.
 
 ## Use
 

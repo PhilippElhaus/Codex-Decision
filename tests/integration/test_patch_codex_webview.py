@@ -19,6 +19,32 @@ SPEC.loader.exec_module(patch)
 
 
 class PatchTests(unittest.TestCase):
+    def test_settings_bridge_forwards_relevance_only_when_valid(self):
+        if not shutil.which("node"):
+            self.skipTest("Node is unavailable")
+        event = {
+            "type": "codex-jev", "action": "settingsSave", "key": "",
+            "mode": "replace", "linePolicy": {},
+            "searchRelevance": {"guard_enabled": True, "relevant_max": 7},
+            "logLimitMb": 50, "neverDeleteLogs": False,
+        }
+        def forward(message):
+            script = (
+                'let captured=null,handler=null;'
+                'let e={onDidReceiveMessage(f){handler=f;return {}},postMessage(){}},'
+                'qe={commands:{executeCommand(_,payload){captured=payload;return Promise.resolve({})}}},'
+                's={markMessageReceived(){}};'
+                + patch.BRIDGE + '{} });'
+                + 'handler(' + json.dumps(message) + ');'
+                + 'setTimeout(()=>process.stdout.write(JSON.stringify(captured)),0);'
+            )
+            result = subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True)
+            return json.loads(result.stdout)
+
+        self.assertEqual(forward(event)["searchRelevance"], event["searchRelevance"])
+        event["searchRelevance"]["relevant_max"] = 101
+        self.assertIsNone(forward(event))
+
     def test_image_bridge_converts_only_our_wsl_plugin_images(self):
         if not shutil.which("wslpath") or not shutil.which("node"):
             self.skipTest("Windows-to-WSL bridge is unavailable here")
@@ -100,6 +126,8 @@ class PatchTests(unittest.TestCase):
         self.assertIn("testApiKey", (self.extension / "out/extension.js").read_text())
         self.assertIn('"openTypeSafe"', (self.extension / "out/extension.js").read_text())
         self.assertIn("settingsSave", (self.extension / "out/extension.js").read_text())
+        self.assertIn("searchRelevance:u.searchRelevance", (self.extension / "out/extension.js").read_text())
+        self.assertIn("u.searchRelevance.relevant_max>100", (self.extension / "out/extension.js").read_text())
         self.assertIn("logLimitMb:u.logLimitMb", (self.extension / "out/extension.js").read_text())
         self.assertIn("neverDeleteLogs:u.neverDeleteLogs", (self.extension / "out/extension.js").read_text())
         self.assertIn("feature:u.feature", (self.extension / "out/extension.js").read_text())
