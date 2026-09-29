@@ -39,10 +39,13 @@ test("panel refreshes only the latest decision while visible", async () => {
     Module._load = originalLoad;
   }
   const oldId = "0".repeat(32);
-  const make = (id, status, at) => ({ version: 1, id, at,
-    filter: "output", status, call_index: 1, call_count: 1,
-    choices: [{ name: "filter_decision", selected: "keep", probabilities: { filter: .2, keep: .8 } }], checks: [],
-    recent: [{ id, theme: "output_keep", elapsed_ms: 24 }] });
+  const make = (id, status, at) => {
+    const latest = { id: `${id}-1`, line: 1, excerpt: "Build finished", summary: "output · line 1",
+      action: "keep", can_omit: .2, exact_needed: .8 };
+    return { version: 2, id, at, filter: "output", status, latest, recent: [latest],
+      totals: { seen: 1, judged: 1, kept: 1, omitted: 0, protected: 0, unjudged: 0, requests: 1 },
+      batch_elapsed_ms: 24 };
+  };
   await fs.writeFile(filename, JSON.stringify(make(oldId, "keep", new Date(Date.now() - 10_000).toISOString())));
   const provider = new LatestDecisionProvider({}, () => directory);
   const view = {

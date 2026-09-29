@@ -115,7 +115,97 @@
     });
   }
 
+  function renderLineDecision(decision) {
+    const serialized = JSON.stringify(decision);
+    if (serialized === currentDecision) return;
+    const newDecision = decision.id !== currentId;
+    currentDecision = serialized;
+    currentId = decision.id;
+    cancelAnimationFrame(animation);
+    cancelAnimationFrame(historyAnimation);
+    const container = element("div", "line-layout");
+    const history = element("section", "history-card line-history");
+    const rows = element("div", "history-lines");
+    rows.setAttribute("aria-label", "Five latest judged source lines, newest at bottom");
+    const padded = Array(5 - decision.recent.length).fill(null).concat(decision.recent);
+    const prior = Array(5 - previousRecent.length).fill(null).concat(previousRecent);
+    const moving = [];
+    for (let index = 0; index < 5; index += 1) {
+      const item = padded[index];
+      const row = element("div", `history-row${index === 4 && item ? " latest" : ""}`);
+      if (item) {
+        append(row, element("span", "history-action", item.action === "omit" ? "Omit" : "Keep"),
+          element("span", "history-theme", item.excerpt || item.summary));
+        row.title = `Line ${item.line}: ${item.excerpt}`;
+        if (newDecision && previousRecent.length) {
+          const former = prior.findIndex((entry) => entry?.id === item.id);
+          if (former >= 0 && former !== index) {
+            row.style.transform = `translateY(${(former - index) * 100}%)`;
+            moving.push(row);
+          } else if (former < 0) {
+            row.style.transform = "translateY(100%)";
+            row.style.opacity = "0";
+            moving.push(row);
+          }
+        }
+      } else row.setAttribute("aria-hidden", "true");
+      rows.appendChild(row);
+    }
+    history.appendChild(rows);
+    container.appendChild(history);
+    previousRecent = decision.recent;
+
+    const latest = decision.latest;
+    const detail = element("section", "line-detail");
+    const action = latest.action === "omit" ? "Omitted" : "Kept";
+    append(detail,
+      append(element("div", "line-detail-title"),
+        element("span", "card-kicker", `LINE ${latest.line} · ${decision.filter.replace("_", "/")}`),
+        element("strong", `line-action ${latest.action}`, action)),
+      element("div", "line-excerpt", latest.excerpt || "(empty source line)"),
+      element("div", "line-totals", `${decision.status === "processing" ? "Checking · " : ""}${decision.totals.judged} judged · ${decision.totals.omitted} omitted · ${decision.totals.protected} protected · ${decision.totals.unjudged} unjudged${decision.batch_elapsed_ms === null ? "" : ` · ${formatElapsed(decision.batch_elapsed_ms)} batch`}`));
+    const animations = [];
+    const signals = element("section", "line-signals");
+    append(signals, element("span", "card-kicker", "NOUL / THIS LINE"));
+    bar(signals, "Can omit", latest.can_omit, latest.action === "omit", animations);
+    bar(signals, "Exact text needed", latest.exact_needed, false, animations);
+    append(container, detail, signals);
+    app.replaceChildren(container);
+    if (moving.length) {
+      void rows.offsetHeight;
+      historyAnimation = requestAnimationFrame(() => {
+        for (const row of moving) {
+          row.style.transition = "transform 280ms ease, opacity 280ms ease";
+          row.style.transform = "translateY(0)";
+          row.style.opacity = "1";
+        }
+      });
+    }
+    const percentages = [...container.querySelectorAll(".bar-percent")];
+    const show = (opacity) => { for (const node of percentages) node.style.opacity = String(opacity); };
+    currentAnimations = animations;
+    currentProgress = 0;
+    for (const update of animations) update(0);
+    const duration = newDecision ? 800 : 0;
+    if (!duration) {
+      currentProgress = 1;
+      for (const update of animations) update(1);
+      show(1);
+      return;
+    }
+    const started = performance.now();
+    function frame(now) {
+      const elapsed = Math.max(0, now - started);
+      currentProgress = Math.min(1, elapsed / duration);
+      for (const update of animations) update(currentProgress);
+      show(Math.min(1, Math.max(0, (elapsed - duration) / 170)));
+      if (elapsed < duration + 170) animation = requestAnimationFrame(frame);
+    }
+    animation = requestAnimationFrame(frame);
+  }
+
   function render(decision) {
+    if (decision.version === 2) { renderLineDecision(decision); return; }
     const serialized = JSON.stringify(decision);
     if (serialized === currentDecision) return;
     const newDecision = decision.id !== currentId;

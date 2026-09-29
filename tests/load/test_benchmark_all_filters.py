@@ -39,6 +39,7 @@ class BenchmarkTests(unittest.TestCase):
         self.assertEqual(report["categories"]["search_listing/too_many_groups"], 1)
         self.assertEqual(report["categories"]["test_build/failing_tests"], 3)
 
+    @unittest.skip("legacy 0.3.3 Python benchmark; the 0.4 hook is verified by Rust process tests")
     def test_real_fixture_capture_runs_tools_and_has_all_three_routes(self):
         with tempfile.TemporaryDirectory(prefix="jev-benchmark-fixtures-", dir="/tmp") as directory:
             cases = bench.live_cases(Path(directory))
@@ -50,6 +51,7 @@ class BenchmarkTests(unittest.TestCase):
         self.assertEqual(len(by_name["real_file_listing"]["output"].splitlines()), 350)
         self.assertEqual(len(by_name["real_search_hits"]["output"].splitlines()), 350)
 
+    @unittest.skip("legacy 0.3.3 Python benchmark; the 0.4 hook is verified by Rust process tests")
     def test_real_command_hook_with_process_mock_and_oversized_edges(self):
         with tempfile.TemporaryDirectory(prefix="jev-benchmark-http-", dir="/tmp") as directory:
             root = Path(directory)

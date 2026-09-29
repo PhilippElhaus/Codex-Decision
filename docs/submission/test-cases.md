@@ -1,6 +1,6 @@
 # Reviewer test cases
 
-Use these cases with the installed `jev-output` skill. They require no TypeSafe account, live key, or private network. The expected result is a short plain-language answer unless a case says otherwise. For live hook execution, use local Codex with Python 3 and `sh`, trust the bundled hook, and supply a dedicated TypeSafe key privately through the portal if OpenAI asks for one.
+These are archived 0.3.3 review cases. They do not validate the 0.4 line-level release. For the local Rust hook, use the current [verification guide](../development/development_verification.md) and reviewed per-line labels before public submission.
 
 ## Five positive cases
 
@@ -52,7 +52,7 @@ FAILED (failures=1)
 
 **Fixture:** No real search output is required.
 
-**Expected workflow and result:** Select **search/listing**. State that it uses bounded task context and grouped paths for Jev's decision, and that a shortened result retains a path to the exact original. Return the integration name and one short reason.
+**Historical expected workflow and result:** Select **search/listing**. The 0.4 hook now judges each eligible match or path line independently and retains a path to the exact original. Return the integration name and one short reason.
 
 ### 5. Interpret an estimate
 

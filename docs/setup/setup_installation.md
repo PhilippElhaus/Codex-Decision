@@ -1,21 +1,20 @@
 # Install Codex Jev
 
-Run these commands in the terminal used by Codex:
+The line-level release is local in this checkout. Build and package it on Linux x86_64:
 
 ```bash
-codex plugin marketplace add https://github.com/PhilippElhaus/Codex-Jev
-codex plugin add codex-jev@codex-jev
+./scripts/build_submission.sh
 ```
 
-Review and trust the bundled hook when Codex prompts. Start a new Codex thread after installation. All three integrations start off.
+Install from the local marketplace entry that points to the packaged source, then migrate the existing `PLUGIN_DATA/config.json` with the bundled `jevctl migrate-config --data-dir <PLUGIN_DATA>`. The migration saves a version 1 rollback copy. Review and trust the Rust hook when Codex prompts. Start a new Codex thread after installation. Existing integration selections are preserved; new installations start with all three off.
 
 For Windows VS Code, build the companion VSIX from WSL, then install it:
 
 ```bash
 cd vscode-control
 mkdir -p ../.local/submission
-npx @vscode/vsce package --no-dependencies --out ../.local/submission/codex-jev-control-0.2.32.vsix
-code --install-extension "$(wslpath -w ../.local/submission/codex-jev-control-0.2.32.vsix)" --force
+npx @vscode/vsce package --no-dependencies --out ../.local/submission/codex-jev-control-0.3.0.vsix
+code --install-extension "$(wslpath -w ../.local/submission/codex-jev-control-0.3.0.vsix)" --force
 ```
 
 Set `codexJev.dataDirectory` to the installed plugin's absolute `PLUGIN_DATA` directory. Enabling an integration opens key setup if no key is saved. The [credential setup](setup_credentials.md) explains that directory and the Jev key. Apply the [version-pinned Codex composer patch](../../vscode-control/README.md#install-the-companion-extension).

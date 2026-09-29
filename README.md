@@ -2,11 +2,11 @@
 
 <img src="assets/logo.png" width="56" alt="Codex Jev logo">
 
-Codex Jev shortens noisy tool results before Codex reads them. It keeps selected evidence and a path to the exact original. Uncertain results stay intact.
+Codex Jev asks Jev to judge eligible output one physical line at a time. It keeps exact source text for retained lines and a path to the full original. Uncertain results stay intact.
 
 ## Measured impact
 
-A [live hook benchmark from 2026-09-26](docs/benchmarks/benchmark_live_2026-09-26.md) used 36 real command results and 30 Jev calls. The measurements cover an earlier filter implementation; [current evidence-selection changes](docs/benchmarks/benchmark_offline_2026-09-27.md) have offline verification.
+A [live hook benchmark from 2026-09-26](docs/benchmarks/benchmark_live_2026-09-26.md) used 36 real command results and 30 Jev calls. It measured the earlier coarse implementation, not this line-level release. Its numbers remain historical context.
 
 | Integration | Results shortened | Model-visible tokens saved | Reduction on shortened results |
 | --- | ---: | ---: | ---: |
@@ -21,9 +21,9 @@ Counts use `o200k_base` on tool text. They are not billed-token or full-task sav
 
 | Integration | Kept in Codex's context |
 | --- | --- |
-| Output filter | Relevant source lines, original line numbers, and an omission map. |
-| Test/build logs | Failures and summaries instead of routine pass and progress lines. |
-| Search/listing | Relevant matches and file leads from broad results, including `rg --json`. |
+| Output filter | Exact retained source lines and an omission map. |
+| Test/build logs | Exact retained lines, with diagnostics and completion totals protected. |
+| Search/listing | Exact retained matches or paths, including `rg --json` records. |
 
 All three start disabled. **Monitor** records decisions without changing output. **Filter** shortens approved results. A shortened result links to its saved original. Eligible text reaches [TypeSafe AI's Jev API](docs/architecture/design_data.md); keep sensitive output outside these filters.
 
@@ -39,9 +39,7 @@ All three start disabled. **Monitor** records decisions without changing output.
 
 <img src="docs/images/jev-settings-overview.png" width="850" alt="Jev settings page showing activity, API key, log retention, and mode">
 
-<img src="docs/images/jev-settings-filters.png" width="850" alt="Jev settings page showing filter methods and cutoffs">
-
-The captures use synthetic state and contain no key. The [full settings capture](docs/images/jev-settings.png) shows all three integrations.
+The existing captures use synthetic state and contain no key; the settings screenshots predate the line-level controls.
 
 ## Install
 
@@ -50,7 +48,7 @@ codex plugin marketplace add https://github.com/PhilippElhaus/Codex-Jev
 codex plugin add codex-jev@codex-jev
 ```
 
-The bundled `jev-output` skill helps configure the filters and check shortened evidence. The [public directory submission](docs/submission/README.md) is prepared separately. The VS Code control requires a [version-pinned Codex patch](vscode-control/README.md).
+The bundled Linux x86_64 Rust hook needs no Python at runtime. The `jev-output` skill helps configure the filters and check shortened evidence. The optional VS Code control requires a [version-pinned Codex patch](vscode-control/README.md).
 
 ## More detail
 

@@ -1,0 +1,31 @@
+[package]
+name = "codex-jev"
+version = "0.4.0"
+edition = "2021"
+license = "MIT"
+
+[lib]
+name = "codex_jev"
+path = "src/lib.rs"
+
+[[bin]]
+name = "jev-hook"
+path = "src/bin/jev-hook.rs"
+
+[[bin]]
+name = "jevctl"
+path = "src/bin/jevctl.rs"
+
+[dependencies]
+chrono = { version = "0.4", features = ["serde"] }
+libc = "0.2"
+regex = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+shell-words = "1"
+ureq = { version = "2", features = ["json"] }
+uuid = { version = "1", features = ["v4"] }
+
+[dev-dependencies]
+tempfile = "3"

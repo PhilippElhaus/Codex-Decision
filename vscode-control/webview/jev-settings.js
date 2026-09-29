@@ -2,30 +2,23 @@
 (() => {
   const sections = [
     ["output", "Output filter", [
-      ["routine_min", "Routine noise, minimum", "Act only when Jev rates routine noise at least this high."],
-      ["exact_max", "Exact text needed, maximum", "Keep output if the chance exact lines matter is higher."],
-      ["unique_max", "Unique value, maximum", "Keep output if the chance of a one-time value is higher."],
-      ["confidence_min", "Confidence, minimum", "Minimum confidence in Jev's filter-or-keep decision; uncertain results stay intact."],
+      ["omit_min", "Can omit, minimum", "A line is removed only above this probability."],
+      ["exact_max", "Exact text needed, maximum", "A line is kept above this probability."],
     ]],
     ["test_build", "Test/build logs", [
-      ["routine_min", "Routine lines, minimum", "Trim only when Jev rates omitted lines as routine."],
-      ["exact_max", "Exact test text needed, maximum", "Keep lines when exact names or values may matter."],
-      ["unique_max", "Unique value, maximum", "Keep lines when a unique result may be present."],
-      ["confidence_min", "Confidence, minimum", "Minimum confidence in Jev's filter-or-keep decision; uncertain results stay intact."],
+      ["omit_min", "Can omit, minimum", "A line is removed only above this probability."],
+      ["exact_max", "Exact text needed, maximum", "A line is kept above this probability."],
     ]],
     ["search_listing", "Search/listing", [
-      ["summarize_probability_min", "Summarize probability, minimum", "Minimum probability for a group to be summarized."],
-      ["summarize_confidence_min", "Summarize confidence, minimum", "Minimum confidence for summarizing a group."],
-      ["drop_probability_min", "Drop probability, minimum", "Minimum probability for omitting a group."],
-      ["drop_confidence_min", "Drop confidence, minimum", "Minimum confidence for omitting a group."],
+      ["omit_min", "Can omit, minimum", "A match or path is removed only above this probability."],
+      ["exact_max", "Exact text needed, maximum", "A match or path is kept above this probability."],
     ]],
   ];
   const sectionDescriptions = {
-    output: "Shortens repetitive tool output while keeping useful details.",
-    test_build: "Removes routine test passes and build progress; keeps failures and summaries.",
-    search_listing: "Condenses broad results to relevant paths and representative matches.",
+    output: "Each eligible source line receives two independent Jev checks.",
+    test_build: "Each test or build line is checked; diagnostics and completion evidence stay visible.",
+    search_listing: "Each match or path is checked separately. Structural records stay intact.",
   };
-  const sectionMethods = { output: ["noul", "choice"], test_build: ["noul", "choice"], search_listing: ["choice"] };
   let active = false;
   let openingVoice = false;
   let navItem = null;
@@ -134,8 +127,8 @@
 
   function showLifetime(stats = {}) {
     const count = (value) => (Number.isSafeInteger(value) && value >= 0 ? value : 0).toLocaleString("en-US");
-    panel.querySelector("#codex-jev-settings-lifetime-tokens").textContent = `~${count(stats.estimatedTokensSaved)}`;
-    panel.querySelector("#codex-jev-settings-lifetime-replaced").textContent = count(stats.replaced);
+    panel.querySelector("#codex-jev-settings-lifetime-tokens").textContent = count(stats.linesJudged);
+    panel.querySelector("#codex-jev-settings-lifetime-replaced").textContent = count(stats.linesOmitted);
     panel.querySelector("#codex-jev-settings-lifetime-calls").textContent = count(stats.calls);
     panel.querySelector("#codex-jev-settings-lifetime-time").textContent = formatDuration(stats.averageMs);
   }
@@ -165,40 +158,13 @@
     }
   }
 
-  function updateMethodControls(hook) {
-    const noul = hook !== "search_listing" && panel.querySelector(`#codex-jev-settings-${hook}-method-noul`).checked;
-    const choice = panel.querySelector(`#codex-jev-settings-${hook}-method-choice`).checked;
-    for (const [name] of sections.find(([key]) => key === hook)[2]) {
-      const enabled = hook === "search_listing" ? choice : (name === "confidence_min" ? choice : noul);
-      panel.querySelector(`#codex-jev-settings-${hook}-${name}`).disabled = !enabled;
-      panel.querySelector(`#codex-jev-settings-${hook}-${name}-slider`).disabled = !enabled;
-    }
-  }
-
-  function setDecisionMethods(methods = {}) {
-    for (const [hook, names] of Object.entries(sectionMethods)) {
-      for (const name of names) {
-        panel.querySelector(`#codex-jev-settings-${hook}-method-${name}`).checked = methods[hook]?.[name] ?? true;
-      }
-      updateMethodControls(hook);
-    }
-  }
-
-  function decisionMethodValues() {
-    return Object.fromEntries(Object.entries(sectionMethods).map(([hook, names]) =>
-      [hook, Object.fromEntries(names.map((name) => [name,
-        panel.querySelector(`#codex-jev-settings-${hook}-method-${name}`).checked]))]));
-  }
-
   function thresholdValues() {
     const values = {};
     for (const [hook, , fields] of sections) {
       values[hook] = {};
       for (const [name] of fields) {
         const input = panel.querySelector(`#codex-jev-settings-${hook}-${name}`);
-        const value = parsePercentage(input.disabled
-          ? panel.querySelector(`#codex-jev-settings-${hook}-${name}-slider`).value
-          : input.value);
+        const value = parsePercentage(input.value);
         if (value === null) {
           input.focus();
           throw new Error("Enter whole percentages from 0 to 100.");
@@ -272,7 +238,7 @@
     document.head.append(style);
     panel = document.createElement("div");
     panel.id = "codex-jev-settings-panel";
-    panel.innerHTML = `<div class="header"><h1>Jev</h1><button id="codex-jev-settings-open-logs" type="button">Open logs</button></div><section aria-label="Lifetime activity"><h2>Lifetime</h2><div class="metrics"><div class="metric"><strong id="codex-jev-settings-lifetime-tokens">—</strong><span>Estimated tokens saved</span></div><div class="metric"><strong id="codex-jev-settings-lifetime-replaced">—</strong><span>Results shortened</span></div><div class="metric"><strong id="codex-jev-settings-lifetime-calls">—</strong><span>Jev checks</span></div><div class="metric"><strong id="codex-jev-settings-lifetime-time">—</strong><span>Avg. decision time</span></div></div></section><section><h2>API key</h2><div class="field"><label for="codex-jev-settings-key">API key</label><input id="codex-jev-settings-key" type="password" autocomplete="off" spellcheck="false" maxlength="4096"></div><div class="actions"><button id="codex-jev-settings-test" type="button">Test API key</button><span id="codex-jev-settings-test-status" role="status" aria-live="polite"></span></div></section><section><h2>Log retention</h2><div class="log-retention"><label for="codex-jev-settings-log-limit">Storage limit (MB)</label><input id="codex-jev-settings-log-limit" class="log-limit-input" type="text" inputmode="numeric" maxlength="4" aria-label="Log storage limit in MB"><label for="codex-jev-settings-never-delete"><input id="codex-jev-settings-never-delete" type="checkbox">Never delete logs</label></div><small>Oldest session log files are removed when the limit is reached.</small></section><section><h2>Behavior</h2><div class="field"><label for="codex-jev-settings-mode">Mode<small>Monitor previews Jev's decisions in the logs while leaving tool output unchanged. Filter shortens approved results.</small></label><select id="codex-jev-settings-mode"><option value="observe">Monitor</option><option value="replace">Filter</option></select></div><div id="codex-jev-settings-thresholds"></div></section><div class="actions save-actions"><button id="codex-jev-settings-save" type="button" class="primary">Save settings</button><button id="codex-jev-settings-reset" type="button" class="subtle" title="Restore the default settings in this form. Save to apply." disabled>Reset defaults</button></div><p id="codex-jev-settings-message" role="status" aria-live="polite"></p>`;
+    panel.innerHTML = `<div class="header"><h1>Jev</h1><button id="codex-jev-settings-open-logs" type="button">Open logs</button></div><section aria-label="Lifetime activity"><h2>Lifetime</h2><div class="metrics"><div class="metric"><strong id="codex-jev-settings-lifetime-tokens">—</strong><span>Lines judged</span></div><div class="metric"><strong id="codex-jev-settings-lifetime-replaced">—</strong><span>Lines omitted</span></div><div class="metric"><strong id="codex-jev-settings-lifetime-calls">—</strong><span>Jev requests</span></div><div class="metric"><strong id="codex-jev-settings-lifetime-time">—</strong><span>Avg. request time</span></div></div></section><section><h2>API key</h2><div class="field"><label for="codex-jev-settings-key">API key</label><input id="codex-jev-settings-key" type="password" autocomplete="off" spellcheck="false" maxlength="4096"></div><div class="actions"><button id="codex-jev-settings-test" type="button">Test API key</button><span id="codex-jev-settings-test-status" role="status" aria-live="polite"></span></div></section><section><h2>Log retention</h2><div class="log-retention"><label for="codex-jev-settings-log-limit">Storage limit (MB)</label><input id="codex-jev-settings-log-limit" class="log-limit-input" type="text" inputmode="numeric" maxlength="4" aria-label="Log storage limit in MB"><label for="codex-jev-settings-never-delete"><input id="codex-jev-settings-never-delete" type="checkbox">Never delete logs</label></div><small>Oldest session log files are removed when the limit is reached.</small></section><section><h2>Behavior</h2><div class="field"><label for="codex-jev-settings-mode">Mode<small>Monitor previews per-line Jev decisions while leaving tool output unchanged. Filter shortens approved results.</small></label><select id="codex-jev-settings-mode"><option value="observe">Monitor</option><option value="replace">Filter</option></select></div><div id="codex-jev-settings-thresholds"></div></section><div class="actions save-actions"><button id="codex-jev-settings-save" type="button" class="primary">Save settings</button><button id="codex-jev-settings-reset" type="button" class="subtle" title="Restore the default settings in this form. Save to apply." disabled>Reset defaults</button></div><p id="codex-jev-settings-message" role="status" aria-live="polite"></p>`;
     const thresholds = panel.querySelector("#codex-jev-settings-thresholds");
     for (const [hook, heading, fields] of sections) {
       const title = document.createElement("h2");
@@ -282,19 +248,6 @@
       description.className = "section-description";
       description.textContent = sectionDescriptions[hook];
       thresholds.append(description);
-      const methods = document.createElement("div");
-      methods.className = "method-controls";
-      for (const name of sectionMethods[hook]) {
-        const label = document.createElement("label");
-        const checkbox = document.createElement("input");
-        checkbox.type = "checkbox";
-        checkbox.id = `codex-jev-settings-${hook}-method-${name}`;
-        checkbox.checked = true;
-        checkbox.addEventListener("change", () => updateMethodControls(hook));
-        label.append(checkbox, `Allow ${name === "noul" ? "Noul" : "Choice"}`);
-        methods.append(label);
-      }
-      thresholds.append(methods);
       for (const [name, label, help] of fields) {
         const id = `codex-jev-settings-${hook}-${name}`;
         const row = document.createElement("div");
@@ -373,8 +326,7 @@
     panel.querySelector("#codex-jev-settings-reset").addEventListener("click", () => {
       if (busy || !defaults) return;
       panel.querySelector("#codex-jev-settings-mode").value = defaults.mode;
-      setThresholds(defaults.thresholds);
-      setDecisionMethods(defaults.decision_methods);
+      setThresholds(defaults.line_policy);
       panel.querySelector("#codex-jev-settings-log-limit").value = String(defaults.log_limit_mb);
       showNeverDeleteLogs(defaults.never_delete_logs);
       showMessage("Defaults ready. Save settings to apply.");
@@ -384,12 +336,11 @@
       try {
         const key = panel.querySelector("#codex-jev-settings-key").value.trim();
         const mode = panel.querySelector("#codex-jev-settings-mode").value;
-        const thresholds = thresholdValues();
-        const decisionMethods = decisionMethodValues();
+        const linePolicy = thresholdValues();
         const logLimitMb = parseLogLimit(panel.querySelector("#codex-jev-settings-log-limit").value);
         if (logLimitMb === null) throw new Error("Enter a log limit from 1 to 9999 MB.");
         const neverDeleteLogs = panel.querySelector("#codex-jev-settings-never-delete").checked;
-        if (request("settingsSave", { key, mode, thresholds, decisionMethods, logLimitMb, neverDeleteLogs })) {
+        if (request("settingsSave", { key, mode, linePolicy, logLimitMb, neverDeleteLogs })) {
           setBusy(true); showMessage("Saving…"); showTest("");
         }
       } catch (error) { showMessage(error.message, "error"); }
@@ -415,8 +366,7 @@
       showSavedKeyLength(reply.keyLength);
       showLifetime(reply.lifetime);
       panel.querySelector("#codex-jev-settings-mode").value = reply.config?.mode || "replace";
-      setThresholds(reply.config?.thresholds);
-      setDecisionMethods(reply.config?.decision_methods);
+      setThresholds(reply.config?.line_policy);
       savedLogLimit = reply.config?.log_limit_mb || 50;
       panel.querySelector("#codex-jev-settings-log-limit").value = String(savedLogLimit);
       savedNeverDeleteLogs = Boolean(reply.config?.never_delete_logs);

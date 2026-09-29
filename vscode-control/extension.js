@@ -8,7 +8,7 @@ const {
   checkHealth, decisionSummary, defaultDataDirectory, estimateTokensSaved,
   isJevOutcome, outcomeLine, readConfig, readEventOffset, readEventsSince, savedCharacters,
   readApiKey, readLifetimeStats, writeApiKey, writeMode, writeSelection, writeSettings, writeNeverDeleteLogs,
-  completeThresholds, completeDecisionMethods, DEFAULT_THRESHOLDS, DEFAULT_DECISION_METHODS,
+  completeLinePolicy, DEFAULT_LINE_POLICY,
 } = require("./core");
 
 function emptyStats() {
@@ -217,11 +217,10 @@ function activate(context) {
         let keyLength = 0;
         try { keyLength = (await readApiKey(directory)).length; } catch { /* no usable key */ }
         const lifetime = await readLifetimeStats(directory);
-        return { action: "ready", config: { ...config, thresholds: completeThresholds(config.thresholds),
-          decision_methods: completeDecisionMethods(config.decision_methods),
+        return { action: "ready", config: { ...config, line_policy: completeLinePolicy(config.line_policy),
           log_limit_mb: config.log_limit_mb ?? 50, never_delete_logs: config.never_delete_logs ?? false },
-          defaults: { mode: "replace", thresholds: DEFAULT_THRESHOLDS,
-            decision_methods: DEFAULT_DECISION_METHODS, log_limit_mb: 50, never_delete_logs: false },
+          defaults: { mode: "replace", line_policy: DEFAULT_LINE_POLICY,
+            log_limit_mb: 50, never_delete_logs: false },
           hasKey: keyLength > 0, keyLength, lifetime };
       }
       if (request.action === "settingsOpenLogs") {
@@ -257,10 +256,9 @@ function activate(context) {
           try { await readApiKey(directory); }
           catch { throw new Error("Enter an API key before saving."); }
         }
-        const thresholds = completeThresholds(request.thresholds);
-        const decisionMethods = completeDecisionMethods(request.decisionMethods);
+        const linePolicy = completeLinePolicy(request.linePolicy);
         const task = selectionQueue.then(async () => {
-          await writeSettings(directory, request.mode, thresholds, request.logLimitMb, request.neverDeleteLogs, decisionMethods);
+          await writeSettings(directory, request.mode, linePolicy, request.logLimitMb, request.neverDeleteLogs);
           await settings().update("mode", request.mode, vscode.ConfigurationTarget.Global);
           if (request.key) await writeApiKey(directory, request.key);
           await sync();

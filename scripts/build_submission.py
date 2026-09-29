@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the minimal Codex Jev Skills-only submission ZIP."""
+"""Legacy build wrapper for the bundled Rust-hook submission ZIP."""
 
 from __future__ import annotations
 
@@ -16,17 +16,11 @@ FILES = (
     ".codex-plugin/plugin.json",
     "skills/jev-output/SKILL.md",
     "hooks/hooks.json",
-    "hooks/post_tool_use.py",
-    "hooks/jev.py",
-    "hooks/evidence.py",
-    "hooks/test_build.py",
-    "hooks/search_listing.py",
-    "hooks/receipts.py",
-    "scripts/configure_key.py",
+    "hooks/bin/linux-x86_64/jev-hook",
+    "hooks/bin/linux-x86_64/jevctl",
     "assets/logo.png",
     "assets/icon.png",
     "config.example.json",
-    "docs/architecture/design_data.md",
     "LICENSE",
 )
 
@@ -35,7 +29,7 @@ def main() -> None:
     manifest = json.loads((ROOT / FILES[0]).read_text(encoding="utf-8"))
     name = manifest["name"]
     version = manifest["version"]
-    if name != "codex-jev" or not re.fullmatch(r"\d+\.\d+\.\d+", version):
+    if name != "codex-jev" or not re.fullmatch(r"\d+\.\d+\.\d+(?:\+codex\.[A-Za-z0-9_-]+)?", version):
         raise ValueError("Expected codex-jev with a stable semantic version")
     if manifest.get("skills") != "./skills/":
         raise ValueError("The submission needs the root skills directory")
@@ -60,7 +54,10 @@ def main() -> None:
                 raise ValueError(f"Missing or linked submission file: {relative}")
             entry = ZipInfo(f"{name}/{relative}", date_time=(2026, 1, 1, 0, 0, 0))
             entry.compress_type = ZIP_DEFLATED
-            entry.external_attr = (stat.S_IFREG | 0o644) << 16
+            executable = relative.startswith("hooks/bin/")
+            if executable and not (source.stat().st_mode & stat.S_IXUSR):
+                raise ValueError(f"Hook binary is not executable: {relative}")
+            entry.external_attr = (stat.S_IFREG | (0o755 if executable else 0o644)) << 16
             archive.writestr(entry, source.read_bytes(), compress_type=ZIP_DEFLATED, compresslevel=9)
     with ZipFile(destination) as archive:
         if archive.testzip() is not None or len(archive.namelist()) != len(FILES):

@@ -1,0 +1,226 @@
+use serde_json::{json, Value};
+use std::fs;
+use std::io::{Read, Write};
+use std::net::TcpListener;
+use std::os::unix::fs::PermissionsExt;
+use std::process::{Command, Stdio};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
+use std::time::Duration;
+
+fn mock_server(
+    fail_on: Option<usize>,
+) -> (String, Arc<AtomicBool>, std::thread::JoinHandle<usize>) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let endpoint = format!("http://{}/v1/systemone", listener.local_addr().unwrap());
+    let stop = Arc::new(AtomicBool::new(false));
+    let running = stop.clone();
+    let thread = std::thread::spawn(move || {
+        let mut count = 0;
+        while !running.load(Ordering::Relaxed) {
+            let Ok((mut stream, _)) = listener.accept() else {
+                std::thread::sleep(Duration::from_millis(5));
+                continue;
+            };
+            stream
+                .set_read_timeout(Some(Duration::from_secs(3)))
+                .unwrap();
+            let mut data = Vec::new();
+            let mut total = None;
+            loop {
+                let mut part = [0u8; 4096];
+                let size = stream.read(&mut part).unwrap();
+                if size == 0 {
+                    break;
+                }
+                data.extend_from_slice(&part[..size]);
+                if let Some(end) = data.windows(4).position(|window| window == b"\r\n\r\n") {
+                    let header = String::from_utf8_lossy(&data[..end]);
+                    let length: usize = header
+                        .lines()
+                        .find_map(|line| {
+                            line.to_ascii_lowercase()
+                                .strip_prefix("content-length:")
+                                .and_then(|value| value.trim().parse().ok())
+                        })
+                        .unwrap();
+                    total = Some(end + 4 + length);
+                }
+                if total.is_some_and(|size| data.len() >= size) {
+                    break;
+                }
+            }
+            let body = &data[data
+                .windows(4)
+                .position(|window| window == b"\r\n\r\n")
+                .unwrap()
+                + 4..];
+            let request: Value = serde_json::from_slice(body).unwrap();
+            assert!(body.len() <= 28_000);
+            assert_eq!(request["model"], "jev-latest");
+            let answers = if fail_on == Some(count + 1) {
+                json!({})
+            } else {
+                Value::Object(request["questions"].as_object().unwrap().iter().map(|(name, _)| {
+                    (name.clone(), json!({"type":"noul","noul":if name.starts_with("omit_") {0.99} else {0.01}}))
+                }).collect())
+            };
+            let response = json!({"model":"jev-1.13.0","answers":answers,"usage":{"input_tokens":100,"output_tokens":10}}).to_string();
+            write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", response.len(), response).unwrap();
+            count += 1;
+        }
+        count
+    });
+    (endpoint, stop, thread)
+}
+
+fn run(fail_on: Option<usize>) -> (Value, tempfile::TempDir, usize) {
+    let temporary = tempfile::tempdir().unwrap();
+    let root = temporary.path();
+    let data_dir = root.join("data");
+    fs::create_dir(&data_dir).unwrap();
+    fs::set_permissions(&data_dir, fs::Permissions::from_mode(0o700)).unwrap();
+    fs::write(data_dir.join("config.json"), json!({"schema_version":2,"enabled":true,
+        "test_build_enabled":false,"search_listing_enabled":false,"mode":"replace","min_chars":1024,
+        "max_chars":2000000,"model":"jev-latest","timeout_seconds":3.0,
+        "line_policy":{"output":{"omit_min":95,"exact_max":5},
+          "test_build":{"omit_min":95,"exact_max":5},"search_listing":{"omit_min":95,"exact_max":5}}}).to_string()).unwrap();
+    fs::write(data_dir.join(".env"), "JEV_API_KEY=synthetic-test-key\n").unwrap();
+    fs::set_permissions(data_dir.join(".env"), fs::Permissions::from_mode(0o600)).unwrap();
+    let transcript = root.join("transcript.jsonl");
+    fs::write(
+        &transcript,
+        json!({"type":"response_item","payload":{"role":"user",
+        "content":[{"type":"input_text","text":"Check whether the build finished"}]}})
+        .to_string()
+            + "\n",
+    )
+    .unwrap();
+    let original = (0..120)
+        .map(|index| format!("Compiling module {index:04} ... done\n"))
+        .collect::<String>();
+    let event = json!({"hook_event_name":"PostToolUse","tool_name":"Bash",
+        "session_id":"fixture-session","tool_use_id":"fixture-call","transcript_path":transcript,
+        "tool_input":{"command":"echo build"},"tool_response":original});
+    let (endpoint, stop, thread) = mock_server(fail_on);
+    let mut child = Command::new(env!("CARGO_BIN_EXE_jev-hook"))
+        .env("PLUGIN_DATA", &data_dir)
+        .env("CODEX_JEV_TEST_ENDPOINT", endpoint)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(event.to_string().as_bytes())
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    stop.store(true, Ordering::Relaxed);
+    let calls = thread.join().unwrap();
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let reply: Value = serde_json::from_slice(&output.stdout).unwrap();
+    (reply, temporary, calls)
+}
+
+#[test]
+fn writes_one_original_and_line_receipt_for_valid_batches() {
+    let (reply, root, calls) = run(None);
+    assert_eq!(reply["continue"], false);
+    assert!(calls > 1);
+    let data_dir = root.path().join("data");
+    let logs = data_dir.join("logs");
+    let snapshot: Value =
+        serde_json::from_slice(&fs::read(logs.join("latest-decision.json")).unwrap()).unwrap();
+    assert_eq!(snapshot["version"], 2);
+    assert_eq!(snapshot["totals"]["seen"], 120);
+    assert_eq!(snapshot["totals"]["judged"], 120);
+    assert!(snapshot["totals"]["omitted"].as_u64().unwrap() > 100);
+    let originals = fs::read_dir(data_dir.join("outputs"))
+        .unwrap()
+        .flat_map(|entry| fs::read_dir(entry.unwrap().path()).unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(originals.len(), 1);
+    let saved = fs::read_to_string(originals[0].as_ref().unwrap().path()).unwrap();
+    assert!(saved.starts_with("Compiling module 0000"));
+    assert!(reply["reason"].as_str().unwrap().contains("full original:"));
+}
+
+#[test]
+fn missing_batch_answers_keep_the_full_result() {
+    let (reply, root, calls) = run(Some(1));
+    assert_eq!(reply, json!({}));
+    assert!(calls >= 1);
+    assert!(!root.path().join("data/outputs").exists());
+}
+
+#[test]
+fn failure_after_a_completed_batch_removes_partial_panel_state() {
+    let (reply, root, calls) = run(Some(2));
+    assert_eq!(reply, json!({}));
+    assert!(calls >= 2);
+    assert!(!root.path().join("data/logs/latest-decision.json").exists());
+    assert!(!root.path().join("data/outputs").exists());
+}
+
+#[test]
+#[ignore = "uses a configured TypeSafe API key and makes a real Jev request"]
+fn live_line_request_records_valid_independent_answers() {
+    let key_file = std::env::var("CODEX_JEV_LIVE_KEY_FILE").expect("set CODEX_JEV_LIVE_KEY_FILE");
+    let temporary = tempfile::tempdir().unwrap();
+    let root = temporary.path();
+    let data = root.join("data");
+    fs::create_dir(&data).unwrap();
+    fs::set_permissions(&data, fs::Permissions::from_mode(0o700)).unwrap();
+    fs::copy(key_file, data.join(".env")).unwrap();
+    fs::set_permissions(data.join(".env"), fs::Permissions::from_mode(0o600)).unwrap();
+    fs::write(data.join("config.json"), json!({"schema_version":2,"enabled":true,
+        "test_build_enabled":false,"search_listing_enabled":false,"mode":"observe",
+        "min_chars":1024,"max_chars":2000000,"model":"jev-1.13.0","timeout_seconds":4.0,
+        "line_policy":{"output":{"omit_min":95,"exact_max":5},
+          "test_build":{"omit_min":95,"exact_max":5},"search_listing":{"omit_min":95,"exact_max":5}}}).to_string()).unwrap();
+    let transcript = root.join("transcript.jsonl");
+    fs::write(&transcript, json!({"type":"response_item","payload":{"role":"user",
+        "content":[{"type":"input_text","text":"Review whether this build completed and preserve its unique version"}]}}).to_string()+"\n").unwrap();
+    let mut source = (0..40)
+        .map(|index| format!("Compiling module {index:02} ... done\n"))
+        .collect::<String>();
+    source.push_str("Version: 7.42.19\nBUILD SUCCESSFUL\n");
+    let event = json!({"hook_event_name":"PostToolUse","tool_name":"Bash",
+        "session_id":"live-fixture-session","tool_use_id":"live-fixture-call","transcript_path":transcript,
+        "tool_input":{"command":"echo build"},"tool_response":source});
+    let binary = std::env::var("CODEX_JEV_HOOK_BIN")
+        .unwrap_or_else(|_| env!("CARGO_BIN_EXE_jev-hook").into());
+    let mut child = Command::new(binary)
+        .env("PLUGIN_DATA", &data)
+        .env_remove("CODEX_JEV_TEST_ENDPOINT")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(event.to_string().as_bytes())
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    assert_eq!(
+        serde_json::from_slice::<Value>(&output.stdout).unwrap(),
+        json!({})
+    );
+    let snapshot: Value =
+        serde_json::from_slice(&fs::read(data.join("logs/latest-decision.json")).unwrap()).unwrap();
+    assert_eq!(snapshot["version"], 2);
+    assert_eq!(snapshot["totals"]["judged"], 42);
+    assert!(snapshot["totals"]["requests"].as_u64().unwrap() >= 1);
+}

@@ -1,24 +1,19 @@
 {
+  "schema_version": 2,
   "enabled": false,
   "test_build_enabled": false,
   "search_listing_enabled": false,
   "mode": "replace",
   "min_chars": 8192,
   "max_chars": 2000000,
-  "sample_chars": 12000,
   "timeout_seconds": 3.0,
-  "model": "jev-1.13.0",
+  "model": "jev-latest",
   "allow_mcp_replacement": false,
   "log_limit_mb": 50,
   "never_delete_logs": false,
-  "decision_methods": {
-    "output": {"noul": true, "choice": true},
-    "test_build": {"noul": true, "choice": true},
-    "search_listing": {"choice": true}
-  },
-  "thresholds": {
-    "output": {"routine_min": 90, "exact_max": 12, "unique_max": 10, "confidence_min": 70},
-    "test_build": {"routine_min": 90, "exact_max": 20, "unique_max": 20, "confidence_min": 70},
-    "search_listing": {"summarize_probability_min": 78, "summarize_confidence_min": 70, "drop_probability_min": 92, "drop_confidence_min": 85}
+  "line_policy": {
+    "output": {"omit_min": 95, "exact_max": 5},
+    "test_build": {"omit_min": 95, "exact_max": 5},
+    "search_listing": {"omit_min": 95, "exact_max": 5}
   }
 }

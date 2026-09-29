@@ -50,7 +50,16 @@ test("panel reads the current snapshot and rejects linked files", async () => {
     await fs.mkdir(logs);
     const filename = path.join(logs, "latest-decision.json");
     await fs.writeFile(filename, JSON.stringify(snapshot));
-    assert.equal((await readLatestPanelDecision(directory)).id, snapshot.id);
+    assert.equal(await readLatestPanelDecision(directory), null, "legacy v1 entries do not populate the live panel");
+    const latest = { id: `${snapshot.id}-12`, line: 12, excerpt: "test passed", summary: "test/build · line 12",
+      action: "keep", can_omit: 0.81, exact_needed: 0.2 };
+    const version2 = { version: 2, id: snapshot.id, at: snapshot.at, filter: "test_build", status: "keep",
+      latest, recent: [latest], totals: { seen: 12, judged: 10, kept: 12, omitted: 0,
+        protected: 2, unjudged: 2, requests: 1 }, batch_elapsed_ms: 48 };
+    await fs.writeFile(filename, JSON.stringify(version2));
+    assert.equal((await readLatestPanelDecision(directory)).latest.line, 12);
+    assert.equal(parsePanelDecision({ ...version2, status: "processing" }).status, "processing");
+    assert.throws(() => parsePanelDecision({ ...version2, latest: { ...latest, can_omit: 1.2 } }), /line row/);
     await fs.rename(filename, path.join(directory, "owned.json"));
     await fs.symlink(path.join(directory, "owned.json"), filename);
     await assert.rejects(readLatestPanelDecision(directory), /Unsafe/);

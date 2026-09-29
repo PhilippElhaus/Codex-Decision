@@ -77,11 +77,13 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(jev.Config().mode, "replace")
 
     def test_config_example_is_valid_and_disabled(self):
-        config = jev.Config.from_file(ROOT / "config.example.json")
-        self.assertFalse(config.enabled)
-        self.assertFalse(config.test_build_enabled)
-        self.assertFalse(config.search_listing_enabled)
-        self.assertEqual(config.mode, "replace")
+        example = json.loads((ROOT / "config.example.json").read_text())
+        self.assertEqual(example["schema_version"], 2)
+        self.assertFalse(example["enabled"])
+        self.assertFalse(example["test_build_enabled"])
+        self.assertFalse(example["search_listing_enabled"])
+        self.assertEqual(example["mode"], "replace")
+        self.assertEqual(example["line_policy"]["output"], {"omit_min": 95, "exact_max": 5})
 
     def test_output_threshold_changes_decision_and_invalid_values_fail(self):
         scores = {**GOOD, "routine_noise": .94, "needs_exact_text": .08, "one_off_value": .05}

@@ -1,5 +1,5 @@
 {
-  "description": "Three selectable Codex Jev PostToolUse filters. Disabled until selected.",
+  "description": "Three selectable line-level Codex Jev PostToolUse filters. Disabled until selected.",
   "hooks": {
     "PostToolUse": [
       {
@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'p=\"$PLUGIN_ROOT/hooks/post_tool_use.py\"; if [ -f \"$p\" ]; then python3 \"$p\" || true; fi'",
+            "command": "sh -c 'p=\"$PLUGIN_ROOT/hooks/bin/linux-x86_64/jev-hook\"; if [ -x \"$p\" ]; then \"$p\" || true; fi'",
             "timeout": 60,
             "statusMessage": "Evaluating large tool output"
           }

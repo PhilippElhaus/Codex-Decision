@@ -19,11 +19,35 @@ const DEFAULT_DECISION_METHODS = Object.freeze({
   test_build: { noul: true, choice: true },
   search_listing: { choice: true },
 });
+const DEFAULT_LINE_POLICY = Object.freeze({
+  output: { omit_min: 95, exact_max: 5 },
+  test_build: { omit_min: 95, exact_max: 5 },
+  search_listing: { omit_min: 95, exact_max: 5 },
+});
 const CONFIG_KEYS = new Set([
   "enabled", "test_build_enabled", "search_listing_enabled", "precompact_enabled", "mode", "min_chars", "max_chars", "sample_chars",
   "timeout_seconds", "model", "allow_mcp_replacement", "thresholds",
-  "log_limit_mb", "never_delete_logs", "decision_methods",
+  "log_limit_mb", "never_delete_logs", "decision_methods", "schema_version", "line_policy",
 ]);
+
+function completeLinePolicy(value = {}) {
+  if (!value || typeof value !== "object" || Array.isArray(value) ||
+      Object.keys(value).some((route) => !Object.hasOwn(DEFAULT_LINE_POLICY, route))) {
+    throw new Error("Invalid Jev line policy");
+  }
+  return Object.fromEntries(Object.entries(DEFAULT_LINE_POLICY).map(([route, defaults]) => {
+    const entered = value[route] ?? {};
+    if (!entered || typeof entered !== "object" || Array.isArray(entered) ||
+        Object.keys(entered).some((key) => !Object.hasOwn(defaults, key))) {
+      throw new Error("Invalid Jev line policy");
+    }
+    const merged = { ...defaults, ...entered };
+    if (Object.values(merged).some((number) => !Number.isInteger(number) || number < 0 || number > 100)) {
+      throw new Error("Jev line policy requires whole percentages from 0 to 100");
+    }
+    return [route, merged];
+  }));
+}
 
 function completeThresholds(value = {}) {
   if (!value || typeof value !== "object" || Array.isArray(value) ||
@@ -64,7 +88,7 @@ async function readConfig(directory) {
     const raw = JSON.parse(await fs.readFile(path.join(directory, "config.json"), "utf8"));
     const merged = {
       enabled: false, test_build_enabled: false, search_listing_enabled: false, mode: "replace", min_chars: 8192, max_chars: 2_000_000,
-      sample_chars: 12_000, timeout_seconds: 3, model: "jev-1.13.0",
+      sample_chars: 12_000, timeout_seconds: 3, model: "jev-latest",
       allow_mcp_replacement: false, log_limit_mb: 50, never_delete_logs: false, ...raw,
     };
     if (!raw || typeof raw !== "object" || Array.isArray(raw) ||
@@ -80,11 +104,12 @@ async function readConfig(directory) {
         typeof merged.model !== "string" || !/^jev-[\w.-]{1,40}$/.test(merged.model) ||
         typeof merged.allow_mcp_replacement !== "boolean" ||
         !Number.isInteger(merged.log_limit_mb) || merged.log_limit_mb < 1 || merged.log_limit_mb > 9999 ||
-        typeof merged.never_delete_logs !== "boolean") {
+        typeof merged.never_delete_logs !== "boolean" ||
+        (merged.schema_version !== undefined && merged.schema_version !== 2)) {
       throw new Error("Invalid Jev config");
     }
-    completeThresholds(merged.thresholds);
-    completeDecisionMethods(merged.decision_methods);
+    if (merged.schema_version === 2) completeLinePolicy(merged.line_policy);
+    else { completeThresholds(merged.thresholds); completeDecisionMethods(merged.decision_methods); }
     const { precompact_enabled: _legacy, ...current } = raw;
     return { enabled: false, test_build_enabled: false, search_listing_enabled: false, mode: "replace", ...current };
   } catch (error) {
@@ -94,9 +119,10 @@ async function readConfig(directory) {
 }
 
 async function writeConfig(directory, updates) {
-  const config = { ...await readConfig(directory), ...updates };
-  completeThresholds(config.thresholds);
-  completeDecisionMethods(config.decision_methods);
+  const old = await readConfig(directory);
+  const { thresholds: _thresholds, decision_methods: _methods, ...retained } = old;
+  const config = { ...retained, ...updates, schema_version: 2,
+    line_policy: completeLinePolicy(updates.line_policy ?? old.line_policy) };
   await fs.mkdir(directory, { recursive: true, mode: 0o700 });
   if ((await fs.lstat(directory)).isSymbolicLink()) throw new Error("Plugin data directory is a link");
   const target = path.join(directory, "config.json");
@@ -136,18 +162,13 @@ async function writeMode(directory, mode) {
   return writeConfig(directory, { mode });
 }
 
-async function writeThresholds(directory, thresholds) {
-  return writeConfig(directory, { thresholds: completeThresholds(thresholds) });
-}
-
-async function writeSettings(directory, mode, thresholds, limitMb, neverDelete, decisionMethods) {
+async function writeSettings(directory, mode, linePolicy, limitMb, neverDelete) {
   if (!["replace", "observe"].includes(mode)) throw new TypeError("invalid Jev mode");
   if (!Number.isInteger(limitMb) || limitMb < 1 || limitMb > 9999 || typeof neverDelete !== "boolean") {
     throw new TypeError("Log retention must be 1 to 9999 MB");
   }
-  return writeConfig(directory, { mode, thresholds: completeThresholds(thresholds),
-    log_limit_mb: limitMb, never_delete_logs: neverDelete,
-    ...(decisionMethods === undefined ? {} : { decision_methods: completeDecisionMethods(decisionMethods) }) });
+  return writeConfig(directory, { mode, line_policy: completeLinePolicy(linePolicy),
+    log_limit_mb: limitMb, never_delete_logs: neverDelete });
 }
 
 async function writeNeverDeleteLogs(directory, neverDelete) {
@@ -290,7 +311,8 @@ async function readEventsSince(directory, offset) {
 
 async function readLifetimeStats(directory) {
   const totals = { calls: 0, completed: 0, replaced: 0, savedChars: 0,
-    estimatedTokensSaved: 0, averageMs: 0 };
+    estimatedTokensSaved: 0, averageMs: 0, linesSeen: 0, linesJudged: 0,
+    linesKept: 0, linesOmitted: 0, linesProtected: 0, linesUnjudged: 0 };
   const statsFile = path.join(directory, "stats.json");
   try {
     const details = await fs.lstat(statsFile);
@@ -299,9 +321,15 @@ async function readLifetimeStats(directory) {
     for (const key of ["calls", "completed", "replaced", "savedChars", "timed", "elapsedMs"]) {
       if (!Number.isSafeInteger(stats[key]) || stats[key] < 0) throw new Error("Invalid Jev stats file");
     }
+    const lineStats = Object.fromEntries(["linesSeen", "linesJudged", "linesKept", "linesOmitted",
+      "linesProtected", "linesUnjudged"].map((key) => {
+      const value = stats[key] ?? 0;
+      if (!Number.isSafeInteger(value) || value < 0) throw new Error("Invalid Jev line stats");
+      return [key, value];
+    }));
     return { calls: stats.calls, completed: stats.completed, replaced: stats.replaced,
       savedChars: stats.savedChars, estimatedTokensSaved: estimateTokensSaved(stats.savedChars),
-      averageMs: stats.timed ? Math.round(stats.elapsedMs / stats.timed) : 0 };
+      averageMs: stats.timed ? Math.round(stats.elapsedMs / stats.timed) : 0, ...lineStats };
   } catch (error) {
     if (error.code !== "ENOENT") throw error;
   }
@@ -507,9 +535,10 @@ async function writeApiKey(directory, key) {
 
 module.exports = {
   activitySummary, checkHealth, completeThresholds, completeDecisionMethods, DEFAULT_THRESHOLDS, DEFAULT_DECISION_METHODS,
+  completeLinePolicy, DEFAULT_LINE_POLICY,
   decisionSummary, defaultDataDirectory, estimateTokensSaved, formatDuration,
   isInformativeEvent, isJevOutcome, outcomeLine, parseHealthOutput, readConfig,
   readApiKey, readEventOffset, readEventsSince, readLatestEvent, readLifetimeStats, readRecentOutcomes,
-  savedCharacters, writeApiKey, writeEnabled, writeMode, writeSelection, writeThresholds,
+  savedCharacters, writeApiKey, writeEnabled, writeMode, writeSelection,
   writeSettings, writeNeverDeleteLogs,
 };

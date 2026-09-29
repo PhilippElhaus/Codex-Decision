@@ -137,9 +137,8 @@ test("composer bridge selects integrations and reports view-scoped activity with
     assert.equal(ready.action, "ready");
     assert.equal(ready.hasKey, false);
     assert.equal(ready.keyLength, 0);
-    assert.equal(ready.config.thresholds.output.routine_min, 90);
-    assert.deepEqual(ready.defaults, { mode: "replace", thresholds: core.DEFAULT_THRESHOLDS,
-      decision_methods: core.DEFAULT_DECISION_METHODS,
+    assert.equal(ready.config.line_policy.output.omit_min, 95);
+    assert.deepEqual(ready.defaults, { mode: "replace", line_policy: core.DEFAULT_LINE_POLICY,
       log_limit_mb: 50, never_delete_logs: false });
     assert.equal(ready.config.log_limit_mb, 50);
     assert.equal(ready.lifetime.calls, 1);
@@ -161,27 +160,27 @@ test("composer bridge selects integrations and reports view-scoped activity with
     assert.equal((await bridge({ action: "settingsOpenLogs" })).settings.action, "openedLogs");
     assert.equal(openedExternal, path.join(directory, "logs"));
     const missing = (await bridge({ action: "settingsSave", mode: "replace", key: "", logLimitMb: 50, neverDeleteLogs: false,
-      thresholds: { output: { routine_min: 90 } } })).settings;
+      linePolicy: { output: { omit_min: 95 } } })).settings;
     assert.equal(missing.action, "error");
     assert.match(missing.message, /Enter an API key/);
-    const decisionMethods = { output: { noul: false, choice: true }, test_build: { noul: true, choice: false },
-      search_listing: { choice: true } };
+    const linePolicy = { output: { omit_min: 97, exact_max: 3 },
+      test_build: { omit_min: 95, exact_max: 5 }, search_listing: { omit_min: 95, exact_max: 5 } };
     const savedSettings = (await bridge({ action: "settingsSave", mode: "observe", key: "new-test-key-123", logLimitMb: 9999, neverDeleteLogs: true,
-      decisionMethods, thresholds: { output: { routine_min: 97 } } })).settings;
+      linePolicy })).settings;
     assert.equal(savedSettings.action, "saved");
     assert.equal(savedSettings.keyLength, "new-test-key-123".length);
     assert.equal(await core.readApiKey(directory), "new-test-key-123");
-    assert.equal((await core.readConfig(directory)).thresholds.output.routine_min, 97);
+    assert.equal((await core.readConfig(directory)).line_policy.output.omit_min, 97);
     assert.equal((await core.readConfig(directory)).mode, "observe");
     assert.equal((await core.readConfig(directory)).log_limit_mb, 9999);
     assert.equal((await core.readConfig(directory)).never_delete_logs, true);
-    assert.deepEqual((await core.readConfig(directory)).decision_methods, decisionMethods);
+    assert.deepEqual((await core.readConfig(directory)).line_policy, linePolicy);
     assert.equal(JSON.stringify(savedSettings).includes("new-test-key-123"), false);
     const readyAfterSave = (await bridge({ action: "settingsRead" })).settings;
     assert.equal(readyAfterSave.hasKey, true);
     assert.equal(readyAfterSave.keyLength, "new-test-key-123".length);
-    assert.deepEqual(readyAfterSave.config.decision_methods, decisionMethods);
-    assert.equal(readyAfterSave.defaults.thresholds.output.routine_min, 90);
+    assert.deepEqual(readyAfterSave.config.line_policy, linePolicy);
+    assert.equal(readyAfterSave.defaults.line_policy.output.omit_min, 95);
     assert.equal(JSON.stringify(readyAfterSave).includes("new-test-key-123"), false);
     const tested = (await bridge({ action: "settingsTest", key: "" })).settings;
     assert.equal(suppliedKey, null);

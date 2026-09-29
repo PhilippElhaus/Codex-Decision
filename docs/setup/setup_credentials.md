@@ -8,10 +8,10 @@ For a default `codex-jev@codex-jev` installation, the data directory is `~/.code
 JEV_API_KEY=your-key
 ```
 
-On Linux or WSL, make the directory private and set the file mode to `600`. From a checkout, the included prompt does this for you without placing the key in shell history:
+On Linux or WSL, make the directory private and set the file mode to `600`. The bundled Rust `jevctl` accepts a key from a pipe; it refuses interactive terminal input so the key is not echoed. For example, pass the key from a local secret manager to:
 
 ```bash
-python3 scripts/configure_key.py --data-dir "$HOME/.codex/plugins/data/codex-jev-codex-jev"
+jevctl set-key --data-dir "$HOME/.codex/plugins/data/codex-jev-codex-jev"
 ```
 
 The parser treats the value as text. It does not execute shell code. The hook sends bounded requests directly to `https://api.typesafe.ai/v1/systemone` with the key in the HTTPS Authorization header. The key does not enter command arguments, tool output, or decision logs. If you use the Codex side window setup, the entered key passes through its local webview bridge to the extension. The extension checks for a saved key and probes Jev health when an integration is enabled.

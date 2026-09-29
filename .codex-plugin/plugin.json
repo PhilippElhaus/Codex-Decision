@@ -1,7 +1,7 @@
 {
   "name": "codex-jev",
-  "version": "0.3.3",
-  "description": "Jev-gated filtering for repetitive output, test/build logs, and broad search/listing results.",
+  "version": "0.4.0+codex.20260929065701",
+  "description": "Per-line Jev filtering for repetitive output, test/build logs, and broad search/listing results.",
   "author": {
     "name": "Philipp Elhaus",
     "url": "https://github.com/PhilippElhaus"
@@ -19,7 +19,7 @@
   "interface": {
     "displayName": "Codex Jev",
     "shortDescription": "Trim repetitive tool output",
-    "longDescription": "Codex Jev adds three optional local PostToolUse filters for repetitive command output, routine test/build logs, and broad search or file listings. It sends bounded portions of eligible results to TypeSafe AI's Jev API for decisions. Uncertain results remain intact, and every shortened result points to an exact local original. Filters start disabled and require a TypeSafe API key and trust in the bundled hook. The included skill helps configure Jev and verify shortened evidence. The optional VS Code control and version-pinned composer patch are installed separately from the plugin package. Local hook execution is unavailable on surfaces without its scripts and runtime.",
+    "longDescription": "Codex Jev adds three optional local PostToolUse filters for repetitive command output, test/build logs, and search or file listings. A bundled Rust hook asks TypeSafe AI's Jev for independent per-line probabilities in bounded batches. Code protects diagnostics and exact evidence, and uncertain results remain intact. Every shortened result points to a private, exact original. Filters start disabled and require a TypeSafe API key. The optional VS Code control and version-pinned composer patch are installed separately. This local package contains a Linux x86_64 hook binary; other execution environments need their own native binary.",
     "developerName": "Philipp Elhaus",
     "category": "Developer Tools",
     "capabilities": [

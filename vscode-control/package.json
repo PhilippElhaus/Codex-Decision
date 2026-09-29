@@ -2,7 +2,7 @@
   "name": "codex-jev-control",
   "displayName": "Codex Jev Control",
   "description": "Jev integration controls and live decision panel for VS Code",
-  "version": "0.2.32",
+  "version": "0.3.0",
   "publisher": "elhaus-labs",
   "license": "MIT",
   "icon": "icon.png",

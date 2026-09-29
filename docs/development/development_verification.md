@@ -1,28 +1,27 @@
-# Verification
+# Verify the local line migration
 
-Run commands from the repository root. [The test map](../../tests/README.md) shows each suite and its coverage. Default tests use synthetic replies and need no API key.
-
-## Fast checks
+Builds use the user cache as Cargo's target directory, so the repository stays free of generated compiler artifacts:
 
 ```bash
-python3 -m unittest discover -s tests/smoke -p 'test_*.py' -v
-python3 -m unittest discover -s tests/unit -p 'test_*.py' -v
-python3 -m unittest discover -s tests/edge -p 'test_*.py' -v
-npm --prefix vscode-control test
-```
-
-## Before delivery
-
-```bash
-python3 -m unittest discover -s tests -p 'test_*.py' -v
-npm --prefix vscode-control test
+CARGO_TARGET_DIR="$HOME/.cache/codex-jev/cargo-target" cargo test -p codex-jev
+npm test --prefix vscode-control
 python3 vscode-control/scripts/browser_smoke.py
-python3 scripts/benchmark_all_filters.py --mode mock --per-variant 100
-git diff --check
 ```
 
-The Python suite includes process-level hook tests and the pinned Codex patch's apply, update, tamper, and restore tests. The Node suite includes the VS Code bridge, error handling, and a multi-batch log load test. The Edge browser smoke test checks the composer, key overlay, and settings form at three widths with mock data. It needs Windows Edge and `pwsh.exe` in WSL.
+The Rust suite checks exact UTF-8 line spans, bounded and unique targets, protected diagnostics, invalid Jev answers, and fail-open process behavior. The browser harnesses render the actual composer and panel code. The ignored live Rust test makes a real call using a private key file and synthetic output; it writes only to a temporary data directory:
 
-The mock benchmark verifies routing and preservation rules. Do not use it as a live speed or token-savings measurement. The [dated benchmark report](../benchmarks/benchmark_live_2026-09-26.md) explains the live measurement and its limits.
+```bash
+CODEX_JEV_LIVE_KEY_FILE=<private-PLUGIN_DATA>/.env \
+CARGO_TARGET_DIR="$HOME/.cache/codex-jev/cargo-target" \
+cargo test -p codex-jev live_line_request_records_valid_independent_answers -- --ignored
+```
 
-For filter logic changes, add reviewed cases for [quality replay](../../scripts/evaluate_quality.py). Label whether each result is safe to shorten and which exact fragments the agent needs. Add paired full-task outcomes when available. The tool reports a held-out risk bound before it suggests stricter thresholds. Do not apply a suggested cutoff from a small or unrepresentative set. Run process-level hook tests after changing a request, output format, or chunk schedule.
+For reviewed quality cases, create a private JSON array with records like:
+
+```json
+[{"id":"failing-test-1","split":"holdout","receipt":"/private/receipt.json","required_lines":[5,6,9],"task_solved":true,"baseline_task_solved":true}]
+```
+
+Run `jevctl evaluate-quality --cases <private-cases.json>`. It reports required lines lost, characters saved, billed tokens when the batch responses supply usage, and labeled task outcomes separately for train and holdout cases. Cases and receipts can contain private data; keep them outside the repository. Do not tune a threshold on the holdout split. The 2026-09-26 live benchmark used the earlier coarse implementation and does not measure this release.
+
+Package with `./scripts/build_submission.sh`, validate the plugin manifest, install the local package and paired VSIX, and test the installed Rust binary using temporary synthetic data. The user's current VS Code window does not need to be reloaded by automation; they can reload it when ready.

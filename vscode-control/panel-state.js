@@ -35,6 +35,7 @@ function parseRecent(value, latestId) {
 }
 
 function parsePanelDecision(value) {
+  if (value?.version === 2) return parseLineDecision(value);
   if (!value || value.version !== 1 || !/^[a-f0-9]{32}$/.test(value.id) ||
       typeof value.at !== "string" || !Number.isFinite(Date.parse(value.at)) ||
       !FILTERS.has(value.filter) || !STATUSES.has(value.status) ||
@@ -66,6 +67,40 @@ function parsePanelDecision(value) {
     recent: parseRecent(value.recent, value.id), demo: value.demo === true };
 }
 
+function parseLineDecision(value) {
+  const identifier = /^[a-f0-9]{32}$/;
+  const lineIdentifier = /^[a-f0-9]{32}-\d+$/;
+  const actions = new Set(["keep", "omit", "keep_unjudged"]);
+  const integer = (number, limit = 2_000_000) => Number.isSafeInteger(number) && number >= 0 && number <= limit;
+  if (!identifier.test(value.id) || typeof value.at !== "string" || !Number.isFinite(Date.parse(value.at)) ||
+      !FILTERS.has(value.filter) || !new Set(["processing", "keep", "candidate", "replace"]).has(value.status) ||
+      !value.totals || !Object.values(value.totals).every((number) => integer(number)) ||
+      !Array.isArray(value.recent) || value.recent.length > 5 ||
+      (value.batch_elapsed_ms !== null && !integer(value.batch_elapsed_ms, 3_600_000))) {
+    throw new Error("Invalid Jev line decision");
+  }
+  const parseLine = (row) => {
+    if (!row || !lineIdentifier.test(row.id) || !integer(row.line) || row.line < 1 ||
+        typeof row.excerpt !== "string" || row.excerpt.length > 240 ||
+        typeof row.summary !== "string" || row.summary.length > 120 || !actions.has(row.action) ||
+        !Number.isFinite(row.can_omit) || row.can_omit < 0 || row.can_omit > 1 ||
+        !Number.isFinite(row.exact_needed) || row.exact_needed < 0 || row.exact_needed > 1) {
+      throw new Error("Invalid Jev line row");
+    }
+    return { id: row.id, line: row.line, excerpt: row.excerpt, summary: row.summary,
+      action: row.action, can_omit: row.can_omit, exact_needed: row.exact_needed };
+  };
+  const recent = value.recent.map(parseLine);
+  const latest = parseLine(value.latest);
+  if (recent.at(-1)?.id !== latest.id || new Set(recent.map((row) => row.id)).size !== recent.length ||
+      value.totals.judged > value.totals.seen || value.totals.omitted > value.totals.judged ||
+      value.totals.kept + value.totals.omitted !== value.totals.seen) {
+    throw new Error("Inconsistent Jev line decision");
+  }
+  return { version: 2, id: value.id, at: value.at, filter: value.filter, status: value.status,
+    latest, recent, totals: value.totals, batch_elapsed_ms: value.batch_elapsed_ms };
+}
+
 async function readLatestPanelDecision(directory) {
   const filename = path.join(directory, "logs", "latest-decision.json");
   let file;
@@ -77,7 +112,8 @@ async function readLatestPanelDecision(directory) {
     file = await fs.open(filename, constants.O_RDONLY | (constants.O_NOFOLLOW || 0));
     const opened = await file.stat();
     if (!opened.isFile() || opened.size > 16_384) throw new Error("Unsafe Jev panel decision file");
-    return parsePanelDecision(JSON.parse(await file.readFile("utf8")));
+    const value = JSON.parse(await file.readFile("utf8"));
+    return value.version === 2 ? parsePanelDecision(value) : null;
   } catch (error) {
     if (error.code === "ENOENT") return null;
     throw error;
