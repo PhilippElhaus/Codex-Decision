@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Jev empty panel</title>
+  <link rel="stylesheet" href="../../vscode-control/webview/jev-panel.css">
+  <script>window.acquireVsCodeApi = () => ({ postMessage() {} });</script>
+</head>
+<body>
+  <main id="app"></main>
+  <script src="../../vscode-control/webview/jev-panel.js"></script>
+  <script>
+    const app = document.getElementById("app");
+    const clean = () => app.textContent.trim() === "Jev" && !app.querySelector("h1,p,.empty-glyph");
+    const first = clean();
+    window.dispatchEvent(new MessageEvent("message", { data: {
+      type: "decision", decision: null, error: "The latest Jev decision could not be read."
+    } }));
+    document.body.dataset.result = JSON.stringify({ initial: first, afterReadFault: clean() });
+    document.title = first && clean() ? "JEV_EMPTY_READY" : "JEV_EMPTY_FAILED";
+  </script>
+</body>
+</html>

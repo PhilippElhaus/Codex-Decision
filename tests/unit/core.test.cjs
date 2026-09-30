@@ -96,7 +96,8 @@ test("never delete can save alone without changing draft settings or needing a k
     assert.deepEqual({ ...(await readConfig(directory)) }, {
       enabled: false, test_build_enabled: false, search_listing_enabled: false,
       mode: "observe", schema_version: 2, line_policy: completeLinePolicy({ output: { omit_min: 96 } }),
-      search_relevance: DEFAULT_SEARCH_RELEVANCE, log_limit_mb: 75, never_delete_logs: true,
+      search_relevance: DEFAULT_SEARCH_RELEVANCE, choice_gate_enabled: true,
+      log_limit_mb: 75, never_delete_logs: true,
     });
     await assert.rejects(writeNeverDeleteLogs(directory, "true"), /boolean/);
     assert.equal((await readConfig(directory)).never_delete_logs, true);
@@ -216,7 +217,7 @@ test("hook health is private, bounded, and rejects corrupt or linked data", asyn
     const logs = path.join(directory, "logs");
     await fs.mkdir(logs);
     const file = path.join(logs, "hook-health.json");
-    const valid = { version: 1, hook_version: "0.7.1", last_seen_ms: Date.now(), last_skip: "small" };
+    const valid = { version: 1, hook_version: "0.8.0", last_seen_ms: Date.now(), last_skip: "small" };
     await fs.writeFile(file, JSON.stringify(valid));
     assert.deepEqual(await readHookHealth(directory), valid);
     await fs.writeFile(file, JSON.stringify({ ...valid, last_error_ms: -1 }));

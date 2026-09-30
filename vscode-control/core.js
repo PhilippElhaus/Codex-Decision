@@ -19,6 +19,7 @@ const CONFIG_KEYS = new Set([
   "enabled", "test_build_enabled", "search_listing_enabled", "mode", "min_chars", "max_chars",
   "timeout_seconds", "model", "allow_mcp_replacement",
   "log_limit_mb", "never_delete_logs", "schema_version", "line_policy", "search_relevance",
+  "choice_gate_enabled",
 ]);
 
 function completeSearchRelevance(value = {}) {
@@ -115,7 +116,8 @@ async function readConfig(directory) {
     const merged = {
       enabled: false, test_build_enabled: false, search_listing_enabled: false, mode: "replace", min_chars: 256, max_chars: 2_000_000,
       timeout_seconds: 3, model: "jev-latest",
-      allow_mcp_replacement: false, log_limit_mb: 50, never_delete_logs: false, ...raw,
+      allow_mcp_replacement: false, log_limit_mb: 50, never_delete_logs: false,
+      choice_gate_enabled: true, ...raw,
     };
     if (!raw || typeof raw !== "object" || Array.isArray(raw) ||
         Object.keys(raw).some((key) => !CONFIG_KEYS.has(key)) ||
@@ -130,6 +132,7 @@ async function readConfig(directory) {
         typeof merged.timeout_seconds !== "number" || merged.timeout_seconds < 0.1 || merged.timeout_seconds > 4 ||
         typeof merged.model !== "string" || !/^jev-[\w.-]{1,40}$/.test(merged.model) ||
         typeof merged.allow_mcp_replacement !== "boolean" ||
+        typeof merged.choice_gate_enabled !== "boolean" ||
         !Number.isInteger(merged.log_limit_mb) || merged.log_limit_mb < 1 || merged.log_limit_mb > 9999 ||
         typeof merged.never_delete_logs !== "boolean" ||
         merged.schema_version !== 2) {
@@ -203,14 +206,16 @@ async function writeMode(directory, mode) {
   return writeConfig(directory, { mode });
 }
 
-async function writeSettings(directory, mode, linePolicy, limitMb, neverDelete, searchRelevance = DEFAULT_SEARCH_RELEVANCE) {
+async function writeSettings(directory, mode, linePolicy, limitMb, neverDelete,
+  searchRelevance = DEFAULT_SEARCH_RELEVANCE, choiceGateEnabled = true) {
   if (!["replace", "observe"].includes(mode)) throw new TypeError("invalid Jev mode");
-  if (!Number.isInteger(limitMb) || limitMb < 1 || limitMb > 9999 || typeof neverDelete !== "boolean") {
+  if (!Number.isInteger(limitMb) || limitMb < 1 || limitMb > 9999 ||
+      typeof neverDelete !== "boolean" || typeof choiceGateEnabled !== "boolean") {
     throw new TypeError("Log retention must be 1 to 9999 MB");
   }
   return writeConfig(directory, { mode, line_policy: completeLinePolicy(linePolicy),
     search_relevance: completeSearchRelevance(searchRelevance),
-    log_limit_mb: limitMb, never_delete_logs: neverDelete });
+    choice_gate_enabled: choiceGateEnabled, log_limit_mb: limitMb, never_delete_logs: neverDelete });
 }
 
 async function writeNeverDeleteLogs(directory, neverDelete) {
@@ -254,6 +259,8 @@ function parseLogLine(line) {
       capsule_chars: typeof row.capsule_chars === "number" && Number.isFinite(row.capsule_chars)
         ? row.capsule_chars : null,
       elapsed_ms: Number(row.elapsed_ms) || 0,
+      requests: Number.isSafeInteger(row.requests) && row.requests >= 0 && row.requests <= 13
+        ? row.requests : 0,
       lines_judged: Number.isSafeInteger(row.lines_judged) && row.lines_judged >= 0 ? row.lines_judged : null,
       lines_relevance_judged: Number.isSafeInteger(row.lines_relevance_judged) && row.lines_relevance_judged >= 0
         ? row.lines_relevance_judged : null,
@@ -397,6 +404,7 @@ async function readLifetimeStats(directory) {
       const event = parseLogLine(line);
       if (!event) continue;
       if (event.status === "calling") totals.calls += 1;
+      else totals.calls += event.requests;
       if (!isJevOutcome(event)) continue;
       totals.completed += 1;
       if (event.status === "replace") totals.replaced += 1;

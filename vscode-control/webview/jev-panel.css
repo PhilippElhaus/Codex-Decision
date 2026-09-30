@@ -29,8 +29,6 @@ body:is(.vscode-light, .light) .batch-layout { --batch-keep: #895900; --batch-cu
 .batch-value { grid-column: 3; grid-row: 2; opacity: 0; text-align: right; color: var(--batch-keep); }
 .batch-row.omit .batch-value { color: var(--batch-cut); }
 .empty { display: grid; min-height: 180px; place-content: center; text-align: center; }
-.empty-glyph { color: var(--vscode-charts-blue, #70a6ca); font: 14px var(--vscode-editor-font-family, monospace); letter-spacing: .3em; }
-.empty h1 { margin-top: 13px; }
-.empty p { max-width: 350px; line-height: 1.5; }
+.empty-label { color: var(--vscode-descriptionForeground); font-size: 15px; font-weight: 600; }
 @media (max-width: 520px) { body { padding: 10px 12px; } }
 @media (max-width: 430px) { .batch-row { grid-template-columns: 3.5ch minmax(0, 1fr) 4.2em; } .batch-reason { display: none; } }

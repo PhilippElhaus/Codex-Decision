@@ -11,10 +11,11 @@ const PERCENT_FADE_MS = 180;
 const MIN_DISPLAY_MS = BAR_FILL_MS + PERCENT_FADE_MS + MIN_SETTLED_MS;
 
 class LatestDecisionProvider {
-  constructor(extensionUri, dataDirectory, now = () => Date.now()) {
+  constructor(extensionUri, dataDirectory, now = () => Date.now(), onFault = () => {}) {
     this.extensionUri = extensionUri;
     this.dataDirectory = dataDirectory;
     this.now = now;
+    this.onFault = onFault;
     this.startedAt = now();
     this.view = null;
     this.timer = null;
@@ -72,12 +73,12 @@ class LatestDecisionProvider {
       let message;
       try {
         const directory = this.dataDirectory();
-        const decision = await readLatestPanelDecision(directory);
+        const decision = directory ? await readLatestPanelDecision(directory) : null;
+        this.onFault(null);
         message = { type: "decision", decision: decision && Date.parse(decision.at) >= this.startedAt ? decision : null };
       } catch (error) {
-        message = { type: "decision", decision: null,
-          error: /dataDirectory/.test(error.message) ? "Set the Jev data directory in VS Code settings." :
-            "The latest Jev decision could not be read." };
+        this.onFault("Latest Jev decision could not be read");
+        message = { type: "decision", decision: null };
       }
       const serialized = JSON.stringify(message);
       if (serialized !== this.lastMessage && this.view?.visible) {

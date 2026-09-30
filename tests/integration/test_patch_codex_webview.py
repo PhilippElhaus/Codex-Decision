@@ -26,7 +26,7 @@ class PatchTests(unittest.TestCase):
             "type": "codex-jev", "action": "settingsSave", "key": "",
             "mode": "replace", "linePolicy": {},
             "searchRelevance": {"guard_enabled": True, "relevant_max": 7},
-            "logLimitMb": 50, "neverDeleteLogs": False,
+            "logLimitMb": 50, "neverDeleteLogs": False, "choiceGateEnabled": True,
         }
         def forward(message):
             script = (
@@ -42,6 +42,7 @@ class PatchTests(unittest.TestCase):
             return json.loads(result.stdout)
 
         self.assertEqual(forward(event)["searchRelevance"], event["searchRelevance"])
+        self.assertIs(forward(event)["choiceGateEnabled"], True)
         event["searchRelevance"]["relevant_max"] = 101
         self.assertIsNone(forward(event))
 

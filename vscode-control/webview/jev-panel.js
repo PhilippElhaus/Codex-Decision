@@ -26,14 +26,12 @@
     return value < 1000 ? `${value}ms` : `${(value / 1000).toFixed(2)}s`;
   }
 
-  function showEmpty(message) {
+  function showEmpty() {
     currentDecision = "";
     currentId = null;
     cancelAnimationFrame(animation);
     app.replaceChildren(append(element("section", "empty"),
-      element("span", "empty-glyph", "[ . . . ]"),
-      element("h1", "", "Jev decision"),
-      element("p", "", message)));
+      element("span", "empty-label", "Jev")));
   }
 
   function batchTotals(decision) {
@@ -124,10 +122,9 @@
 
   window.addEventListener("message", (event) => {
     if (event.data?.type !== "decision") return;
-    if (event.data.error) showEmpty(event.data.error);
-    else if (event.data.decision) renderBatchDecision(event.data.decision);
-    else showEmpty("Waiting for a Jev check. The newest result will appear here automatically.");
+    if (event.data.decision) renderBatchDecision(event.data.decision);
+    else showEmpty();
   });
-  showEmpty("Waiting for a Jev check. The newest result will appear here automatically.");
+  showEmpty();
   vscode.postMessage({ type: "ready" });
 })();

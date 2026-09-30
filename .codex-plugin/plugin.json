@@ -1,6 +1,6 @@
 {
   "name": "codex-jev",
-  "version": "0.7.1+codex.20260930122748",
+  "version": "0.8.0+codex.20260930131750",
   "description": "Per-line Jev filtering across local text, test/build, and search/listing tool results.",
   "author": {
     "name": "Philipp Elhaus",

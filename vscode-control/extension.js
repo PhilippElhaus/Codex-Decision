@@ -19,7 +19,7 @@ function emptyStats() {
 }
 
 function activate(context) {
-  const state = { enabled: false, outputEnabled: false, testBuildEnabled: false, searchListingEnabled: false, needsKey: false, mode: "replace", health: null, hookHealth: null, configurationError: null, viewStartedAt: Date.now(), recent: null, history: [], stats: emptyStats(), busyUntil: 0, eventSize: -1, checking: false, polling: null, callingSeen: false, viewId: null, sessionId: null, generation: 0, eventDirectory: null };
+  const state = { enabled: false, outputEnabled: false, testBuildEnabled: false, searchListingEnabled: false, needsKey: false, mode: "replace", health: null, hookHealth: null, panelFault: null, configurationError: null, sessionPending: true, viewStartedAt: Date.now(), recent: null, history: [], stats: emptyStats(), busyUntil: 0, eventSize: -1, checking: false, polling: null, callingSeen: false, viewId: null, sessionId: null, generation: 0, eventDirectory: null };
   let selectionQueue = Promise.resolve();
   let viewBaseline = Promise.resolve();
   let probePromise = null;
@@ -32,7 +32,9 @@ function activate(context) {
     return directory;
   };
   const activeDirectory = () => sessionDirectory(dataDirectory(), state.sessionId);
-  const decisionPanel = new LatestDecisionProvider(context.extensionUri, activeDirectory);
+  const decisionPanel = new LatestDecisionProvider(context.extensionUri,
+    () => state.sessionId ? activeDirectory() : null, () => Date.now(),
+    (fault) => { state.panelFault = fault; });
   context.subscriptions.push(vscode.window.registerWebviewViewProvider(VIEW_ID, decisionPanel));
   context.subscriptions.push(decisionPanel);
   context.subscriptions.push(vscode.commands.registerCommand("codexJev.showLatestDecision", () =>
@@ -45,6 +47,8 @@ function activate(context) {
     needsKey: state.needsKey,
     health: state.health,
     hookHealth: state.hookHealth,
+    panelFault: state.panelFault,
+    sessionPending: state.sessionPending,
     expectedHookVersion: EXPECTED_HOOK_VERSION,
     configurationError: state.configurationError,
     viewStartedAt: state.viewStartedAt,
@@ -61,10 +65,12 @@ function activate(context) {
     state.recent = null;
     state.callingSeen = false;
     state.busyUntil = 0;
+    state.panelFault = null;
   }
 
-  async function enterView(viewId, sessionId) {
-    if (typeof viewId !== "string" || !/^[\w:-]{1,96}$/.test(viewId)) {
+  async function enterView(viewId, sessionId, expectsLocalSession = false) {
+    if (typeof viewId !== "string" || !/^[\w:-]{1,96}$/.test(viewId) ||
+        (sessionId != null && (typeof sessionId !== "string" || !/^[A-Za-z0-9._-]{1,128}$/.test(sessionId)))) {
       state.viewId = null;
       state.sessionId = null;
       state.generation += 1;
@@ -72,12 +78,33 @@ function activate(context) {
       state.eventSize = -1;
       clearActivity();
       state.enabled = false;
+      state.sessionPending = false;
       state.configurationError = "Codex session could not be identified";
+      return;
+    }
+    if (sessionId == null) {
+      if (state.viewId !== viewId || state.sessionId !== null || state.sessionPending === expectsLocalSession) {
+        state.generation += 1;
+        state.eventDirectory = null;
+        state.eventSize = -1;
+        clearActivity();
+      }
+      state.viewId = viewId;
+      state.sessionId = null;
+      state.enabled = false;
+      state.outputEnabled = false;
+      state.testBuildEnabled = false;
+      state.searchListingEnabled = false;
+      state.health = null;
+      state.hookHealth = null;
+      state.sessionPending = !expectsLocalSession;
+      state.configurationError = expectsLocalSession ? "Codex session could not be identified" : null;
       return;
     }
     if (state.viewId === viewId && state.sessionId === sessionId) return;
     state.viewId = viewId;
     state.sessionId = sessionId;
+    state.sessionPending = false;
     state.viewStartedAt = Date.now();
     state.hookHealth = null;
     const generation = ++state.generation;
@@ -101,6 +128,7 @@ function activate(context) {
   }
 
   async function sync() {
+    if (!state.sessionId) return;
     let generation = state.generation;
     try {
       const directory = activeDirectory();
@@ -178,6 +206,7 @@ function activate(context) {
   }
 
   async function pollEvent() {
+    if (!state.sessionId) return;
     if (state.polling) return state.polling;
     const task = (async () => {
       if (state.eventSize === -2) await viewBaseline;
@@ -204,6 +233,7 @@ function activate(context) {
             state.callingSeen = true;
             pulse();
           } else if (isJevOutcome(event)) {
+            state.stats.calls += event.requests;
             if (!state.callingSeen) pulse();
             state.stats.completed += 1;
             state.stats.checkedChars += event.original_chars;
@@ -216,6 +246,10 @@ function activate(context) {
             state.history.length = Math.min(state.history.length, 3);
             state.recent = event;
             state.callingSeen = false;
+          } else if (event.status === "skip" && event.reason === "choice_kept_full_output") {
+            state.stats.calls += event.requests;
+            state.recent = event;
+            pulse();
           }
           if (event.reason === "no_evaluator" || event.reason === "evaluator_unavailable") {
             // A hook failure may be transient or unrelated to connection health.
@@ -261,9 +295,10 @@ function activate(context) {
         const lifetime = await readLifetimeStats(directory);
         return { action: "ready", config: { ...config, line_policy: completeLinePolicy(config.line_policy),
           search_relevance: completeSearchRelevance(config.search_relevance),
+          choice_gate_enabled: config.choice_gate_enabled ?? true,
           log_limit_mb: config.log_limit_mb ?? 50, never_delete_logs: config.never_delete_logs ?? false },
           defaults: { mode: "replace", line_policy: DEFAULT_LINE_POLICY, search_relevance: DEFAULT_SEARCH_RELEVANCE,
-            log_limit_mb: 50, never_delete_logs: false },
+            choice_gate_enabled: true, log_limit_mb: 50, never_delete_logs: false },
           hasKey: keyLength > 0, keyLength, lifetime };
       }
       if (request.action === "settingsOpenLogs") {
@@ -294,7 +329,8 @@ function activate(context) {
       if (request.action === "settingsSave") {
         if (!["observe", "replace"].includes(request.mode)) throw new Error("Invalid mode");
         if (!Number.isInteger(request.logLimitMb) || request.logLimitMb < 1 || request.logLimitMb > 9999 ||
-            typeof request.neverDeleteLogs !== "boolean") throw new Error("Log retention must be 1 to 9999 MB");
+            typeof request.neverDeleteLogs !== "boolean" ||
+            typeof request.choiceGateEnabled !== "boolean") throw new Error("Invalid Jev settings");
         if (!request.key) {
           try { await readApiKey(dataDirectory()); }
           catch { throw new Error("Enter an API key before saving."); }
@@ -302,7 +338,8 @@ function activate(context) {
         const linePolicy = completeLinePolicy(request.linePolicy);
         const searchRelevance = completeSearchRelevance(request.searchRelevance);
         const task = selectionQueue.then(async () => {
-          await writeSettings(directory, request.mode, linePolicy, request.logLimitMb, request.neverDeleteLogs, searchRelevance);
+          await writeSettings(directory, request.mode, linePolicy, request.logLimitMb,
+            request.neverDeleteLogs, searchRelevance, request.choiceGateEnabled);
           if (request.key) await writeApiKey(dataDirectory(), request.key);
           await sync();
           if (state.enabled && request.key) await probe();
@@ -318,7 +355,7 @@ function activate(context) {
   }
 
   context.subscriptions.push(vscode.commands.registerCommand("codexJev.bridge", async (request) => {
-    await enterView(request?.viewId, request?.sessionId);
+    await enterView(request?.viewId, request?.sessionId, request?.expectsLocalSession === true);
     if (request?.action === "openTypeSafe") {
       try {
         const externalOpen = await vscode.env.openExternal(vscode.Uri.parse("https://typesafe.ai/"));

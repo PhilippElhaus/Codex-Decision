@@ -36,6 +36,16 @@ def main() -> None:
             if not outcome.get('ok'):
                 raise AssertionError({'viewport': width, **outcome})
             reports.append({'viewport': width, 'motion': motion, **outcome})
+        empty = windows_path(ROOT.parent / 'tests/browser/jev_panel_empty_harness.html').replace('\\', '/')
+        empty_address = 'file:///' + quote(empty, safe='/:')
+        result = subprocess.run([
+            str(edge), '--headless', '--disable-gpu', '--no-first-run',
+            '--no-default-browser-check', '--disable-extensions',
+            f'--user-data-dir={windows_path(profile / "empty-panel")}',
+            '--dump-dom', empty_address,
+        ], capture_output=True, text=True, timeout=30, check=False)
+        if result.returncode != 0 or 'JEV_EMPTY_READY' not in result.stdout:
+            raise RuntimeError('Jev empty panel showed more than its label')
         print(json.dumps(reports))
     finally:
         remove_profile(profile, 'jev-edge-test-')

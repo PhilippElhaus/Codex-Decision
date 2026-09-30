@@ -24,6 +24,7 @@ struct Config {
     output: bool,
     test_build: bool,
     search_listing: bool,
+    choice_gate_enabled: bool,
     mode: String,
     min_chars: usize,
     max_chars: usize,
@@ -60,6 +61,7 @@ fn config(data_dir: &Path) -> Result<Option<Config>, String> {
         "enabled",
         "test_build_enabled",
         "search_listing_enabled",
+        "choice_gate_enabled",
         "mode",
         "min_chars",
         "max_chars",
@@ -169,6 +171,7 @@ fn config(data_dir: &Path) -> Result<Option<Config>, String> {
         output,
         test_build,
         search_listing,
+        choice_gate_enabled: optional_bool("choice_gate_enabled", true)?,
         mode,
         min_chars,
         max_chars,
@@ -919,6 +922,85 @@ fn evaluate(request: &Value, key: &str, timeout: f64) -> Result<Value, String> {
     serde_json::from_slice(&body).map_err(|_| "invalid Jev response".into())
 }
 
+fn choice_request(task: &str, command: &str, lines: &[SourceLine], model: &str) -> Value {
+    let eligible: Vec<&SourceLine> = lines
+        .iter()
+        .filter(|line| line.eligible && line.protected_reason.is_none())
+        .collect();
+    let mut samples = Vec::new();
+    let count = eligible.len().min(21);
+    for index in 0..count {
+        let position = if count == 1 {
+            0
+        } else {
+            index * (eligible.len() - 1) / (count - 1)
+        };
+        let line = eligible[position];
+        samples.push(json!({"line":line.number,
+            "text":line.model_text.chars().take(180).collect::<String>()}));
+    }
+    json!({"model":model,"state":{"task":task.chars().take(500).collect::<String>(),
+        "command":command.chars().take(400).collect::<String>(),
+        "line_count":lines.len(),"eligible_count":eligible.len(),"sample":samples},
+        "questions":{"line_filter_fit":{"type":"choice",
+            "instructions":"Would independent per-line filtering usefully remove routine repetition from this output while preserving task-relevant evidence? Judge only this sampled output. Choose uncertain if the sample is mixed or insufficient.",
+            "criteria":{
+                "line_filter":"Mostly repetitive standalone progress, status, or log lines; removing many routine lines would be useful.",
+                "keep_full":"Mostly connected prose, source code, configuration, structured data, or distinct values where line removal would lose useful context or save little.",
+                "uncertain":"Mixed or insufficient evidence; preserve the entire result."}}}})
+}
+
+fn choice_allows_line_filter(response: &Value) -> Result<bool, String> {
+    let answer = response
+        .pointer("/answers/line_filter_fit")
+        .ok_or("missing Jev choice")?;
+    if answer.get("type").and_then(Value::as_str) != Some("choice") {
+        return Err("invalid Jev choice type".into());
+    }
+    let selected = answer
+        .get("choice")
+        .and_then(Value::as_str)
+        .ok_or("missing Jev choice option")?;
+    let probabilities = answer
+        .get("probabilities")
+        .and_then(Value::as_object)
+        .ok_or("missing Jev choice probabilities")?;
+    let options = ["line_filter", "keep_full", "uncertain"];
+    if probabilities.len() != options.len() || !options.contains(&selected) {
+        return Err("invalid Jev choice options".into());
+    }
+    let mut total = 0.0;
+    let mut selected_probability = 0.0;
+    for option in options {
+        let value = probabilities
+            .get(option)
+            .and_then(Value::as_f64)
+            .ok_or("missing Jev choice probability")?;
+        if !value.is_finite() || !(0.0..=1.0).contains(&value) {
+            return Err("invalid Jev choice probability".into());
+        }
+        total += value;
+        if option == selected {
+            selected_probability = value;
+        }
+    }
+    let confidence = answer
+        .get("confidence")
+        .and_then(Value::as_f64)
+        .ok_or("missing Jev choice confidence")?;
+    if !confidence.is_finite()
+        || !(0.0..=1.0).contains(&confidence)
+        || (total - 1.0).abs() > 0.02
+        || probabilities
+            .values()
+            .filter_map(Value::as_f64)
+            .any(|value| value > selected_probability + 1e-9)
+    {
+        return Err("invalid Jev choice distribution".into());
+    }
+    Ok(selected == "line_filter" && selected_probability >= 0.80 && confidence >= 0.70)
+}
+
 fn ensure_dir(path: &Path) -> Result<(), String> {
     if path.is_symlink() {
         return Err("linked directory".into());
@@ -1071,6 +1153,77 @@ fn hook_health(data_dir: &Path, outcome: &str, reason: &str) -> Result<(), Strin
 fn skip(data_dir: &Path, reason: &str) -> Result<Value, String> {
     hook_health(data_dir, "skip", reason)?;
     Ok(json!({}))
+}
+
+fn load_stats(path: &Path) -> Result<Value, String> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(json!({})),
+        Err(_) => return Err("stats stat failed".into()),
+    };
+    if !metadata.is_file() || metadata.file_type().is_symlink() || metadata.len() > 8192 {
+        return Err("unsafe stats file".into());
+    }
+    let value: Value = serde_json::from_slice(&fs::read(path).map_err(|_| "stats read failed")?)
+        .map_err(|_| "invalid stats file")?;
+    let object = value.as_object().ok_or("invalid stats file")?;
+    if object.values().any(|item| item.as_u64().is_none()) {
+        return Err("invalid stats value".into());
+    }
+    Ok(value)
+}
+
+fn record_gate_skip(
+    data_dir: &Path,
+    event: &Value,
+    source_chars: usize,
+    elapsed_ms: u64,
+) -> Result<(), String> {
+    ensure_dir(data_dir)?;
+    let logs = data_dir.join("logs");
+    ensure_dir(&logs)?;
+    let _lock = lock_logs(&logs)?;
+    let stats_path = data_dir.join("stats.json");
+    let mut stats = load_stats(&stats_path)?;
+    let path = logs.join("events.jsonl");
+    if path.is_symlink() {
+        return Err("linked event log".into());
+    }
+    let mut options = OpenOptions::new();
+    options.append(true).create(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600).custom_flags(libc::O_NOFOLLOW);
+    }
+    let mut file = options.open(path).map_err(|_| "event log")?;
+    writeln!(
+        file,
+        "{}",
+        json!({"version":2,"at":Utc::now().to_rfc3339(),
+        "status":"skip","reason":"choice_kept_full_output","filter":"output",
+        "tool":event.get("tool_name"),"original_chars":source_chars,"capsule_chars":source_chars,
+        "elapsed_ms":elapsed_ms,"requests":1})
+    )
+    .map_err(|_| "event log write")?;
+    for (name, amount) in [
+        ("calls", 1),
+        ("completed", 0),
+        ("replaced", 0),
+        ("timed", 1),
+        ("elapsedMs", elapsed_ms),
+    ] {
+        stats[name] = json!(stats
+            .get(name)
+            .and_then(Value::as_u64)
+            .unwrap_or(0)
+            .saturating_add(amount));
+    }
+    write_private(
+        &stats_path,
+        &serde_json::to_vec(&stats).map_err(|_| "stats encoding")?,
+        true,
+    )
 }
 
 fn session_dir(data_dir: &Path, session: &str) -> Result<PathBuf, String> {
@@ -1279,6 +1432,7 @@ fn record(
     lines: &[SourceLine],
     decisions: &[codex_jev::LineDecision],
     batches: &[BatchRecord],
+    gate_elapsed_ms: Option<u64>,
     config: &Config,
     receipt_id: &str,
     snapshot_id: &str,
@@ -1336,13 +1490,15 @@ fn record(
     let summary = json!({"version":2,"id":id,"at":now.to_rfc3339(),"filter":route,"status":status,
         "reason":if config.mode == "observe" { "observe" } else { "line_policy" },
         "tool":event.get("tool_name"),"capsule_chars":visible.chars().count(),
-        "elapsed_ms":batches.iter().map(|batch| batch.elapsed_ms).sum::<u64>(),
+        "elapsed_ms":batches.iter().map(|batch| batch.elapsed_ms).sum::<u64>() + gate_elapsed_ms.unwrap_or(0),
         "source_sha256":original_hash,"lines_seen":seen,"lines_judged":judged,"lines_kept":seen-omitted,
         "lines_omitted":omitted,"lines_protected":protected,"lines_unjudged":unjudged,
         "lines_relevance_judged":relevance_judged,"lines_below_omit_cutoff":below_omit_cutoff,
         "lines_relevance_kept":relevance_kept,"search_relevance_guard":config.search_relevance.guard_enabled,
         "line_policy":config.policy[route],"search_relevance_policy":config.search_relevance,
-        "requests":batches.len(),"original_chars":source.chars().count(),"visible_chars":visible.chars().count()});
+        "requests":batches.len()+usize::from(gate_elapsed_ms.is_some()),
+        "choice_gate_ran":gate_elapsed_ms.is_some(),
+        "original_chars":source.chars().count(),"visible_chars":visible.chars().count()});
     let receipt = json!({"version":2,"manifest":summary,"tool":event.get("tool_name"),
         "tool_input":event.get("tool_input"),"initial_output":source,
         "visible_output":if status == "replace" { Some(visible) } else { None },
@@ -1386,18 +1542,22 @@ fn record(
     let mut event_file = event_options.open(event_path).map_err(|_| "event log")?;
     writeln!(event_file, "{}", summary).map_err(|_| "event log write")?;
     let stats_path = data_dir.join("stats.json");
-    let mut stats = fs::read(&stats_path)
-        .ok()
-        .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
-        .unwrap_or_else(|| json!({}));
+    let mut stats = load_stats(&stats_path)?;
     for (key, increment) in [
-        ("calls", batches.len() as u64),
+        (
+            "calls",
+            batches.len() as u64 + u64::from(gate_elapsed_ms.is_some()),
+        ),
         ("completed", 1),
         ("replaced", u64::from(status == "replace")),
-        ("timed", batches.len() as u64),
+        (
+            "timed",
+            batches.len() as u64 + u64::from(gate_elapsed_ms.is_some()),
+        ),
         (
             "elapsedMs",
-            batches.iter().map(|batch| batch.elapsed_ms).sum(),
+            batches.iter().map(|batch| batch.elapsed_ms).sum::<u64>()
+                + gate_elapsed_ms.unwrap_or(0),
         ),
         (
             "savedChars",
@@ -1609,6 +1769,18 @@ fn process_event(
         return skip(scoped, "no_eligible_lines");
     }
     let api_key = key(data_dir)?;
+    let mut gate_elapsed_ms = None;
+    if config.choice_gate_enabled && route == "output" && batches.len() >= 2 {
+        let request = choice_request(&task, command(event), &lines, &config.model);
+        let before = Instant::now();
+        let response = evaluate(&request, &api_key, config.timeout)?;
+        let elapsed_ms = before.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
+        if !choice_allows_line_filter(&response)? {
+            record_gate_skip(scoped, event, source.chars().count(), elapsed_ms)?;
+            return skip(scoped, "choice_kept_full_output");
+        }
+        gate_elapsed_ms = Some(elapsed_ms);
+    }
     let receipt_id = Uuid::new_v4().simple().to_string();
     let mut progress = ProgressSnapshot::new(scoped, receipt_id.clone())?;
     let started = Instant::now();
@@ -1701,6 +1873,7 @@ fn process_event(
         &lines,
         &decisions,
         &records,
+        gate_elapsed_ms,
         config,
         &receipt_id,
         &progress.last_snapshot_id,
@@ -1794,6 +1967,7 @@ mod tests {
             output: true,
             test_build: true,
             search_listing: true,
+            choice_gate_enabled: true,
             mode: "observe".into(),
             min_chars: 1024,
             max_chars: 2_000_000,
@@ -1805,6 +1979,42 @@ mod tests {
             log_limit_mb: 50,
             never_delete_logs: false,
         }
+    }
+
+    #[test]
+    fn choice_gate_rejects_inconsistent_answers_and_keeps_uncertainty() {
+        let answer = |choice: &str, confidence: f64, filter: f64, full: f64, uncertain: f64| {
+            json!({"answers":{"line_filter_fit":{"type":"choice","choice":choice,
+                "confidence":confidence,"probabilities":{"line_filter":filter,
+                    "keep_full":full,"uncertain":uncertain}}}})
+        };
+        assert!(choice_allows_line_filter(&answer("line_filter", 0.96, 0.98, 0.01, 0.01)).unwrap());
+        assert!(!choice_allows_line_filter(&answer("keep_full", 0.96, 0.01, 0.98, 0.01)).unwrap());
+        assert!(!choice_allows_line_filter(&answer("uncertain", 0.01, 0.33, 0.33, 0.34)).unwrap());
+        assert!(
+            !choice_allows_line_filter(&answer("line_filter", 0.60, 0.80, 0.10, 0.10)).unwrap()
+        );
+        for bad in [
+            answer("line_filter", 0.96, 0.49, 0.50, 0.01),
+            answer("line_filter", 0.96, 0.98, 0.98, 0.01),
+            answer("other", 0.96, 0.98, 0.01, 0.01),
+            json!({"answers":{"line_filter_fit":{"type":"choice","choice":"line_filter"}}}),
+        ] {
+            assert!(choice_allows_line_filter(&bad).is_err());
+        }
+    }
+
+    #[test]
+    fn corrupt_stats_are_reported_instead_of_reset() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("stats.json");
+        assert_eq!(load_stats(&path).unwrap(), json!({}));
+        for invalid in ["{broken", "[]", "{\"calls\":-1}", "{\"calls\":\"one\"}"] {
+            fs::write(&path, invalid).unwrap();
+            assert!(load_stats(&path).is_err());
+        }
+        fs::write(&path, "{\"calls\":4}").unwrap();
+        assert_eq!(load_stats(&path).unwrap()["calls"], 4);
     }
 
     #[test]

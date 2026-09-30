@@ -56,8 +56,8 @@
         defaults: { mode: "replace", line_policy: {
           output: { omit_min: 95, exact_max: 5 }, test_build: { omit_min: 95, exact_max: 5 },
           search_listing: { omit_min: 95, exact_max: 5 } },
-          search_relevance: { guard_enabled: false, relevant_max: 5 } },
-        config: { mode: "replace", log_limit_mb: 50, never_delete_logs: true,
+          search_relevance: { guard_enabled: false, relevant_max: 5 }, choice_gate_enabled: true },
+        config: { mode: "replace", log_limit_mb: 50, never_delete_logs: true, choice_gate_enabled: true,
           search_relevance: { guard_enabled: false, relevant_max: 5 },
           line_policy: { output: { omit_min: 90, exact_max: 10 },
             test_build: { omit_min: 95, exact_max: 5 }, search_listing: { omit_min: 97, exact_max: 3 } } } } :
@@ -69,8 +69,8 @@
           needsKey: demo === "onboarding" || demo === "missing-key",
           health: demo === "onboarding" || demo === "missing-key" ? { ok: false, reason: "JEV_KEY_MISSING" } :
             demo === "unavailable" ? { ok: false, reason: "JEV_TIMEOUT" } : { ok: true, model: "jev-1.13.0" },
-          hookHealth: { version: 1, hook_version: "0.7.1", last_seen_ms: Date.now(), last_success_ms: Date.now() },
-          expectedHookVersion: "0.7.1",
+          hookHealth: { version: 1, hook_version: "0.8.0", last_seen_ms: Date.now(), last_success_ms: Date.now() },
+          expectedHookVersion: "0.8.0",
           viewStartedAt: Date.now() - 1000,
           busy: demo === "pulse", mode: "replace", recent: history[0], history,
           stats: { calls: 1, candidates: 1, kept: 0, replaced: 1, checkedChars: 6367, savedChars: 6058, estimatedTokensSaved: 1515, elapsedMs: 1263, completed: 1 },

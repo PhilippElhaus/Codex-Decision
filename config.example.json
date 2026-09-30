@@ -9,6 +9,7 @@
   "timeout_seconds": 3.0,
   "model": "jev-latest",
   "allow_mcp_replacement": false,
+  "choice_gate_enabled": true,
   "log_limit_mb": 50,
   "never_delete_logs": false,
   "search_relevance": {"guard_enabled": false, "relevant_max": 5},

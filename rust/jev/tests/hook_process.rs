@@ -186,6 +186,13 @@ fn two_sessions_keep_switches_decisions_stats_and_health_separate() {
 fn mock_server(
     fail_on: Option<usize>,
 ) -> (String, Arc<AtomicBool>, std::thread::JoinHandle<usize>) {
+    mock_server_choice(fail_on, "line_filter")
+}
+
+fn mock_server_choice(
+    fail_on: Option<usize>,
+    choice: &'static str,
+) -> (String, Arc<AtomicBool>, std::thread::JoinHandle<usize>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     listener.set_nonblocking(true).unwrap();
     let endpoint = format!("http://{}/v1/systemone", listener.local_addr().unwrap());
@@ -236,6 +243,21 @@ fn mock_server(
             assert_eq!(request["model"], "jev-latest");
             let answers = if fail_on == Some(count + 1) {
                 json!({})
+            } else if request["questions"].get("line_filter_fit").is_some() {
+                let (line_filter, keep_full, uncertain) = match choice {
+                    "keep_full" => (0.01, 0.98, 0.01),
+                    "uncertain" => (0.33, 0.33, 0.34),
+                    _ => (0.98, 0.01, 0.01),
+                };
+                let selected = if choice == "uncertain" {
+                    "uncertain"
+                } else {
+                    choice
+                };
+                json!({"line_filter_fit":{"type":"choice","choice":selected,
+                    "confidence":if choice == "uncertain" {0.01} else {0.96},
+                    "probabilities":{"line_filter":line_filter,"keep_full":keep_full,
+                        "uncertain":uncertain}}})
             } else {
                 Value::Object(
                     request["questions"]
@@ -261,7 +283,11 @@ fn mock_server(
     (endpoint, stop, thread)
 }
 
-fn run(fail_on: Option<usize>, search: bool) -> (Value, tempfile::TempDir, usize) {
+fn run(
+    fail_on: Option<usize>,
+    search: bool,
+    choice: Option<&'static str>,
+) -> (Value, tempfile::TempDir, usize) {
     let temporary = tempfile::tempdir().unwrap();
     let root = temporary.path();
     let data_dir = root.join("data");
@@ -270,6 +296,7 @@ fn run(fail_on: Option<usize>, search: bool) -> (Value, tempfile::TempDir, usize
     fs::write(data_dir.join("config.json"), json!({"schema_version":2,"scope":"global","enabled":true,
         "test_build_enabled":false,"search_listing_enabled":search,"mode":"replace","min_chars":1024,
         "max_chars":2000000,"model":"jev-latest","timeout_seconds":3.0,
+        "choice_gate_enabled":choice.is_some(),
         "search_relevance":{"guard_enabled":search,"relevant_max":5},
         "line_policy":{"output":{"omit_min":95,"exact_max":5},
           "test_build":{"omit_min":95,"exact_max":5},"search_listing":{"omit_min":95,"exact_max":5}}}).to_string()).unwrap();
@@ -299,7 +326,7 @@ fn run(fail_on: Option<usize>, search: bool) -> (Value, tempfile::TempDir, usize
     let event = json!({"hook_event_name":"PostToolUse","tool_name":"Bash",
         "session_id":"fixture-session","tool_use_id":"fixture-call","transcript_path":transcript,
         "tool_input":{"command":if search {"rg -n symbol src"} else {"echo build"}},"tool_response":original});
-    let (endpoint, stop, thread) = mock_server(fail_on);
+    let (endpoint, stop, thread) = mock_server_choice(fail_on, choice.unwrap_or("line_filter"));
     let mut child = Command::new(env!("CARGO_BIN_EXE_jev-hook"))
         .env("PLUGIN_DATA", &data_dir)
         .env("CODEX_JEV_TEST_ENDPOINT", endpoint)
@@ -329,7 +356,7 @@ fn run(fail_on: Option<usize>, search: bool) -> (Value, tempfile::TempDir, usize
 
 #[test]
 fn writes_one_original_and_line_receipt_for_valid_batches() {
-    let (reply, root, calls) = run(None, false);
+    let (reply, root, calls) = run(None, false, None);
     assert_eq!(reply["continue"], false);
     assert!(calls > 1);
     let data_dir = root.path().join("data");
@@ -357,7 +384,7 @@ fn writes_one_original_and_line_receipt_for_valid_batches() {
 
 #[test]
 fn missing_batch_answers_keep_the_full_result() {
-    let (reply, root, calls) = run(Some(1), false);
+    let (reply, root, calls) = run(Some(1), false, None);
     assert_eq!(reply, json!({}));
     assert!(calls >= 1);
     assert!(!root.path().join("data/outputs").exists());
@@ -374,7 +401,7 @@ fn missing_batch_answers_keep_the_full_result() {
 
 #[test]
 fn failure_after_a_completed_batch_removes_partial_panel_state() {
-    let (reply, root, calls) = run(Some(2), false);
+    let (reply, root, calls) = run(Some(2), false, None);
     assert_eq!(reply, json!({}));
     assert!(calls >= 2);
     assert!(!scoped(&root.path().join("data"), "fixture-session")
@@ -385,7 +412,7 @@ fn failure_after_a_completed_batch_removes_partial_panel_state() {
 
 #[test]
 fn search_relevance_reaches_receipt_panel_and_cumulative_stats() {
-    let (reply, root, _) = run(None, true);
+    let (reply, root, _) = run(None, true, None);
     assert_eq!(reply["continue"], false);
     let data = root.path().join("data");
     let snapshot: Value = serde_json::from_slice(
@@ -419,6 +446,62 @@ fn search_relevance_reaches_receipt_panel_and_cumulative_stats() {
     let record: Value = serde_json::from_slice(&fs::read(receipt).unwrap()).unwrap();
     assert_eq!(record["decisions"][1]["reason"], "task_relevant");
     assert_eq!(record["decisions"][1]["p_task_relevant"], 0.91);
+}
+
+#[test]
+fn choice_gate_keeps_full_output_with_one_request_when_filtering_is_unhelpful() {
+    let (reply, root, calls) = run(None, false, Some("keep_full"));
+    assert_eq!(reply, json!({}));
+    assert_eq!(calls, 1);
+    let scoped = scoped(&root.path().join("data"), "fixture-session");
+    let health: Value =
+        serde_json::from_slice(&fs::read(scoped.join("logs/hook-health.json")).unwrap()).unwrap();
+    assert_eq!(health["last_skip"], "choice_kept_full_output");
+    assert!(!scoped.join("logs/latest-decision.json").exists());
+    let stats: Value =
+        serde_json::from_slice(&fs::read(scoped.join("stats.json")).unwrap()).unwrap();
+    assert_eq!(stats["calls"], 1);
+    assert_eq!(stats["completed"], 0);
+    let event = fs::read_to_string(scoped.join("logs/events.jsonl")).unwrap();
+    assert!(event.contains("choice_kept_full_output"));
+    assert!(!root.path().join("data/outputs").exists());
+}
+
+#[test]
+fn choice_gate_runs_line_checks_only_after_a_confident_filter_decision() {
+    let (reply, root, calls) = run(None, false, Some("line_filter"));
+    assert_eq!(reply["continue"], false);
+    assert!(calls >= 3);
+    assert!(scoped(&root.path().join("data"), "fixture-session")
+        .join("logs/latest-decision.json")
+        .exists());
+    let stats: Value = serde_json::from_slice(
+        &fs::read(scoped(&root.path().join("data"), "fixture-session").join("stats.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(stats["calls"].as_u64().unwrap() as usize, calls);
+    let (uncertain, root, calls) = run(None, false, Some("uncertain"));
+    assert_eq!(uncertain, json!({}));
+    assert_eq!(calls, 1);
+    assert!(!scoped(&root.path().join("data"), "fixture-session")
+        .join("logs/latest-decision.json")
+        .exists());
+}
+
+#[test]
+fn malformed_choice_reports_hook_error_and_preserves_full_output() {
+    let (reply, root, calls) = run(Some(1), false, Some("line_filter"));
+    assert_eq!(reply, json!({}));
+    assert_eq!(calls, 1);
+    let health: Value = serde_json::from_slice(
+        &fs::read(
+            scoped(&root.path().join("data"), "fixture-session").join("logs/hook-health.json"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    assert!(health["last_error_ms"].is_number());
+    assert!(!root.path().join("data/outputs").exists());
 }
 
 #[test]
@@ -681,4 +764,68 @@ fn live_line_request_records_valid_independent_answers() {
     .unwrap();
     assert_eq!(stats["linesRelevanceJudged"], 25);
     assert_eq!(stats["savedChars"], 0);
+}
+
+#[test]
+#[ignore = "uses a configured TypeSafe API key and makes real Jev requests"]
+fn live_choice_gate_accepts_typesafe_choice_response() {
+    let key_file = std::env::var("CODEX_JEV_LIVE_KEY_FILE").expect("set CODEX_JEV_LIVE_KEY_FILE");
+    let temporary = tempfile::tempdir().unwrap();
+    let data = temporary.path().join("data");
+    fs::create_dir(&data).unwrap();
+    fs::set_permissions(&data, fs::Permissions::from_mode(0o700)).unwrap();
+    fs::copy(key_file, data.join(".env")).unwrap();
+    fs::set_permissions(data.join(".env"), fs::Permissions::from_mode(0o600)).unwrap();
+    fs::write(
+        data.join("config.json"),
+        json!({"schema_version":2,"scope":"global","enabled":true,
+        "test_build_enabled":false,"search_listing_enabled":false,"choice_gate_enabled":true,
+        "mode":"observe","min_chars":1024,"max_chars":2000000,"model":"jev-1.13.0",
+        "timeout_seconds":4.0,"line_policy":{"output":{},"test_build":{},"search_listing":{}}})
+        .to_string(),
+    )
+    .unwrap();
+    let transcript = temporary.path().join("transcript.jsonl");
+    fs::write(
+        &transcript,
+        json!({"type":"response_item","payload":{"role":"user",
+        "content":[{"type":"input_text","text":"Review this synthetic progress log"}]}})
+        .to_string()
+            + "\n",
+    )
+    .unwrap();
+    let source = (0..120)
+        .map(|index| format!("Progress item {index:03} completed successfully\n"))
+        .collect::<String>();
+    let event = json!({"hook_event_name":"PostToolUse","tool_name":"Bash",
+        "session_id":"live-choice-session","tool_use_id":"live-choice-call","transcript_path":transcript,
+        "tool_input":{"command":"echo progress"},"tool_response":source});
+    let mut child = Command::new(env!("CARGO_BIN_EXE_jev-hook"))
+        .env("PLUGIN_DATA", &data)
+        .env_remove("CODEX_JEV_TEST_ENDPOINT")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(event.to_string().as_bytes())
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success());
+    assert!(
+        output.stderr.is_empty(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let health: Value = serde_json::from_slice(
+        &fs::read(scoped(&data, "live-choice-session").join("logs/hook-health.json")).unwrap(),
+    )
+    .unwrap();
+    assert!(
+        health["last_success_ms"].is_number() || health["last_skip"] == "choice_kept_full_output"
+    );
 }

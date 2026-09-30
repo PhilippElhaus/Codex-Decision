@@ -102,3 +102,41 @@ test("panel keeps each decision visible through its animation and a one second r
     await fs.rm(directory, { recursive: true, force: true });
   }
 });
+
+test("panel is empty without a thread and reports corrupt session data outside the panel", async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-panel-test-"));
+  const messages = [];
+  const faults = [];
+  const fake = { Uri: { joinPath: (_root, ...parts) => parts.join("/") } };
+  const originalLoad = Module._load;
+  Module._load = function (request, parent, isMain) {
+    if (request === "vscode") return fake;
+    return originalLoad.call(this, request, parent, isMain);
+  };
+  let LatestDecisionProvider;
+  try {
+    delete require.cache[require.resolve("../../vscode-control/panel")];
+    ({ LatestDecisionProvider } = require("../../vscode-control/panel"));
+  } finally { Module._load = originalLoad; }
+  let active = null;
+  const provider = new LatestDecisionProvider({}, () => active, () => Date.now(),
+    (fault) => faults.push(fault));
+  provider.view = { visible: true, webview: { postMessage: async (message) => messages.push(message) } };
+  try {
+    await provider.refresh();
+    assert.deepEqual(messages.at(-1), { type: "decision", decision: null });
+    assert.equal(faults.at(-1), null);
+    active = directory;
+    await fs.mkdir(path.join(directory, "logs"));
+    await fs.writeFile(path.join(directory, "logs", "latest-decision.json"), "{broken");
+    await provider.refresh();
+    assert.deepEqual(messages.at(-1), { type: "decision", decision: null });
+    assert.equal(faults.at(-1), "Latest Jev decision could not be read");
+    await fs.rm(path.join(directory, "logs", "latest-decision.json"));
+    await provider.refresh();
+    assert.equal(faults.at(-1), null);
+  } finally {
+    provider.dispose();
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});

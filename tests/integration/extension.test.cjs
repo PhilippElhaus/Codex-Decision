@@ -79,7 +79,7 @@ test("composer bridge selects integrations and reports view-scoped activity with
     browserAvailable = true;
     const firstSelection = await bridge({ action: "setSelection", feature: "output", enabled: true, viewId: "view-one" });
     assert.equal(firstSelection.needsKey, true);
-    assert.equal(firstSelection.expectedHookVersion, "0.7.1");
+    assert.equal(firstSelection.expectedHookVersion, "0.8.0");
     const firstTest = await bridge({ action: "testApiKey", key: "example-test-key", viewId: "view-one" });
     assert.equal(firstTest.keyTest.ok, true);
     assert.equal(suppliedKey, "example-test-key");
@@ -100,6 +100,14 @@ test("composer bridge selects integrations and reports view-scoped activity with
     assert.equal(first.stats.completed, 1);
     assert.equal(first.stats.savedChars, 10608);
     assert.equal(first.stats.estimatedTokensSaved, 2652);
+    await fs.appendFile(path.join(scoped, "logs", "events.jsonl"), JSON.stringify({
+      status: "skip", reason: "choice_kept_full_output", tool: "Read", requests: 1,
+      original_chars: 16000, capsule_chars: 16000, elapsed_ms: 80,
+    }) + "\n");
+    await until(async () => (await bridge({ action: "status", viewId: "view-one" })).stats.calls === 2);
+    const gateSkip = await bridge({ action: "status", viewId: "view-one" });
+    assert.equal(gateSkip.stats.completed, 1);
+    assert.match(gateSkip.recent, /choice_kept_full_output/);
     const beforeFailureProbe = probes;
     await fs.appendFile(path.join(scoped, "logs", "events.jsonl"), JSON.stringify({
       status: "keep", reason: "evaluator_unavailable", tool: "Bash",
@@ -137,9 +145,10 @@ test("composer bridge selects integrations and reports view-scoped activity with
     assert.equal(ready.config.line_policy.output.omit_min, 95);
     assert.deepEqual(ready.defaults, { mode: "replace", line_policy: core.DEFAULT_LINE_POLICY,
       search_relevance: core.DEFAULT_SEARCH_RELEVANCE,
-      log_limit_mb: 50, never_delete_logs: false });
+      choice_gate_enabled: true, log_limit_mb: 50, never_delete_logs: false });
+    assert.equal(ready.config.choice_gate_enabled, true);
     assert.equal(ready.config.log_limit_mb, 50);
-    assert.equal(ready.lifetime.calls, 1);
+    assert.equal(ready.lifetime.calls, 2);
     assert.equal(ready.lifetime.replaced, 1);
     assert.equal(ready.lifetime.estimatedTokensSaved, 2652);
     assert.equal(JSON.stringify(ready).includes("JEV_API_KEY"), false);
@@ -154,13 +163,13 @@ test("composer bridge selects integrations and reports view-scoped activity with
       "neverDeleteLogsSaved");
     assert.equal((await bridge({ action: "settingsOpenLogs" })).settings.action, "openedLogs");
     assert.equal(openedExternal, path.join(scoped, "logs"));
-    const missing = (await bridge({ action: "settingsSave", mode: "replace", key: "", logLimitMb: 50, neverDeleteLogs: false,
+    const missing = (await bridge({ action: "settingsSave", mode: "replace", key: "", logLimitMb: 50, neverDeleteLogs: false, choiceGateEnabled: true,
       linePolicy: { output: { omit_min: 95 } } })).settings;
     assert.equal(missing.action, "error");
     assert.match(missing.message, /Enter an API key/);
     const linePolicy = { output: { omit_min: 97, exact_max: 3 },
       test_build: { omit_min: 95, exact_max: 5 }, search_listing: { omit_min: 95, exact_max: 5 } };
-    const savedSettings = (await bridge({ action: "settingsSave", mode: "observe", key: "new-test-key-123", logLimitMb: 9999, neverDeleteLogs: true,
+    const savedSettings = (await bridge({ action: "settingsSave", mode: "observe", key: "new-test-key-123", logLimitMb: 9999, neverDeleteLogs: true, choiceGateEnabled: false,
       linePolicy })).settings;
     assert.equal(savedSettings.action, "saved");
     assert.equal(savedSettings.keyLength, "new-test-key-123".length);
@@ -169,6 +178,7 @@ test("composer bridge selects integrations and reports view-scoped activity with
     assert.equal((await core.readConfig(scoped)).mode, "observe");
     assert.equal((await core.readConfig(scoped)).log_limit_mb, 9999);
     assert.equal((await core.readConfig(scoped)).never_delete_logs, true);
+    assert.equal((await core.readConfig(scoped)).choice_gate_enabled, false);
     assert.deepEqual((await core.readConfig(scoped)).line_policy, linePolicy);
     assert.equal(JSON.stringify(savedSettings).includes("new-test-key-123"), false);
     const readyAfterSave = (await bridge({ action: "settingsRead" })).settings;
@@ -209,6 +219,22 @@ test("composer bridge selects integrations and reports view-scoped activity with
     assert.equal(missingView.configurationError, "Codex session could not be identified");
     assert.equal(missingView.enabled, false);
     assert.equal((await core.readConfig(core.sessionDirectory(directory, "other-window"))).enabled, false);
+    const home = await rawBridge({ action: "status", viewId: "home-view", sessionId: null,
+      expectsLocalSession: false });
+    assert.equal(home.configurationError, null);
+    assert.equal(home.sessionPending, true);
+    assert.equal(home.panelFault, null);
+    const homeSelection = await rawBridge({ action: "setSelection", viewId: "home-view", sessionId: null,
+      expectsLocalSession: false, feature: "output", enabled: true });
+    assert.equal(homeSelection.enabled, false);
+    assert.equal((await core.readConfig(core.sessionDirectory(directory, "other-window"))).search_listing_enabled, true);
+    const unknownLocal = await rawBridge({ action: "status", viewId: "local-view", sessionId: null,
+      expectsLocalSession: true });
+    assert.equal(unknownLocal.configurationError, "Codex session could not be identified");
+    assert.equal(unknownLocal.sessionPending, false);
+    const recovered = await bridge({ action: "status", viewId: "restored-view" });
+    assert.equal(recovered.configurationError, "Jev configuration could not be read");
+    assert.equal(recovered.sessionPending, false);
   } finally {
     for (const disposable of context.subscriptions.reverse()) disposable.dispose();
     await fs.rm(directory, { recursive: true, force: true });

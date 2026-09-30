@@ -24,11 +24,11 @@ For the optional Windows VS Code control, build and install its VSIX from WSL:
 ```bash
 cd vscode-control
 mkdir -p ../.local/submission
-npx @vscode/vsce package --no-dependencies --out ../.local/submission/codex-jev-control-0.6.1.vsix
-code --install-extension "$(wslpath -w ../.local/submission/codex-jev-control-0.6.1.vsix)" --force
+npx @vscode/vsce package --no-dependencies --out ../.local/submission/codex-jev-control-0.7.0.vsix
+code --install-extension "$(wslpath -w ../.local/submission/codex-jev-control-0.7.0.vsix)" --force
 ```
 
-Set `codexJev.dataDirectory` to the installed plugin's absolute `PLUGIN_DATA` directory. Apply the [version-pinned Codex composer patch](../../vscode-control/README.md#install), then reload VS Code. The control needs the same data directory as the hook. It reads the current Codex thread ID from the Codex route; if it cannot identify the thread, it shows an error instead of changing shared settings.
+Set `codexJev.dataDirectory` to the installed plugin's absolute `PLUGIN_DATA` directory. Apply the [version-pinned Codex composer patch](../../vscode-control/README.md#install), then reload VS Code. The control needs the same data directory as the hook. It reads the current Codex thread ID from the Codex route. The home screen has no thread yet and stays neutral; a malformed local thread ID shows an error rather than changing shared settings.
 
 A new VS Code Codex session starts with all three filters off. Its switches, mode, cutoffs, decisions, statistics, and health live under `PLUGIN_DATA/sessions/<sha256-of-session-id>/`. The API key remains shared for the local installation in `PLUGIN_DATA/.env`. Selecting a filter creates that session's config. Existing plugin-wide enable flags are not inherited by new sessions.
 

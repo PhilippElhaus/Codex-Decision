@@ -14,7 +14,7 @@ SPEC.loader.exec_module(checker)
 
 class ReleaseVersionTests(unittest.TestCase):
     def test_checked_in_versions_match(self):
-        self.assertEqual(checker.check(), "0.7.1")
+        self.assertEqual(checker.check(), "0.8.0")
 
     def test_mismatched_control_or_plugin_blocks_package(self):
         with tempfile.TemporaryDirectory(prefix="jev-release-test-", dir="/tmp") as temporary:
@@ -23,7 +23,7 @@ class ReleaseVersionTests(unittest.TestCase):
                 target = root / name
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes((ROOT / name).read_bytes())
-            self.assertEqual(checker.check(root), "0.7.1")
+            self.assertEqual(checker.check(root), "0.8.0")
             control = root / "vscode-control/package.json"
             value = json.loads(control.read_text())
             value["codexJevHookVersion"] = "0.6.0"
