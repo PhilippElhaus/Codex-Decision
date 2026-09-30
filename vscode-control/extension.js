@@ -10,7 +10,7 @@ const {
   isJevOutcome, outcomeLine, readConfig, readEventOffset, readEventsSince, savedCharacters,
   readApiKey, readLifetimeStats, writeApiKey, writeSelection, writeSettings, writeNeverDeleteLogs,
   completeLinePolicy, DEFAULT_LINE_POLICY, completeSearchRelevance, DEFAULT_SEARCH_RELEVANCE,
-  sessionDirectory, readHookHealth,
+  sessionDirectory, readHookHealth, ensureSessionDefaults,
 } = require("./core");
 
 function emptyStats() {
@@ -142,7 +142,7 @@ function activate(context) {
         state.eventDirectory = directory;
         state.health = null;
       }
-      const config = await readConfig(directory);
+      const config = await ensureSessionDefaults(directory);
       if (generation !== state.generation) return;
       const selected = config.enabled || config.test_build_enabled || config.search_listing_enabled;
       let needsKey = false;

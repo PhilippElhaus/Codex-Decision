@@ -22,6 +22,20 @@ ICON_ASSET = "webview/assets/jev-icon.png"
 IMAGE_ASSET = "webview/assets/app-initial-de4359f78ed1.js"
 IMAGE_ORIGINAL = "ffdf480c63b5c99009ae0b618cad846ac5f33af42af4cec900f633586370a9dc"
 IMAGE_ANCHOR = 'let i=SS(e);if(i==null)return null;try{let e={path:i,hostId:t}'
+ROUTE_ASSET = "webview/assets/app-initial-113eb9b2c1a2.js"
+ROUTE_ORIGINAL = "acf372e1e1c64679915cad75014f766a1604004955eb8068c718e6e1f62d0b9e"
+ROUTE_ANCHOR = 'function BV(){return kV(zV(),`useLocation() may be used only in the context of a <Router> component.`),tH.useContext(vH).location}'
+ROUTE_BRIDGE = (
+    'function BV(){kV(zV(),`useLocation() may be used only in the context of a <Router> component.`);'
+    'let jevLocation=tH.useContext(vH).location,jevPath=jevLocation.pathname,'
+    'jevLocal=/^\\/(?:local|hotkey-window\\/thread)\\/([A-Za-z0-9._-]{1,128})\\/?$/.exec(jevPath),'
+    'jevRoute=document.documentElement.dataset;'
+    'let jevKind=jevLocal?"local":/^\\/(?:remote|hotkey-window\\/remote)\\//.test(jevPath)?"remote":"none";'
+    'if(jevRoute.codexJevRouteKind!==jevKind)jevRoute.codexJevRouteKind=jevKind;'
+    'if(jevLocal){if(jevRoute.codexJevSessionId!==jevLocal[1])jevRoute.codexJevSessionId=jevLocal[1];}'
+    'else if(jevRoute.codexJevSessionId)delete jevRoute.codexJevSessionId;'
+    'return jevLocation}'
+)
 ANCHOR = 'let a=e.onDidReceiveMessage(u=>{if(s.markMessageReceived(),u.type==="chunked-message-ack")'
 
 
@@ -93,6 +107,13 @@ def patched_image_asset(original: bytes) -> bytes:
     if not bridge:
         raise RuntimeError("WSL image path is unavailable")
     return source.replace(IMAGE_ANCHOR, IMAGE_ANCHOR.replace("try{", bridge + "try{"), 1).encode("utf-8")
+
+
+def patched_route_asset(original: bytes) -> bytes:
+    source = original.decode("utf-8")
+    if digest(original) != ROUTE_ORIGINAL or source.count(ROUTE_ANCHOR) != 1:
+        raise RuntimeError("Codex router changed")
+    return source.replace(ROUTE_ANCHOR, ROUTE_BRIDGE, 1).encode("utf-8")
 
 
 BRIDGE = (
@@ -167,6 +188,8 @@ def apply(root: Path, backup: Path) -> None:
         source[relative] = data
     image_original = exact_file(root, IMAGE_ASSET).read_bytes()
     image_patched = patched_image_asset(image_original)
+    route_original = exact_file(root, ROUTE_ASSET).read_bytes()
+    route_patched = patched_route_asset(route_original)
     js = source["out/extension.js"].decode("utf-8")
     html = source["webview/index.html"].decode("utf-8")
     if js.count(ANCHOR) != 1 or html.count(MODULE) != 1:
@@ -178,6 +201,7 @@ def apply(root: Path, backup: Path) -> None:
         SETTINGS_ASSET: settings_asset.read_bytes(),
         ICON_ASSET: exact_file(Path(__file__).parent, "icon.png").read_bytes(),
         IMAGE_ASSET: image_patched,
+        ROUTE_ASSET: route_patched,
     }
     if not existing_backup:
         backup.mkdir(parents=True)
@@ -188,11 +212,15 @@ def apply(root: Path, backup: Path) -> None:
         image_backup = backup / IMAGE_ASSET
         image_backup.parent.mkdir(parents=True, exist_ok=True)
         image_backup.write_bytes(image_original)
+        (backup / ROUTE_ASSET).write_bytes(route_original)
     elif not (backup / IMAGE_ASSET).is_file():
         raise RuntimeError("missing image rollback file")
+    elif not (backup / ROUTE_ASSET).is_file():
+        raise RuntimeError("missing router rollback file")
     manifest_data = json.dumps({
         "version": VERSION, "original": ORIGINAL,
         "originalImage": IMAGE_ORIGINAL,
+        "originalRoute": ROUTE_ORIGINAL,
         "patched": {key: digest(value) for key, value in changed.items()},
     }, indent=2).encode("utf-8") + b"\n"
     try:
@@ -213,6 +241,7 @@ def apply(root: Path, backup: Path) -> None:
         (root / SETTINGS_ASSET).unlink(missing_ok=True)
         (root / ICON_ASSET).unlink(missing_ok=True)
         write_exact(root / IMAGE_ASSET, image_original)
+        write_exact(root / ROUTE_ASSET, route_original)
         raise
 
 
@@ -235,6 +264,11 @@ def restore(root: Path, backup: Path) -> None:
         if digest(original_image) != IMAGE_ORIGINAL:
             raise RuntimeError("image rollback file changed")
         write_exact(root / IMAGE_ASSET, original_image)
+    if ROUTE_ASSET in manifest["patched"]:
+        original_route = exact_file(backup, ROUTE_ASSET).read_bytes()
+        if digest(original_route) != ROUTE_ORIGINAL:
+            raise RuntimeError("router rollback file changed")
+        write_exact(root / ROUTE_ASSET, original_route)
     (root / ASSET).unlink()
     if SETTINGS_ASSET in manifest["patched"]:
         (root / SETTINGS_ASSET).unlink()
@@ -265,6 +299,12 @@ def update(root: Path, backup: Path) -> None:
     else:
         image_original = exact_file(root, IMAGE_ASSET).read_bytes()
     image_patched = patched_image_asset(image_original)
+    route_backup = backup / ROUTE_ASSET
+    if route_backup.is_file():
+        route_original = exact_file(backup, ROUTE_ASSET).read_bytes()
+    else:
+        route_original = exact_file(root, ROUTE_ASSET).read_bytes()
+    route_patched = patched_route_asset(route_original)
     original_js = exact_file(backup, "out/extension.js").read_bytes()
     original_html = exact_file(backup, "webview/index.html").read_bytes()
     js = original_js.decode("utf-8")
@@ -278,6 +318,7 @@ def update(root: Path, backup: Path) -> None:
         SETTINGS_ASSET: exact_file(settings_asset.parent, settings_asset.name).read_bytes(),
         ICON_ASSET: exact_file(Path(__file__).parent, "icon.png").read_bytes(),
         IMAGE_ASSET: image_patched,
+        ROUTE_ASSET: route_patched,
     }
     for asset in (ICON_ASSET, SETTINGS_ASSET):
         if asset not in manifest["patched"] and ((root / asset).exists() or (root / asset).is_symlink()):
@@ -287,11 +328,15 @@ def update(root: Path, backup: Path) -> None:
     for relative, data in changed.items():
         manifest["patched"][relative] = digest(data)
     manifest["originalImage"] = IMAGE_ORIGINAL
+    manifest["originalRoute"] = ROUTE_ORIGINAL
     new_manifest = json.dumps(manifest, indent=2).encode("utf-8") + b"\n"
     try:
         if not image_backup.is_file():
             image_backup.parent.mkdir(parents=True, exist_ok=True)
             image_backup.write_bytes(image_original)
+        if not route_backup.is_file():
+            route_backup.parent.mkdir(parents=True, exist_ok=True)
+            route_backup.write_bytes(route_original)
         for relative, data in changed.items():
             write_exact(root / relative, data)
         write_exact(manifest_path, new_manifest)

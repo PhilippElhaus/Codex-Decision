@@ -7,10 +7,28 @@ const path = require("node:path");
 const test = require("node:test");
 const {
   activitySummary, checkHealth, completeLinePolicy, completeSearchRelevance, DEFAULT_SEARCH_RELEVANCE, decisionSummary, sessionDirectory, readHookHealth, estimateTokensSaved, formatDuration, outcomeLine, parseHealthOutput, readApiKey, readConfig,
-  readEventOffset, readEventsSince, readLatestEvent, readLifetimeStats, readRecentOutcomes, writeApiKey, writeEnabled, writeMode, writeSelection, writeSettings, writeNeverDeleteLogs,
+  readEventOffset, readEventsSince, readLatestEvent, readLifetimeStats, readRecentOutcomes, writeApiKey, writeEnabled, writeMode, writeSelection, writeSettings, writeNeverDeleteLogs, ensureSessionDefaults,
 } = require("../../vscode-control/core");
 const withV2 = (config) => ({ ...config, schema_version: 2, line_policy: completeLinePolicy(),
   search_relevance: DEFAULT_SEARCH_RELEVANCE });
+
+test("new Codex sessions enable all three filters once and preserve later choices", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "jev-default-session-"));
+  const first = sessionDirectory(root, "thread-one");
+  const second = sessionDirectory(root, "thread-two");
+  try {
+    const created = await ensureSessionDefaults(first);
+    assert.equal(created.enabled, true);
+    assert.equal(created.test_build_enabled, true);
+    assert.equal(created.search_listing_enabled, true);
+    await writeSelection(first, false, false, false);
+    assert.equal((await ensureSessionDefaults(first)).enabled, false);
+    assert.equal((await ensureSessionDefaults(first)).search_listing_enabled, false);
+    assert.equal((await ensureSessionDefaults(second)).enabled, true);
+    assert.equal((await readConfig(first)).enabled, false);
+    await assert.rejects(ensureSessionDefaults(root), /session directory/);
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
+});
 
 test("session readers reject linked directories before opening state", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "jev-session-path-"));

@@ -19,13 +19,13 @@ Open `/hooks` in Codex and trust the Jev hook. Do this again when an update chan
 
 ### 1. Connect Jev
 
-Sign in to Codex. Select a Jev filter, then enter and test your typesafe.ai API key in **Connect Jev**. The key is shared by this local installation and stays out of chat.
+Sign in to Codex, open a thread, then enter and test your typesafe.ai API key in **Connect Jev**. The key is shared by this local installation and stays out of chat.
 
 <img src="docs/images/jev-connect.png" width="760" alt="Connect Jev screen beside the Codex sign-in screen, with an empty API key field">
 
 ### 2. Choose a filter for this session
 
-In the **jev** menu, choose regular output, test and build logs, or search results and listings. Each Codex session has its own switches and settings. All filters start off for a new session.
+The VS Code control selects all three filters for a new local thread. In the **jev** menu, you can turn off regular output, test and build logs, or search results and listings separately. Existing thread choices stay as you left them. Eligible text is sent to TypeSafe when a filter and API key are active.
 
 <img src="docs/images/jev-menu.png" width="620" alt="Jev menu in the Codex chat box with three integration switches">
 

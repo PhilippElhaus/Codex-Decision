@@ -71,7 +71,12 @@ test("composer bridge selects integrations and reports view-scoped activity with
     const sessionId = "fixture-session";
     const scoped = core.sessionDirectory(directory, sessionId);
     const bridge = (request) => rawBridge({ sessionId, viewId: "view-two", ...request });
-    assert.equal((await bridge({ action: "status", viewId: "view-one" })).enabled, false);
+    const defaultView = await bridge({ action: "status", viewId: "view-one" });
+    assert.equal(defaultView.enabled, true);
+    assert.equal(defaultView.outputEnabled, true);
+    assert.equal(defaultView.testBuildEnabled, true);
+    assert.equal(defaultView.searchListingEnabled, true);
+    assert.equal(defaultView.needsKey, true);
     assert.equal((await bridge({ action: "openTypeSafe", viewId: "view-one" })).externalOpen, true);
     assert.equal(openedExternal, "https://typesafe.ai/");
     browserAvailable = false;
@@ -84,7 +89,7 @@ test("composer bridge selects integrations and reports view-scoped activity with
     assert.equal(firstTest.keyTest.ok, true);
     assert.equal(suppliedKey, "example-test-key");
     assert.equal(JSON.stringify(firstTest).includes("example-test-key"), false);
-    await until(async () => (await bridge({ action: "status", viewId: "view-one" })).health?.ok === true);
+    assert.equal((await bridge({ action: "status", viewId: "view-one" })).health?.reason, "JEV_KEY_MISSING");
     assert.equal((await core.readConfig(scoped)).enabled, true);
 
     await fs.mkdir(path.join(scoped, "logs"), { recursive: true });
@@ -121,6 +126,7 @@ test("composer bridge selects integrations and reports view-scoped activity with
     await Promise.all([
       bridge({ action: "setSelection", feature: "output", enabled: false, viewId: "view-one" }),
       bridge({ action: "setSelection", feature: "test_build", enabled: true, viewId: "view-one" }),
+      bridge({ action: "setSelection", feature: "search_listing", enabled: false, viewId: "view-one" }),
     ]);
     const selected = await bridge({ action: "status", viewId: "view-one" });
     assert.equal(selected.outputEnabled, false);
@@ -197,10 +203,10 @@ test("composer bridge selects integrations and reports view-scoped activity with
     assert.equal(JSON.stringify(saved).includes("another-test-key-123"), false);
 
     const other = await bridge({ action: "status", sessionId: "other-window", viewId: "view-three" });
-    assert.equal(other.enabled, false);
+    assert.equal(other.enabled, true);
     assert.equal(other.stats.completed, 0);
     assert.deepEqual(other.history, []);
-    assert.equal((await core.readConfig(core.sessionDirectory(directory, "other-window"))).enabled, false);
+    assert.equal((await core.readConfig(core.sessionDirectory(directory, "other-window"))).enabled, true);
     await bridge({ action: "setSelection", sessionId: "other-window", viewId: "view-three",
       feature: "search_listing", enabled: true });
     assert.equal((await core.readConfig(core.sessionDirectory(directory, "other-window"))).search_listing_enabled, true);
@@ -218,7 +224,7 @@ test("composer bridge selects integrations and reports view-scoped activity with
     const missingView = await bridge({ action: "setSelection", viewId: "", feature: "output", enabled: true });
     assert.equal(missingView.configurationError, "Codex session could not be identified");
     assert.equal(missingView.enabled, false);
-    assert.equal((await core.readConfig(core.sessionDirectory(directory, "other-window"))).enabled, false);
+    assert.equal((await core.readConfig(core.sessionDirectory(directory, "other-window"))).enabled, true);
     const home = await rawBridge({ action: "status", viewId: "home-view", sessionId: null,
       expectsLocalSession: false });
     assert.equal(home.configurationError, null);

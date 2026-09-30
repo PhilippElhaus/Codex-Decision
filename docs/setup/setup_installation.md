@@ -24,13 +24,13 @@ For the optional Windows VS Code control, build and install its VSIX from WSL:
 ```bash
 cd vscode-control
 mkdir -p ../.local/submission
-npx @vscode/vsce package --no-dependencies --out ../.local/submission/codex-jev-control-0.7.0.vsix
-code --install-extension "$(wslpath -w ../.local/submission/codex-jev-control-0.7.0.vsix)" --force
+npx @vscode/vsce package --no-dependencies --out ../.local/submission/codex-jev-control-0.7.1.vsix
+code --install-extension "$(wslpath -w ../.local/submission/codex-jev-control-0.7.1.vsix)" --force
 ```
 
-Set `codexJev.dataDirectory` to the installed plugin's absolute `PLUGIN_DATA` directory. Apply the [version-pinned Codex composer patch](../../vscode-control/README.md#install), then reload VS Code. The control needs the same data directory as the hook. It reads the current Codex thread ID from the Codex route. The home screen has no thread yet and stays neutral; a malformed local thread ID shows an error rather than changing shared settings.
+Set `codexJev.dataDirectory` to the installed plugin's absolute `PLUGIN_DATA` directory. Apply the [version-pinned Codex composer patch](../../vscode-control/README.md#install), then reload VS Code. The control needs the same data directory as the hook. Its pinned bridge reads the active thread from Codex's internal router, which can change while the webview URL stays fixed. The home screen has no thread yet and stays neutral; an unreadable local thread ID shows an error rather than changing shared settings.
 
-A new VS Code Codex session starts with all three filters off. Its switches, mode, cutoffs, decisions, statistics, and health live under `PLUGIN_DATA/sessions/<sha256-of-session-id>/`. The API key remains shared for the local installation in `PLUGIN_DATA/.env`. Selecting a filter creates that session's config. Existing plugin-wide enable flags are not inherited by new sessions.
+A new local thread in the VS Code control starts with all three filters selected. Its switches, mode, cutoffs, decisions, statistics, and health live under `PLUGIN_DATA/sessions/<sha256-of-session-id>/`. The API key remains shared for the local installation in `PLUGIN_DATA/.env`. The control creates the new session config once and preserves any later changes; plugin-wide enable flags are not inherited. Without the VS Code control, the hook still requires explicit configuration.
 
 CLI users without the VS Code control can opt into installation-wide filtering by adding `"scope": "global"` to a schema-2 `PLUGIN_DATA/config.json`, then enabling the desired routes. [config.example.json](../../config.example.json) shows the fields. A session config, when present, overrides this global choice for that session. This global opt-in deliberately affects every session that has no override.
 

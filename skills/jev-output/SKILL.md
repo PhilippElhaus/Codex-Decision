@@ -5,7 +5,7 @@ description: Help configure and verify Codex Jev's local tool-output filters whe
 
 # Codex Jev output
 
-Codex Jev runs as a local Rust `PostToolUse` hook that classifies supported local command and tool text into three exclusive routes. This skill helps with setup and evidence review; invoking the skill does not activate a filter. New installs start with three filters disabled. The hook needs a user-provided TypeSafe AI API key and Codex trust for the current hook definition. On a surface without local hook execution, explain that limitation before recommending a setting.
+Codex Jev runs as a local Rust `PostToolUse` hook that classifies supported local command and tool text into three exclusive routes. This skill helps with setup and evidence review; invoking the skill does not activate a filter. The optional VS Code control selects all three filters for a new local thread and preserves later changes; a standalone hook starts without session filters until configured. The hook needs a user-provided TypeSafe AI API key and Codex trust for the current hook definition. On a surface without local hook execution, explain that limitation before recommending a setting.
 
 ## Set up or diagnose
 

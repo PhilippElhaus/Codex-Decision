@@ -1,6 +1,6 @@
 # Integration behavior
 
-The Rust PostToolUse hook has three independently selectable routes. All start disabled. Eligible source lines receive independent Noul judgments; a validated pair of probabilities and deterministic protections decides whether each line stays. Search results receive a third task-relevance judgment. [Data handling](design_data.md) describes the request and storage limits.
+The Rust PostToolUse hook has three independently selectable routes. The VS Code control selects all three for each new local thread; a standalone hook requires explicit configuration. Eligible source lines receive independent Noul judgments; a validated pair of probabilities and deterministic protections decides whether each line stays. Search results receive a third task-relevance judgment. [Data handling](design_data.md) describes the request and storage limits.
 
 | Route | Local eligibility and protection | Visible result in Filter mode |
 | --- | --- | --- |

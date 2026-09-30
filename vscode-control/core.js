@@ -147,7 +147,7 @@ async function readConfig(directory) {
   }
 }
 
-async function writeConfig(directory, updates) {
+async function writeConfig(directory, updates, createOnly = false) {
   const old = await readConfig(directory);
   const config = { ...old, ...updates, schema_version: 2,
     line_policy: completeLinePolicy(updates.line_policy ?? old.line_policy),
@@ -175,6 +175,15 @@ async function writeConfig(directory, updates) {
   } catch (error) {
     if (error.code !== "ENOENT") throw error;
   }
+  if (createOnly) {
+    try {
+      await fs.writeFile(target, JSON.stringify(config, null, 2) + "\n", { flag: "wx", mode: 0o600 });
+      return config;
+    } catch (error) {
+      if (error.code === "EEXIST") return readConfig(directory);
+      throw error;
+    }
+  }
   const temporary = path.join(directory, `.config-${process.pid}-${Date.now()}.tmp`);
   try {
     await fs.writeFile(temporary, JSON.stringify(config, null, 2) + "\n", { flag: "wx", mode: 0o600 });
@@ -183,6 +192,20 @@ async function writeConfig(directory, updates) {
     await fs.rm(temporary, { force: true });
   }
   return config;
+}
+
+async function ensureSessionDefaults(directory) {
+  if (path.basename(path.dirname(directory)) !== "sessions") {
+    throw new Error("Jev defaults require a session directory");
+  }
+  try {
+    await fs.lstat(path.join(directory, "config.json"));
+    return readConfig(directory);
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
+  return writeConfig(directory, { enabled: true, test_build_enabled: true,
+    search_listing_enabled: true }, true);
 }
 
 async function writeEnabled(directory, enabled) {
@@ -596,5 +619,5 @@ module.exports = {
   isInformativeEvent, isJevOutcome, outcomeLine, parseHealthOutput, readConfig,
   readApiKey, readEventOffset, readEventsSince, readLatestEvent, readLifetimeStats, readRecentOutcomes,
   savedCharacters, writeApiKey, writeEnabled, writeMode, writeSelection,
-  writeSettings, writeNeverDeleteLogs,
+  writeSettings, writeNeverDeleteLogs, ensureSessionDefaults,
 };

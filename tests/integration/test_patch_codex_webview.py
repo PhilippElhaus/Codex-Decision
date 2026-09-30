@@ -19,6 +19,31 @@ SPEC.loader.exec_module(patch)
 
 
 class PatchTests(unittest.TestCase):
+    def test_codex_router_bridge_publishes_and_clears_real_local_session(self):
+        if not shutil.which("node"):
+            self.skipTest("Node is unavailable")
+        cases = [
+            ("/local/thread-one", "local", "thread-one"),
+            ("/hotkey-window/thread/thread-two", "local", "thread-two"),
+            ("/local/client-new-thread:pending", "none", None),
+            ("/remote/remote-task", "remote", None),
+            ("/settings", "none", None),
+            ("/local/bad/slash", "none", None),
+        ]
+        for pathname, kind, session in cases:
+            script = (
+                'let document={documentElement:{dataset:{codexJevSessionId:"stale"}}};'
+                f'let vH={{}},tH={{useContext:()=>({{"location":{{"pathname":{json.dumps(pathname)}}}}})}},'
+                'kV=()=>{},zV=()=>true;'
+                + patch.ROUTE_BRIDGE +
+                'BV();'
+                'process.stdout.write(JSON.stringify(document.documentElement.dataset));'
+            )
+            result = subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True)
+            data = json.loads(result.stdout)
+            self.assertEqual(data["codexJevRouteKind"], kind)
+            self.assertEqual(data.get("codexJevSessionId"), session)
+
     def test_settings_bridge_forwards_relevance_only_when_valid(self):
         if not shutil.which("node"):
             self.skipTest("Node is unavailable")
@@ -101,6 +126,7 @@ class PatchTests(unittest.TestCase):
             "out/extension.js": ("prefix " + patch.ANCHOR + " suffix").encode(),
             "webview/index.html": ("<html>" + patch.MODULE + "</html>").encode(),
             patch.IMAGE_ASSET: ("prefix " + patch.IMAGE_ANCHOR + " suffix").encode(),
+            patch.ROUTE_ASSET: ("prefix " + patch.ROUTE_ANCHOR + " suffix").encode(),
         }
         for relative, content in original.items():
             destination = self.extension / relative
@@ -110,12 +136,16 @@ class PatchTests(unittest.TestCase):
         self.original = original
         self.digests = {name: hashlib.sha256(value).hexdigest() for name, value in original.items()}
         self.original_patch = mock.patch.object(patch, "ORIGINAL", {
-            name: value for name, value in self.digests.items() if name != patch.IMAGE_ASSET})
+            name: value for name, value in self.digests.items()
+            if name not in (patch.IMAGE_ASSET, patch.ROUTE_ASSET)})
         self.original_patch.start()
         self.addCleanup(self.original_patch.stop)
         self.image_patch = mock.patch.object(patch, "IMAGE_ORIGINAL", self.digests[patch.IMAGE_ASSET])
         self.image_patch.start()
         self.addCleanup(self.image_patch.stop)
+        self.route_patch = mock.patch.object(patch, "ROUTE_ORIGINAL", self.digests[patch.ROUTE_ASSET])
+        self.route_patch.start()
+        self.addCleanup(self.route_patch.stop)
 
     def test_apply_update_restore_and_tamper_rejection(self):
         patch.apply(self.extension, self.backup)
@@ -141,6 +171,7 @@ class PatchTests(unittest.TestCase):
         self.assertEqual((self.extension / patch.ICON_ASSET).read_bytes(),
                          (SOURCE.parent / "icon.png").read_bytes())
         self.assertIn(b"wsl.localhost", (self.extension / patch.IMAGE_ASSET).read_bytes())
+        self.assertIn(b"codexJevRouteKind", (self.extension / patch.ROUTE_ASSET).read_bytes())
 
         patch.update(self.extension, self.backup)
         second = json.loads(manifest_path.read_text())
@@ -159,21 +190,27 @@ class PatchTests(unittest.TestCase):
         for relative, content in self.original.items():
             self.assertEqual((self.extension / relative).read_bytes(), content)
 
-    def test_update_adds_icon_to_previous_patch(self):
+    def test_update_adds_router_bridge_to_previous_patch(self):
         patch.apply(self.extension, self.backup)
         manifest_path = self.backup / "manifest.json"
         manifest = json.loads(manifest_path.read_text())
         del manifest["patched"][patch.ICON_ASSET]
         del manifest["patched"][patch.SETTINGS_ASSET]
+        del manifest["patched"][patch.ROUTE_ASSET]
+        del manifest["originalRoute"]
         manifest_path.write_text(json.dumps(manifest))
         (self.extension / patch.ICON_ASSET).unlink()
         (self.extension / patch.SETTINGS_ASSET).unlink()
+        (self.extension / patch.ROUTE_ASSET).write_bytes(self.original[patch.ROUTE_ASSET])
+        (self.backup / patch.ROUTE_ASSET).unlink()
         patch.update(self.extension, self.backup)
         upgraded = json.loads(manifest_path.read_text())
         self.assertEqual((self.extension / patch.ICON_ASSET).read_bytes(),
                          (SOURCE.parent / "icon.png").read_bytes())
         self.assertIn(patch.ICON_ASSET, upgraded["patched"])
         self.assertIn(patch.SETTINGS_ASSET, upgraded["patched"])
+        self.assertIn(patch.ROUTE_ASSET, upgraded["patched"])
+        self.assertEqual((self.backup / patch.ROUTE_ASSET).read_bytes(), self.original[patch.ROUTE_ASSET])
         patch.restore(self.extension, self.backup)
         self.assertFalse((self.extension / patch.ICON_ASSET).exists())
         self.assertFalse((self.extension / patch.SETTINGS_ASSET).exists())

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-codex-jev-session-id="fixture-session">
+<html lang="en" data-codex-jev-route-kind="local" data-codex-jev-session-id="fixture-session">
 <head>
   <meta charset="utf-8">
   <title>Jev browser harness</title>
@@ -31,6 +31,9 @@
     ];
     let calls = 0, activeViewId = null, freshView = false;
     window.__jevHarnessLastAction = "";
+    window.__jevHarnessLastSessionId = null;
+    window.__jevHarnessHoldNextStatus = false;
+    window.__jevHarnessHeldStatus = null;
     window.__jevHarnessSettingsRead = 0;
     window.__jevHarnessLastSettingsSave = null;
     window.__jevHarnessNeverDelete = false;
@@ -42,6 +45,7 @@
     window.acquireVsCodeApi = () => ({ postMessage(request) {
       calls += 1;
       window.__jevHarnessLastAction = request.action;
+      window.__jevHarnessLastSessionId = request.sessionId;
       if (request.action === "settingsRead") window.__jevHarnessSettingsRead += 1;
       if (request.action === "settingsSave") window.__jevHarnessLastSettingsSave = request;
       if (request.action === "settingsSetNeverDeleteLogs" && !window.__jevHarnessFailNeverDelete) {
@@ -66,6 +70,11 @@
             { ok: true, model: "jev-1.13.0" }) : undefined;
       const keySaved = request.action === "saveApiKey";
       const waitingForThread = request.sessionId == null;
+      if (request.action === "status" && window.__jevHarnessHoldNextStatus) {
+        window.__jevHarnessHoldNextStatus = false;
+        window.__jevHarnessHeldStatus = request;
+        return;
+      }
       if (keySaved) { needsKey = false; health = { ok: true, model: "jev-1.13.0" }; }
       const settings = request.action === "settingsRead" ? { action: "ready", hasKey: true, keyLength: window.__jevHarnessKeyLength,
         lifetime: { calls: 126, completed: 124, replaced: 41, linesJudged: 87320, linesOmitted: 915, averageMs: 487 },
@@ -692,12 +701,33 @@
       setup.querySelector("#codex-jev-save-key").click();
       await until(() => setup.style.display === "none" && !needsKey, "saving key closes overlay");
       check(key.value === "", "key field cleared after save");
-      document.documentElement.removeAttribute("data-codex-jev-session-id");
+      window.__jevHarnessHoldNextStatus = true;
+      await until(() => window.__jevHarnessHeldStatus?.sessionId === "fixture-session",
+        "hold a reply from the previous thread");
+      document.documentElement.dataset.codexJevRouteKind = "none";
+      delete document.documentElement.dataset.codexJevSessionId;
       await until(() => document.getElementById("codex-jev-option").disabled &&
         button.style.color === "rgb(154, 154, 154)", "home view stays neutral without a thread");
       check(document.getElementById("codex-jev-menu-note").textContent.includes("Open a Codex thread") &&
         document.getElementById("codex-jev-session-note").textContent.includes("Open a Codex thread"),
         "home view explains why switches are unavailable");
+      window.dispatchEvent(new MessageEvent("message", { data: {
+        type: "codex-jev-reply", id: window.__jevHarnessHeldStatus.id,
+        status: { enabled: true, outputEnabled: true, sessionPending: false, health: { ok: true } },
+      } }));
+      await pause(30);
+      check(document.getElementById("codex-jev-option").disabled,
+        "late reply from an old thread cannot reactivate the home view");
+      document.documentElement.dataset.codexJevRouteKind = "local";
+      document.documentElement.dataset.codexJevSessionId = "next-thread";
+      await until(() => window.__jevHarnessLastSessionId === "next-thread" &&
+        !document.getElementById("codex-jev-option").disabled &&
+        document.getElementById("codex-jev-session-note").style.display === "none",
+        "internal Codex navigation activates the new thread without changing the webview URL");
+      document.documentElement.dataset.codexJevRouteKind = "none";
+      delete document.documentElement.dataset.codexJevSessionId;
+      await until(() => document.getElementById("codex-jev-option").disabled,
+        "leaving the internal thread route clears the session");
       check(calls >= 5, "host bridge used");
       document.getElementById("results").textContent = JSON.stringify({ ok: true, calls });
       document.title = "JEV_BROWSER_PASS";

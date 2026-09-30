@@ -23,20 +23,24 @@
   let compactAtWidth = 0;
   let seenModel = false;
   let viewId = newViewId();
-  let viewLocation = window.location.href;
-  let lastSessionId = null;
+  let viewLocation = null;
   const sentViews = new Map();
   const colors = { off: "#9a9a9a", healthy: "#87cda4", failed: "#e99490", pending: "#e6bc6a", busy: "#83bcf7" };
 
   function sessionId() {
-    const match = window.location.pathname.match(/^\/(?:local|remote)\/([A-Za-z0-9._-]{1,128})\/?$/) ||
+    const route = document.documentElement.dataset;
+    if (route.codexJevRouteKind) {
+      return route.codexJevRouteKind === "local" && /^[A-Za-z0-9._-]{1,128}$/.test(route.codexJevSessionId || "")
+        ? route.codexJevSessionId : null;
+    }
+    const match = window.location.pathname.match(/^\/local\/([A-Za-z0-9._-]{1,128})\/?$/) ||
       window.location.pathname.match(/^\/hotkey-window\/thread\/([A-Za-z0-9._-]{1,128})\/?$/);
-    if (match?.[1]) lastSessionId = match[1];
-    else if (!/^\/settings(?:\/|$)/.test(window.location.pathname)) lastSessionId = null;
-    return lastSessionId || document.documentElement.dataset.codexJevSessionId || null;
+    return match?.[1] || null;
   }
 
   function expectsLocalSession() {
+    const route = document.documentElement.dataset.codexJevRouteKind;
+    if (route) return route === "local";
     return /^\/(?:local\/|hotkey-window\/thread\/)/.test(window.location.pathname);
   }
 
@@ -48,12 +52,19 @@
   }
 
   function currentViewId() {
-    if (window.location.href !== viewLocation) {
-      viewLocation = window.location.href;
+    const route = document.documentElement.dataset;
+    const location = `${window.location.href}\0${route.codexJevRouteKind || ""}\0${sessionId() || ""}`;
+    if (location !== viewLocation) {
+      viewLocation = location;
       viewId = newViewId();
       retryRequestId = 0;
+      keyRequestId = 0;
+      externalRequestId = 0;
       setupDismissed = false;
-      state = { ...state, busy: false, recent: "No decision recorded yet", history: [], stats: {} };
+      state = { ...state, enabled: false, outputEnabled: false, testBuildEnabled: false,
+        searchListingEnabled: false, needsKey: false, health: null, hookHealth: null,
+        sessionPending: !sessionId(), configurationError: null, busy: false,
+        recent: "No decision recorded yet", history: [], stats: {} };
       render();
     }
     return viewId;
@@ -583,6 +594,7 @@
       if (event.data?.type !== "codex-jev-reply") return;
       const sentView = sentViews.get(event.data.id);
       sentViews.delete(event.data.id);
+      if (!sentView || sentView !== currentViewId()) return;
       if (event.data.id === retryRequestId) retryRequestId = 0;
       if (event.data.id === externalRequestId) {
         externalRequestId = 0;
@@ -602,7 +614,6 @@
           showKeyStatus(event.data.status?.keySaveError || "Connection unavailable", false);
         }
       }
-      if (!sentView || sentView !== currentViewId()) return;
       if (event.data.status && typeof event.data.status === "object") {
         state = event.data.status;
         render();
