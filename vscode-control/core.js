@@ -361,9 +361,11 @@ async function readLifetimeStats(directory) {
     const details = await fs.lstat(statsFile);
     if (!details.isFile() || details.isSymbolicLink() || details.size > 8192) throw new Error("Unsafe Jev stats file");
     const stats = JSON.parse(await fs.readFile(statsFile, "utf8"));
-    for (const key of ["calls", "completed", "replaced", "savedChars", "timed", "elapsedMs"]) {
+    for (const key of ["calls", "completed", "replaced", "timed", "elapsedMs"]) {
       if (!Number.isSafeInteger(stats[key]) || stats[key] < 0) throw new Error("Invalid Jev stats file");
     }
+    const savedChars = stats.savedChars ?? 0;
+    if (!Number.isSafeInteger(savedChars) || savedChars < 0) throw new Error("Invalid Jev stats file");
     const lineStats = Object.fromEntries(["linesSeen", "linesJudged", "linesKept", "linesOmitted",
       "linesProtected", "linesUnjudged", "linesRelevanceJudged", "linesBelowOmitCutoff", "linesRelevanceKept"].map((key) => {
       const value = stats[key] ?? 0;
@@ -371,7 +373,7 @@ async function readLifetimeStats(directory) {
       return [key, value];
     }));
     return { calls: stats.calls, completed: stats.completed, replaced: stats.replaced,
-      savedChars: stats.savedChars, estimatedTokensSaved: estimateTokensSaved(stats.savedChars),
+      savedChars, estimatedTokensSaved: estimateTokensSaved(savedChars),
       averageMs: stats.timed ? Math.round(stats.elapsedMs / stats.timed) : 0, ...lineStats };
   } catch (error) {
     if (error.code !== "ENOENT") throw error;

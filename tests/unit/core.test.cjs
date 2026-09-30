@@ -216,7 +216,7 @@ test("hook health is private, bounded, and rejects corrupt or linked data", asyn
     const logs = path.join(directory, "logs");
     await fs.mkdir(logs);
     const file = path.join(logs, "hook-health.json");
-    const valid = { version: 1, hook_version: "0.7.0", last_seen_ms: Date.now(), last_skip: "small" };
+    const valid = { version: 1, hook_version: "0.7.1", last_seen_ms: Date.now(), last_skip: "small" };
     await fs.writeFile(file, JSON.stringify(valid));
     assert.deepEqual(await readHookHealth(directory), valid);
     await fs.writeFile(file, JSON.stringify({ ...valid, last_error_ms: -1 }));
@@ -294,6 +294,20 @@ test("session totals scan retained decisions within one session", async () => {
       savedChars: 8000, estimatedTokensSaved: 2000, averageMs: 325,
       linesSeen: 0, linesJudged: 0, linesKept: 0, linesOmitted: 0, linesProtected: 0, linesUnjudged: 0,
       linesRelevanceJudged: 0, linesBelowOmitCutoff: 0, linesRelevanceKept: 0 });
+  } finally { await fs.rm(directory, { recursive: true, force: true }); }
+});
+
+test("Monitor stats with no savedChars read as zero for existing sessions", async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-monitor-stats-"));
+  try {
+    await fs.writeFile(path.join(directory, "stats.json"), JSON.stringify({
+      calls: 2, completed: 1, replaced: 0, timed: 2, elapsedMs: 948,
+      linesSeen: 58, linesJudged: 55,
+    }));
+    const stats = await readLifetimeStats(directory);
+    assert.equal(stats.savedChars, 0);
+    assert.equal(stats.estimatedTokensSaved, 0);
+    assert.equal(stats.linesJudged, 55);
   } finally { await fs.rm(directory, { recursive: true, force: true }); }
 });
 

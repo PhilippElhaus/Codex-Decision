@@ -22,7 +22,7 @@
   <script>
     let outputEnabled = false, testBuildEnabled = false, searchListingEnabled = false, needsKey = false, health = { ok: true, model: "jev-1.13.0" }, busy = false, mode = "replace";
     const viewStartedAt = Date.now() - 1000;
-    let hookHealth = { version: 1, hook_version: "0.7.0", last_seen_ms: Date.now(), last_success_ms: Date.now() };
+    let hookHealth = { version: 1, hook_version: "0.7.1", last_seen_ms: Date.now(), last_success_ms: Date.now() };
     const stats = { calls: 7, candidates: 4, kept: 2, replaced: 1, checkedChars: 90640, savedChars: 6058, estimatedTokensSaved: 1515, elapsedMs: 8120, completed: 7 };
     const history = [
       "replaced · test/build · 6,367 chars · -95%",
@@ -81,7 +81,7 @@
             request.action === "settingsOpenLogs" ? { action: "openedLogs" } : undefined;
       queueMicrotask(() => window.dispatchEvent(new MessageEvent("message", { data: {
         type: "codex-jev-reply", id: request.id,
-        status: { enabled: outputEnabled || testBuildEnabled || searchListingEnabled, outputEnabled, testBuildEnabled, searchListingEnabled, needsKey, keyTest, keySaved, externalOpen: request.action === "openTypeSafe" ? window.__jevHarnessExternalOpen : undefined, settings, health, hookHealth, expectedHookVersion: "0.7.0", viewStartedAt, busy, mode, recent: freshView ? "No decision recorded yet" : history[0],
+        status: { enabled: outputEnabled || testBuildEnabled || searchListingEnabled, outputEnabled, testBuildEnabled, searchListingEnabled, needsKey, keyTest, keySaved, externalOpen: request.action === "openTypeSafe" ? window.__jevHarnessExternalOpen : undefined, settings, health, hookHealth, expectedHookVersion: "0.7.1", viewStartedAt, busy, mode, recent: freshView ? "No decision recorded yet" : history[0],
           history: freshView ? [] : history,
           stats: freshView ? { calls: 0, candidates: 0, kept: 0, replaced: 0, checkedChars: 0, elapsedMs: 0, completed: 0 } : stats },
       } })));
@@ -287,7 +287,7 @@
       await until(() => button.style.color === "rgb(230, 188, 106)", "API alone leaves hook unverified");
       check(document.getElementById("codex-jev-health-reason").textContent.includes("trust Jev in /hooks"),
         "unverified hook shows recovery step");
-      hookHealth = { version: 1, hook_version: "0.7.0", last_seen_ms: Date.now(), last_skip_ms: Date.now(), last_skip: "small" };
+      hookHealth = { version: 1, hook_version: "0.7.1", last_seen_ms: Date.now(), last_skip_ms: Date.now(), last_skip: "small" };
       await until(() => button.style.color === "rgb(135, 205, 164)", "observed skip verifies hook invocation");
       hookHealth = { ...hookHealth, last_error_ms: Date.now() + 1, last_error: "invalid Jev response" };
       await until(() => button.style.color === "rgb(233, 148, 144)", "hook error is red even with healthy API");
@@ -299,7 +299,7 @@
       await until(() => button.style.color === "rgb(233, 148, 144)", "old hook binary is reported");
       check(document.getElementById("codex-jev-health-reason").textContent.includes("Update the Jev plugin"),
         "version mismatch has a recovery step");
-      hookHealth = { ...hookHealth, hook_version: "0.7.0", last_seen_ms: Date.now() + 4 };
+      hookHealth = { ...hookHealth, hook_version: "0.7.1", last_seen_ms: Date.now() + 4 };
       await until(() => button.style.color === "rgb(135, 205, 164)", "matching hook restores health");
       const observeBadge = document.getElementById("codex-jev-observe");
       check(getComputedStyle(observeBadge).display === "none", "replacement mode has no observe badge");

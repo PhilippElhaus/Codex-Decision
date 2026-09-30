@@ -7,8 +7,8 @@ This optional extension adds Jev switches to the Codex composer, detailed Jev se
 From this directory in WSL:
 
 ```bash
-npx @vscode/vsce package --no-dependencies --out ../.local/submission/codex-jev-control-0.6.0.vsix
-code --install-extension "$(wslpath -w ../.local/submission/codex-jev-control-0.6.0.vsix)" --force
+npx @vscode/vsce package --no-dependencies --out ../.local/submission/codex-jev-control-0.6.1.vsix
+code --install-extension "$(wslpath -w ../.local/submission/codex-jev-control-0.6.1.vsix)" --force
 ```
 
 The composer and Codex settings page require the separate local patch for Codex VS Code extension `26.917.62051`. It checks exact host hashes and keeps rollback files outside this repository:

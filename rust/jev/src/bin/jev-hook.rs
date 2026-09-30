@@ -1399,6 +1399,14 @@ fn record(
             "elapsedMs",
             batches.iter().map(|batch| batch.elapsed_ms).sum(),
         ),
+        (
+            "savedChars",
+            if status == "replace" {
+                source.len().saturating_sub(visible.len()) as u64
+            } else {
+                0
+            },
+        ),
         ("linesSeen", seen as u64),
         ("linesJudged", judged as u64),
         ("linesKept", (seen - omitted) as u64),
@@ -1414,13 +1422,6 @@ fn record(
             .and_then(Value::as_u64)
             .unwrap_or(0)
             .saturating_add(increment));
-    }
-    if status == "replace" {
-        stats["savedChars"] = json!(stats
-            .get("savedChars")
-            .and_then(Value::as_u64)
-            .unwrap_or(0)
-            .saturating_add(source.len().saturating_sub(visible.len()) as u64));
     }
     write_private(
         &stats_path,

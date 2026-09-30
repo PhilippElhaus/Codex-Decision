@@ -24,8 +24,8 @@ For the optional Windows VS Code control, build and install its VSIX from WSL:
 ```bash
 cd vscode-control
 mkdir -p ../.local/submission
-npx @vscode/vsce package --no-dependencies --out ../.local/submission/codex-jev-control-0.6.0.vsix
-code --install-extension "$(wslpath -w ../.local/submission/codex-jev-control-0.6.0.vsix)" --force
+npx @vscode/vsce package --no-dependencies --out ../.local/submission/codex-jev-control-0.6.1.vsix
+code --install-extension "$(wslpath -w ../.local/submission/codex-jev-control-0.6.1.vsix)" --force
 ```
 
 Set `codexJev.dataDirectory` to the installed plugin's absolute `PLUGIN_DATA` directory. Apply the [version-pinned Codex composer patch](../../vscode-control/README.md#install), then reload VS Code. The control needs the same data directory as the hook. It reads the current Codex thread ID from the Codex route; if it cannot identify the thread, it shows an error instead of changing shared settings.

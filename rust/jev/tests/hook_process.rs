@@ -165,6 +165,20 @@ fn two_sessions_keep_switches_decisions_stats_and_health_separate() {
         serde_json::from_slice(&fs::read(second.join("stats.json")).unwrap()).unwrap();
     assert_eq!(first_stats["completed"], 1);
     assert_eq!(second_stats["completed"], 1);
+    let monitor = scoped(&data, "window-monitor");
+    fs::create_dir(&monitor).unwrap();
+    fs::set_permissions(&monitor, fs::Permissions::from_mode(0o700)).unwrap();
+    let mut observed = global.clone();
+    observed["mode"] = json!("observe");
+    fs::write(monitor.join("config.json"), observed.to_string()).unwrap();
+    assert_eq!(
+        send_event(&data, &endpoint, &make_event("window-monitor")),
+        json!({})
+    );
+    let monitor_stats: Value =
+        serde_json::from_slice(&fs::read(monitor.join("stats.json")).unwrap()).unwrap();
+    assert_eq!(monitor_stats["completed"], 1);
+    assert_eq!(monitor_stats["savedChars"], 0);
     stop.store(true, Ordering::Relaxed);
     assert!(thread.join().unwrap() > 1);
 }
@@ -666,4 +680,5 @@ fn live_line_request_records_valid_independent_answers() {
     )
     .unwrap();
     assert_eq!(stats["linesRelevanceJudged"], 25);
+    assert_eq!(stats["savedChars"], 0);
 }
