@@ -23,6 +23,8 @@ codex plugin marketplace add https://github.com/PhilippElhaus/Codex-Jev
 codex plugin add codex-jev@codex-jev
 ```
 
+Open `/hooks` in Codex and trust the Jev hook. Codex requires this review after installation or a hook update. Start a new thread after upgrading. A working API key alone does not mean the hook is running.
+
 The screens below use the optional [VS Code control](vscode-control/README.md), which needs a [version-pinned Codex patch](vscode-control/README.md#install). The screenshots use example data and contain no real API key.
 
 ### 1. Connect Jev

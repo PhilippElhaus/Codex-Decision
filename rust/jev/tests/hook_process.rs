@@ -145,7 +145,11 @@ fn run(fail_on: Option<usize>, search: bool) -> (Value, tempfile::TempDir, usize
     stop.store(true, Ordering::Relaxed);
     let calls = thread.join().unwrap();
     assert!(output.status.success());
-    assert!(output.stderr.is_empty());
+    if fail_on.is_some() {
+        assert!(String::from_utf8_lossy(&output.stderr).contains("Codex Jev hook skipped:"));
+    } else {
+        assert!(output.stderr.is_empty());
+    }
     let reply: Value = serde_json::from_slice(&output.stdout).unwrap();
     (reply, temporary, calls)
 }
@@ -238,7 +242,10 @@ fn disabled_specialized_routes_make_no_request_or_activity_with_output_enabled()
         data.join("config.json"),
         json!({"schema_version":2,"enabled":true,"test_build_enabled":false,
             "search_listing_enabled":false,"mode":"observe","min_chars":1024,
-            "max_chars":2000000,"model":"jev-latest","timeout_seconds":3.0})
+            "max_chars":2000000,"model":"jev-latest","timeout_seconds":3.0,
+            "line_policy":{"output":{"omit_min":95,"exact_max":5},
+                "test_build":{"omit_min":95,"exact_max":5},
+                "search_listing":{"omit_min":95,"exact_max":5}}})
         .to_string(),
     )
     .unwrap();

@@ -343,6 +343,10 @@
       await pause(150);
       check(button.style.color === "rgb(135, 205, 164)" &&
         document.getElementById("codex-jev-health-row").hidden, "test/build filter requires Jev health");
+      check(button.getAttribute("aria-label").includes("Jev API connected") &&
+        tooltip.querySelector("#codex-jev-empty").textContent.includes("open /hooks") &&
+        tooltip.querySelector("#codex-jev-empty").style.display !== "none",
+        "API health does not imply hook trust when no decision was seen");
       option.click();
       await pause(50);
       check(localOption.getAttribute("aria-checked") === "true" && option.getAttribute("aria-checked") === "true", "both filters selected");

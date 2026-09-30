@@ -3,7 +3,6 @@ __pycache__/
 .pytest_cache/
 .coverage
 .local/
-/.migration/
 /target/
 AGENTS.md
 *.dpapi

@@ -1558,7 +1558,10 @@ fn execute() -> Result<Value, String> {
 }
 
 fn main() {
-    let answer = execute().unwrap_or_else(|_| json!({}));
+    let answer = execute().unwrap_or_else(|error| {
+        eprintln!("Codex Jev hook skipped: {error}");
+        json!({})
+    });
     println!("{}", answer);
 }
 

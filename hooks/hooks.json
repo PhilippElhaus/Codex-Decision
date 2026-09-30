@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'p=\"$PLUGIN_ROOT/hooks/bin/linux-x86_64/jev-hook\"; if [ -x \"$p\" ]; then \"$p\" || true; fi'",
+            "command": "\"$PLUGIN_ROOT/hooks/bin/linux-x86_64/jev-hook\"",
             "timeout": 60,
             "statusMessage": "Evaluating large tool output"
           }

@@ -29,6 +29,8 @@ In **Codex settings → Jev**, choose Monitor or Filter and set the `Can omit` m
 
 The composer switches control separate input routes. Recognized test/build and search/listing commands or tools use only their own switch. If that switch is off, the result is untouched and does not appear as a new decision or statistic, even if Output filter is on. Output filter handles other eligible local plain text. A 256-byte minimum avoids calls for tiny replies; structured and mutating tool results remain untouched.
 
+The green control means the API key and Jev endpoint passed a connection check. It does not confirm that Codex trusted or ran the hook. If activity stays empty after eligible tool output, open `/hooks` in Codex, trust the Jev PostToolUse hook, and start a new thread. Codex reviews a changed hook again after an upgrade.
+
 ## Verify
 
 ```bash

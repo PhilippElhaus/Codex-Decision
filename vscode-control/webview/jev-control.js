@@ -299,7 +299,7 @@
     root.querySelector("#codex-jev-option").setAttribute("aria-checked", String(state.outputEnabled));
     root.querySelector("#codex-jev-test-build").setAttribute("aria-checked", String(state.testBuildEnabled));
     root.querySelector("#codex-jev-search-listing").setAttribute("aria-checked", String(state.searchListingEnabled));
-    const status = !state.enabled ? "Jev off" : needsSetup ? "API key needed" : state.health?.ok === true ? "Jev connected" :
+    const status = !state.enabled ? "Jev off" : needsSetup ? "API key needed" : state.health?.ok === true ? "Jev API connected" :
       state.health?.ok === false ? "Jev unavailable" : "Checking Jev connection";
     root.querySelector("#codex-jev-tip").dataset.needsKey = String(needsSetup);
     const healthRow = root.querySelector("#codex-jev-health-row");
@@ -337,7 +337,9 @@
       }
       return item;
     }));
-    root.querySelector("#codex-jev-empty").style.display = state.enabled && !history.length ? "block" : "none";
+    const empty = root.querySelector("#codex-jev-empty");
+    empty.style.display = state.enabled && !history.length ? "block" : "none";
+    empty.textContent = "No hook decision in this view. If tool results stay unchecked, open /hooks in Codex and trust the Jev hook.";
     button.setAttribute("aria-label", `${status}${unavailable ? `: ${healthReason(state.health?.reason)}` : ""}. This session: ${totals}. ${tokens}. ${history.join(". ") || state.recent}. Select Jev integrations`);
   }
 

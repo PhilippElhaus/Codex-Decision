@@ -129,19 +129,23 @@ class ConfigTests(unittest.TestCase):
         for event in hooks["hooks"]:
             self.assertFalse(hooks["hooks"][event][0]["hooks"][0].get("async", False))
 
-    def test_hook_launcher_fails_open_when_cache_disappears_or_script_fails(self):
+    def test_hook_launcher_reports_missing_or_failing_binary(self):
         hooks = json.loads((ROOT / "hooks" / "hooks.json").read_text())
         command = hooks["hooks"]["PostToolUse"][0]["hooks"][0]["command"]
         with tempfile.TemporaryDirectory(prefix="jev-launcher-", dir="/tmp") as directory:
             environment = {**os.environ, "PLUGIN_ROOT": directory}
             missing = subprocess.run(command, shell=True, input="{}", text=True,
-                                     capture_output=True, env=environment, check=True)
+                                     capture_output=True, env=environment)
+            self.assertNotEqual(missing.returncode, 0)
             self.assertEqual(missing.stdout, "")
-            hook_dir = Path(directory) / "hooks"
-            hook_dir.mkdir()
-            (hook_dir / "post_tool_use.py").write_text("raise SystemExit(99)\n")
+            hook_dir = Path(directory) / "hooks" / "bin" / "linux-x86_64"
+            hook_dir.mkdir(parents=True)
+            binary = hook_dir / "jev-hook"
+            binary.write_text("#!/bin/sh\nexit 99\n")
+            binary.chmod(0o755)
             failing = subprocess.run(command, shell=True, input="{}", text=True,
-                                     capture_output=True, env=environment, check=True)
+                                     capture_output=True, env=environment)
+            self.assertEqual(failing.returncode, 99)
             self.assertEqual(failing.stdout, "")
 
 
