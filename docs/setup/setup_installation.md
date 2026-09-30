@@ -8,6 +8,8 @@ On Linux x86_64, download the plugin ZIP and companion VSIX from the [v0.6.1 rel
 
 Install from the local marketplace entry that points to the packaged source, then migrate an older `PLUGIN_DATA/config.json` with the bundled `jevctl migrate-config --data-dir <PLUGIN_DATA>`. The migration saves a version 1 rollback copy. Open `/hooks` in Codex and review and trust the Jev PostToolUse hook. Codex skips new or changed hooks until trusted, even when the plugin is enabled and the API key works. Start a new Codex thread after installation or upgrade. Existing integration selections are preserved; new installations start with all three off.
 
+For source installs, run `python3 scripts/check_hook_trust.py` after each plugin update. The check reads Codex's hook status without changing trust records or contacting Jev. If it reports `modified`, `untrusted`, or `disabled`, open `/hooks` in the same Codex environment, review and trust or enable Jev, then rerun the check. Treat a failed check as an incomplete upgrade. Codex owns the old trust record and replaces it when you trust the current definition.
+
 For Windows VS Code, build the companion VSIX from WSL, then install it:
 
 ```bash
