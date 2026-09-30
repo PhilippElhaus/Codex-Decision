@@ -15,6 +15,7 @@
   let keyRequestId = 0;
   let externalRequestId = 0;
   let pending = 0;
+  let lastAppliedReply = 0;
   let retryRequestId = 0;
   let menuOpen = false;
   let layoutObserver;
@@ -614,7 +615,9 @@
           showKeyStatus(event.data.status?.keySaveError || "Connection unavailable", false);
         }
       }
-      if (event.data.status && typeof event.data.status === "object") {
+      if (event.data.id >= lastAppliedReply &&
+          event.data.status && typeof event.data.status === "object") {
+        lastAppliedReply = event.data.id;
         state = event.data.status;
         render();
       }

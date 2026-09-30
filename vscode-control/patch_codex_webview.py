@@ -85,7 +85,7 @@ def marketplace_path_bridge() -> str:
 
 
 def image_path_bridge() -> str:
-    """Let Windows VS Code read the two WSL-installed plugin image files."""
+    """Let Windows VS Code read cached and local WSL plugin image files."""
     try:
         root = subprocess.run(["wslpath", "-w", "/"], capture_output=True,
                               text=True, timeout=3, check=True).stdout.strip().rstrip("\\")
@@ -94,7 +94,9 @@ def image_path_bridge() -> str:
     if not root.lower().startswith(("\\\\wsl.localhost\\", "\\\\wsl$\\")):
         return ""
     cache = str(Path.home() / ".codex/plugins/cache/personal")
-    return (f'if(i.startsWith({json.dumps(cache + "/codex-jev/")})||'
+    local_jev = str(Path.home() / "plugins/codex-jev")
+    return (f'if(i.startsWith({json.dumps(local_jev + "/")})||'
+            f'i.startsWith({json.dumps(cache + "/codex-jev/")})||'
             f'i.startsWith({json.dumps(cache + "/codex-chime/")}))'
             f'i={json.dumps(root)}+i.replaceAll("/","\\\\");')
 

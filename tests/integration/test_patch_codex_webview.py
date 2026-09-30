@@ -75,11 +75,14 @@ class PatchTests(unittest.TestCase):
         if not shutil.which("wslpath") or not shutil.which("node"):
             self.skipTest("Windows-to-WSL bridge is unavailable here")
         prefix = str(Path.home() / ".codex/plugins/cache/personal")
+        local = str(Path.home() / "plugins/codex-jev")
         for incoming in (f"{prefix}/codex-jev/1/assets/icon.png",
-                         f"{prefix}/codex-chime/1/assets/logo.png", "/tmp/other.png"):
+                         f"{prefix}/codex-chime/1/assets/logo.png",
+                         f"{local}/assets/icon.png", f"{local}/assets/logo.png",
+                         f"{local}-other/assets/icon.png", "/tmp/other.png"):
             script = "let i=" + json.dumps(incoming) + ";" + patch.image_path_bridge() + "process.stdout.write(i);"
             output = subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True).stdout
-            if incoming.startswith(prefix):
+            if incoming.startswith((prefix + "/", local + "/")):
                 self.assertTrue(output.startswith("\\\\wsl.localhost\\"))
                 self.assertTrue(output.endswith("\\assets\\" + incoming.split("/")[-1]))
             else:

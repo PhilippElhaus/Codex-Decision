@@ -70,8 +70,12 @@ test("composer bridge selects integrations and reports view-scoped activity with
     const rawBridge = commands.get("codexJev.bridge");
     const sessionId = "fixture-session";
     const scoped = core.sessionDirectory(directory, sessionId);
-    const bridge = (request) => rawBridge({ sessionId, viewId: "view-two", ...request });
-    const defaultView = await bridge({ action: "status", viewId: "view-one" });
+    const bridge = (request) => rawBridge({ sessionId, viewId: "view-one", ...request });
+    const initialReplies = await Promise.all(Array.from({ length: 12 },
+      () => bridge({ action: "status", viewId: "view-one" })));
+    const defaultView = initialReplies[0];
+    assert.ok(initialReplies.every((reply) => reply.enabled && reply.outputEnabled),
+      "concurrent startup replies must not briefly report Jev off");
     assert.equal(defaultView.enabled, true);
     assert.equal(defaultView.outputEnabled, true);
     assert.equal(defaultView.testBuildEnabled, true);
@@ -118,9 +122,10 @@ test("composer bridge selects integrations and reports view-scoped activity with
       status: "keep", reason: "evaluator_unavailable", tool: "Bash",
       original_chars: 20000, capsule_chars: 0, elapsed_ms: 120,
     }) + "\n");
-    await until(async () => probes > beforeFailureProbe &&
+    await until(async () =>
       (await bridge({ action: "status", viewId: "view-one" })).stats.completed === 2);
-    assert.equal((await bridge({ action: "status", viewId: "view-one" })).health.ok, true);
+    assert.equal(probes, beforeFailureProbe, "missing key does not trigger a network probe");
+    assert.equal((await bridge({ action: "status", viewId: "view-one" })).health.reason, "JEV_KEY_MISSING");
     assert.equal((await bridge({ action: "status", viewId: "view-one" })).stats.estimatedTokensSaved, 2652);
 
     await Promise.all([
@@ -136,12 +141,25 @@ test("composer bridge selects integrations and reports view-scoped activity with
     assert.equal(newView.stats.completed, 0);
     assert.equal(newView.stats.estimatedTokensSaved, 0);
     assert.deepEqual(newView.history, []);
+    for (let index = 0; index < 8; index += 1) {
+      const [homeStatus, threadStatus] = await Promise.all([
+        rawBridge({ action: "status", viewId: "background-home", sessionId: null,
+          expectsLocalSession: false }),
+        bridge({ action: "status", viewId: "view-one" }),
+      ]);
+      assert.equal(homeStatus.enabled, false, "background home view stays neutral");
+      assert.equal(threadStatus.enabled, true, "background view cannot turn off the thread");
+      assert.equal(threadStatus.stats.replaced, 1, "background view cannot erase thread activity");
+    }
+    await bridge({ action: "setSelection", feature: "search_listing", enabled: true,
+      viewId: "view-one" });
+    assert.equal((await bridge({ action: "status", viewId: "view-two" })).searchListingEnabled, true,
+      "views of the same thread share a saved selection");
+    await bridge({ action: "setSelection", feature: "search_listing", enabled: false,
+      viewId: "view-one" });
 
-    health = { ok: false, reason: "JEV_HTTP_ERROR" };
     await commands.get("codexJev.checkConnection")();
-    assert.equal((await bridge({ action: "status", viewId: "view-two" })).health.reason, "JEV_HTTP_ERROR");
-    health = { ok: true, model: "jev-1.13.0" };
-    assert.equal((await bridge({ action: "retryConnection", viewId: "view-two" })).health.ok, true);
+    assert.equal((await bridge({ action: "status", viewId: "view-two" })).health.reason, "JEV_KEY_MISSING");
 
     assert.equal(commands.has("codexJev.openSettings"), false);
     const ready = (await bridge({ action: "settingsRead" })).settings;
@@ -201,6 +219,11 @@ test("composer bridge selects integrations and reports view-scoped activity with
     assert.equal(saved.needsKey, false);
     assert.equal(await core.readApiKey(directory), "another-test-key-123");
     assert.equal(JSON.stringify(saved).includes("another-test-key-123"), false);
+    health = { ok: false, reason: "JEV_HTTP_ERROR" };
+    await commands.get("codexJev.checkConnection")();
+    assert.equal((await bridge({ action: "status", viewId: "view-two" })).health.reason, "JEV_HTTP_ERROR");
+    health = { ok: true, model: "jev-1.13.0" };
+    assert.equal((await bridge({ action: "retryConnection", viewId: "view-two" })).health.ok, true);
 
     const other = await bridge({ action: "status", sessionId: "other-window", viewId: "view-three" });
     assert.equal(other.enabled, true);
@@ -211,6 +234,10 @@ test("composer bridge selects integrations and reports view-scoped activity with
       feature: "search_listing", enabled: true });
     assert.equal((await core.readConfig(core.sessionDirectory(directory, "other-window"))).search_listing_enabled, true);
     assert.equal((await core.readConfig(scoped)).search_listing_enabled, false);
+    assert.equal((await bridge({ action: "status", viewId: "view-one" })).stats.replaced, 1,
+      "another thread view cannot erase the first view's decisions");
+    assert.equal((await bridge({ action: "status", viewId: "view-one" })).searchListingEnabled, false,
+      "another thread view cannot change the first view's filters");
     const returned = await bridge({ action: "status", viewId: "view-four" });
     assert.equal(returned.outputEnabled, false);
     assert.equal(returned.testBuildEnabled, true);

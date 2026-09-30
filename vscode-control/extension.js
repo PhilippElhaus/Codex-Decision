@@ -18,27 +18,13 @@ function emptyStats() {
     savedChars: 0, elapsedMs: 0, completed: 0 };
 }
 
-function activate(context) {
+function createController(dataDirectory) {
   const state = { enabled: false, outputEnabled: false, testBuildEnabled: false, searchListingEnabled: false, needsKey: false, mode: "replace", health: null, hookHealth: null, panelFault: null, configurationError: null, sessionPending: true, viewStartedAt: Date.now(), recent: null, history: [], stats: emptyStats(), busyUntil: 0, eventSize: -1, checking: false, polling: null, callingSeen: false, viewId: null, sessionId: null, generation: 0, eventDirectory: null };
   let selectionQueue = Promise.resolve();
   let viewBaseline = Promise.resolve();
+  let entering = Promise.resolve();
   let probePromise = null;
-  const settings = () => vscode.workspace.getConfiguration("codexJev");
-  const dataDirectory = () => {
-    const directory = settings().get("dataDirectory") || defaultDataDirectory();
-    if (typeof directory !== "string" || !path.isAbsolute(directory)) {
-      throw new Error("Set codexJev.dataDirectory to the installed plugin's absolute PLUGIN_DATA path.");
-    }
-    return directory;
-  };
   const activeDirectory = () => sessionDirectory(dataDirectory(), state.sessionId);
-  const decisionPanel = new LatestDecisionProvider(context.extensionUri,
-    () => state.sessionId ? activeDirectory() : null, () => Date.now(),
-    (fault) => { state.panelFault = fault; });
-  context.subscriptions.push(vscode.window.registerWebviewViewProvider(VIEW_ID, decisionPanel));
-  context.subscriptions.push(decisionPanel);
-  context.subscriptions.push(vscode.commands.registerCommand("codexJev.showLatestDecision", () =>
-    vscode.commands.executeCommand(`${VIEW_ID}.focus`)));
   const snapshot = () => ({
     enabled: state.enabled,
     outputEnabled: state.outputEnabled,
@@ -80,6 +66,7 @@ function activate(context) {
       state.enabled = false;
       state.sessionPending = false;
       state.configurationError = "Codex session could not be identified";
+      entering = Promise.resolve();
       return;
     }
     if (sessionId == null) {
@@ -99,9 +86,10 @@ function activate(context) {
       state.hookHealth = null;
       state.sessionPending = !expectsLocalSession;
       state.configurationError = expectsLocalSession ? "Codex session could not be identified" : null;
+      entering = Promise.resolve();
       return;
     }
-    if (state.viewId === viewId && state.sessionId === sessionId) return;
+    if (state.viewId === viewId && state.sessionId === sessionId) return entering;
     state.viewId = viewId;
     state.sessionId = sessionId;
     state.sessionPending = false;
@@ -118,8 +106,10 @@ function activate(context) {
         if (state.generation === generation) state.eventSize = -1;
       }
     })();
-    await viewBaseline;
-    await sync();
+    entering = viewBaseline.then(() => {
+      if (state.generation === generation) return sync();
+    });
+    return entering;
   }
 
   function pulse() {
@@ -165,7 +155,7 @@ function activate(context) {
       if (!state.enabled) {
         state.health = null;
       }
-      if (state.enabled && (!wasEnabled || directoryChanged)) {
+      if (state.enabled && !state.needsKey && (!wasEnabled || directoryChanged)) {
         void (probePromise ? probePromise.then(() => probe()) : probe());
       }
     } catch (error) {
@@ -182,7 +172,7 @@ function activate(context) {
   }
 
   function probe() {
-    if (!state.enabled) return Promise.resolve();
+    if (!state.enabled || state.needsKey) return Promise.resolve();
     if (probePromise) return probePromise;
     state.checking = true;
     pulse();
@@ -354,7 +344,7 @@ function activate(context) {
     return { action: "error", message: "Unknown settings action" };
   }
 
-  context.subscriptions.push(vscode.commands.registerCommand("codexJev.bridge", async (request) => {
+  async function bridge(request) {
     await enterView(request?.viewId, request?.sessionId, request?.expectsLocalSession === true);
     if (request?.action === "openTypeSafe") {
       try {
@@ -396,30 +386,94 @@ function activate(context) {
       }));
     }
     return snapshot();
+  }
+  return { state, bridge, pollEvent, sync, probe, activeDirectory };
+}
+
+function activate(context) {
+  const controllers = new Map();
+  let active = null;
+  const settings = () => vscode.workspace.getConfiguration("codexJev");
+  const dataDirectory = () => {
+    const directory = settings().get("dataDirectory") || defaultDataDirectory();
+    if (typeof directory !== "string" || !path.isAbsolute(directory)) {
+      throw new Error("Set codexJev.dataDirectory to the installed plugin's absolute PLUGIN_DATA path.");
+    }
+    return directory;
+  };
+  const controllerFor = (viewId) => {
+    if (typeof viewId !== "string" || !/^[\w:-]{1,96}$/.test(viewId)) {
+      return createController(dataDirectory);
+    }
+    let entry = controllers.get(viewId);
+    if (!entry) {
+      entry = { controller: createController(dataDirectory), lastSeen: 0 };
+      controllers.set(viewId, entry);
+    }
+    entry.lastSeen = Date.now();
+    return entry.controller;
+  };
+  const decisionPanel = new LatestDecisionProvider(context.extensionUri,
+    () => active?.state.sessionId ? active.activeDirectory() : null, () => Date.now(),
+    (fault) => { if (active) active.state.panelFault = fault; });
+  context.subscriptions.push(vscode.window.registerWebviewViewProvider(VIEW_ID, decisionPanel));
+  context.subscriptions.push(decisionPanel);
+  context.subscriptions.push(vscode.commands.registerCommand("codexJev.showLatestDecision", () =>
+    vscode.commands.executeCommand(`${VIEW_ID}.focus`)));
+  context.subscriptions.push(vscode.commands.registerCommand("codexJev.bridge", async (request) => {
+    const controller = controllerFor(request?.viewId);
+    if (typeof request?.sessionId === "string" && /^[A-Za-z0-9._-]{1,128}$/.test(request.sessionId)) {
+      active = controller;
+    }
+    const reply = await controller.bridge(request);
+    const settingsSaved = request?.action === "settingsSave" && reply.settings?.action === "saved";
+    const changed = request?.action === "setSelection" || request?.action === "saveApiKey" ||
+      settingsSaved;
+    if (changed) {
+      await Promise.all([...controllers.values()].map(async ({ controller: other }) => {
+        if (other !== controller && other.state.sessionId &&
+            (request.action === "saveApiKey" || other.state.sessionId === controller.state.sessionId)) {
+          await other.sync();
+        }
+      }));
+    }
+    return reply;
   }));
   context.subscriptions.push(vscode.commands.registerCommand("codexJev.checkConnection", async () => {
-    if (!state.enabled) {
+    if (!active?.state.enabled) {
       void vscode.window.showInformationMessage("Select a Jev integration to check the Jev connection.");
       return;
     }
-    await probe();
+    await active.probe();
   }));
   context.subscriptions.push(vscode.workspace.onDidChangeConfiguration((event) => {
     if (event.affectsConfiguration("codexJev")) {
-      void sync();
+      for (const { controller } of controllers.values()) void controller.sync();
     }
   }));
 
-  const eventTimer = setInterval(() => { void pollEvent(); }, 250);
-  const configTimer = setInterval(() => { void sync(); }, 10_000);
-  const healthTimer = setInterval(() => { void probe(); }, 5 * 60_000);
+  const live = () => {
+    const now = Date.now();
+    for (const [id, entry] of controllers) {
+      if (now - entry.lastSeen > 5 * 60_000) {
+        if (active === entry.controller) active = null;
+        controllers.delete(id);
+      }
+    }
+    return [...controllers.values()].filter((entry) => now - entry.lastSeen < 10_000)
+      .map((entry) => entry.controller);
+  };
+  const eventTimer = setInterval(() => { for (const controller of live()) void controller.pollEvent(); }, 250);
+  const configTimer = setInterval(() => { for (const controller of live()) void controller.sync(); }, 10_000);
+  const healthTimer = setInterval(() => { for (const controller of live()) void controller.probe(); }, 5 * 60_000);
   const retryTimer = setInterval(() => {
-    if (state.enabled && state.health?.ok === false) void probe();
+    for (const controller of live()) {
+      if (controller.state.enabled && controller.state.health?.ok === false) void controller.probe();
+    }
   }, 30_000);
   context.subscriptions.push({ dispose: () => {
     clearInterval(eventTimer); clearInterval(configTimer); clearInterval(healthTimer); clearInterval(retryTimer);
   } });
-  void sync();
 }
 
 function deactivate() {}

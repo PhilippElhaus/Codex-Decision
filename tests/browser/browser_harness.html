@@ -703,6 +703,19 @@
       check(key.value === "", "key field cleared after save");
       window.__jevHarnessHoldNextStatus = true;
       await until(() => window.__jevHarnessHeldStatus?.sessionId === "fixture-session",
+        "hold an older reply in the same thread");
+      const oldReply = window.__jevHarnessHeldStatus;
+      await pause(300);
+      window.dispatchEvent(new MessageEvent("message", { data: {
+        type: "codex-jev-reply", id: oldReply.id,
+        status: { enabled: false, sessionPending: false, health: null },
+      } }));
+      await pause(30);
+      check(button.style.color !== "rgb(154, 154, 154)",
+        "an older reply cannot briefly turn the active thread gray");
+      window.__jevHarnessHeldStatus = null;
+      window.__jevHarnessHoldNextStatus = true;
+      await until(() => window.__jevHarnessHeldStatus?.sessionId === "fixture-session",
         "hold a reply from the previous thread");
       document.documentElement.dataset.codexJevRouteKind = "none";
       delete document.documentElement.dataset.codexJevSessionId;
