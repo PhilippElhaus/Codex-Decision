@@ -1,29 +1,37 @@
-# Install Codex Jev
+# Install and verify
 
-On Linux x86_64, download the plugin ZIP and companion VSIX from the [v0.6.1 release](https://github.com/PhilippElhaus/Codex-Jev/releases/tag/v0.6.1), or build the plugin from source:
+Codex Jev currently packages a Linux x86_64 hook. Install it from this repository's Codex marketplace:
 
 ```bash
-./scripts/build_submission.sh
+codex plugin marketplace add https://github.com/PhilippElhaus/Codex-Jev
+codex plugin add codex-jev@codex-jev
 ```
 
-Install from the local marketplace entry that points to the packaged source, then migrate an older `PLUGIN_DATA/config.json` with the bundled `jevctl migrate-config --data-dir <PLUGIN_DATA>`. The migration saves a version 1 rollback copy. Open `/hooks` in Codex and review and trust the Jev PostToolUse hook. Codex skips new or changed hooks until trusted, even when the plugin is enabled and the API key works. Start a new Codex thread after installation or upgrade. Existing integration selections are preserved; new installations start with all three off.
+To build the plugin ZIP from source instead, run `./scripts/build_submission.sh`. The archive is written under `.local/submission/`.
 
-For source installs, run `python3 scripts/check_hook_trust.py` after each plugin update. The check reads Codex's hook status without changing trust records or contacting Jev. If it reports `modified`, `untrusted`, or `disabled`, open `/hooks` in the same Codex environment, review and trust or enable Jev, then rerun the check. Treat a failed check as an incomplete upgrade. Codex owns the old trust record and replaces it when you trust the current definition.
+Open `/hooks` in the same Codex environment that runs your tools. Review and trust **Codex Jev → PostToolUse**, then start a new thread. Codex does not run a new or changed non-managed hook until it is trusted. The trust record is tied to the hook definition, so a successful API key test alone cannot verify an upgrade.
 
-For Windows VS Code, build the companion VSIX from WSL, then install it:
+For every plugin update, run this check before declaring the installation ready:
+
+```bash
+python3 scripts/check_hook_trust.py
+```
+
+A nonzero exit means the hook is absent, disabled, changed, or untrusted. Open `/hooks`, review the current definition, then rerun the check. Codex manages its trust records; Jev does not rewrite them or silently trust a changed command. The check is the upgrade gate that prevents an old trust record from being mistaken for a working hook.
+
+For the optional Windows VS Code control, build and install its VSIX from WSL:
 
 ```bash
 cd vscode-control
 mkdir -p ../.local/submission
-npx @vscode/vsce package --no-dependencies --out ../.local/submission/codex-jev-control-0.5.1.vsix
-code --install-extension "$(wslpath -w ../.local/submission/codex-jev-control-0.5.1.vsix)" --force
+npx @vscode/vsce package --no-dependencies --out ../.local/submission/codex-jev-control-0.6.0.vsix
+code --install-extension "$(wslpath -w ../.local/submission/codex-jev-control-0.6.0.vsix)" --force
 ```
 
-Set `codexJev.dataDirectory` to the installed plugin's absolute `PLUGIN_DATA` directory. Enabling an integration opens key setup if no key is saved. The [credential setup](setup_credentials.md) explains that directory and the Jev key. Apply the [version-pinned Codex composer patch](../../vscode-control/README.md#install).
+Set `codexJev.dataDirectory` to the installed plugin's absolute `PLUGIN_DATA` directory. Apply the [version-pinned Codex composer patch](../../vscode-control/README.md#install), then reload VS Code. The control needs the same data directory as the hook. It reads the current Codex thread ID from the Codex route; if it cannot identify the thread, it shows an error instead of changing shared settings.
 
-When upgrading an existing control, run the patch utility's `update` action as well: the Codex settings page is injected into the Codex extension separately from the Jev VSIX. Reload VS Code yourself after both are installed.
+A new VS Code Codex session starts with all three filters off. Its switches, mode, cutoffs, decisions, statistics, and health live under `PLUGIN_DATA/sessions/<sha256-of-session-id>/`. The API key remains shared for the local installation in `PLUGIN_DATA/.env`. Selecting a filter creates that session's config. Existing plugin-wide enable flags are not inherited by new sessions.
 
+CLI users without the VS Code control can opt into installation-wide filtering by adding `"scope": "global"` to a schema-2 `PLUGIN_DATA/config.json`, then enabling the desired routes. [config.example.json](../../config.example.json) shows the fields. A session config, when present, overrides this global choice for that session. This global opt-in deliberately affects every session that has no override.
 
-CLI users can select the integrations with `enabled`, `test_build_enabled`, and `search_listing_enabled` in `PLUGIN_DATA/config.json`. See the [config example](../../config.example.json) and [integration behavior](../architecture/design_integrations.md).
-
-If Jev shows zero checked results after a session, first inspect `/hooks` in the same Codex environment that runs the tools. Trust a pending Jev hook, then start a new thread and run an eligible local command with at least 256 characters of plain-text output. The three switches cover separate routes; turn on the switch for that command. The green VS Code connection indicator checks only the Jev API and key. Small, sensitive, structured, and unsupported results make no Jev request.
+If the control stays amber after a sizeable local text result, check `/hooks`, start a new thread, and confirm that the selected switch matches that tool's route. Red means a configuration, key, API, or hook problem; the original tool result remains visible. [Verification](../development/development_verification.md) gives a repeatable test.

@@ -325,10 +325,9 @@ pub fn pack_batches(
     batches
 }
 
-pub fn parse_probabilities(
-    batch: &Batch,
-    response: &Value,
-) -> Result<BTreeMap<usize, (f64, f64, Option<f64>)>, String> {
+pub type ParsedProbabilities = BTreeMap<usize, (f64, f64, Option<f64>)>;
+
+pub fn parse_probabilities(batch: &Batch, response: &Value) -> Result<ParsedProbabilities, String> {
     let answers = response
         .get("answers")
         .and_then(Value::as_object)

@@ -1,17 +1,17 @@
 # Codex Jev control for VS Code
 
-This optional extension adds the **Jev** bottom panel, three integration toggles in the Codex composer, and line-level settings. It reads the installed plugin's `PLUGIN_DATA`; set `codexJev.dataDirectory` to that absolute directory in VS Code settings. On Windows with WSL, use its `\\wsl.localhost\<distro>\...` path.
+This optional extension adds Jev switches to the Codex composer, detailed Jev settings, and a bottom-panel view of the latest decision. Set `codexJev.dataDirectory` to the installed plugin's absolute `PLUGIN_DATA` path. Windows VS Code with WSL normally uses a `\\wsl.localhost\<distro>\...` path.
 
 ## Install
 
 From this directory in WSL:
 
 ```bash
-npx @vscode/vsce package --no-dependencies --out ../.local/submission/codex-jev-control-0.5.1.vsix
-code --install-extension "$(wslpath -w ../.local/submission/codex-jev-control-0.5.1.vsix)" --force
+npx @vscode/vsce package --no-dependencies --out ../.local/submission/codex-jev-control-0.6.0.vsix
+code --install-extension "$(wslpath -w ../.local/submission/codex-jev-control-0.6.0.vsix)" --force
 ```
 
-The composer control requires a separately installed, version-pinned local patch for Codex extension `26.917.62051`. The patch verifies exact host hashes and keeps rollback files outside this repository:
+The composer and Codex settings page require the separate local patch for Codex VS Code extension `26.917.62051`. It checks exact host hashes and keeps rollback files outside this repository:
 
 ```bash
 python3 patch_codex_webview.py update \
@@ -19,23 +19,24 @@ python3 patch_codex_webview.py update \
   --backup '/mnt/c/Users/<user>/AppData/Local/Codex/codex-jev/rollback/26.917.62051'
 ```
 
-Use `apply` for the first installation, `update` after each Jev control upgrade, or `restore` to roll back. The settings script runs inside the patched Codex webview, so installing the VSIX alone does not update that page. The patch utility is still Python; the packaged Jev hook runs as Rust without Python. Reload the VS Code window yourself after both updates. A new Codex thread picks up a newly installed plugin hook.
+Use `apply` for the first installation, `update` after a control upgrade, or `restore` to remove the patch. Reload VS Code after installing both pieces. Start a new Codex thread after a plugin hook upgrade and review the hook in `/hooks` again if its definition changed.
 
 ## Use
 
-The **Jev** tab appears beside Output and Terminal. Hide it from its tab menu and reopen it with **View → Open View… → Jev: Latest decision**. VS Code does not expose a contribution point for a direct custom entry in its top-level View menu. The panel stays empty until a version 3 batch decision arrives. It shows up to 250 judged source lines from the latest batch, each with a bounded excerpt, Keep/Omit result, and a 0–1 visual **retention index**. Blue cut rows sit near zero; gold kept rows sit near one. The index is derived locally from the final action and the Noul probabilities; it is not itself a Jev probability. Hover a row for the underlying omission, exact-text, and task-relevance scores and its keep reason. Dense batches flow into columns and the header shows the total kept versus source lines. Full-block `█` bars grow together over 900 ms even when Windows reports reduced motion, values fade in, and the batch rests for another second. Rapid updates coalesce to the newest batch. Long batches use the panel's page scroll without a nested scrollbar. The snapshot contains only bounded excerpts, not the full output.
+The three composer switches cover other local output, test/build logs, and search/listing results. Each Codex session has its own switches, Monitor/Filter mode, cutoffs, decisions, counters, and hook status. The control reads the active session ID from Codex's route and stores state under `PLUGIN_DATA/sessions/<session-hash>/`; a new session starts with all filters off. If it cannot identify the session, it shows an error instead of changing another session's settings. Only the API key in `PLUGIN_DATA/.env` is shared across this installation.
 
-In **Codex settings → Jev**, choose Monitor or Filter and set the `Can omit` minimum and `Exact text needed` maximum for each route. Search relevance is always rated and shown; its optional keep guard starts disabled. Monitor records line judgments while returning the full output. Filter may shorten an output only when every omitted line passes its own thresholds and local evidence protections. Changes apply to the next tool result. A private receipt stores the original once; batch records store requests and answers. **Open logs** opens the private log directory. Saved originals live separately under `PLUGIN_DATA/outputs/`.
+Amber means the hook has not been observed recently in this session. Green requires both a successful API check and a recent hook invocation, including a normal skip. Red shows a key, API, configuration, status-file, or hook error. A key test alone never verifies hook trust. If Jev stays amber after eligible tool output, open `/hooks` in Codex, trust the Jev hook, and try a new thread. Short, sensitive, and unsupported results are intentionally skipped.
 
-The composer switches control separate input routes. Recognized test/build and search/listing commands or tools use only their own switch. If that switch is off, the result is untouched and does not appear as a new decision or statistic, even if Output filter is on. Output filter handles other eligible local plain text. A 256-byte minimum avoids calls for tiny replies; structured and mutating tool results remain untouched.
+Open **Codex settings → Jev** to choose Monitor or Filter, adjust line cutoffs, test or replace the key, and open this session's logs. Monitor records decisions but leaves full output visible. Filter can shorten only eligible text after the local evidence checks pass; every shortened result links to its exact original.
 
-The green control means the API key and Jev endpoint passed a connection check. It does not confirm that Codex trusted or ran the hook. If activity stays empty after eligible tool output, open `/hooks` in Codex, trust the Jev PostToolUse hook, and start a new thread. Codex reviews a changed hook again after an upgrade.
+The **Jev** panel sits beside Output and Terminal. Reopen it through **View → Open View… → Jev: Latest decision**. It shows up to 250 judged lines from the latest batch in the active session. Blue rows were cut and gold rows were kept. The visual retention index is a display aid; hover for the underlying Jev probabilities. The panel snapshot contains bounded excerpts, not the full output.
 
 ## Verify
 
 ```bash
 npm test
 python3 scripts/browser_smoke.py
+python3 ../scripts/check_hook_trust.py
 ```
 
-The panel's synthetic [browser harness](../tests/browser/jev_panel_harness.html) renders the real webview code in dark and light colors. The [documentation captures](../docs/images/) use the current webview code and synthetic, key-free state.
+The browser harnesses use the real composer, settings, and panel code with synthetic, key-free data. The Codex patch must be revalidated against each new Codex extension build.

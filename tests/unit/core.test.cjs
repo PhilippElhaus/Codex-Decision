@@ -6,11 +6,29 @@ const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
 const {
-  activitySummary, checkHealth, completeLinePolicy, completeSearchRelevance, DEFAULT_SEARCH_RELEVANCE, decisionSummary, estimateTokensSaved, formatDuration, outcomeLine, parseHealthOutput, readApiKey, readConfig,
+  activitySummary, checkHealth, completeLinePolicy, completeSearchRelevance, DEFAULT_SEARCH_RELEVANCE, decisionSummary, sessionDirectory, readHookHealth, estimateTokensSaved, formatDuration, outcomeLine, parseHealthOutput, readApiKey, readConfig,
   readEventOffset, readEventsSince, readLatestEvent, readLifetimeStats, readRecentOutcomes, writeApiKey, writeEnabled, writeMode, writeSelection, writeSettings, writeNeverDeleteLogs,
 } = require("../../vscode-control/core");
 const withV2 = (config) => ({ ...config, schema_version: 2, line_policy: completeLinePolicy(),
   search_relevance: DEFAULT_SEARCH_RELEVANCE });
+
+test("session readers reject linked directories before opening state", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "jev-session-path-"));
+  try {
+    await fs.mkdir(path.join(root, "sessions"), { mode: 0o700 });
+    const outside = path.join(root, "outside");
+    await fs.mkdir(outside, { mode: 0o700 });
+    await fs.writeFile(path.join(outside, "config.json"), JSON.stringify(withV2({
+      enabled: true, test_build_enabled: false, search_listing_enabled: false, mode: "replace",
+    })));
+    const linked = sessionDirectory(root, "linked-window");
+    await fs.symlink(outside, linked);
+    await assert.rejects(readConfig(linked), /Unsafe Jev session directory/);
+    await assert.rejects(readHookHealth(linked), /Unsafe Jev session directory/);
+    await assert.rejects(readLifetimeStats(linked), /Unsafe Jev session directory/);
+    await assert.rejects(readEventOffset(linked), /Unsafe Jev session directory/);
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
+});
 
 test("line policy round trips and rejects invalid percentages", async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-settings-test-"));
@@ -87,13 +105,13 @@ test("never delete can save alone without changing draft settings or needing a k
   } finally { await fs.rm(directory, { recursive: true, force: true }); }
 });
 
-test("session activity index and cumulative stats take precedence over legacy log", async () => {
+test("session activity index and cumulative stats use only current paths", async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-retention-test-"));
   try {
     await fs.writeFile(path.join(directory, "events.jsonl"), JSON.stringify({
       status: "keep", reason: "legacy", tool: "Bash", original_chars: 1000,
     }) + "\n");
-    await fs.mkdir(path.join(directory, "logs"));
+    await fs.mkdir(path.join(directory, "logs"), { recursive: true });
     await fs.writeFile(path.join(directory, "logs", "events.jsonl"), JSON.stringify({
       status: "replace", reason: "jev_replace", tool: "Bash", original_chars: 1000, capsule_chars: 100,
     }) + "\n");
@@ -132,7 +150,7 @@ test("hook selection writes the config atomically and preserves the Jev mode", a
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-control-test-"));
   try {
     assert.deepEqual(await readConfig(directory), { enabled: false, test_build_enabled: false, search_listing_enabled: false, mode: "replace" });
-    await fs.writeFile(path.join(directory, "config.json"), JSON.stringify({ mode: "replace", min_chars: 10000 }));
+    await fs.writeFile(path.join(directory, "config.json"), JSON.stringify(withV2({ enabled: false, test_build_enabled: false, search_listing_enabled: false, mode: "replace", min_chars: 10000 })));
     assert.deepEqual(await writeEnabled(directory, true), withV2({ enabled: true, test_build_enabled: false, search_listing_enabled: false, mode: "replace", min_chars: 10000 }));
     assert.deepEqual(await readConfig(directory), withV2({ enabled: true, test_build_enabled: false, search_listing_enabled: false, mode: "replace", min_chars: 10000 }));
     assert.deepEqual(await writeSelection(directory, false, true), withV2({ enabled: false, test_build_enabled: true, search_listing_enabled: false, mode: "replace", min_chars: 10000 }));
@@ -162,35 +180,51 @@ test("mode setting changes only the mode and rejects invalid values", async () =
   }
 });
 
-test("legacy PreCompact selection is retired without enabling search/listing", async () => {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-control-test-"));
+test("outdated configuration is rejected without changing it", async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-current-config-"));
   try {
-    await fs.writeFile(path.join(directory, "config.json"), JSON.stringify({ enabled: true, precompact_enabled: true }));
-    const config = await readConfig(directory);
-    assert.equal(config.enabled, true);
-    assert.equal(config.search_listing_enabled, false);
-    assert.equal(Object.hasOwn(config, "precompact_enabled"), false);
-    await writeSelection(directory, true, true, true);
-    assert.equal((await fs.readFile(path.join(directory, "config.json"), "utf8")).includes("precompact"), false);
-  } finally {
-    await fs.rm(directory, { recursive: true, force: true });
+    for (const outdated of [
+      { enabled: true, precompact_enabled: true },
+      { enabled: true, sample_chars: 12000 },
+      { schema_version: 1, enabled: true },
+    ]) {
+      const bytes = JSON.stringify(outdated);
+      await fs.writeFile(path.join(directory, "config.json"), bytes);
+      await assert.rejects(readConfig(directory), /Invalid Jev config/);
+      await assert.rejects(writeEnabled(directory, true), /Invalid Jev config/);
+      assert.equal(await fs.readFile(path.join(directory, "config.json"), "utf8"), bytes);
+    }
+  } finally { await fs.rm(directory, { recursive: true, force: true }); }
+});
+
+test("session paths are stable, separate, and reject unsafe IDs", async () => {
+  const root = path.join(os.tmpdir(), "jev-data");
+  const first = sessionDirectory(root, "session-one");
+  const second = sessionDirectory(root, "session-two");
+  assert.notEqual(first, second);
+  assert.equal(first, sessionDirectory(root, "session-one"));
+  assert.ok(first.startsWith(path.join(root, "sessions") + path.sep));
+  for (const invalid of ["", "../escape", "contains space", 5, "a".repeat(129)]) {
+    assert.throws(() => sessionDirectory(root, invalid), /session ID/);
   }
 });
 
-test("legacy sampling setting is removed when a selection saves", async () => {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-control-test-"));
+test("hook health is private, bounded, and rejects corrupt or linked data", async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-hook-health-"));
   try {
-    await fs.writeFile(path.join(directory, "config.json"), JSON.stringify({
-      enabled: true, test_build_enabled: true, search_listing_enabled: false,
-      sample_chars: 12000,
-    }));
-    const saved = await writeSelection(directory, true, true, false);
-    assert.equal(saved.schema_version, 2);
-    assert.equal(saved.enabled, true);
-    assert.equal(saved.test_build_enabled, true);
-    assert.equal(Object.hasOwn(saved, "sample_chars"), false);
-    const persisted = JSON.parse(await fs.readFile(path.join(directory, "config.json")));
-    assert.equal(Object.hasOwn(persisted, "sample_chars"), false);
+    assert.equal(await readHookHealth(directory), null);
+    const logs = path.join(directory, "logs");
+    await fs.mkdir(logs);
+    const file = path.join(logs, "hook-health.json");
+    const valid = { version: 1, hook_version: "0.7.0", last_seen_ms: Date.now(), last_skip: "small" };
+    await fs.writeFile(file, JSON.stringify(valid));
+    assert.deepEqual(await readHookHealth(directory), valid);
+    await fs.writeFile(file, JSON.stringify({ ...valid, last_error_ms: -1 }));
+    await assert.rejects(readHookHealth(directory), /Invalid Jev hook health/);
+    await fs.writeFile(file, JSON.stringify({ ...valid, last_seen_ms: Date.now() + 600_000 }));
+    await assert.rejects(readHookHealth(directory), /Invalid Jev hook health/);
+    await fs.writeFile(file, "x".repeat(5000));
+    await assert.rejects(readHookHealth(directory), /Unsafe Jev hook health/);
   } finally { await fs.rm(directory, { recursive: true, force: true }); }
 });
 
@@ -220,7 +254,8 @@ test("invalid config and linked target fail without changing a hook selection", 
 test("recent decision is read from a bounded log tail", async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-control-test-"));
   try {
-    const file = path.join(directory, "events.jsonl");
+    const file = path.join(directory, "logs", "events.jsonl");
+    await fs.mkdir(path.dirname(file), { recursive: true });
     await fs.writeFile(file, "x".repeat(40000) + "\n" +
       JSON.stringify({ tool: "Bash", status: "replace", reason: "jev_replace", original_chars: 12345, capsule_chars: 1000, elapsed_ms: 480 }) + "\n" +
       JSON.stringify({ tool: "Bash", status: "skip", reason: "small", original_chars: 42, elapsed_ms: 0 }) + "\n");
@@ -237,7 +272,7 @@ test("recent decision is read from a bounded log tail", async () => {
   }
 });
 
-test("lifetime activity scans retained decisions across sessions", async () => {
+test("session totals scan retained decisions within one session", async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-lifetime-test-"));
   try {
     assert.deepEqual(await readLifetimeStats(directory), { calls: 0, completed: 0, replaced: 0,
@@ -253,7 +288,8 @@ test("lifetime activity scans retained decisions across sessions", async () => {
       { status: "keep", reason: "jev_keep", original_chars: 8000, elapsed_ms: 200 },
       { status: "replace", reason: "jev_replace", original_chars: 9000, capsule_chars: null, elapsed_ms: 100 },
     ];
-    await fs.writeFile(path.join(directory, "events.jsonl"), rows.map((row) => JSON.stringify(row)).join("\n") + "\nnot-json\n");
+    await fs.mkdir(path.join(directory, "logs"), { recursive: true });
+    await fs.writeFile(path.join(directory, "logs", "events.jsonl"), rows.map((row) => JSON.stringify(row)).join("\n") + "\nnot-json\n");
     assert.deepEqual(await readLifetimeStats(directory), { calls: 2, completed: 4, replaced: 2,
       savedChars: 8000, estimatedTokensSaved: 2000, averageMs: 325,
       linesSeen: 0, linesJudged: 0, linesKept: 0, linesOmitted: 0, linesProtected: 0, linesUnjudged: 0,
@@ -287,7 +323,8 @@ test("summary keeps three signals and missing capsule sizes do not imply savings
 test("incremental event reader keeps incomplete lines for the next poll", async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-control-test-"));
   try {
-    const file = path.join(directory, "events.jsonl");
+    await fs.mkdir(path.join(directory, "logs"));
+    const file = path.join(directory, "logs", "events.jsonl");
     const calling = JSON.stringify({ status: "calling", reason: "jev_request", tool: "Bash" }) + "\n";
     const result = JSON.stringify({ status: "candidate", reason: "observe", tool: "Bash", original_chars: 12000, elapsed_ms: 970 }) + "\n";
     await fs.writeFile(file, calling + result.slice(0, 20));
@@ -306,8 +343,9 @@ test("incremental event reader keeps incomplete lines for the next poll", async 
 test("new controls start after existing log entries", async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-control-test-"));
   try {
+    await fs.mkdir(path.join(directory, "logs"));
     assert.equal(await readEventOffset(directory), 0);
-    const file = path.join(directory, "events.jsonl");
+    const file = path.join(directory, "logs", "events.jsonl");
     const historical = JSON.stringify({ status: "keep", reason: "jev_keep", tool: "Bash", original_chars: 13006 }) + "\n";
     await fs.writeFile(file, historical);
     const offset = await readEventOffset(directory);
@@ -333,7 +371,8 @@ test("recent outcomes span tools and ignore calls, skips, and malformed rows", a
     ];
     const content = rows.slice(0, 4).map((row) => JSON.stringify(row) + "\n").join("") +
       "not-json\n" + rows.slice(4).map((row) => JSON.stringify(row) + "\n").join("");
-    await fs.writeFile(path.join(directory, "events.jsonl"), content);
+    await fs.mkdir(path.join(directory, "logs"), { recursive: true });
+    await fs.writeFile(path.join(directory, "logs", "events.jsonl"), content);
     const recent = await readRecentOutcomes(directory);
     assert.equal(recent.offset, Buffer.byteLength(content));
     assert.deepEqual(recent.outcomes.map((row) => [row.status, row.tool]), [
@@ -347,7 +386,8 @@ test("recent outcomes span tools and ignore calls, skips, and malformed rows", a
 test("incremental reader handles log truncation and a burst larger than one read", async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-control-test-"));
   try {
-    const file = path.join(directory, "events.jsonl");
+    await fs.mkdir(path.join(directory, "logs"));
+    const file = path.join(directory, "logs", "events.jsonl");
     const line = JSON.stringify({ status: "candidate", reason: "observe", tool: "Bash", original_chars: 12000, elapsed_ms: 1000 }) + "\n";
     const count = 3200;
     await fs.writeFile(file, line.repeat(count));

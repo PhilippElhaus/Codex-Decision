@@ -25,7 +25,7 @@ def main() -> None:
                 str(edge), '--headless', '--disable-gpu', '--no-first-run',
                 '--no-default-browser-check', '--disable-extensions',
                 f'--force-prefers-reduced-motion={motion}',
-                '--virtual-time-budget=3000', f'--window-size={width},600',
+                '--virtual-time-budget=10000', f'--window-size={width},600',
                 f'--user-data-dir={windows_path(profile / f"viewport-{width}")}',
                 '--dump-dom', address,
             ], capture_output=True, text=True, timeout=30, check=False)

@@ -1,14 +1,173 @@
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use std::fs;
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::os::unix::fs::PermissionsExt;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
 };
 use std::time::Duration;
+
+fn scoped(data: &Path, session: &str) -> PathBuf {
+    data.join("sessions")
+        .join(format!("{:x}", Sha256::digest(session.as_bytes())))
+}
+
+#[test]
+fn linked_session_directory_fails_open_and_reports_the_problem() {
+    let root = tempfile::tempdir().unwrap();
+    let data = root.path().join("data");
+    fs::create_dir(&data).unwrap();
+    fs::set_permissions(&data, fs::Permissions::from_mode(0o700)).unwrap();
+    fs::create_dir(data.join("sessions")).unwrap();
+    fs::set_permissions(data.join("sessions"), fs::Permissions::from_mode(0o700)).unwrap();
+    let outside = root.path().join("outside");
+    fs::create_dir(&outside).unwrap();
+    std::os::unix::fs::symlink(&outside, scoped(&data, "linked-session")).unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_jev-hook"))
+        .env("PLUGIN_DATA", &data)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(
+            json!({"hook_event_name":"PostToolUse","tool_name":"Bash",
+            "session_id":"linked-session","tool_use_id":"call-one",
+            "tool_input":{"command":"echo hello"},"tool_response":"hello"})
+            .to_string()
+            .as_bytes(),
+        )
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success());
+    assert_eq!(
+        serde_json::from_slice::<Value>(&output.stdout).unwrap(),
+        json!({})
+    );
+    assert!(String::from_utf8_lossy(&output.stderr).contains("unsafe directory"));
+    assert!(fs::read_dir(&outside).unwrap().next().is_none());
+}
+
+fn send_event(data: &Path, endpoint: &str, event: &Value) -> Value {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_jev-hook"))
+        .env("PLUGIN_DATA", data)
+        .env("CODEX_JEV_TEST_ENDPOINT", endpoint)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(event.to_string().as_bytes())
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success());
+    assert!(
+        output.stderr.is_empty(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    serde_json::from_slice(&output.stdout).unwrap()
+}
+
+#[test]
+fn two_sessions_keep_switches_decisions_stats_and_health_separate() {
+    let root = tempfile::tempdir().unwrap();
+    let data = root.path().join("data");
+    fs::create_dir(&data).unwrap();
+    fs::set_permissions(&data, fs::Permissions::from_mode(0o700)).unwrap();
+    let global = json!({"schema_version":2,"enabled":true,"test_build_enabled":false,
+        "search_listing_enabled":false,"mode":"replace","min_chars":256,
+        "line_policy":{"output":{"omit_min":95,"exact_max":5},
+          "test_build":{"omit_min":95,"exact_max":5},"search_listing":{"omit_min":95,"exact_max":5}}});
+    fs::write(data.join("config.json"), global.to_string()).unwrap();
+    fs::write(data.join(".env"), "JEV_API_KEY=synthetic-test-key\n").unwrap();
+    fs::set_permissions(data.join(".env"), fs::Permissions::from_mode(0o600)).unwrap();
+    fs::create_dir(data.join("sessions")).unwrap();
+    fs::set_permissions(data.join("sessions"), fs::Permissions::from_mode(0o700)).unwrap();
+    let first = scoped(&data, "window-one");
+    fs::create_dir_all(&first).unwrap();
+    fs::set_permissions(&first, fs::Permissions::from_mode(0o700)).unwrap();
+    fs::write(first.join("config.json"), global.to_string()).unwrap();
+    let transcript = root.path().join("transcript.jsonl");
+    fs::write(
+        &transcript,
+        json!({"type":"response_item","payload":{"role":"user",
+        "content":[{"type":"input_text","text":"Check the build"}]}})
+        .to_string()
+            + "\n",
+    )
+    .unwrap();
+    let source = (0..120)
+        .map(|index| format!("Compiling module {index:04} ... done\n"))
+        .collect::<String>();
+    let make_event = |session: &str| {
+        json!({"hook_event_name":"PostToolUse","tool_name":"Bash",
+        "session_id":session,"tool_use_id":"call-one","transcript_path":transcript,
+        "tool_input":{"command":"echo build"},"tool_response":source})
+    };
+    let (endpoint, stop, thread) = mock_server(None);
+    assert_eq!(
+        send_event(&data, &endpoint, &make_event("window-two")),
+        json!({})
+    );
+    assert!(!scoped(&data, "window-two").exists());
+    assert_eq!(
+        send_event(&data, &endpoint, &make_event("window-one"))["continue"],
+        false
+    );
+    assert!(first.join("logs/latest-decision.json").exists());
+    assert!(first.join("logs/hook-health.json").exists());
+    assert!(first.join("stats.json").exists());
+    assert_eq!(
+        fs::metadata(data.join("sessions"))
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o077,
+        0
+    );
+    assert!(!data.join("logs").exists());
+    assert!(!data.join("stats.json").exists());
+    let second = scoped(&data, "window-two");
+    fs::create_dir_all(&second).unwrap();
+    fs::set_permissions(&second, fs::Permissions::from_mode(0o700)).unwrap();
+    let mut disabled = global.clone();
+    disabled["enabled"] = json!(false);
+    fs::write(second.join("config.json"), disabled.to_string()).unwrap();
+    assert_eq!(
+        send_event(&data, &endpoint, &make_event("window-two")),
+        json!({})
+    );
+    assert!(!second.join("logs").exists());
+    fs::write(second.join("config.json"), global.to_string()).unwrap();
+    assert_eq!(
+        send_event(&data, &endpoint, &make_event("window-two"))["continue"],
+        false
+    );
+    assert!(second.join("logs/latest-decision.json").exists());
+    assert!(second.join("stats.json").exists());
+    let first_stats: Value =
+        serde_json::from_slice(&fs::read(first.join("stats.json")).unwrap()).unwrap();
+    let second_stats: Value =
+        serde_json::from_slice(&fs::read(second.join("stats.json")).unwrap()).unwrap();
+    assert_eq!(first_stats["completed"], 1);
+    assert_eq!(second_stats["completed"], 1);
+    stop.store(true, Ordering::Relaxed);
+    assert!(thread.join().unwrap() > 1);
+}
 
 fn mock_server(
     fail_on: Option<usize>,
@@ -94,7 +253,7 @@ fn run(fail_on: Option<usize>, search: bool) -> (Value, tempfile::TempDir, usize
     let data_dir = root.join("data");
     fs::create_dir(&data_dir).unwrap();
     fs::set_permissions(&data_dir, fs::Permissions::from_mode(0o700)).unwrap();
-    fs::write(data_dir.join("config.json"), json!({"schema_version":2,"enabled":true,
+    fs::write(data_dir.join("config.json"), json!({"schema_version":2,"scope":"global","enabled":true,
         "test_build_enabled":false,"search_listing_enabled":search,"mode":"replace","min_chars":1024,
         "max_chars":2000000,"model":"jev-latest","timeout_seconds":3.0,
         "search_relevance":{"guard_enabled":search,"relevant_max":5},
@@ -160,7 +319,7 @@ fn writes_one_original_and_line_receipt_for_valid_batches() {
     assert_eq!(reply["continue"], false);
     assert!(calls > 1);
     let data_dir = root.path().join("data");
-    let logs = data_dir.join("logs");
+    let logs = scoped(&data_dir, "fixture-session").join("logs");
     let snapshot: Value =
         serde_json::from_slice(&fs::read(logs.join("latest-decision.json")).unwrap()).unwrap();
     assert_eq!(snapshot["version"], 3);
@@ -188,6 +347,15 @@ fn missing_batch_answers_keep_the_full_result() {
     assert_eq!(reply, json!({}));
     assert!(calls >= 1);
     assert!(!root.path().join("data/outputs").exists());
+    let health: Value = serde_json::from_slice(
+        &fs::read(
+            scoped(&root.path().join("data"), "fixture-session").join("logs/hook-health.json"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    assert!(health["last_error_ms"].is_number());
+    assert!(health["last_success_ms"].is_null());
 }
 
 #[test]
@@ -195,7 +363,9 @@ fn failure_after_a_completed_batch_removes_partial_panel_state() {
     let (reply, root, calls) = run(Some(2), false);
     assert_eq!(reply, json!({}));
     assert!(calls >= 2);
-    assert!(!root.path().join("data/logs/latest-decision.json").exists());
+    assert!(!scoped(&root.path().join("data"), "fixture-session")
+        .join("logs/latest-decision.json")
+        .exists());
     assert!(!root.path().join("data/outputs").exists());
 }
 
@@ -204,18 +374,23 @@ fn search_relevance_reaches_receipt_panel_and_cumulative_stats() {
     let (reply, root, _) = run(None, true);
     assert_eq!(reply["continue"], false);
     let data = root.path().join("data");
-    let snapshot: Value =
-        serde_json::from_slice(&fs::read(data.join("logs/latest-decision.json")).unwrap()).unwrap();
+    let snapshot: Value = serde_json::from_slice(
+        &fs::read(scoped(&data, "fixture-session").join("logs/latest-decision.json")).unwrap(),
+    )
+    .unwrap();
     assert_eq!(snapshot["filter"], "search_listing");
     assert!(snapshot["rows"]
         .as_array()
         .unwrap()
         .iter()
         .all(|row| row["task_relevant"].is_number()));
-    let stats: Value = serde_json::from_slice(&fs::read(data.join("stats.json")).unwrap()).unwrap();
+    let stats: Value = serde_json::from_slice(
+        &fs::read(scoped(&data, "fixture-session").join("stats.json")).unwrap(),
+    )
+    .unwrap();
     assert_eq!(stats["linesRelevanceJudged"], 120);
     assert_eq!(stats["linesRelevanceKept"], 1);
-    let session = fs::read_dir(data.join("logs"))
+    let session = fs::read_dir(scoped(&data, "fixture-session").join("logs"))
         .unwrap()
         .filter_map(Result::ok)
         .find(|entry| entry.path().is_dir())
@@ -240,7 +415,7 @@ fn disabled_specialized_routes_make_no_request_or_activity_with_output_enabled()
     fs::set_permissions(&data, fs::Permissions::from_mode(0o700)).unwrap();
     fs::write(
         data.join("config.json"),
-        json!({"schema_version":2,"enabled":true,"test_build_enabled":false,
+        json!({"schema_version":2,"scope":"global","enabled":true,"test_build_enabled":false,
             "search_listing_enabled":false,"mode":"observe","min_chars":1024,
             "max_chars":2000000,"model":"jev-latest","timeout_seconds":3.0,
             "line_policy":{"output":{"omit_min":95,"exact_max":5},
@@ -302,7 +477,7 @@ fn plain_local_read_and_text_search_results_reach_distinct_routes() {
     let data = temporary.path().join("data");
     fs::create_dir(&data).unwrap();
     fs::set_permissions(&data, fs::Permissions::from_mode(0o700)).unwrap();
-    fs::write(data.join("config.json"), json!({"schema_version":2,"enabled":true,
+    fs::write(data.join("config.json"), json!({"schema_version":2,"scope":"global","enabled":true,
         "test_build_enabled":false,"search_listing_enabled":true,"mode":"replace",
         "min_chars":1024,"max_chars":2000000,"model":"jev-latest","timeout_seconds":3.0,
         "line_policy":{"output":{"omit_min":95,"exact_max":5},
@@ -366,9 +541,11 @@ fn plain_local_read_and_text_search_results_reach_distinct_routes() {
             reply.get("continue").and_then(Value::as_bool),
             if index == 0 { Some(false) } else { None }
         );
-        let snapshot: Value =
-            serde_json::from_slice(&fs::read(data.join("logs/latest-decision.json")).unwrap())
-                .unwrap();
+        let snapshot: Value = serde_json::from_slice(
+            &fs::read(scoped(&data, "local-tool-routing").join("logs/latest-decision.json"))
+                .unwrap(),
+        )
+        .unwrap();
         assert_eq!(
             snapshot["filter"],
             if *tool == "Read" {
@@ -394,7 +571,7 @@ fn live_line_request_records_valid_independent_answers() {
     fs::set_permissions(&data, fs::Permissions::from_mode(0o700)).unwrap();
     fs::copy(key_file, data.join(".env")).unwrap();
     fs::set_permissions(data.join(".env"), fs::Permissions::from_mode(0o600)).unwrap();
-    fs::write(data.join("config.json"), json!({"schema_version":2,"enabled":true,
+    fs::write(data.join("config.json"), json!({"schema_version":2,"scope":"global","enabled":true,
         "test_build_enabled":false,"search_listing_enabled":false,"mode":"observe",
         "min_chars":1024,"max_chars":2000000,"model":"jev-1.13.0","timeout_seconds":4.0,
         "line_policy":{"output":{"omit_min":95,"exact_max":5},
@@ -432,15 +609,17 @@ fn live_line_request_records_valid_independent_answers() {
         serde_json::from_slice::<Value>(&output.stdout).unwrap(),
         json!({})
     );
-    let snapshot: Value =
-        serde_json::from_slice(&fs::read(data.join("logs/latest-decision.json")).unwrap()).unwrap();
+    let snapshot: Value = serde_json::from_slice(
+        &fs::read(scoped(&data, "live-fixture-session").join("logs/latest-decision.json")).unwrap(),
+    )
+    .unwrap();
     assert_eq!(snapshot["version"], 3);
     assert_eq!(snapshot["totals"]["seen"], 42);
     assert_eq!(snapshot["totals"]["judged"], 40);
     assert_eq!(snapshot["totals"]["protected"], 2);
     assert!(snapshot["totals"]["requests"].as_u64().unwrap() >= 1);
 
-    fs::write(data.join("config.json"), json!({"schema_version":2,"enabled":false,
+    fs::write(data.join("config.json"), json!({"schema_version":2,"scope":"global","enabled":false,
         "test_build_enabled":false,"search_listing_enabled":true,"mode":"observe",
         "min_chars":1024,"max_chars":2000000,"model":"jev-1.13.0","timeout_seconds":4.0,
         "search_relevance":{"guard_enabled":false,"relevant_max":5},
@@ -471,8 +650,10 @@ fn live_line_request_records_valid_independent_answers() {
     let search_output = search_child.wait_with_output().unwrap();
     assert!(search_output.status.success());
     assert!(search_output.stderr.is_empty());
-    let search_snapshot: Value =
-        serde_json::from_slice(&fs::read(data.join("logs/latest-decision.json")).unwrap()).unwrap();
+    let search_snapshot: Value = serde_json::from_slice(
+        &fs::read(scoped(&data, "live-fixture-session").join("logs/latest-decision.json")).unwrap(),
+    )
+    .unwrap();
     assert_eq!(search_snapshot["filter"], "search_listing");
     assert_eq!(search_snapshot["totals"]["judged"], 25);
     assert!(search_snapshot["rows"]
@@ -480,6 +661,9 @@ fn live_line_request_records_valid_independent_answers() {
         .unwrap()
         .iter()
         .all(|row| row["task_relevant"].is_number()));
-    let stats: Value = serde_json::from_slice(&fs::read(data.join("stats.json")).unwrap()).unwrap();
+    let stats: Value = serde_json::from_slice(
+        &fs::read(scoped(&data, "live-fixture-session").join("stats.json")).unwrap(),
+    )
+    .unwrap();
     assert_eq!(stats["linesRelevanceJudged"], 25);
 }

@@ -1,52 +1,17 @@
 # Tests
 
-Run tests from the repository root. The current Rust hook and VS Code control checks use synthetic Jev replies and temporary data outside `D:\`. They do not need an API key. The Python suites below exercise retained legacy code and are not the release gate for the Rust hook.
-
-## Current release checks
+Run the current release checks from the repository root. The offline tests use synthetic tool output and Jev replies; they do not need an API key.
 
 ```bash
 CARGO_TARGET_DIR="$HOME/.cache/codex-jev/cargo-target" cargo test -p codex-jev
+CARGO_TARGET_DIR="$HOME/.cache/codex-jev/cargo-target" cargo clippy --all-targets -- -D warnings
 npm test --prefix vscode-control
+python3 -m unittest discover -s tests -p 'test_*.py'
 python3 vscode-control/scripts/browser_smoke.py
-python3 vscode-control/scripts/capture_docs.py
 ```
 
-Rust process tests cover exact bytes, protected-line batching, three search Noul answers, exclusive route selection across all switch combinations, receipt/panel/stat propagation, and offline gate trials. Node tests cover the settings bridge and panel snapshot. The browser harness renders the real settings and panel code using synthetic, key-free state.
+Rust process tests launch the real hook against a local mock API. They cover routing, exact saved originals, incomplete and failed batches, protected lines, malformed config, private hook status, and two simultaneous session IDs with separate settings and records. Node tests cover the control bridge, configuration and key validation, session path selection, bounded log reads, panel validation, and connection errors. The browser smoke test renders the actual composer and settings scripts in Edge at four widths and checks pending, healthy, and failed hook states. The panel harness renders the current version-3 batch view. Python tests validate trust inspection, the pinned Codex patch, documentation links, and default config values.
 
-## Legacy suites
+To exercise the installed hook, run `python3 scripts/check_hook_trust.py` after installation and after every update. Then start a new Codex thread and run a local command with more than 256 characters of ordinary text on an enabled route. The control should first show amber, then green after a hook invocation; a completed decision appears in this session's logs. A key test checks the API only.
 
-| Directory | Purpose | Main coverage |
-| --- | --- | --- |
-| `unit/` | Local decisions and configuration | Output safety gates, threshold boundaries, quality reports and conservative cutoff calibration, VS Code config and log helpers. |
-| `integration/` | Contracts between components | Test/build and search routing, ripgrep JSON selection, Python/Node defaults, VS Code bridge, patch and rollback, and an extracted public submission ZIP. |
-| `e2e/` | Hook entry point | All three filters through a process-level Jev mock; oversize and outage behavior. |
-| `browser/` | Browser fixtures | Composer control, settings, key overlay, responsive layout, the decision panel, and documentation captures. |
-| `edge/` | Invalid inputs | Malformed config, unsafe credential files, invalid Jev answers, receipt links, retention boundaries, concurrent log writes, Unicode and CRLF output, complete output coverage, and Go/Cargo JSON events. |
-| `load/` | Bounded large inputs | Large-output replay, benchmark accounting, and multi-batch decision logs. |
-| `smoke/` | Small launch checks | Disabled, malformed, and short events through the command hook; local documentation links. |
-
-## Fast checks
-
-```bash
-python3 -m unittest discover -s tests/smoke -p 'test_*.py' -v
-python3 -m unittest discover -s tests/unit -p 'test_*.py' -v
-python3 -m unittest discover -s tests/edge -p 'test_*.py' -v
-npm --prefix vscode-control test
-```
-
-## Full offline check
-
-```bash
-python3 -m unittest discover -s tests -p 'test_*.py' -v
-npm --prefix vscode-control test
-python3 vscode-control/scripts/browser_smoke.py
-python3 scripts/benchmark_all_filters.py --mode mock --per-variant 100
-```
-
-The browser smoke test runs the composer webview scripts with a synthetic VS Code bridge. It checks the TypeSafe link click, browser-launch error, the checked log-retention tick and persistence, failed-save recovery, method controls, percentage boundaries, saved-key mask length, Reset defaults alignment, and layouts at 360, 720, and 1200 pixels in Microsoft Edge. The separate `browser/jev_panel_harness.html` renders the real panel script and styles with synthetic line judgments, parallel bar growth, kept/cut colors, stable rows, a 50-line reduction example, and an optional 250-row batch. The Node bridge tests check the fixed TypeSafe URL, panel command, view refresh, and snapshot validation. Process-level tests check one receipt per Jev request and exact output for every chunk. Edge tests check permissions, pruning, symlink preservation, concurrent log writes, Unicode line endings, and unencodable text. The submission test builds a ZIP, rejects linked or escaping paths, and runs its extracted hook. Browser smoke needs Windows Edge and `pwsh.exe` available from WSL. Python and Node tests can run without the browser.
-
-The mock benchmark checks all three routes. Its result is a test fixture, not a live performance claim. The dated live benchmark in `docs/benchmarks/` is separate from the offline suite.
-
-For the current Rust hook, use `jevctl evaluate-quality --cases <private-cases.json>` with reviewed receipts and required line numbers. It reports per-route and per-split evidence loss and offline gate trials without changing settings. The historical Python evaluator accepts a different JSONL format and does not replay current Rust receipts.
-
-When changing a cutoff or mode, run the defaults contract and boundary tests. When changing hook routing, run the process-level tests and browser smoke test. When changing the pinned Codex patch, run the patch and rollback tests before installation.
+An optional live Rust test uses `CODEX_JEV_LIVE_KEY_FILE=<private .env path>` and `cargo test -p codex-jev live_line_request_records_valid_independent_answers -- --ignored`. It makes real Jev requests using synthetic output and writes only to a temporary directory. The offline suite and live smoke test do not prove that every future judgment preserves every useful line; review real receipts with `jevctl evaluate-quality --cases <private JSON>` before changing cutoffs.

@@ -2,7 +2,8 @@
   "name": "codex-jev-control",
   "displayName": "Codex Jev Control",
   "description": "Jev integration controls and live decision panel for VS Code",
-  "version": "0.5.1",
+  "version": "0.6.0",
+  "codexJevHookVersion": "0.7.0",
   "publisher": "elhaus-labs",
   "license": "MIT",
   "icon": "icon.png",
@@ -34,13 +35,6 @@
           "type": "string",
           "default": "",
           "description": "Absolute PLUGIN_DATA directory for Codex Jev. Set this to the installed plugin data directory, or set CODEX_JEV_DATA_DIRECTORY."
-        },
-        "codexJev.mode": {
-          "type": "string",
-          "enum": ["replace", "observe"],
-          "default": "replace",
-          "scope": "application",
-          "description": "Filter shortens approved output. Monitor records decisions and keeps full output. Stored values remain replace and observe."
         }
       }
     }

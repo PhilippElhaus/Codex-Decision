@@ -1,27 +1,15 @@
-# Verify the local line migration
+# Verify a change
 
-Builds use the user cache as Cargo's target directory, so the repository stays free of generated compiler artifacts:
+Use the release checks in [tests/README.md](../../tests/README.md). Run the Rust process suite after hook or storage changes, Node tests after control changes, and the Edge browser smoke test after any composer or settings change. Build with `./scripts/build_submission.sh`, which writes Cargo artifacts in the user cache and the plugin ZIP in `.local/submission/`. The packaging command checks the exact files in the archive.
 
-```bash
-CARGO_TARGET_DIR="$HOME/.cache/codex-jev/cargo-target" cargo test -p codex-jev
-npm test --prefix vscode-control
-python3 vscode-control/scripts/browser_smoke.py
-```
+Before deployment, check the plugin ZIP and VSIX, then install the new plugin and control. Run `python3 scripts/check_hook_trust.py` against the installed hook. Codex binds trust to a hook definition hash, so the upgrade is incomplete until `/hooks` shows the current definition as trusted and enabled. Start a new thread and run an eligible local command. Verify a fresh hook-health record and a decision for that session. Repeat from a second Codex window: its switches and counters should start empty, and enabling it should not change the first window.
 
-The Rust suite checks exact UTF-8 line spans, bounded and unique targets, protected-line batching, search relevance, invalid Jev answers, offline gate trials, and fail-open process behavior. The browser harnesses render the actual composer and panel code. The ignored live Rust test makes output and search calls using a private key file and synthetic results, including the third search Noul; it writes only to a temporary data directory:
+The hook returns the full original result on a failed Jev request, invalid answer, unsafe task, or storage error. `logs/hook-health.json` identifies the last invocation, skip, success, and error without storing the key or tool text. The control reports an unreadable status file as an error and an unobserved hook as amber. Normal skips include short, structured, unsupported, and sensitive results. Keep the `/hooks` check in every release procedure; Jev never edits Codex's trust database.
 
-```bash
-CODEX_JEV_LIVE_KEY_FILE=<private-PLUGIN_DATA>/.env \
-CARGO_TARGET_DIR="$HOME/.cache/codex-jev/cargo-target" \
-cargo test -p codex-jev live_line_request_records_valid_independent_answers -- --ignored
-```
-
-For reviewed quality cases, create a private JSON array with records like:
+For reviewed quality cases, create a private JSON array such as:
 
 ```json
 [{"id":"failing-test-1","split":"holdout","receipt":"/private/receipt.json","required_lines":[5,6,9],"task_solved":true,"baseline_task_solved":true}]
 ```
 
-Run `jevctl evaluate-quality --cases <private-cases.json>`. It reports required lines lost, characters saved, billed tokens when the batch responses supply usage, and labeled task outcomes by route and train/holdout split. Its offline gate trials replay the saved line probabilities at 95/5, 98/2, and 99/1, with a search relevance keep guard trial. Trials do not change settings or prove future task success. Cases and receipts can contain private data; keep them outside the repository. Choose candidate gates on train cases, then verify once against held-out cases. The 2026-09-26 live benchmark used the earlier coarse implementation and does not measure this release.
-
-Package with `./scripts/build_submission.sh`, validate the plugin manifest, and install the local package and paired VSIX. Run `python3 scripts/check_hook_trust.py` against the installed plugin after each update. If it fails, review Jev in Codex `/hooks`, trust the current definition, and rerun the check before calling the upgrade complete. Test the installed Rust binary using temporary synthetic data. The user's current VS Code window does not need to be reloaded by automation; they can reload it when ready.
+Run `jevctl evaluate-quality --cases <private-cases.json>`. It reports required lines lost, characters saved, and gate trials per route and split. These trials do not change settings or prove future task success. Receipts may contain private tool output; keep cases outside the repository. The optional ignored live Rust test makes a small number of real Jev requests with synthetic output and a private key file.

@@ -25,13 +25,11 @@ def main() -> None:
         address = 'file:///' + quote(target, safe='/:')
         captures = [
             ('menu', 'jev-menu.png', 620, 340),
-            ('tooltip', 'jev-tooltip.png', 900, 280),
-            ('unavailable', 'jev-unavailable.png', 900, 280),
             ('onboarding', 'jev-connect.png', 950, 610),
             ('settings', 'jev-settings.png', 1040, 1650),
         ]
         for state, name, width, height in captures:
-            output = IMAGES / name
+            output = profile / name if state == 'settings' else IMAGES / name
             result = subprocess.run([
                 str(edge), '--headless', '--disable-gpu', '--no-first-run',
                 '--no-default-browser-check', '--disable-extensions',
@@ -61,7 +59,7 @@ def main() -> None:
                                         '>Filter</option>' not in result.stdout):
                 raise RuntimeError('Jev settings were not rendered in Codex settings')
             print(f'{name}: {output.stat().st_size} bytes; layout={layout}')
-        settings = Image.open(IMAGES / 'jev-settings.png')
+        settings = Image.open(profile / 'jev-settings.png')
         if settings.size != (2080, 3300):
             raise RuntimeError(f'Unexpected settings capture size: {settings.size}')
         for name, box in (
@@ -71,27 +69,22 @@ def main() -> None:
             settings.crop(box).save(IMAGES / name, optimize=True)
             print(f'{name}: {box}')
         panel = IMAGES / 'jev-panel.png'
-        light_panel = IMAGES / 'jev-panel-light.png'
         panel_address = 'file:///' + quote(windows_path(ROOT.parent / 'tests/browser/jev_panel_harness.html').replace('\\', '/'), safe='/:')
-        for state, output, suffix in (('dark', panel, '?fifty&capture'), ('light', light_panel, '?fifty&light&capture')):
-            result = subprocess.run([
-                str(edge), '--headless', '--disable-gpu', '--no-first-run',
-                '--no-default-browser-check', '--disable-extensions', '--hide-scrollbars',
-                '--force-device-scale-factor=1', '--virtual-time-budget=1500',
-                '--window-size=1200,900', f'--user-data-dir={windows_path(profile / ("panel-" + state))}',
-                '--dump-dom', f'--screenshot={windows_path(output)}', panel_address + suffix,
-            ], capture_output=True, text=True, timeout=30, check=False)
-            if result.returncode != 0 or not output.is_file() or 'JEV_LINE_PANEL_READY' not in result.stdout:
-                raise RuntimeError(f'Could not capture the current {state} line-level Jev panel')
-            with Image.open(output) as captured:
-                captured.crop((0, 0, captured.width, min(captured.height, 900))).save(output, optimize=True)
-            output.chmod(0o644)
-            print(f'{output.name}: {output.stat().st_size} bytes')
-        with Image.open(panel) as dark, Image.open(light_panel) as light:
-            comparison = Image.new('RGB', (dark.width, dark.height + light.height + 20), 'white')
-            comparison.paste(dark.convert('RGB'), (0, 0))
-            comparison.paste(light.convert('RGB'), (0, dark.height + 20))
-            comparison.save(IMAGES / 'jev-panel-themes.png', optimize=True)
+        result = subprocess.run([
+            str(edge), '--headless', '--disable-gpu', '--no-first-run',
+            '--no-default-browser-check', '--disable-extensions', '--hide-scrollbars',
+            '--force-device-scale-factor=1', '--virtual-time-budget=1500',
+            '--window-size=1200,900', f'--user-data-dir={windows_path(profile / "panel-dark")}',
+            '--dump-dom', f'--screenshot={windows_path(panel)}', panel_address + '?fifty&capture',
+        ], capture_output=True, text=True, timeout=30, check=False)
+        if (result.returncode != 0 or not panel.is_file() or 'JEV_LINE_PANEL_READY' not in result.stdout or
+                result.stdout.count('class="batch-row ') != 50 or
+                '47 cut' not in result.stdout or '3 / 50 kept' not in result.stdout):
+            raise RuntimeError('Could not capture the current line-level Jev panel')
+        with Image.open(panel) as captured:
+            captured.crop((0, 0, captured.width, min(captured.height, 900))).save(panel, optimize=True)
+        panel.chmod(0o644)
+        print(f'{panel.name}: {panel.stat().st_size} bytes')
     finally:
         remove_profile(profile, 'jev-docs-')
 

@@ -17,7 +17,8 @@ test("a large decision log is read in bounded batches without loss or duplicatio
       capsule_chars: index % 4 === 1 ? 200 : 0, elapsed_ms: 10,
     }));
     const body = rows.join("\n") + "\n";
-    await fs.writeFile(path.join(directory, "events.jsonl"), body);
+    await fs.mkdir(path.join(directory, "logs"));
+    await fs.writeFile(path.join(directory, "logs", "events.jsonl"), body);
     let offset = 0;
     const seen = [];
     while (offset < Buffer.byteLength(body)) {

@@ -2,61 +2,49 @@
 
 <img src="assets/logo.png" width="56" alt="Codex Jev logo">
 
-Codex Jev trims repetitive output from local tools before Codex reads it. It checks each eligible line, protects errors and other useful details, and saves the full result whenever it shortens one.
+Codex Jev cuts repetitive lines from local tool output before Codex reads them. It keeps errors and useful details, and every shortened result points to a private copy of the complete original.
 
-**Less noise in Codex's context.** In a [live benchmark from September 2026](docs/benchmarks/benchmark_live_2026-09-26.md), an earlier version reduced the text sent to Codex for results it shortened:
-
-| Output | Less text sent to Codex |
-| --- | ---: |
-| Regular tool output | 95% |
-| Test and build logs | 90% |
-| Search results and file listings | 71% |
-
-Measured as tokens. The full stress-test mix fell by 3%, including oversized results that Jev skipped. These figures describe the earlier version, not a benchmark of the current line-by-line release or a complete coding task.
+**What you gain:** less log noise in the conversation, a way to inspect what was kept, and clear status when the filter has not run or has failed. In a synthetic 120-line build test, the current hook omits more than 100 routine lines. Savings on real tasks depend on the output and Jev's judgments.
 
 ## Get started
 
-Install the plugin on Linux x86_64:
+On Linux x86_64, install the plugin:
 
 ```bash
 codex plugin marketplace add https://github.com/PhilippElhaus/Codex-Jev
 codex plugin add codex-jev@codex-jev
 ```
 
-Open `/hooks` in Codex and trust the Jev hook. Codex requires this review after installation or a hook update. Start a new thread after upgrading. A working API key alone does not mean the hook is running.
-
-For source installs, run `python3 scripts/check_hook_trust.py` after each upgrade. It fails if Codex still marks the hook as changed, untrusted, or disabled.
-
-The screens below use the optional [VS Code control](vscode-control/README.md), which needs a [version-pinned Codex patch](vscode-control/README.md#install). The screenshots use example data and contain no real API key.
+Open `/hooks` in Codex and trust the Jev hook. Do this again when an update changes the hook definition. Start a new Codex thread after installation or upgrade. The optional [VS Code control](vscode-control/README.md) adds the screens below; its composer control needs the documented patch for the supported Codex extension version.
 
 ### 1. Connect Jev
 
-Sign in to Codex. When you first turn on a Jev integration, **Connect Jev** asks for a typesafe.ai API key. Test and save it here; keep it out of chat.
+Sign in to Codex. Select a Jev filter, then enter and test your typesafe.ai API key in **Connect Jev**. The key is shared by this local installation and stays out of chat.
 
 <img src="docs/images/jev-connect.png" width="760" alt="Connect Jev screen beside the Codex sign-in screen, with an empty API key field">
 
-### 2. Choose what to filter
+### 2. Choose a filter for this session
 
-Use the **jev** menu in the Codex chat box to choose regular tool output, test and build logs, or search results and file listings. All three start off. **Monitor** shows what Jev would remove; **Filter** shortens approved results.
+In the **jev** menu, choose regular output, test and build logs, or search results and listings. Each Codex session has its own switches and settings. All filters start off for a new session.
 
 <img src="docs/images/jev-menu.png" width="620" alt="Jev menu in the Codex chat box with three integration switches">
 
-### 3. Adjust settings in Codex
+### 3. Adjust the details
 
-Open **Codex settings → Jev** to change the mode, review activity, manage the key, or open saved logs. Lower on the same page, you can adjust when each filter removes a line. Changes apply to the next tool result.
+Open **Codex settings → Jev** to choose **Monitor** (show decisions, keep full output) or **Filter** (shorten approved output). You can also review this session's activity, change its cutoffs, or open its logs.
 
 <img src="docs/images/jev-settings-overview.png" width="760" alt="Codex Jev settings showing activity, API key controls, and log options">
 
 <img src="docs/images/jev-settings-filters.png" width="760" alt="Jev settings for filter mode and line removal thresholds">
 
-### 4. See what Jev kept
+### 4. Inspect a result
 
-The optional **Jev** panel beside Output and Terminal shows the latest decision. Blue lines were omitted; gold lines were kept. This example keeps 3 of 50 lines. When Jev shortens a result, Codex gets the kept text and a path to the complete original.
+The **Jev** panel shows the latest decision from this session. Blue lines were cut; gold lines were kept. This synthetic example keeps 3 of 50 lines. A shortened result also gives Codex the path to its complete original.
 
 <img src="docs/images/jev-panel.png" width="1000" alt="Jev panel showing 3 kept lines and 47 omitted lines from a synthetic 50-line result">
 
+The composer indicator is **amber** until the hook runs in this session, **green** after a recent hook invocation and successful API check, and **red** if the key, connection, configuration, or hook fails. A short or protected result may be skipped normally; the indicator still confirms the hook was invoked.
+
 ## More detail
 
-- [Installation and upgrades](docs/setup/setup_installation.md) · [API key setup](docs/setup/setup_credentials.md)
-- [What each filter handles](docs/architecture/design_integrations.md) · [Data handling and safeguards](docs/architecture/design_data.md)
-- [Verification and tests](docs/development/development_verification.md) · [Full benchmark results](docs/benchmarks/benchmark_live_2026-09-26.md)
+[Install and verify](docs/setup/setup_installation.md) · [API key](docs/setup/setup_credentials.md) · [What gets filtered](docs/architecture/design_integrations.md) · [Privacy and safeguards](docs/architecture/design_data.md) · [Tests](docs/development/development_verification.md) · [45-second Jev explainer by Matija Sosić](https://x.com/MatijaSosic/status/2100190746389135772)

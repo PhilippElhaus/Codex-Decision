@@ -20,6 +20,7 @@ const PANEL_SNAPSHOT_MAX_BYTES: usize = 256 * 1024;
 
 #[derive(Clone)]
 struct Config {
+    global_scope: bool,
     output: bool,
     test_build: bool,
     search_listing: bool,
@@ -50,8 +51,44 @@ fn config(data_dir: &Path) -> Result<Option<Config>, String> {
     }
     let raw: Value = serde_json::from_slice(&bytes).map_err(|_| "invalid config")?;
     if raw.get("schema_version").and_then(Value::as_u64) != Some(2) {
-        return Ok(None);
+        return Err("unsupported config version".into());
     }
+    let object = raw.as_object().ok_or("invalid config")?;
+    const ALLOWED: &[&str] = &[
+        "schema_version",
+        "scope",
+        "enabled",
+        "test_build_enabled",
+        "search_listing_enabled",
+        "mode",
+        "min_chars",
+        "max_chars",
+        "model",
+        "timeout_seconds",
+        "allow_mcp_replacement",
+        "line_policy",
+        "search_relevance",
+        "log_limit_mb",
+        "never_delete_logs",
+    ];
+    if object.keys().any(|key| !ALLOWED.contains(&key.as_str())) {
+        return Err("unknown config field".into());
+    }
+    if raw.get("scope").is_some() && raw.get("scope").and_then(Value::as_str) != Some("global") {
+        return Err("unsupported config scope".into());
+    }
+    let optional_u64 = |key: &str, default| -> Result<u64, String> {
+        match raw.get(key) {
+            None => Ok(default),
+            Some(value) => value.as_u64().ok_or_else(|| format!("invalid {key}")),
+        }
+    };
+    let optional_bool = |key: &str, default| -> Result<bool, String> {
+        match raw.get(key) {
+            None => Ok(default),
+            Some(value) => value.as_bool().ok_or_else(|| format!("invalid {key}")),
+        }
+    };
     let boolean = |key: &str| {
         raw.get(key)
             .and_then(Value::as_bool)
@@ -68,31 +105,28 @@ fn config(data_dir: &Path) -> Result<Option<Config>, String> {
     if !matches!(mode.as_str(), "replace" | "observe") {
         return Err("invalid mode".into());
     }
-    let min_chars = raw.get("min_chars").and_then(Value::as_u64).unwrap_or(256) as usize;
-    let max_chars = raw
-        .get("max_chars")
-        .and_then(Value::as_u64)
-        .unwrap_or(2_000_000) as usize;
+    let min_chars = optional_u64("min_chars", 256)? as usize;
+    let max_chars = optional_u64("max_chars", 2_000_000)? as usize;
     if !(256..=2_000_000).contains(&min_chars) || min_chars > max_chars || max_chars > 2_000_000 {
         return Err("invalid size bounds".into());
     }
-    let model = raw
-        .get("model")
-        .and_then(Value::as_str)
-        .unwrap_or("jev-latest")
-        .to_owned();
+    let model = match raw.get("model") {
+        None => "jev-latest",
+        Some(value) => value.as_str().ok_or("invalid model")?,
+    }
+    .to_owned();
     if !model.starts_with("jev-")
-        || model.len() > 48
-        || !model
+        || !(5..=44).contains(&model.len())
+        || !model[4..]
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || b".-_".contains(&byte))
     {
         return Err("invalid model".into());
     }
-    let timeout = raw
-        .get("timeout_seconds")
-        .and_then(Value::as_f64)
-        .unwrap_or(3.0);
+    let timeout = match raw.get("timeout_seconds") {
+        None => 3.0,
+        Some(value) => value.as_f64().ok_or("invalid timeout")?,
+    };
     if !(0.1..=4.0).contains(&timeout) {
         return Err("invalid timeout".into());
     }
@@ -101,6 +135,13 @@ fn config(data_dir: &Path) -> Result<Option<Config>, String> {
         .get("line_policy")
         .and_then(Value::as_object)
         .ok_or("missing line policy")?;
+    if entered.len() != 3
+        || entered
+            .keys()
+            .any(|key| !["output", "test_build", "search_listing"].contains(&key.as_str()))
+    {
+        return Err("invalid line policy routes".into());
+    }
     for route in ["output", "test_build", "search_listing"] {
         let value = entered.get(route).ok_or("missing route policy")?;
         let item: LinePolicy =
@@ -119,14 +160,12 @@ fn config(data_dir: &Path) -> Result<Option<Config>, String> {
     if !search_relevance.valid() {
         return Err("invalid search relevance threshold".into());
     }
-    let log_limit_mb = raw
-        .get("log_limit_mb")
-        .and_then(Value::as_u64)
-        .unwrap_or(50);
+    let log_limit_mb = optional_u64("log_limit_mb", 50)?;
     if !(1..=9999).contains(&log_limit_mb) {
         return Err("invalid log limit".into());
     }
     Ok(Some(Config {
+        global_scope: raw.get("scope").and_then(Value::as_str) == Some("global"),
         output,
         test_build,
         search_listing,
@@ -135,17 +174,11 @@ fn config(data_dir: &Path) -> Result<Option<Config>, String> {
         max_chars,
         model,
         timeout,
-        allow_mcp_replacement: raw
-            .get("allow_mcp_replacement")
-            .and_then(Value::as_bool)
-            .unwrap_or(false),
+        allow_mcp_replacement: optional_bool("allow_mcp_replacement", false)?,
         policy,
         search_relevance,
         log_limit_mb,
-        never_delete_logs: raw
-            .get("never_delete_logs")
-            .and_then(Value::as_bool)
-            .unwrap_or(false),
+        never_delete_logs: optional_bool("never_delete_logs", false)?,
     }))
 }
 
@@ -838,13 +871,12 @@ fn apply_route_structure(route: &str, tool: &str, command: &str, lines: &mut [So
                 if line.model_text.is_empty() || line.model_text.chars().any(char::is_control) {
                     return false;
                 }
-            } else if numbered
+            } else if (numbered
                 && !match_line
                     .as_ref()
-                    .is_some_and(|pattern| pattern.is_match(&line.model_text))
+                    .is_some_and(|pattern| pattern.is_match(&line.model_text)))
+                || line.model_text.contains('\0')
             {
-                return false;
-            } else if line.model_text.contains('\0') {
                 return false;
             } else if line.model_text.trim().is_empty() {
                 line.protected_reason = Some("blank".into());
@@ -914,6 +946,25 @@ fn ensure_dir(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
+fn check_dir_if_exists(path: &Path) -> Result<(), String> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(_) => return Err("directory stat failed".into()),
+    };
+    if !metadata.is_dir() || metadata.file_type().is_symlink() {
+        return Err("unsafe directory".into());
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if metadata.permissions().mode() & 0o077 != 0 {
+            return Err("directory permissions".into());
+        }
+    }
+    Ok(())
+}
+
 fn write_private(path: &Path, bytes: &[u8], replace: bool) -> Result<(), String> {
     if path.is_symlink() {
         return Err("linked file".into());
@@ -967,6 +1018,75 @@ fn lock_logs(logs: &Path) -> Result<File, String> {
     Ok(file)
 }
 
+// A small, private signal that the control can inspect without reading tool text or credentials.
+// The log lock prevents concurrent hooks from replacing a newer signal with an older one.
+fn hook_health(data_dir: &Path, outcome: &str, reason: &str) -> Result<(), String> {
+    ensure_dir(data_dir)?;
+    let logs = data_dir.join("logs");
+    ensure_dir(&logs)?;
+    let _lock = lock_logs(&logs)?;
+    let path = logs.join("hook-health.json");
+    let mut health = if path.exists() {
+        let metadata = fs::symlink_metadata(&path).map_err(|_| "hook health stat")?;
+        if !metadata.is_file() || metadata.file_type().is_symlink() || metadata.len() > 4096 {
+            return Err("unsafe hook health".into());
+        }
+        serde_json::from_slice::<Value>(&fs::read(&path).map_err(|_| "hook health read")?)
+            .map_err(|_| "invalid hook health")?
+    } else {
+        json!({})
+    };
+    if !health.is_object() {
+        return Err("invalid hook health".into());
+    }
+    let now = Utc::now().timestamp_millis().max(
+        health["last_seen_ms"]
+            .as_i64()
+            .unwrap_or(0)
+            .saturating_add(1),
+    );
+    health["version"] = json!(1);
+    health["hook_version"] = json!(env!("CARGO_PKG_VERSION"));
+    health["last_seen_ms"] = json!(now);
+    match outcome {
+        "success" => health["last_success_ms"] = json!(now),
+        "error" => {
+            health["last_error_ms"] = json!(now);
+            health["last_error"] = json!(reason);
+        }
+        "skip" => {
+            health["last_skip_ms"] = json!(now);
+            health["last_skip"] = json!(reason);
+        }
+        "seen" => {}
+        _ => return Err("invalid hook health outcome".into()),
+    }
+    write_private(
+        &path,
+        &serde_json::to_vec(&health).map_err(|_| "hook health encoding")?,
+        true,
+    )
+}
+
+fn skip(data_dir: &Path, reason: &str) -> Result<Value, String> {
+    hook_health(data_dir, "skip", reason)?;
+    Ok(json!({}))
+}
+
+fn session_dir(data_dir: &Path, session: &str) -> Result<PathBuf, String> {
+    if session.is_empty()
+        || session.len() > 128
+        || !session
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"._-".contains(&byte))
+    {
+        return Err("invalid session id".into());
+    }
+    Ok(data_dir
+        .join("sessions")
+        .join(format!("{:x}", Sha256::digest(session.as_bytes()))))
+}
+
 fn output_path(data_dir: &Path, event: &Value) -> Result<PathBuf, String> {
     let valid = |key: &str| {
         key.len() <= 128
@@ -993,6 +1113,7 @@ fn output_path(data_dir: &Path, event: &Value) -> Result<PathBuf, String> {
         .join(format!("{}.txt", hash(call))))
 }
 
+#[allow(clippy::too_many_arguments)] // A complete immutable batch record is assembled here.
 fn line_snapshot(
     receipt_id: &str,
     snapshot_id: &str,
@@ -1147,6 +1268,7 @@ impl Drop for ProgressSnapshot {
     }
 }
 
+#[allow(clippy::too_many_arguments)] // Keep event and decision evidence explicit at the write boundary.
 fn record(
     data_dir: &Path,
     event: &Value,
@@ -1390,12 +1512,6 @@ fn execute() -> Result<Value, String> {
         return Err("unsafe plugin data".into());
     }
     ensure_dir(&data_dir)?;
-    let Some(config) = config(&data_dir)? else {
-        return Ok(json!({}));
-    };
-    if !(config.output || config.test_build || config.search_listing) {
-        return Ok(json!({}));
-    }
     let mut input = Vec::new();
     std::io::stdin()
         .take(16_000_001)
@@ -1405,54 +1521,95 @@ fn execute() -> Result<Value, String> {
         return Err("hook input too large".into());
     }
     let event: Value = serde_json::from_slice(&input).map_err(|_| "invalid hook JSON")?;
+    let session = event
+        .get("session_id")
+        .and_then(Value::as_str)
+        .ok_or("missing session id")?;
+    let scoped = session_dir(&data_dir, session)?;
+    check_dir_if_exists(&data_dir.join("sessions"))?;
+    check_dir_if_exists(&scoped)?;
+    let scoped_config = match fs::symlink_metadata(scoped.join("config.json")) {
+        Ok(_) => true,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+        Err(_) => return Err("config stat failed".into()),
+    };
+    let selected = if scoped_config {
+        config(&scoped)?
+    } else {
+        config(&data_dir)?.filter(|global| global.global_scope)
+    };
+    let Some(config) = selected else {
+        return Ok(json!({}));
+    };
+    if !(config.output || config.test_build || config.search_listing) {
+        return Ok(json!({}));
+    }
+    ensure_dir(&data_dir.join("sessions"))?;
+    hook_health(&scoped, "seen", "")?;
+    let result = process_event(&data_dir, &scoped, &event, &config);
+    if let Err(error) = &result {
+        if let Err(status_error) = hook_health(&scoped, "error", error) {
+            eprintln!("Codex Jev status write failed: {status_error}");
+        }
+    }
+    result
+}
+
+fn process_event(
+    data_dir: &Path,
+    scoped: &Path,
+    event: &Value,
+    config: &Config,
+) -> Result<Value, String> {
     if event.get("hook_event_name").and_then(Value::as_str) != Some("PostToolUse") {
-        return Ok(json!({}));
+        return skip(scoped, "unsupported_event");
     }
-    let Some(route) = route(&event, &config) else {
-        return Ok(json!({}));
+    let Some(route) = route(event, config) else {
+        return skip(scoped, "unsupported_route");
     };
-    let Some(source) = response_text(&event) else {
-        return Ok(json!({}));
+    let Some(source) = response_text(event) else {
+        return skip(scoped, "unsupported_result");
     };
-    if source.len() < config.min_chars
-        || source.len() > config.max_chars
-        || sensitive(&source)
-        || sensitive(command(&event))
-        || sensitive_input(&event)
-    {
-        return Ok(json!({}));
+    if source.len() < config.min_chars {
+        return skip(scoped, "small");
     }
-    let user_task = match task_context(&event) {
+    if source.len() > config.max_chars {
+        return skip(scoped, "large");
+    }
+    if sensitive(&source) || sensitive(command(event)) || sensitive_input(event) {
+        return skip(scoped, "sensitive");
+    }
+    let user_task = match task_context(event) {
         Ok(task) => task,
-        Err(()) => return Ok(json!({})),
+        Err(()) => return skip(scoped, "unsafe_task_context"),
     };
     let has_user_task = user_task.is_some();
-    let task = user_task.unwrap_or_else(|| fallback_task(&event));
+    let task = user_task.unwrap_or_else(|| fallback_task(event));
     let mut lines = source_lines(&source);
     if lines.is_empty()
         || !apply_route_structure(
             route,
             event["tool_name"].as_str().unwrap_or(""),
-            command(&event),
+            command(event),
             &mut lines,
         )
     {
-        return Ok(json!({}));
+        return skip(scoped, "structured_or_empty");
     }
     protect_neighbors(&mut lines);
     let batches = pack_batches(
         route,
         &task,
-        &command(&event).chars().take(400).collect::<String>(),
+        &command(event).chars().take(400).collect::<String>(),
         &lines,
         &config.model,
     );
     if batches.is_empty() {
-        return Ok(json!({}));
+        return skip(scoped, "no_eligible_lines");
     }
-    let api_key = key(&data_dir)?;
+    let api_key = key(data_dir)?;
     let receipt_id = Uuid::new_v4().simple().to_string();
-    let mut progress = ProgressSnapshot::new(&data_dir, receipt_id.clone())?;
+    let mut progress = ProgressSnapshot::new(scoped, receipt_id.clone())?;
     let started = Instant::now();
     let mut probabilities = BTreeMap::new();
     let mut records = Vec::new();
@@ -1500,7 +1657,7 @@ fn execute() -> Result<Value, String> {
         .filter(|row| row.action == Action::Omit)
         .count();
     let candidate = omitted > 0;
-    let path = output_path(&data_dir, &event)?;
+    let path = output_path(data_dir, event)?;
     let feedback = render(&source, &lines, &decisions, &path.to_string_lossy());
     let replace = candidate
         && config.mode == "replace"
@@ -1523,7 +1680,7 @@ fn execute() -> Result<Value, String> {
         "keep"
     };
     if replace {
-        ensure_dir(&data_dir)?;
+        ensure_dir(data_dir)?;
         ensure_dir(&data_dir.join("outputs"))?;
         ensure_dir(path.parent().ok_or("invalid output path")?)?;
         write_private(&path, source.as_bytes(), false)?;
@@ -1534,8 +1691,8 @@ fn execute() -> Result<Value, String> {
         source.as_str()
     };
     record(
-        &data_dir,
-        &event,
+        scoped,
+        event,
         route,
         status,
         &source,
@@ -1543,10 +1700,11 @@ fn execute() -> Result<Value, String> {
         &lines,
         &decisions,
         &records,
-        &config,
+        config,
         &receipt_id,
         &progress.last_snapshot_id,
     )?;
+    hook_health(scoped, "success", "")?;
     progress.active = false;
     if replace {
         Ok(
@@ -1560,6 +1718,7 @@ fn execute() -> Result<Value, String> {
 fn main() {
     let answer = execute().unwrap_or_else(|error| {
         eprintln!("Codex Jev hook skipped: {error}");
+        // Errors after session parsing are recorded in that session by execute().
         json!({})
     });
     println!("{}", answer);
@@ -1569,8 +1728,68 @@ fn main() {
 mod tests {
     use super::*;
 
+    #[test]
+    fn old_or_unknown_config_never_looks_disabled() {
+        let directory = tempfile::tempdir().unwrap();
+        for value in [
+            json!({"enabled":true}),
+            json!({"schema_version":1,"enabled":true}),
+            json!({"schema_version":3,"enabled":true}),
+        ] {
+            fs::write(directory.path().join("config.json"), value.to_string()).unwrap();
+            assert!(config(directory.path())
+                .err()
+                .unwrap()
+                .contains("unsupported config version"));
+        }
+    }
+
+    #[test]
+    fn malformed_optional_settings_do_not_fall_back_to_defaults() {
+        let directory = tempfile::tempdir().unwrap();
+        let baseline = json!({"schema_version":2,"enabled":true,"test_build_enabled":false,
+            "search_listing_enabled":false,"mode":"replace",
+            "line_policy":{"output":{},"test_build":{},"search_listing":{}}});
+        for (key, bad) in [
+            ("min_chars", json!("256")),
+            ("max_chars", json!(-1)),
+            ("timeout_seconds", json!("three")),
+            ("model", json!("jev-")),
+            ("allow_mcp_replacement", json!("yes")),
+            ("never_delete_logs", json!(1)),
+            ("log_limit_mb", json!(0)),
+            ("unknown", json!(true)),
+        ] {
+            let mut entered = baseline.clone();
+            entered[key] = bad;
+            fs::write(directory.path().join("config.json"), entered.to_string()).unwrap();
+            assert!(config(directory.path()).is_err(), "{key}");
+        }
+        fs::write(directory.path().join("config.json"), baseline.to_string()).unwrap();
+        assert!(config(directory.path()).unwrap().is_some());
+    }
+
+    #[test]
+    fn hook_status_records_skips_and_errors_without_tool_text() {
+        let directory = tempfile::tempdir().unwrap();
+        let data = directory.path().join("data");
+        hook_health(&data, "seen", "").unwrap();
+        skip(&data, "small").unwrap();
+        hook_health(&data, "error", "invalid Jev response").unwrap();
+        let bytes = fs::read(data.join("logs/hook-health.json")).unwrap();
+        let status: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(status["last_skip"], "small");
+        assert_eq!(status["last_error"], "invalid Jev response");
+        assert!(!String::from_utf8_lossy(&bytes).contains("tool_response"));
+        hook_health(&data, "success", "").unwrap();
+        let updated: Value =
+            serde_json::from_slice(&fs::read(data.join("logs/hook-health.json")).unwrap()).unwrap();
+        assert!(updated["last_success_ms"].as_i64() >= status["last_error_ms"].as_i64());
+    }
+
     fn enabled() -> Config {
         Config {
+            global_scope: false,
             output: true,
             test_build: true,
             search_listing: true,

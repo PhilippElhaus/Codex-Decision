@@ -4,48 +4,6 @@ body { margin: 0; padding: 12px 18px 20px; color: var(--vscode-foreground); back
 #app { max-width: 1180px; margin: 0 auto; }
 #app:has(.batch-layout) { max-width: none; }
 .card-kicker { font-family: var(--vscode-editor-font-family, monospace); letter-spacing: .11em; font-size: 10px; }
-h1 { margin: 5px 0 0; font-size: 20px; font-weight: 650; line-height: 1.2; }
-.cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-.card { min-width: 0; padding: 12px 15px 13px; border: 1px solid var(--vscode-panel-border, #5556); border-radius: 10px; background: var(--vscode-sideBar-background, var(--vscode-editor-background)); }
-.decision-card { height: 190px; overflow: hidden; }
-.decision-card.inactive { opacity: .5; filter: grayscale(1); }
-.card-title { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
-.card-kicker { color: var(--vscode-descriptionForeground); }
-h2 { min-width: 0; margin: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 13px; font-weight: 650; }
-.bars { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; gap: 10px; }
-.bar-row { min-width: 0; overflow: hidden; }
-.bar-head { display: flex; justify-content: space-between; gap: 14px; align-items: baseline; line-height: 1.2; }
-.bar-label { color: var(--vscode-foreground); font-size: 12px; }
-.bar-percent { opacity: 0; color: var(--vscode-descriptionForeground); font: 650 12px var(--vscode-editor-font-family, monospace); font-variant-numeric: tabular-nums; }
-.bar-row.selected .bar-label, .bar-row.selected .bar-percent { color: var(--vscode-charts-orange, #db945f); }
-.ascii-track { display: flex; white-space: pre; overflow: hidden; width: 100%; margin-top: 4px; color: var(--vscode-descriptionForeground); font: 12px/1.4 var(--vscode-editor-font-family, Consolas, monospace); }
-.ascii-track .cells { display: flex; flex: none; min-width: 0; }
-.ascii-track .cell { display: inline-flex; flex: 0 0 1ch; width: 1ch; align-items: center; justify-content: center; }
-.ascii-track .filled { color: var(--vscode-charts-blue, #70a6ca); }
-.bar-row.selected .ascii-track .filled { color: var(--vscode-charts-orange, #db945f); }
-.ascii-track .unfilled { opacity: .38; }
-.placeholder-track { opacity: .5; }
-.bracket { flex: none; opacity: .65; }
-.empty p { color: var(--vscode-descriptionForeground); font-size: 12px; }
-.history-card { grid-column: 1 / -1; min-width: 0; height: calc(5 * 1.55em); padding: 0 2px; overflow: hidden; color: var(--vscode-foreground); font: 12px/1.55 var(--vscode-editor-font-family, monospace); }
-.history-lines { display: grid; grid-template-rows: repeat(5, minmax(0, 1fr)); height: 100%; overflow: hidden; }
-.history-row { display: flex; align-items: center; gap: 16px; min-width: 0; overflow: hidden; background: var(--vscode-panel-background, var(--vscode-editor-background)); }
-.history-row.latest { color: var(--vscode-foreground); font-weight: 650; }
-.history-theme { flex: 1 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.history-time { flex: none; min-width: 68px; text-align: right; white-space: nowrap; color: var(--vscode-descriptionForeground, color-mix(in srgb, var(--vscode-foreground) 70%, var(--vscode-panel-background, var(--vscode-editor-background)) 30%)); font-variant-numeric: tabular-nums; }
-.line-layout { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 18px; }
-.line-history { grid-column: 1 / -1; }
-.line-history .history-row { gap: 10px; }
-.history-action { flex: none; width: 42px; color: var(--vscode-descriptionForeground); font-size: 10px; text-transform: uppercase; letter-spacing: .06em; }
-.history-row.latest .history-action { color: var(--vscode-charts-blue, #70a6ca); }
-.line-detail, .line-signals { min-width: 0; min-height: 170px; padding: 10px 2px; border-top: 1px solid var(--vscode-panel-border, #5556); }
-.line-detail-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.line-action { font-size: 11px; font-weight: 650; color: var(--vscode-charts-blue, #70a6ca); white-space: nowrap; }
-.line-action.omit { color: var(--vscode-charts-orange, #db945f); }
-.line-excerpt { margin-top: 14px; color: var(--vscode-foreground); font: 12px/1.5 var(--vscode-editor-font-family, monospace); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.line-totals { margin-top: 10px; color: var(--vscode-descriptionForeground); font-size: 11px; }
-.line-signals { display: grid; gap: 4px; }
-.line-signals .bar-row { min-height: 37px; }
 .batch-layout { min-width: 0; --batch-keep: #d6a547; --batch-cut: #69aef0; }
 body:is(.vscode-light, .light) .batch-layout { --batch-keep: #895900; --batch-cut: #1c67aa; }
 .batch-header { position: sticky; top: -12px; z-index: 2; min-height: 70px; padding: 8px 0 9px; background: var(--vscode-panel-background, var(--vscode-editor-background)); border-bottom: 1px solid var(--vscode-panel-border, #5556); }
@@ -74,6 +32,5 @@ body:is(.vscode-light, .light) .batch-layout { --batch-keep: #895900; --batch-cu
 .empty-glyph { color: var(--vscode-charts-blue, #70a6ca); font: 14px var(--vscode-editor-font-family, monospace); letter-spacing: .3em; }
 .empty h1 { margin-top: 13px; }
 .empty p { max-width: 350px; line-height: 1.5; }
-@media (max-width: 520px) { body { padding: 10px 12px; } .cards { grid-template-columns: 1fr; } .card { padding: 11px; } }
-@media (max-width: 650px) { .line-layout { grid-template-columns: 1fr; } }
+@media (max-width: 520px) { body { padding: 10px 12px; } }
 @media (max-width: 430px) { .batch-row { grid-template-columns: 3.5ch minmax(0, 1fr) 4.2em; } .batch-reason { display: none; } }

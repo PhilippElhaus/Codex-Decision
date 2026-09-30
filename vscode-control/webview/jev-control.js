@@ -8,7 +8,7 @@
     return api;
   };
 
-  let state = { enabled: false, outputEnabled: false, testBuildEnabled: false, searchListingEnabled: false, needsKey: false, health: null, busy: false, mode: "replace", recent: "No decision recorded yet", history: [], stats: {} };
+  let state = { enabled: false, outputEnabled: false, testBuildEnabled: false, searchListingEnabled: false, needsKey: false, health: null, hookHealth: null, configurationError: null, busy: false, mode: "replace", recent: "No decision recorded yet", history: [], stats: {} };
   let root;
   let setup;
   let setupDismissed = false;
@@ -24,8 +24,20 @@
   let seenModel = false;
   let viewId = newViewId();
   let viewLocation = window.location.href;
+  let lastSessionId = null;
   const sentViews = new Map();
-  const colors = { off: "#9a9a9a", healthy: "#87cda4", failed: "#e99490", busy: "#83bcf7" };
+  const colors = { off: "#9a9a9a", healthy: "#87cda4", failed: "#e99490", pending: "#e6bc6a", busy: "#83bcf7" };
+
+  function sessionId() {
+    const match = window.location.pathname.match(/^\/(?:local|remote)\/([A-Za-z0-9._-]{1,128})\/?$/) ||
+      window.location.pathname.match(/^\/hotkey-window\/thread\/([A-Za-z0-9._-]{1,128})\/?$/);
+    if (match?.[1]) lastSessionId = match[1];
+    else if (!/^\/settings(?:\/|$)/.test(window.location.pathname)) lastSessionId = null;
+    return lastSessionId || document.documentElement.dataset.codexJevSessionId || null;
+  }
+
+  window.__codexJevSessionId = sessionId;
+  window.__codexJevViewId = currentViewId;
 
   function newViewId() {
     return `view-${Math.random().toString(36).slice(2)}-${Date.now().toString(36)}`;
@@ -50,7 +62,7 @@
     const current = currentViewId();
     sentViews.set(id, current);
     if (sentViews.size > 50) sentViews.delete(sentViews.keys().next().value);
-    api.postMessage({ type: "codex-jev", action, enabled, feature, ...(key === undefined ? {} : { key }), viewId: current, id });
+    api.postMessage({ type: "codex-jev", action, enabled, feature, ...(key === undefined ? {} : { key }), viewId: current, sessionId: sessionId(), id });
     return id;
   }
 
@@ -289,8 +301,16 @@
     if (showSetup && !wasVisible) queueMicrotask(() => setup.querySelector("#codex-jev-key").focus());
     root.querySelector("#codex-jev-open-connect").style.display = needsSetup ? "flex" : "none";
     const button = root.querySelector("#codex-jev-button");
-    const visual = !state.enabled ? "off" : state.busy ? "busy" :
-      state.health?.ok === true ? "healthy" : state.health?.ok === false ? "failed" : "off";
+    const hook = state.hookHealth;
+    const seen = Number(hook?.last_seen_ms) >= Number(state.viewStartedAt || Infinity);
+    const recent = seen && Date.now() - Number(hook.last_seen_ms) <= 120_000;
+    const versionMismatch = seen && hook.hook_version !== state.expectedHookVersion;
+    const hookFailed = hook?.fault || (seen && Number(hook.last_error_ms || 0) >= Number(state.viewStartedAt || Infinity) &&
+      Number(hook.last_error_ms || 0) > Number(hook.last_success_ms || 0));
+    const failed = Boolean(state.configurationError || (state.enabled && (state.health?.ok === false || hookFailed || versionMismatch)));
+    const pendingHook = state.enabled && state.health?.ok === true && !recent && !hookFailed;
+    const visual = failed ? "failed" : !state.enabled ? "off" : state.busy ? "busy" :
+      pendingHook ? "pending" : state.health?.ok === true ? "healthy" : "pending";
     button.style.color = colors[visual];
     root.dataset.observe = String(state.enabled && state.mode === "observe");
     button.setAttribute("aria-expanded", String(menuOpen));
@@ -299,18 +319,23 @@
     root.querySelector("#codex-jev-option").setAttribute("aria-checked", String(state.outputEnabled));
     root.querySelector("#codex-jev-test-build").setAttribute("aria-checked", String(state.testBuildEnabled));
     root.querySelector("#codex-jev-search-listing").setAttribute("aria-checked", String(state.searchListingEnabled));
-    const status = !state.enabled ? "Jev off" : needsSetup ? "API key needed" : state.health?.ok === true ? "Jev API connected" :
-      state.health?.ok === false ? "Jev unavailable" : "Checking Jev connection";
+    const status = state.configurationError ? "Jev configuration error" : !state.enabled ? "Jev off" :
+      needsSetup ? "API key needed" : versionMismatch ? "Jev hook version mismatch" : hookFailed ? "Jev hook failed" :
+      state.health?.ok === false ? "Jev API unavailable" : pendingHook ? "Jev hook unverified" :
+      state.health?.ok === true ? "Jev hook active" : "Checking Jev connection";
     root.querySelector("#codex-jev-tip").dataset.needsKey = String(needsSetup);
     const healthRow = root.querySelector("#codex-jev-health-row");
-    healthRow.hidden = state.enabled && !needsSetup && state.health?.ok === true;
+    healthRow.hidden = state.enabled && !needsSetup && !failed && !pendingHook && state.health?.ok === true;
     healthRow.querySelector("strong").textContent = healthRow.hidden ? "" : status;
-    const unavailable = state.enabled && (state.health?.ok === false || needsSetup);
+    const unavailable = failed || (state.enabled && needsSetup) || pendingHook;
     const reason = root.querySelector("#codex-jev-health-reason");
-    reason.textContent = unavailable && !needsSetup ? `· ${healthReason(state.health.reason)}` : "";
+    reason.textContent = unavailable && !needsSetup ? `· ${state.configurationError ||
+      (versionMismatch ? "Update the Jev plugin and control together" :
+        hookFailed ? (hook.fault || hook.last_error || "Tool output was left unchanged") :
+        pendingHook ? "Run a local tool; if it stays unverified, trust Jev in /hooks" : healthReason(state.health?.reason))}` : "";
     reason.style.display = unavailable && !needsSetup ? "inline" : "none";
     const retry = root.querySelector("#codex-jev-retry");
-    retry.style.display = unavailable ? "inline-block" : "none";
+    retry.style.display = state.enabled && !pendingHook && !state.configurationError && !hookFailed && !versionMismatch && (needsSetup || state.health?.ok === false) ? "inline-block" : "none";
     retry.disabled = Boolean(retryRequestId);
     retry.textContent = needsSetup ? "Connect" : retryRequestId ? "Checking…" : "Retry";
     const stats = state.stats || {};
@@ -339,8 +364,8 @@
     }));
     const empty = root.querySelector("#codex-jev-empty");
     empty.style.display = state.enabled && !history.length ? "block" : "none";
-    empty.textContent = "No hook decision in this view. If tool results stay unchecked, open /hooks in Codex and trust the Jev hook.";
-    button.setAttribute("aria-label", `${status}${unavailable ? `: ${healthReason(state.health?.reason)}` : ""}. This session: ${totals}. ${tokens}. ${history.join(". ") || state.recent}. Select Jev integrations`);
+    empty.textContent = "No hook decision in this session. Short or protected results may be skipped.";
+    button.setAttribute("aria-label", `${status}${unavailable ? `: ${reason.textContent}` : ""}. This session: ${totals}. ${tokens}. ${history.join(". ") || state.recent}. Select Jev integrations`);
   }
 
   function visibleRect(element) {

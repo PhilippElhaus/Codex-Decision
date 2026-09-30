@@ -67,7 +67,10 @@ test("composer bridge selects integrations and reports view-scoped activity with
     await commands.get("codexJev.showLatestDecision")();
     assert.equal(executedCommand, "codexJevDecision.focus");
     assert.equal(commands.has("codexJev.selectHooks"), false);
-    const bridge = commands.get("codexJev.bridge");
+    const rawBridge = commands.get("codexJev.bridge");
+    const sessionId = "fixture-session";
+    const scoped = core.sessionDirectory(directory, sessionId);
+    const bridge = (request) => rawBridge({ sessionId, viewId: "view-two", ...request });
     assert.equal((await bridge({ action: "status", viewId: "view-one" })).enabled, false);
     assert.equal((await bridge({ action: "openTypeSafe", viewId: "view-one" })).externalOpen, true);
     assert.equal(openedExternal, "https://typesafe.ai/");
@@ -76,22 +79,16 @@ test("composer bridge selects integrations and reports view-scoped activity with
     browserAvailable = true;
     const firstSelection = await bridge({ action: "setSelection", feature: "output", enabled: true, viewId: "view-one" });
     assert.equal(firstSelection.needsKey, true);
+    assert.equal(firstSelection.expectedHookVersion, "0.7.0");
     const firstTest = await bridge({ action: "testApiKey", key: "example-test-key", viewId: "view-one" });
     assert.equal(firstTest.keyTest.ok, true);
     assert.equal(suppliedKey, "example-test-key");
     assert.equal(JSON.stringify(firstTest).includes("example-test-key"), false);
     await until(async () => (await bridge({ action: "status", viewId: "view-one" })).health?.ok === true);
-    assert.equal((await core.readConfig(directory)).enabled, true);
+    assert.equal((await core.readConfig(scoped)).enabled, true);
 
-    mode = "observe";
-    configListener({ affectsConfiguration: (key) => key === "codexJev" });
-    await until(async () => (await bridge({ action: "status", viewId: "view-one" })).mode === "observe");
-    assert.equal((await core.readConfig(directory)).mode, "observe");
-    mode = "replace";
-    configListener({ affectsConfiguration: (key) => key === "codexJev" });
-    await until(async () => (await bridge({ action: "status", viewId: "view-one" })).mode === "replace");
-
-    await fs.appendFile(path.join(directory, "events.jsonl"), JSON.stringify({
+    await fs.mkdir(path.join(scoped, "logs"), { recursive: true });
+    await fs.appendFile(path.join(scoped, "logs", "events.jsonl"), JSON.stringify({
       status: "calling", reason: "jev_request", tool: "Bash",
     }) + "\n" + JSON.stringify({
       status: "replace", reason: "jev_replace", tool: "Bash", original_chars: 11520,
@@ -104,7 +101,7 @@ test("composer bridge selects integrations and reports view-scoped activity with
     assert.equal(first.stats.savedChars, 10608);
     assert.equal(first.stats.estimatedTokensSaved, 2652);
     const beforeFailureProbe = probes;
-    await fs.appendFile(path.join(directory, "events.jsonl"), JSON.stringify({
+    await fs.appendFile(path.join(scoped, "logs", "events.jsonl"), JSON.stringify({
       status: "keep", reason: "evaluator_unavailable", tool: "Bash",
       original_chars: 20000, capsule_chars: 0, elapsed_ms: 120,
     }) + "\n");
@@ -149,17 +146,14 @@ test("composer bridge selects integrations and reports view-scoped activity with
     const retained = (await bridge({ action: "settingsSetNeverDeleteLogs", neverDeleteLogs: true })).settings;
     assert.deepEqual(retained, { action: "neverDeleteLogsSaved", neverDeleteLogs: true });
     assert.equal((await bridge({ action: "settingsRead" })).settings.config.never_delete_logs, true);
-    assert.equal((await core.readConfig(directory)).mode, "replace");
+    assert.equal((await core.readConfig(scoped)).mode, "replace");
     const invalidRetention = (await bridge({ action: "settingsSetNeverDeleteLogs", neverDeleteLogs: "true" })).settings;
     assert.equal(invalidRetention.action, "error");
-    assert.equal((await core.readConfig(directory)).never_delete_logs, true);
+    assert.equal((await core.readConfig(scoped)).never_delete_logs, true);
     assert.equal((await bridge({ action: "settingsSetNeverDeleteLogs", neverDeleteLogs: false })).settings.action,
       "neverDeleteLogsSaved");
     assert.equal((await bridge({ action: "settingsOpenLogs" })).settings.action, "openedLogs");
-    assert.equal(openedExternal, directory);
-    await fs.mkdir(path.join(directory, "logs"));
-    assert.equal((await bridge({ action: "settingsOpenLogs" })).settings.action, "openedLogs");
-    assert.equal(openedExternal, path.join(directory, "logs"));
+    assert.equal(openedExternal, path.join(scoped, "logs"));
     const missing = (await bridge({ action: "settingsSave", mode: "replace", key: "", logLimitMb: 50, neverDeleteLogs: false,
       linePolicy: { output: { omit_min: 95 } } })).settings;
     assert.equal(missing.action, "error");
@@ -171,11 +165,11 @@ test("composer bridge selects integrations and reports view-scoped activity with
     assert.equal(savedSettings.action, "saved");
     assert.equal(savedSettings.keyLength, "new-test-key-123".length);
     assert.equal(await core.readApiKey(directory), "new-test-key-123");
-    assert.equal((await core.readConfig(directory)).line_policy.output.omit_min, 97);
-    assert.equal((await core.readConfig(directory)).mode, "observe");
-    assert.equal((await core.readConfig(directory)).log_limit_mb, 9999);
-    assert.equal((await core.readConfig(directory)).never_delete_logs, true);
-    assert.deepEqual((await core.readConfig(directory)).line_policy, linePolicy);
+    assert.equal((await core.readConfig(scoped)).line_policy.output.omit_min, 97);
+    assert.equal((await core.readConfig(scoped)).mode, "observe");
+    assert.equal((await core.readConfig(scoped)).log_limit_mb, 9999);
+    assert.equal((await core.readConfig(scoped)).never_delete_logs, true);
+    assert.deepEqual((await core.readConfig(scoped)).line_policy, linePolicy);
     assert.equal(JSON.stringify(savedSettings).includes("new-test-key-123"), false);
     const readyAfterSave = (await bridge({ action: "settingsRead" })).settings;
     assert.equal(readyAfterSave.hasKey, true);
@@ -191,6 +185,30 @@ test("composer bridge selects integrations and reports view-scoped activity with
     assert.equal(saved.needsKey, false);
     assert.equal(await core.readApiKey(directory), "another-test-key-123");
     assert.equal(JSON.stringify(saved).includes("another-test-key-123"), false);
+
+    const other = await bridge({ action: "status", sessionId: "other-window", viewId: "view-three" });
+    assert.equal(other.enabled, false);
+    assert.equal(other.stats.completed, 0);
+    assert.deepEqual(other.history, []);
+    assert.equal((await core.readConfig(core.sessionDirectory(directory, "other-window"))).enabled, false);
+    await bridge({ action: "setSelection", sessionId: "other-window", viewId: "view-three",
+      feature: "search_listing", enabled: true });
+    assert.equal((await core.readConfig(core.sessionDirectory(directory, "other-window"))).search_listing_enabled, true);
+    assert.equal((await core.readConfig(scoped)).search_listing_enabled, false);
+    const returned = await bridge({ action: "status", viewId: "view-four" });
+    assert.equal(returned.outputEnabled, false);
+    assert.equal(returned.testBuildEnabled, true);
+    assert.equal(returned.searchListingEnabled, false);
+    assert.equal(returned.stats.completed, 0, "old activity stays outside the new view");
+
+    await fs.writeFile(path.join(scoped, "config.json"), '{"schema_version":1,"enabled":true}');
+    const broken = await bridge({ action: "status", viewId: "view-five" });
+    assert.equal(broken.configurationError, "Jev configuration could not be read");
+    assert.equal(broken.health.reason, "JEV_CONFIG_ERROR");
+    const missingView = await bridge({ action: "setSelection", viewId: "", feature: "output", enabled: true });
+    assert.equal(missingView.configurationError, "Codex session could not be identified");
+    assert.equal(missingView.enabled, false);
+    assert.equal((await core.readConfig(core.sessionDirectory(directory, "other-window"))).enabled, false);
   } finally {
     for (const disposable of context.subscriptions.reverse()) disposable.dispose();
     await fs.rm(directory, { recursive: true, force: true });

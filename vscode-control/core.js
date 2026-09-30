@@ -1,6 +1,7 @@
 "use strict";
 
 const fs = require("node:fs/promises");
+const crypto = require("node:crypto");
 const { constants } = require("node:fs");
 const readline = require("node:readline");
 const path = require("node:path");
@@ -8,17 +9,6 @@ const { execFile } = require("node:child_process");
 const { promisify } = require("node:util");
 const runFile = promisify(execFile);
 const JEV_ENDPOINT = "https://api.typesafe.ai/v1/systemone";
-const DEFAULT_THRESHOLDS = Object.freeze({
-  output: { routine_min: 90, exact_max: 12, unique_max: 10, confidence_min: 70 },
-  test_build: { routine_min: 90, exact_max: 20, unique_max: 20, confidence_min: 70 },
-  search_listing: { summarize_probability_min: 78, summarize_confidence_min: 70,
-    drop_probability_min: 92, drop_confidence_min: 85 },
-});
-const DEFAULT_DECISION_METHODS = Object.freeze({
-  output: { noul: true, choice: true },
-  test_build: { noul: true, choice: true },
-  search_listing: { choice: true },
-});
 const DEFAULT_LINE_POLICY = Object.freeze({
   output: { omit_min: 95, exact_max: 5 },
   test_build: { omit_min: 95, exact_max: 5 },
@@ -26,9 +16,9 @@ const DEFAULT_LINE_POLICY = Object.freeze({
 });
 const DEFAULT_SEARCH_RELEVANCE = Object.freeze({ guard_enabled: false, relevant_max: 5 });
 const CONFIG_KEYS = new Set([
-  "enabled", "test_build_enabled", "search_listing_enabled", "precompact_enabled", "mode", "min_chars", "max_chars", "sample_chars",
-  "timeout_seconds", "model", "allow_mcp_replacement", "thresholds",
-  "log_limit_mb", "never_delete_logs", "decision_methods", "schema_version", "line_policy", "search_relevance",
+  "enabled", "test_build_enabled", "search_listing_enabled", "mode", "min_chars", "max_chars",
+  "timeout_seconds", "model", "allow_mcp_replacement",
+  "log_limit_mb", "never_delete_logs", "schema_version", "line_policy", "search_relevance",
 ]);
 
 function completeSearchRelevance(value = {}) {
@@ -63,72 +53,91 @@ function completeLinePolicy(value = {}) {
   }));
 }
 
-function completeThresholds(value = {}) {
-  if (!value || typeof value !== "object" || Array.isArray(value) ||
-      Object.keys(value).some((hook) => !Object.hasOwn(DEFAULT_THRESHOLDS, hook))) throw new Error("Invalid Jev thresholds");
-  const result = {};
-  for (const [hook, defaults] of Object.entries(DEFAULT_THRESHOLDS)) {
-    const entered = value[hook] === undefined ? {} : value[hook];
-    if (typeof entered !== "object" || Array.isArray(entered) ||
-        Object.keys(entered).some((name) => !Object.hasOwn(defaults, name))) throw new Error("Invalid Jev thresholds");
-    result[hook] = { ...defaults, ...entered };
-    if (Object.values(result[hook]).some((number) => !Number.isInteger(number) || number < 0 || number > 100)) {
-      throw new Error("Jev thresholds must be whole percentages from 0 to 100");
-    }
-  }
-  return result;
-}
-
-function completeDecisionMethods(value = {}) {
-  if (!value || typeof value !== "object" || Array.isArray(value) ||
-      Object.keys(value).some((hook) => !Object.hasOwn(DEFAULT_DECISION_METHODS, hook))) throw new Error("Invalid Jev decision methods");
-  const result = {};
-  for (const [hook, defaults] of Object.entries(DEFAULT_DECISION_METHODS)) {
-    const entered = value[hook] === undefined ? {} : value[hook];
-    if (!entered || typeof entered !== "object" || Array.isArray(entered) ||
-        Object.keys(entered).some((name) => !Object.hasOwn(defaults, name))) throw new Error("Invalid Jev decision methods");
-    result[hook] = { ...defaults, ...entered };
-    if (Object.values(result[hook]).some((enabled) => typeof enabled !== "boolean")) throw new Error("Jev decision methods must be booleans");
-  }
-  return result;
-}
-
 function defaultDataDirectory() {
   return process.env.CODEX_JEV_DATA_DIRECTORY || "";
 }
 
+function sessionDirectory(directory, sessionId) {
+  if (typeof sessionId !== "string" || !/^[A-Za-z0-9._-]{1,128}$/.test(sessionId)) {
+    throw new Error("Jev needs a valid Codex session ID");
+  }
+  return path.join(directory, "sessions", crypto.createHash("sha256").update(sessionId).digest("hex"));
+}
+
+async function validateSessionPath(directory) {
+  const parent = path.dirname(directory);
+  if (path.basename(parent) !== "sessions") return;
+  for (const folder of [parent, directory]) {
+    const details = await fs.lstat(folder);
+    if (!details.isDirectory() || details.isSymbolicLink() ||
+        (process.platform !== "win32" && (details.mode & 0o077))) {
+      throw new Error("Unsafe Jev session directory");
+    }
+  }
+}
+
+async function readHookHealth(directory) {
+  const filename = path.join(directory, "logs", "hook-health.json");
+  try {
+    await validateSessionPath(directory);
+    const logs = await fs.lstat(path.dirname(filename));
+    if (!logs.isDirectory() || logs.isSymbolicLink()) throw new Error("Unsafe Jev hook health directory");
+    const details = await fs.lstat(filename);
+    if (!details.isFile() || details.isSymbolicLink() || details.size > 4096) throw new Error("Unsafe Jev hook health");
+    const health = JSON.parse(await fs.readFile(filename, "utf8"));
+    if (!health || health.version !== 1 || typeof health.hook_version !== "string" ||
+        !/^\d+\.\d+\.\d+$/.test(health.hook_version) ||
+        !Number.isSafeInteger(health.last_seen_ms) || health.last_seen_ms <= 0 ||
+        health.last_seen_ms > Date.now() + 300_000 ||
+        ["last_success_ms", "last_error_ms", "last_skip_ms"].some((key) =>
+          health[key] !== undefined && (!Number.isSafeInteger(health[key]) || health[key] < 0 ||
+            health[key] > health.last_seen_ms)) ||
+        ["last_error", "last_skip"].some((key) =>
+          health[key] !== undefined && (typeof health[key] !== "string" || health[key].length > 80))) {
+      throw new Error("Invalid Jev hook health");
+    }
+    return health;
+  } catch (error) {
+    if (error.code === "ENOENT") return null;
+    throw error;
+  }
+}
+
 async function readConfig(directory) {
   try {
-    const raw = JSON.parse(await fs.readFile(path.join(directory, "config.json"), "utf8"));
+    await validateSessionPath(directory);
+    const filename = path.join(directory, "config.json");
+    const details = await fs.lstat(filename);
+    if (!details.isFile() || details.isSymbolicLink() || details.size > 64_000) {
+      throw new Error("Unsafe Jev config");
+    }
+    const raw = JSON.parse(await fs.readFile(filename, "utf8"));
     const merged = {
       enabled: false, test_build_enabled: false, search_listing_enabled: false, mode: "replace", min_chars: 256, max_chars: 2_000_000,
-      sample_chars: 12_000, timeout_seconds: 3, model: "jev-latest",
+      timeout_seconds: 3, model: "jev-latest",
       allow_mcp_replacement: false, log_limit_mb: 50, never_delete_logs: false, ...raw,
     };
     if (!raw || typeof raw !== "object" || Array.isArray(raw) ||
         Object.keys(raw).some((key) => !CONFIG_KEYS.has(key)) ||
+        ["enabled", "test_build_enabled", "search_listing_enabled", "mode"].some((key) => !Object.hasOwn(raw, key)) ||
+        !raw.line_policy || typeof raw.line_policy !== "object" || Array.isArray(raw.line_policy) ||
+        ["output", "test_build", "search_listing"].some((key) => !Object.hasOwn(raw.line_policy, key)) ||
         typeof merged.enabled !== "boolean" || typeof merged.test_build_enabled !== "boolean" ||
         typeof merged.search_listing_enabled !== "boolean" ||
-        (raw.precompact_enabled !== undefined && typeof raw.precompact_enabled !== "boolean") ||
         !["observe", "replace"].includes(merged.mode) ||
         !Number.isInteger(merged.min_chars) || !Number.isInteger(merged.max_chars) ||
         merged.min_chars < 256 || merged.min_chars > merged.max_chars || merged.max_chars > 2_000_000 ||
-        !Number.isInteger(merged.sample_chars) || merged.sample_chars < 1000 || merged.sample_chars > 24_000 ||
         typeof merged.timeout_seconds !== "number" || merged.timeout_seconds < 0.1 || merged.timeout_seconds > 4 ||
         typeof merged.model !== "string" || !/^jev-[\w.-]{1,40}$/.test(merged.model) ||
         typeof merged.allow_mcp_replacement !== "boolean" ||
         !Number.isInteger(merged.log_limit_mb) || merged.log_limit_mb < 1 || merged.log_limit_mb > 9999 ||
         typeof merged.never_delete_logs !== "boolean" ||
-        (merged.schema_version !== undefined && merged.schema_version !== 2)) {
+        merged.schema_version !== 2) {
       throw new Error("Invalid Jev config");
     }
-    if (merged.schema_version === 2) {
-      completeLinePolicy(merged.line_policy);
-      completeSearchRelevance(merged.search_relevance);
-    }
-    else { completeThresholds(merged.thresholds); completeDecisionMethods(merged.decision_methods); }
-    const { precompact_enabled: _legacy, sample_chars: _sampleChars, ...current } = raw;
-    return { enabled: false, test_build_enabled: false, search_listing_enabled: false, mode: "replace", ...current };
+    completeLinePolicy(merged.line_policy);
+    completeSearchRelevance(merged.search_relevance);
+    return { enabled: false, test_build_enabled: false, search_listing_enabled: false, mode: "replace", ...raw };
   } catch (error) {
     if (error.code === "ENOENT") return { enabled: false, test_build_enabled: false, search_listing_enabled: false, mode: "replace" };
     throw error;
@@ -137,12 +146,26 @@ async function readConfig(directory) {
 
 async function writeConfig(directory, updates) {
   const old = await readConfig(directory);
-  const { thresholds: _thresholds, decision_methods: _methods, ...retained } = old;
-  const config = { ...retained, ...updates, schema_version: 2,
+  const config = { ...old, ...updates, schema_version: 2,
     line_policy: completeLinePolicy(updates.line_policy ?? old.line_policy),
     search_relevance: completeSearchRelevance(updates.search_relevance ?? old.search_relevance) };
+  const parent = path.dirname(directory);
+  if (path.basename(parent) === "sessions") {
+    const root = await fs.lstat(path.dirname(parent));
+    if (!root.isDirectory() || root.isSymbolicLink()) throw new Error("Unsafe Jev data directory");
+    await fs.mkdir(parent, { recursive: true, mode: 0o700 });
+    const sessions = await fs.lstat(parent);
+    if (!sessions.isDirectory() || sessions.isSymbolicLink() ||
+        (process.platform !== "win32" && (sessions.mode & 0o077))) {
+      throw new Error("Unsafe Jev sessions directory");
+    }
+  }
   await fs.mkdir(directory, { recursive: true, mode: 0o700 });
-  if ((await fs.lstat(directory)).isSymbolicLink()) throw new Error("Plugin data directory is a link");
+  const folder = await fs.lstat(directory);
+  if (!folder.isDirectory() || folder.isSymbolicLink() ||
+      (process.platform !== "win32" && (folder.mode & 0o077))) {
+    throw new Error("Unsafe Jev config directory");
+  }
   const target = path.join(directory, "config.json");
   try {
     if ((await fs.lstat(target)).isSymbolicLink()) throw new Error("Jev config is a link");
@@ -198,6 +221,7 @@ async function writeNeverDeleteLogs(directory, neverDelete) {
 async function activityLogPath(directory) {
   const current = path.join(directory, "logs", "events.jsonl");
   try {
+    await validateSessionPath(directory);
     const logs = await fs.lstat(path.join(directory, "logs"));
     if (!logs.isDirectory() || logs.isSymbolicLink()) throw new Error("Unsafe Jev logs directory");
     const index = await fs.lstat(current);
@@ -205,14 +229,7 @@ async function activityLogPath(directory) {
     return current;
   } catch (error) {
     if (error.code !== "ENOENT") throw error;
-    const legacy = path.join(directory, "events.jsonl");
-    try {
-      const details = await fs.lstat(legacy);
-      if (!details.isFile() || details.isSymbolicLink()) throw new Error("Unsafe Jev legacy log");
-    } catch (legacyError) {
-      if (legacyError.code !== "ENOENT") throw legacyError;
-    }
-    return legacy;
+    return current;
   }
 }
 
@@ -340,6 +357,7 @@ async function readLifetimeStats(directory) {
     linesRelevanceJudged: 0, linesBelowOmitCutoff: 0, linesRelevanceKept: 0 };
   const statsFile = path.join(directory, "stats.json");
   try {
+    await validateSessionPath(directory);
     const details = await fs.lstat(statsFile);
     if (!details.isFile() || details.isSymbolicLink() || details.size > 8192) throw new Error("Unsafe Jev stats file");
     const stats = JSON.parse(await fs.readFile(statsFile, "utf8"));
@@ -561,7 +579,7 @@ async function writeApiKey(directory, key) {
 }
 
 module.exports = {
-  activitySummary, checkHealth, completeThresholds, completeDecisionMethods, DEFAULT_THRESHOLDS, DEFAULT_DECISION_METHODS,
+  activitySummary, checkHealth, sessionDirectory, validateSessionPath, readHookHealth,
   completeLinePolicy, DEFAULT_LINE_POLICY,
   completeSearchRelevance, DEFAULT_SEARCH_RELEVANCE,
   decisionSummary, defaultDataDirectory, estimateTokensSaved, formatDuration,

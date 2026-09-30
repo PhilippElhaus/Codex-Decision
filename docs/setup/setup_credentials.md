@@ -16,7 +16,7 @@ jevctl set-key --data-dir "$HOME/.codex/plugins/data/codex-jev-codex-jev"
 
 The parser treats the value as text. It does not execute shell code. The hook sends bounded requests directly to `https://api.typesafe.ai/v1/systemone` with the key in the HTTPS Authorization header. The key does not enter command arguments, tool output, or decision logs. If you use the Codex side window setup, the entered key passes through its local webview bridge to the extension. The extension checks for a saved key and probes Jev health when an integration is enabled.
 
-Set `codexJev.dataDirectory` in VS Code to the same absolute directory. For a WSL installation used by Windows VS Code, use a `\\wsl.localhost\<distro>\...` path. `CODEX_JEV_DATA_DIRECTORY` is an alternative setting for the control and the live benchmark scripts.
+Set `codexJev.dataDirectory` in VS Code to the same absolute directory. For a WSL installation used by Windows VS Code, use a `\\wsl.localhost\<distro>\...` path. `CODEX_JEV_DATA_DIRECTORY` is an alternative setting for the control.
 
 Enabling an integration without a key opens **Connect Jev** over the Codex side window. Enter a typesafe.ai API key there, test it, then save it. A link below Save and Skip opens the typesafe.ai homepage in the system browser. **Skip for now** closes the prompt without saving; **Connect Jev…** in the Jev menu and **Connect** in the missing-key tooltip reopen it. In **Codex settings → Jev**, below **Voice**, a saved key is indicated by a masked placeholder; its value never reaches the webview. Click **Test API key** with the field empty to test the saved key; enter a different key to test or save a replacement. The result appears beside the button. Changes to hook cutoffs also live there.
 

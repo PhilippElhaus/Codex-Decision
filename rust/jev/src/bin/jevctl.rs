@@ -33,51 +33,6 @@ fn write_private(path: &Path, data: &[u8]) -> Result<(), String> {
     result
 }
 
-fn migrate(data_dir: &Path) -> Result<(), String> {
-    let path = data_dir.join("config.json");
-    if path.is_symlink() {
-        return Err("linked config".into());
-    }
-    let bytes = fs::read(&path).map_err(|error| error.to_string())?;
-    let mut raw: Value = serde_json::from_slice(&bytes).map_err(|error| error.to_string())?;
-    if raw.get("schema_version").and_then(Value::as_u64) == Some(2) {
-        return Ok(());
-    }
-    if raw.get("schema_version").is_some() {
-        return Err("unsupported config version".into());
-    }
-    let config = raw.as_object_mut().ok_or("invalid config")?;
-    config.remove("thresholds");
-    config.remove("decision_methods");
-    config.remove("precompact_enabled");
-    config.remove("sample_chars");
-    config.insert("schema_version".into(), json!(2));
-    config.insert(
-        "line_policy".into(),
-        json!({
-        "output":{"omit_min":95,"exact_max":5},
-        "test_build":{"omit_min":95,"exact_max":5},
-        "search_listing":{"omit_min":95,"exact_max":5}}),
-    );
-    config.insert(
-        "search_relevance".into(),
-        json!({"guard_enabled":false,"relevant_max":5}),
-    );
-    let rollback = data_dir.join(format!(
-        "config.v1.{}.json",
-        chrono::Utc::now().format("%Y%m%d%H%M%S")
-    ));
-    if rollback.exists() {
-        return Err("config rollback already exists".into());
-    }
-    write_private(&rollback, &bytes)?;
-    write_private(
-        &path,
-        &serde_json::to_vec_pretty(&raw).map_err(|error| error.to_string())?,
-    )?;
-    Ok(())
-}
-
 fn set_key(data_dir: &Path) -> Result<(), String> {
     #[cfg(unix)]
     if unsafe { libc::isatty(libc::STDIN_FILENO) } != 0 {
@@ -550,7 +505,7 @@ fn evaluate_quality(cases_path: &Path) -> Result<(), String> {
 fn run() -> Result<(), String> {
     let args: Vec<String> = std::env::args().collect();
     if args.len() != 4 {
-        return Err("usage: jevctl <migrate-config|set-key> --data-dir <absolute PLUGIN_DATA> | package --root <repository>".into());
+        return Err("usage: jevctl set-key --data-dir <absolute PLUGIN_DATA> | package --root <repository> | evaluate-quality --cases <private JSON>".into());
     }
     if args[1] == "package" && args[2] == "--root" {
         return package(&PathBuf::from(&args[3]));
@@ -566,7 +521,6 @@ fn run() -> Result<(), String> {
         return Err("unsafe data directory".into());
     }
     match args[1].as_str() {
-        "migrate-config" => migrate(&data_dir),
         "set-key" => set_key(&data_dir),
         _ => Err("unknown command".into()),
     }
