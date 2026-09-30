@@ -295,8 +295,20 @@
       check(button.style.color === "rgb(135, 205, 164)", "connected green");
       hookHealth = null;
       await until(() => button.style.color === "rgb(230, 188, 106)", "API alone leaves hook unverified");
-      check(document.getElementById("codex-jev-health-reason").textContent.includes("trust Jev in /hooks"),
+      const healthRow = document.getElementById("codex-jev-health-row");
+      const healthReason = document.getElementById("codex-jev-health-reason");
+      const tip = document.getElementById("codex-jev-tip");
+      tip.style.display = "block";
+      check(healthRow.querySelector("strong").textContent === "Error",
+        "unverified hook has a short error heading");
+      check(healthReason.parentElement === tip &&
+        healthReason.getBoundingClientRect().top >= healthRow.getBoundingClientRect().bottom,
+        "red guidance sits below the error heading");
+      check(getComputedStyle(healthReason).display === "block" &&
+        !healthReason.textContent.startsWith("·") &&
+        healthReason.textContent.includes("trust Jev in /hooks"),
         "unverified hook shows recovery step");
+      tip.style.removeProperty("display");
       hookHealth = { version: 1, hook_version: "0.8.0", last_seen_ms: Date.now(), last_skip_ms: Date.now(), last_skip: "small" };
       await until(() => button.style.color === "rgb(135, 205, 164)", "observed skip verifies hook invocation");
       hookHealth = { ...hookHealth, last_error_ms: Date.now() + 1, last_error: "invalid Jev response" };

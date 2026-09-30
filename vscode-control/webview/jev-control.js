@@ -173,15 +173,14 @@
       #codex-jev-tip::after { content: ""; position: absolute; top: 100%; left: 0; right: 0; height: 10px; }
       #codex-jev:hover #codex-jev-tip, #codex-jev:focus-within #codex-jev-tip { display: block; }
       #codex-jev[data-menu="true"] #codex-jev-tip { display: none; }
-      #codex-jev-health-row { display: flex; align-items: center; gap: 5px; min-height: 20px; }
+      #codex-jev-health-row { display: flex; align-items: center; gap: 8px; min-height: 20px; }
       #codex-jev-health-row[hidden] { display: none; }
       #codex-jev-health-row strong { color: #fff; white-space: nowrap; }
-      #codex-jev-health-reason { display: none; color: #e99490; margin: 0; min-width: 0; }
+      #codex-jev-health-reason { display: none; color: #e99490; margin: 4px 0 0; overflow-wrap: anywhere; }
       #codex-jev-retry { display: none; margin-left: auto; padding: 2px 7px; border: 1px solid #666; border-radius: 8px; background: #383838; color: #eee; font: inherit; cursor: pointer; }
       #codex-jev-retry:hover { background: #484848; }
       #codex-jev-retry:disabled { opacity: .6; cursor: default; }
       #codex-jev-retry:focus-visible { outline: 2px solid #83bcf7; outline-offset: 2px; }
-      #codex-jev-tip #codex-jev-health-reason { color: #e99490; margin: 0; }
       #codex-jev-stats { color: #d4d4d4; }
       #codex-jev-tokens { margin-top: 3px; color: #d4d4d4; }
       #codex-jev-tip h3 { margin: 10px 0 4px; color: #aaa; font-size: 11px; font-weight: 650; letter-spacing: .04em; }
@@ -229,7 +228,7 @@
     root.id = "codex-jev";
     root.innerHTML = `
       <button id="codex-jev-button" type="button" aria-label="Jev integrations" aria-expanded="false" aria-controls="codex-jev-menu"><span id="codex-jev-dot"></span><span id="codex-jev-label">jev</span><span id="codex-jev-observe">MON</span></button>
-      <div id="codex-jev-tip" role="group" aria-label="Jev activity"><div id="codex-jev-health-row"><strong></strong><span id="codex-jev-health-reason"></span><button id="codex-jev-retry" type="button">Retry</button></div><p id="codex-jev-session-note">Open a Codex thread to use Jev.</p><h3 id="codex-jev-session-heading">This session</h3><div id="codex-jev-stats"></div><div id="codex-jev-tokens"></div><h3 id="codex-jev-history-heading">Recent Actions</h3><ol id="codex-jev-history"></ol><p id="codex-jev-empty">None yet</p></div>
+      <div id="codex-jev-tip" role="group" aria-label="Jev activity"><div id="codex-jev-health-row"><strong></strong><button id="codex-jev-retry" type="button">Retry</button></div><p id="codex-jev-health-reason"></p><p id="codex-jev-session-note">Open a Codex thread to use Jev.</p><h3 id="codex-jev-session-heading">This session</h3><div id="codex-jev-stats"></div><div id="codex-jev-tokens"></div><h3 id="codex-jev-history-heading">Recent Actions</h3><ol id="codex-jev-history"></ol><p id="codex-jev-empty">None yet</p></div>
       <div id="codex-jev-menu" role="group" aria-label="Jev integrations" data-open="false"><h2>Jev integrations</h2><button id="codex-jev-option" class="codex-jev-option" type="button" role="checkbox" aria-checked="false"><span class="codex-jev-check"></span><span><strong>Output filter</strong><small>Read and other local tool text</small></span></button><button id="codex-jev-test-build" class="codex-jev-option" type="button" role="checkbox" aria-checked="false"><span class="codex-jev-check"></span><span><strong>Test/build logs</strong><small>Test/build commands and tools</small></span></button><button id="codex-jev-search-listing" class="codex-jev-option" type="button" role="checkbox" aria-checked="false"><span class="codex-jev-check"></span><span><strong>Search/listing</strong><small>Search and listing commands or tools</small></span></button><button id="codex-jev-open-connect" class="codex-jev-option" type="button">Connect Jev…</button><p id="codex-jev-menu-note">Each switch controls only its own route. Select none to turn Jev off.</p></div>`;
     document.body.appendChild(root);
     setup = document.createElement("div");
@@ -350,7 +349,7 @@
     const status = state.configurationError ? "Jev configuration error" : state.panelFault ? "Jev view unavailable" :
       state.sessionPending ? "Jev ready for a thread" : !state.enabled ? "Jev off" :
       needsSetup ? "API key needed" : versionMismatch ? "Jev hook version mismatch" : hookFailed ? "Jev hook failed" :
-      state.health?.ok === false ? "Jev API unavailable" : pendingHook ? "Jev hook unverified" :
+      state.health?.ok === false ? "Jev API unavailable" : pendingHook ? "Error" :
       state.health?.ok === true ? "Jev hook active" : "Checking Jev connection";
     root.querySelector("#codex-jev-tip").dataset.needsKey = String(needsSetup);
     const healthRow = root.querySelector("#codex-jev-health-row");
@@ -359,12 +358,12 @@
     healthRow.querySelector("strong").textContent = healthRow.hidden ? "" : status;
     const unavailable = failed || (state.enabled && needsSetup) || pendingHook;
     const reason = root.querySelector("#codex-jev-health-reason");
-    reason.textContent = (unavailable || choiceKeptFull) && !needsSetup ? `· ${state.configurationError || state.panelFault ||
+    reason.textContent = (unavailable || choiceKeptFull) && !needsSetup ? `${state.configurationError || state.panelFault ||
       (versionMismatch ? "Update the Jev plugin and control together" :
         hookFailed ? (hook.fault || hook.last_error || "Tool output was left unchanged") :
         pendingHook ? "Run a local tool; if it stays unverified, trust Jev in /hooks" :
         choiceKeptFull ? "Choice kept the latest output complete" : healthReason(state.health?.reason))}` : "";
-    reason.style.display = (unavailable || choiceKeptFull) && !needsSetup ? "inline" : "none";
+    reason.style.display = (unavailable || choiceKeptFull) && !needsSetup ? "block" : "none";
     const retry = root.querySelector("#codex-jev-retry");
     retry.style.display = state.enabled && !pendingHook && !state.configurationError && !hookFailed && !versionMismatch && (needsSetup || state.health?.ok === false) ? "inline-block" : "none";
     retry.disabled = Boolean(retryRequestId);
