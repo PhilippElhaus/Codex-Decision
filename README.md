@@ -2,55 +2,57 @@
 
 <img src="assets/logo.png" width="56" alt="Codex Jev logo">
 
-Codex Jev uses a Rust PostToolUse hook to judge eligible output one physical line at a time. It keeps exact source text for retained lines and a path to the full original. Uncertain results stay intact.
+Codex Jev trims repetitive output from local tools before Codex reads it. It checks each eligible line, protects errors and other useful details, and saves the full result whenever it shortens one.
 
-## How it works
+**Less noise in Codex's context.** In a [live benchmark from September 2026](docs/benchmarks/benchmark_live_2026-09-26.md), an earlier version reduced the text sent to Codex for results it shortened:
 
-The hook sends bounded batches of eligible lines to Jev. Each judged line receives two independent Noul probabilities: **Can omit?** and **Exact text needed?** Search results also receive **Task relevant?**. With the default policy, a line can be removed only when the first two probabilities reach at least 95% and at most 5%, respectively. The search relevance guard starts in preview mode and can be enabled to keep potentially useful matches. Code protects diagnostics, completion totals, nearby context, and unjudged lines before asking Jev. If a request fails validation, Codex sees the full result.
+| Output | Less text sent to Codex |
+| --- | ---: |
+| Regular tool output | 95% |
+| Test and build logs | 90% |
+| Search results and file listings | 71% |
 
-The optional **Jev** panel beside Output and Terminal shows every judged line in the latest batch, up to 250. A 0–1 visual retention index puts cut lines near zero in blue and kept lines near one in gold. Dense batches flow into columns, so a result such as 50 lines reduced to 3 kept is visible at a glance. Bars grow together before each batch rests for a second. The panel stays empty until a real decision arrives.
+Measured as tokens. The full stress-test mix fell by 3%, including oversized results that Jev skipped. These figures describe the earlier version, not a benchmark of the current line-by-line release or a complete coding task.
 
-<img src="docs/images/jev-panel.png" width="1000" alt="Jev panel rendered from the current extension webview with 50 synthetic source lines across three columns, 3 gold Keep bars near one, and 47 blue Omit markers near zero">
+## Get started
 
-## What it filters
-
-| Integration | Kept in Codex's context |
-| --- | --- |
-| Output filter | Exact retained source lines and an omission map. |
-| Test/build logs | Exact retained lines, with diagnostics and completion totals protected. |
-| Search/listing | Exact retained matches or paths, including `rg --json` records. |
-
-All three start disabled. **Monitor** records decisions without changing output. **Filter** shortens approved results. A shortened result links to its saved original. Eligible text reaches [TypeSafe AI's Jev API](docs/architecture/design_data.md); keep sensitive output outside these filters.
-
-The hook sees supported local PostToolUse events and classifies their text before checking the switches. Direct shell tests and builds, plus test/build tools, use **Test/build logs**. Direct searches and listings, plus search/listing tools, use **Search/listing**. Other plain text from read, command, and local tools uses **Output filter**. A disabled specialized route leaves its result alone even when Output filter is enabled. Compound shell commands, structured or action results, and sensitive-looking input or output are left alone. A result normally needs at least 256 bytes before Jev is called; filtering additionally needs meaningful savings. Hosted tools that do not emit local PostToolUse events cannot be reached by this hook.
-
-<img src="docs/images/jev-menu.png" width="620" alt="Jev integration selector in the Codex composer">
-
-## Setup and settings
-
-1. [Install the plugin](docs/setup/setup_installation.md). The optional [VS Code control](vscode-control/README.md) adds the composer menu and settings page.
-2. Enable an integration. **Connect Jev** asks for a typesafe.ai API key; test and save it there. Do not enter the key in chat.
-3. Open **Codex settings → Jev** to select Monitor or Filter, adjust cutoffs, test or replace the key, and open logs. Changes apply to the next tool result.
-
-<img src="docs/images/jev-connect.png" width="900" alt="Illustrative Connect Jev API key screen beside the Codex sign-in view; example state with no key">
-
-<img src="docs/images/jev-settings-overview.png" width="850" alt="Jev settings page showing line counts, API key, log retention, and Monitor or Filter mode">
-
-<img src="docs/images/jev-settings-filters.png" width="850" alt="Jev settings showing per-line omission thresholds and the optional search relevance guard">
-
-These captures render the current webview code with synthetic, key-free state.
-
-## Install
+Install the plugin on Linux x86_64:
 
 ```bash
 codex plugin marketplace add https://github.com/PhilippElhaus/Codex-Jev
 codex plugin add codex-jev@codex-jev
 ```
 
-The bundled Linux x86_64 Rust hook needs no Python at runtime. The `jev-output` skill helps configure the filters and check shortened evidence. The optional VS Code control requires a [version-pinned Codex patch](vscode-control/README.md).
+The screens below use the optional [VS Code control](vscode-control/README.md), which needs a [version-pinned Codex patch](vscode-control/README.md#install). The screenshots use example data and contain no real API key.
+
+### 1. Connect Jev
+
+Sign in to Codex. When you first turn on a Jev integration, **Connect Jev** asks for a typesafe.ai API key. Test and save it here; keep it out of chat.
+
+<img src="docs/images/jev-connect.png" width="760" alt="Connect Jev screen beside the Codex sign-in screen, with an empty API key field">
+
+### 2. Choose what to filter
+
+Use the **jev** menu in the Codex chat box to choose regular tool output, test and build logs, or search results and file listings. All three start off. **Monitor** shows what Jev would remove; **Filter** shortens approved results.
+
+<img src="docs/images/jev-menu.png" width="620" alt="Jev menu in the Codex chat box with three integration switches">
+
+### 3. Adjust settings in Codex
+
+Open **Codex settings → Jev** to change the mode, review activity, manage the key, or open saved logs. Lower on the same page, you can adjust when each filter removes a line. Changes apply to the next tool result.
+
+<img src="docs/images/jev-settings-overview.png" width="760" alt="Codex Jev settings showing activity, API key controls, and log options">
+
+<img src="docs/images/jev-settings-filters.png" width="760" alt="Jev settings for filter mode and line removal thresholds">
+
+### 4. See what Jev kept
+
+The optional **Jev** panel beside Output and Terminal shows the latest decision. Blue lines were omitted; gold lines were kept. This example keeps 3 of 50 lines. When Jev shortens a result, Codex gets the kept text and a path to the complete original.
+
+<img src="docs/images/jev-panel.png" width="1000" alt="Jev panel showing 3 kept lines and 47 omitted lines from a synthetic 50-line result">
 
 ## More detail
 
-- [Key setup](docs/setup/setup_credentials.md) and [data handling](docs/architecture/design_data.md)
-- [Integration design](docs/architecture/design_integrations.md) and [verification](docs/development/development_verification.md)
-- [Test map](tests/README.md). The [2026-09-26 benchmark](docs/benchmarks/benchmark_live_2026-09-26.md) measured a previous implementation and does not measure this release.
+- [Installation and upgrades](docs/setup/setup_installation.md) · [API key setup](docs/setup/setup_credentials.md)
+- [What each filter handles](docs/architecture/design_integrations.md) · [Data handling and safeguards](docs/architecture/design_data.md)
+- [Verification and tests](docs/development/development_verification.md) · [Full benchmark results](docs/benchmarks/benchmark_live_2026-09-26.md)
