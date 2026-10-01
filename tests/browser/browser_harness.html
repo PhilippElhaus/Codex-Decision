@@ -34,6 +34,7 @@
     window.__jevHarnessLastSessionId = null;
     window.__jevHarnessHoldNextStatus = false;
     window.__jevHarnessHeldStatus = null;
+    window.__jevHarnessDropReplies = false;
     window.__jevHarnessSettingsRead = 0;
     window.__jevHarnessLastSettingsSave = null;
     window.__jevHarnessNeverDelete = false;
@@ -46,6 +47,7 @@
       calls += 1;
       window.__jevHarnessLastAction = request.action;
       window.__jevHarnessLastSessionId = request.sessionId;
+      if (window.__jevHarnessDropReplies) return;
       if (request.action === "settingsRead") window.__jevHarnessSettingsRead += 1;
       if (request.action === "settingsSave") window.__jevHarnessLastSettingsSave = request;
       if (request.action === "settingsSetNeverDeleteLogs" && !window.__jevHarnessFailNeverDelete) {
@@ -416,6 +418,30 @@
         tooltip.innerText.includes("Filtering is off for this session") &&
         getComputedStyle(tooltip.querySelector("#codex-jev-session-heading")).display === "none",
         "disabled filters show an explanation instead of an empty tooltip");
+      window.__jevHarnessDropReplies = true;
+      option.click();
+      check(option.disabled && option.getAttribute("aria-busy") === "true" &&
+        document.getElementById("codex-jev-menu-note").textContent === "Saving selection…",
+        "selection waits for acknowledgement instead of accepting duplicate clicks");
+      const actualNow = Date.now;
+      Date.now = () => actualNow() + 11000;
+      await until(() => tooltip.querySelector("#codex-jev-health-row strong").textContent === "Jev control unavailable",
+        "missing host reply times out visibly");
+      Date.now = actualNow;
+      check(button.style.color === "rgb(233, 148, 144)" && !option.disabled &&
+        document.getElementById("codex-jev-menu-note").textContent.includes("Reload VS Code") &&
+        getComputedStyle(retry).display !== "none",
+        "bridge timeout explains recovery and releases pending selection");
+      window.__jevHarnessDropReplies = false;
+      retry.click();
+      await until(() => button.style.color === "rgb(135, 205, 164)" && retry.style.display === "none",
+        "bridge reconnect restores controls");
+      option.click();
+      await until(() => option.getAttribute("aria-checked") === "true" && !option.disabled,
+        "selection works after reconnect");
+      option.click();
+      await until(() => option.getAttribute("aria-checked") === "false" && !option.disabled,
+        "selection can be disabled after reconnect");
       health = null;
       window.dispatchEvent(new Event("focus"));
       await until(() => button.style.color === "rgb(230, 188, 106)", "pending API check is amber");
@@ -749,6 +775,15 @@
       await until(() => window.__jevHarnessHeldStatus?.sessionId === "fixture-session",
         "hold an older reply in the same thread");
       const oldReply = window.__jevHarnessHeldStatus;
+      const beforeFreshStatus = calls;
+      await until(() => calls > beforeFreshStatus && button.style.color === "rgb(135, 205, 164)",
+        "a newer status arrives while an old request is held");
+      Date.now = () => actualNow() + 11000;
+      await pause(1100);
+      Date.now = actualNow;
+      check(button.style.color === "rgb(135, 205, 164)" &&
+        !document.getElementById("codex-jev-menu-note").textContent.includes("did not respond"),
+        "an obsolete status timeout cannot replace a newer healthy reply");
       await pause(300);
       window.dispatchEvent(new MessageEvent("message", { data: {
         type: "codex-jev-reply", id: oldReply.id,
@@ -766,8 +801,8 @@
       await until(() => document.getElementById("codex-jev-option").disabled &&
         button.style.color === "rgb(135, 205, 164)", "home view keeps API health without a thread");
       check(root.dataset.noSession === "true" &&
-        document.getElementById("codex-jev-menu-note").textContent === "Select none to turn Jev off.",
-        "home view has no thread notice");
+        document.getElementById("codex-jev-menu-note").textContent === "Open a local Codex thread to select integrations.",
+        "home view explains why session switches are unavailable");
       const homeTip = document.getElementById("codex-jev-tip");
       homeTip.style.display = "block";
       check(getComputedStyle(homeTip).display === "none", "home view suppresses the hover tooltip");

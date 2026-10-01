@@ -25,6 +25,9 @@
   let seenModel = false;
   let viewId = newViewId();
   let viewLocation = null;
+  let bridgeFault = null;
+  let bridgeWaitingSince = Date.now();
+  const requestTimeoutMs = 10000;
   const sentViews = new Map();
   const colors = { healthy: "#87cda4", failed: "#e99490", pending: "#e6bc6a" };
 
@@ -61,6 +64,8 @@
       retryRequestId = 0;
       keyRequestId = 0;
       externalRequestId = 0;
+      bridgeFault = null;
+      bridgeWaitingSince = Date.now();
       setupDismissed = false;
       state = { ...state, enabled: false, outputEnabled: false, testBuildEnabled: false,
         searchListingEnabled: false, needsKey: false, health: null, hookHealth: null,
@@ -76,10 +81,34 @@
     if (!api) return 0;
     const id = ++pending;
     const current = currentViewId();
-    sentViews.set(id, current);
+    sentViews.set(id, { viewId: current, action, feature, expires: Date.now() + requestTimeoutMs });
     if (sentViews.size > 50) sentViews.delete(sentViews.keys().next().value);
     api.postMessage({ type: "codex-jev", action, enabled, feature, focused: document.hasFocus() && document.visibilityState === "visible", ...(key === undefined ? {} : { key }), viewId: current, sessionId: sessionId(), expectsLocalSession: expectsLocalSession(), id });
     return id;
+  }
+
+  function expireRequests() {
+    const current = currentViewId();
+    let timedOut = bridgeWaitingSince !== null && Date.now() - bridgeWaitingSince >= requestTimeoutMs;
+    for (const [id, request] of sentViews) {
+      if (Date.now() < request.expires) continue;
+      sentViews.delete(id);
+      if (request.viewId !== current) continue;
+      if (request.action === "status" && id < lastAppliedReply) continue;
+      timedOut = true;
+      if (id === retryRequestId) retryRequestId = 0;
+      if (id === externalRequestId) externalRequestId = 0;
+      if (id === keyRequestId) {
+        keyRequestId = 0;
+        setup.querySelector("#codex-jev-test-key").disabled = false;
+        setup.querySelector("#codex-jev-save-key").disabled = false;
+        showKeyStatus("Jev controls did not respond. Try again.", false);
+      }
+    }
+    if (timedOut) {
+      bridgeFault = "Jev controls did not respond. Reload VS Code and retry.";
+      render();
+    }
   }
 
   function healthReason(reason) {
@@ -320,10 +349,17 @@
     const noSession = state.sessionPending ||
       state.configurationError === "Codex session could not be identified";
     root.dataset.noSession = String(noSession);
-    for (const selector of ["#codex-jev-option", "#codex-jev-test-build", "#codex-jev-search-listing"]) {
-      root.querySelector(selector).disabled = noSession;
+    const saving = new Set([...sentViews.values()]
+      .filter((request) => request.viewId === viewId && request.action === "setSelection")
+      .map((request) => request.feature));
+    for (const [selector, feature] of [["#codex-jev-option", "output"],
+      ["#codex-jev-test-build", "test_build"], ["#codex-jev-search-listing", "search_listing"]]) {
+      root.querySelector(selector).disabled = noSession || saving.has(feature);
+      root.querySelector(selector).setAttribute("aria-busy", String(saving.has(feature)));
     }
-    root.querySelector("#codex-jev-menu-note").textContent = "Select none to turn Jev off.";
+    root.querySelector("#codex-jev-menu-note").textContent = bridgeFault ||
+      (noSession ? "Open a local Codex thread to select integrations." :
+        saving.size ? "Saving selection…" : "Select none to turn Jev off.");
     const hook = state.hookHealth;
     const seen = Number(hook?.last_seen_ms) >= Number(state.viewStartedAt || Infinity);
     const versionMismatch = seen && hook.hook_version !== state.expectedHookVersion;
@@ -332,7 +368,7 @@
     const choiceKeptFull = seen && hook?.last_skip === "choice_kept_full_output" &&
       Number(hook.last_skip_ms || 0) >= Number(hook.last_success_ms || 0) &&
       Number(hook.last_skip_ms || 0) >= Number(state.viewStartedAt || Infinity);
-    const failed = state.health?.ok === false;
+    const failed = Boolean(bridgeFault) || state.health?.ok === false;
     const visual = failed ? "failed" : state.health?.ok === true ? "healthy" : "pending";
     button.style.color = colors[visual];
     root.dataset.observe = String(state.enabled && state.mode === "observe");
@@ -342,26 +378,26 @@
     root.querySelector("#codex-jev-option").setAttribute("aria-checked", String(state.outputEnabled));
     root.querySelector("#codex-jev-test-build").setAttribute("aria-checked", String(state.testBuildEnabled));
     root.querySelector("#codex-jev-search-listing").setAttribute("aria-checked", String(state.searchListingEnabled));
-    const status = state.health?.ok === false ? "Jev API unavailable" :
+    const status = bridgeFault ? "Jev control unavailable" : state.health?.ok === false ? "Jev API unavailable" :
       state.health?.ok === true ? "Jev API connected" : "Checking Jev API";
-    const checking = state.health?.ok !== true && state.health?.ok !== false;
+    const checking = !bridgeFault && state.health?.ok !== true && state.health?.ok !== false;
     root.querySelector("#codex-jev-tip").dataset.needsKey = String(needsSetup);
     const healthRow = root.querySelector("#codex-jev-health-row");
     healthRow.hidden = !failed && !checking && !needsSetup && !state.configurationError && !state.panelFault &&
       !hookFailed && !versionMismatch && !choiceKeptFull;
     healthRow.querySelector("strong").textContent = healthRow.hidden ? "" :
-      state.configurationError ? "Jev configuration error" : state.panelFault ? "Jev view unavailable" :
+      bridgeFault ? status : state.configurationError ? "Jev configuration error" : state.panelFault ? "Jev view unavailable" :
       versionMismatch ? "Jev hook version mismatch" : hookFailed ? "Jev hook failed" :
       needsSetup ? "Jev API key required" : status;
     const unavailable = failed || Boolean(state.configurationError || state.panelFault || hookFailed || versionMismatch);
     const reason = root.querySelector("#codex-jev-health-reason");
-    reason.textContent = (unavailable || choiceKeptFull) && !needsSetup ? `${state.configurationError || state.panelFault ||
+    reason.textContent = (unavailable || choiceKeptFull) && !needsSetup ? `${bridgeFault || state.configurationError || state.panelFault ||
       (versionMismatch ? "Update the Jev plugin and control together" :
         hookFailed ? (hook.fault || hook.last_error || "Tool output was left unchanged") :
         choiceKeptFull ? "Choice kept the latest output complete" : healthReason(state.health?.reason))}` : "";
     reason.style.display = (unavailable || choiceKeptFull) && !needsSetup ? "block" : "none";
     const retry = root.querySelector("#codex-jev-retry");
-    retry.style.display = !state.configurationError && (needsSetup || state.health?.ok === false) ? "inline-block" : "none";
+    retry.style.display = bridgeFault || (!state.configurationError && (needsSetup || state.health?.ok === false)) ? "inline-block" : "none";
     retry.disabled = Boolean(retryRequestId);
     retry.textContent = needsSetup ? "Connect" : retryRequestId ? "Checking…" : "Retry";
     const stats = state.stats || {};
@@ -600,7 +636,7 @@
       if (event.data?.type !== "codex-jev-reply") return;
       const sentView = sentViews.get(event.data.id);
       sentViews.delete(event.data.id);
-      if (!sentView || sentView !== currentViewId()) return;
+      if (!sentView || sentView.viewId !== currentViewId()) return;
       if (event.data.id === retryRequestId) retryRequestId = 0;
       if (event.data.id === externalRequestId) {
         externalRequestId = 0;
@@ -623,11 +659,14 @@
       if (event.data.id >= lastAppliedReply &&
           event.data.status && typeof event.data.status === "object") {
         lastAppliedReply = event.data.id;
+        bridgeWaitingSince = null;
+        bridgeFault = event.data.status.health?.reason === "BRIDGE_UNAVAILABLE"
+          ? "Jev controls are unavailable. Reload VS Code and retry." : null;
         state = event.data.status;
         render();
       }
     });
-    setInterval(() => { if (!retryRequestId) send("status"); }, 1000);
+    setInterval(() => { expireRequests(); if (!retryRequestId) send("status"); }, 1000);
     window.addEventListener("focus", () => send("status"));
     document.addEventListener("visibilitychange", () => send("status"));
     window.addEventListener("codex-jev-route", () => send("status"));

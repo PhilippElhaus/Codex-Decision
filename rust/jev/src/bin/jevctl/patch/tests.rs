@@ -112,7 +112,7 @@ fn bridge_fragments_publish_routes_and_validate_settings_messages() {
         let message = json!({"type":"codex-jev","action":"settingsSave","key":"",
                 "mode":"replace","linePolicy":{},"searchRelevance":{"guard_enabled":true,"relevant_max":relevant},
                 "logLimitMb":50,"neverDeleteLogs":false,"choiceGateEnabled":true});
-        let script = format!("let captured=null,handler=null;let e={{onDidReceiveMessage(f){{handler=f;return {{}}}},postMessage(){{}}}},qe={{commands:{{executeCommand(_,payload){{captured=payload;return Promise.resolve({{}})}}}}}},s={{markMessageReceived(){{}}}};{host}{{}} }});handler({message});setTimeout(()=>process.stdout.write(JSON.stringify(captured)),0);");
+        let script = format!("let captured=null,handler=null;let e={{onDidReceiveMessage(f){{handler=f;return {{}}}},postMessage(){{}}}},require=()=>({{commands:{{executeCommand(_,payload){{captured=payload;return Promise.resolve({{}})}}}}}}),s={{markMessageReceived(){{}}}};{host}{{}} }});handler({message});setTimeout(()=>process.stdout.write(JSON.stringify(captured)),0);");
         let output = Command::new("node").arg("-e").arg(script).output().unwrap();
         assert!(
             output.status.success(),
