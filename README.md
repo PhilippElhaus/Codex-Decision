@@ -4,7 +4,19 @@
 
 Codex Jev cuts repetitive lines from local tool output before Codex reads them. It keeps errors and useful details, and every shortened result points to a private copy of the complete original.
 
-**What you gain:** less log noise in the conversation, a way to inspect what was kept, and clear status when the filter has not run or has failed. In a synthetic 120-line build test, the current hook omits more than 100 routine lines. Savings on real tasks depend on the output and Jev's judgments.
+**What you gain:** less log noise in the conversation, a way to inspect what was kept, and clear status when the filter has not run or has failed. Savings depend on the output, the configured cutoffs, and Jev's judgments.
+
+## Release 0.8.1
+
+[Download the Linux x86_64 plugin, VS Code control 0.7.5, and SHA-256 checksums](https://github.com/PhilippElhaus/Codex-Jev/releases/tag/v0.8.1).
+
+- **Safer writes:** private atomic files and process locks prevent partial records and lost settings when sessions run together.
+- **Bounded work:** input limits and a 45-second hook budget keep oversized or failed requests from blocking the task; full output stays available.
+- **Smaller binaries:** removed dependencies and stripped symbols reduce the two shipped binaries by 45%.
+- **Less API work:** simpler questions and batch packing used 27.5% fewer Jev input tokens on the reviewed build fixture.
+- **Consistent controls:** one settings contract prevents Rust and VS Code defaults from drifting; the panel follows the focused thread and usage totals count requests correctly.
+
+The default line cutoffs remain 95% minimum confidence to omit and 5% maximum need for exact text. Existing secret checks and log retention settings remain unchanged.
 
 ## Get started
 
@@ -35,7 +47,7 @@ Open **Codex settings → Jev** at any time to choose **Monitor** (show decision
 
 <img src="docs/images/jev-settings-overview.png" width="760" alt="Codex Jev settings showing activity, API key controls, and log options">
 
-<img src="docs/images/jev-settings-filters.png" width="760" alt="Jev settings for filter mode and line removal thresholds">
+<img src="docs/images/jev-settings-filters.png" width="760" alt="Jev settings in Filter mode with the default 95% omission and 5% exact-text thresholds on all three filters">
 
 ### 4. Inspect a result
 
@@ -44,6 +56,24 @@ The **Jev** panel shows the latest decision from this session. Blue lines were c
 <img src="docs/images/jev-panel.png" width="1000" alt="Jev panel showing 3 kept lines and 47 omitted lines from a synthetic 50-line result">
 
 The composer indicator is **green** when a small Jev API check succeeds and **red** when the key or API check fails. It stays amber while the check is pending. A hook error appears in the activity tooltip during a thread. On the home screen, the tooltip stays hidden and the indicator still shows API health.
+
+## Jev in action
+
+The [live demo](docs/development/quality_demo.md) sent eight synthetic fixtures to Jev 1.13.0 with a reviewed **70% omission / 25% exact-text** trial. It kept all 224 required lines, including all 214 holdout lines. Saved originals matched the source byte for byte.
+
+| Example | Lines omitted / seen | Evidence kept |
+| --- | ---: | --- |
+| Build failure | 116 / 125 | Version and diagnostics |
+| Failing tests | 119 / 124 | Expected/actual values and failure total |
+| Current timeout search | 44 / 47 | Current paths and values |
+| Every configuration constant | 0 / 90 | Every value |
+| Every latency measurement | 0 / 60 | Every measurement |
+
+The image below replays the final batch from the failing-test demo in the real panel. Four diagnostic lines are protected outside this batch; Jev also keeps `actual: 6000`.
+
+<img src="docs/images/jev-demo-tests.png" width="1000" alt="Reviewed failing-test demo in the real Jev panel: 119 of 124 lines cut, 4 protected, and actual: 6000 kept in the final batch">
+
+These results measure evidence retention on this corpus. The unchanged 95/5 defaults omitted no lines when the same judgments were replayed. Review your workload before changing cutoffs.
 
 ![Editable architecture diagram showing the Codex tool, Rust hook, local checks, Jev Choice and line checks, session data, VS Code control, and TypeSafe API](docs/images/jev-architecture.svg)
 

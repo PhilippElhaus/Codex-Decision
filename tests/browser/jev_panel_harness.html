@@ -27,6 +27,7 @@
   <script>if (location.search.includes("light")) document.body.classList.add("light");</script>
   <main id="app" aria-live="polite"></main>
   <script src="../../vscode-control/webview/jev-panel.js"></script>
+  <script src="../fixtures/reviewed-test-failure-panel.js"></script>
   <script>
     const row = (line, excerpt, action, canOmit, exactNeeded, taskRelevant, reason) => {
       const resistance = 1 - canOmit;
@@ -49,6 +50,7 @@
       totals: { seen: 12, judged: 6, kept: 10, omitted: 2, protected: 0, unjudged: 6, requests: 1 },
     };
     const query = new URLSearchParams(location.search);
+    if (query.has("reviewed")) Object.assign(decision, window.JEV_REVIEWED_TEST_FAILURE);
     if (query.has("fifty") || query.has("dense")) {
       const count = query.has("dense") ? 250 : 50;
       const kept = new Set(count === 250 ? [21, 74, 126, 181, 230] : [8, 25, 42]);

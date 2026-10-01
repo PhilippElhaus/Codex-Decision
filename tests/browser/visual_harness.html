@@ -59,8 +59,8 @@
           search_relevance: { guard_enabled: false, relevant_max: 5 }, choice_gate_enabled: true },
         config: { mode: "replace", log_limit_mb: 50, never_delete_logs: true, choice_gate_enabled: true,
           search_relevance: { guard_enabled: false, relevant_max: 5 },
-          line_policy: { output: { omit_min: 90, exact_max: 10 },
-            test_build: { omit_min: 95, exact_max: 5 }, search_listing: { omit_min: 97, exact_max: 3 } } } } :
+          line_policy: { output: { omit_min: 95, exact_max: 5 },
+            test_build: { omit_min: 95, exact_max: 5 }, search_listing: { omit_min: 95, exact_max: 5 } } } } :
         request.action === "settingsTest" ? { action: "tested", result: { ok: true, model: "jev-1.13.0" } } : undefined;
       queueMicrotask(() => window.dispatchEvent(new MessageEvent("message", { data: {
         type: "codex-jev-reply", id: request.id,

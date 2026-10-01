@@ -4,6 +4,8 @@ On 2026-10-01, Jev 1.13.0 evaluated eight [synthetic fixtures](../../tests/fixtu
 
 The reviewed 70% omission / 25% exact-text trial retained all 224 required lines, including all 214 required holdout lines. It shortened five results and kept three results complete. Every saved original matched the source byte for byte. These labels measure evidence retention; they do not establish downstream task success or a general error rate. The conservative 95/5 defaults remain unchanged, and their replay omitted no lines in this corpus.
 
+The README panel image replays the final failing-test batch with the recorded actions and probabilities in the real webview. Its [key-free fixture](../../tests/fixtures/reviewed-test-failure-panel.js) contains only synthetic line excerpts and panel data. Run `python3 vscode-control/scripts/capture_docs.py` to regenerate the screenshots, including settings at the default 95/5 cutoffs.
+
 | Case | Lines omitted / seen | Visible bytes saved | Outcome |
 | --- | ---: | ---: | --- |
 | Build failure | 116 / 125 | 2,781 | Version and diagnostics kept |
