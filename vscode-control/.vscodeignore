@@ -3,5 +3,4 @@
 **/*.pyc
 scripts/**
 tests/**
-composer-preview.html
 patch-assets/**

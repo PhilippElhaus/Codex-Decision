@@ -24,8 +24,8 @@ For the optional Windows VS Code control, build and install its VSIX from WSL:
 ```bash
 cd vscode-control
 mkdir -p ../.local/submission
-npx @vscode/vsce package --no-dependencies --out ../.local/submission/codex-jev-control-0.7.6.vsix
-code --install-extension "$(wslpath -w ../.local/submission/codex-jev-control-0.7.6.vsix)" --force
+../scripts/build_control.sh
+code --install-extension "$(wslpath -w ../.local/submission/codex-jev-control-0.7.7.vsix)" --force
 ```
 
 Set `codexJev.dataDirectory` to the installed plugin's absolute `PLUGIN_DATA` directory. Apply the [version-pinned Codex composer patch](../../vscode-control/README.md#install), then reload VS Code. The control needs the same data directory as the hook. Its pinned bridge reads the active thread from Codex's internal router, which can change while the webview URL stays fixed. The home screen has no thread yet; its indicator still checks API health and its settings page remains available. An unreadable local thread ID cannot change another session's switches.
@@ -35,3 +35,5 @@ A new local thread in the VS Code control starts with all three filters selected
 CLI users without the VS Code control can opt into installation-wide filtering by adding `"scope": "global"` to a schema-2 `PLUGIN_DATA/config.json`, then enabling the desired routes. [config.example.json](../../config.example.json) shows the fields. A session config, when present, overrides this global choice for that session. This global opt-in deliberately affects every session that has no override.
 
 If the indicator is red, test the key and API connection in settings. If the API is green but no decisions appear after eligible tool output, check `/hooks`, start a new thread, and confirm that the selected switch matches that tool's route. A failed hook keeps the original tool result visible. [Verification](../development/development_verification.md) gives a repeatable test.
+
+Windows controls require `python3` in the selected WSL distribution and apply Linux permissions through WSL for UNC paths: directories use `700` and configuration files use `600`. Existing control-created session directories are repaired when opened. Otherwise, a directory created as `755` causes the hook to skip before it can record activity. The control reports missing hook activity after one minute without a receipt; run a local command to distinguish an idle thread from a hook that is not running. Invalid configuration and shared settings also produce a session hook error.

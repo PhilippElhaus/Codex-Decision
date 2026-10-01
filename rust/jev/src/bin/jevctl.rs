@@ -59,15 +59,10 @@ fn set_key(data_dir: &Path) -> Result<(), String> {
 }
 
 fn package(root: &Path) -> Result<(), String> {
-    if !root
-        .file_name()
-        .and_then(|name| name.to_str())
-        .is_some_and(|name| name.eq_ignore_ascii_case("codex-jev"))
-        || root.is_symlink()
-        || !root.is_dir()
-    {
-        return Err("package root must be the canonical codex-jev directory".into());
+    if !root.is_absolute() || root.is_symlink() || !root.is_dir() {
+        return Err("package root must be an absolute checkout directory".into());
     }
+    codex_jev::check_ancestors(root)?;
     let files = [
         ".codex-plugin/plugin.json",
         "skills/jev-output/SKILL.md",
@@ -106,6 +101,13 @@ fn package(root: &Path) -> Result<(), String> {
     {
         return Err("invalid package manifest".into());
     }
+    for name in ["jev-hook", "jevctl"] {
+        release::check_binary(
+            &root.join("hooks/bin/linux-x86_64").join(name),
+            name,
+            version.split('+').next().ok_or("invalid package version")?,
+        )?;
+    }
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -122,6 +124,7 @@ fn package(root: &Path) -> Result<(), String> {
         }
     }
     let destination_dir = root.join(".local/submission");
+    codex_jev::check_ancestors(&destination_dir)?;
     fs::create_dir_all(&destination_dir).map_err(|error| error.to_string())?;
     let destination = destination_dir.join(format!("codex-jev-{version}.zip"));
     if destination.exists() {
@@ -532,6 +535,10 @@ fn evaluate_quality(cases_path: &Path) -> Result<(), String> {
 
 fn run() -> Result<(), String> {
     let args: Vec<String> = std::env::args().collect();
+    if args.len() == 2 && args[1] == "--version" {
+        println!("jevctl {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
     if args.len() == 9
         && args[1] == "patch-webview"
         && args[3] == "--root"

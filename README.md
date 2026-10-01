@@ -6,15 +6,15 @@ Codex Jev cuts repetitive lines from local tool output before Codex reads them. 
 
 **What you gain:** less log noise in the conversation, a way to inspect what was kept, and clear status when the filter has not run or has failed. Savings depend on the output, the configured cutoffs, and Jev's judgments.
 
-## Release 0.8.1
+## Version 0.8.2
 
-[Download the Linux x86_64 plugin, VS Code control 0.7.5, and SHA-256 checksums](https://github.com/PhilippElhaus/Codex-Jev/releases/tag/v0.8.1).
+[Build the Linux x86_64 plugin and VS Code control 0.7.7](docs/setup/setup_installation.md), or download the [previous packaged release 0.8.1](https://github.com/PhilippElhaus/Codex-Jev/releases/tag/v0.8.1).
 
-- **Safer writes:** private atomic files and process locks prevent partial records and lost settings when sessions run together.
-- **Bounded work:** input limits and a 45-second hook budget keep oversized or failed requests from blocking the task; full output stays available.
-- **Smaller binaries:** removed dependencies and stripped symbols reduce the two shipped binaries by 45%.
-- **Less API work:** simpler questions and batch packing used 27.5% fewer Jev input tokens on the reviewed build fixture.
-- **Consistent controls:** one settings contract prevents Rust and VS Code defaults from drifting; the panel follows the focused thread and usage totals count requests correctly.
+- **Working Windows/WSL sessions:** the control applies private Linux permissions through UNC paths and repairs older session folders. Long turns retain the user task needed for filtering. Missing hook activity and configuration errors are visible.
+- **Recoverable settings:** missing host replies release the settings controls after ten seconds and show how to retry.
+- **Accurate activity:** log compaction preserves this view's counters and consumes new events once; fallback latency weights every API request.
+- **Focused hook modules:** routing, API requests, storage, telemetry, snapshots, and the filtering pipeline have separate source files.
+- **Checked packages:** release builds verify binary versions, Linux x86_64 targets, exact archive contents, and source bytes. CI also runs the real webviews in Chromium.
 
 The default line cutoffs remain 95% minimum confidence to omit and 5% maximum need for exact text. Existing secret checks and log retention settings remain unchanged.
 

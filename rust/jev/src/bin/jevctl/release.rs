@@ -1,6 +1,7 @@
 use chrono::Utc;
 use serde_json::Value;
 use std::fs;
+use std::io::Read;
 use std::path::Path;
 use std::process::Command;
 
@@ -48,10 +49,31 @@ pub fn check_versions(root: &Path) -> Result<(), String> {
     let control_version = control["codexJevHookVersion"]
         .as_str()
         .ok_or("missing control hook version")?;
-    if plugin.split('+').next() != Some(hook) || control_version != hook {
+    if plugin.split('+').next() != Some(hook)
+        || control_version != hook
+        || hook != env!("CARGO_PKG_VERSION")
+    {
         return Err("hook, plugin, and VS Code control versions differ".into());
     }
     println!("Codex Jev hook version {hook} is consistent.");
+    Ok(())
+}
+
+pub fn check_binary(path: &Path, name: &str, version: &str) -> Result<(), String> {
+    let mut header = [0u8; 64];
+    fs::File::open(path)
+        .and_then(|mut file| file.read_exact(&mut header))
+        .map_err(|_| format!("invalid {name} binary"))?;
+    if &header[..6] != b"\x7fELF\x02\x01" || header[18..20] != [62, 0] {
+        return Err(format!("{name} must be a Linux x86_64 ELF binary"));
+    }
+    let result = Command::new(path)
+        .arg("--version")
+        .output()
+        .map_err(|error| error.to_string())?;
+    if !result.status.success() || result.stdout != format!("{name} {version}\n").as_bytes() {
+        return Err(format!("{name} binary version differs from package"));
+    }
     Ok(())
 }
 

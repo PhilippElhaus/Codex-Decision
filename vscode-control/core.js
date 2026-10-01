@@ -8,6 +8,8 @@ const path = require("node:path");
 const { execFile } = require("node:child_process");
 const { promisify } = require("node:util");
 const runFile = promisify(execFile);
+const { restrictWslPath, wslLocation } = require("./private-paths");
+const securedWslPaths = new Map();
 const JEV_ENDPOINT = "https://api.typesafe.ai/v1/systemone";
 const { defaults, validate } = require("./schema");
 const DEFAULT_LINE_POLICY = Object.freeze(defaults("config").line_policy);
@@ -62,6 +64,7 @@ async function validateSessionPath(directory) {
 async function withWriteLock(directory, operation) {
   await validateSessionPath(directory);
   await fs.mkdir(directory, { recursive: true, mode: 0o700 });
+  await secureWslDirectories(directory);
   await validateSessionPath(directory);
   const lock = path.join(directory, ".jev-write.lock");
   const deadline = performance.now() + 2000;
@@ -81,6 +84,26 @@ async function withWriteLock(directory, operation) {
   finally { await fs.rmdir(lock); }
 }
 
+async function secureWslDirectories(directory) {
+  await validateDirectoryPath(directory);
+  const parent = path.dirname(directory);
+  const folders = path.basename(parent) === "sessions" ? [path.dirname(parent), parent, directory] : [directory];
+  for (const folder of folders) await secureExistingWslPath(folder, true);
+}
+
+async function secureExistingWslPath(filename, directory) {
+  if (process.platform !== "win32" || !wslLocation(filename)) return;
+  const details = await fs.lstat(filename);
+  if (details.isSymbolicLink() || (directory ? !details.isDirectory() : !details.isFile())) {
+    throw new Error("Unsafe Jev state path");
+  }
+  const identity = `${details.dev}:${details.ino}:${details.birthtimeMs}:${directory ? "" : `${details.mtimeMs}:${details.size}`}`;
+  if (securedWslPaths.get(filename) === identity) return;
+  await restrictWslPath(filename, directory);
+  if (securedWslPaths.size >= 1024) securedWslPaths.delete(securedWslPaths.keys().next().value);
+  securedWslPaths.set(filename, identity);
+}
+
 async function atomicWrite(target, content) {
   const temporary = path.join(path.dirname(target), `.jev-${crypto.randomUUID()}.tmp`);
   let owned = false;
@@ -88,6 +111,7 @@ async function atomicWrite(target, content) {
     const file = await fs.open(temporary, "wx", 0o600);
     owned = true;
     try { await file.writeFile(content); await file.sync(); } finally { await file.close(); }
+    await restrictWslPath(temporary, false);
     await fs.rename(temporary, target);
   } finally {
     if (owned) await fs.rm(temporary, { force: true });
@@ -174,6 +198,7 @@ async function updateConfig(directory, updates, createOnly) {
   if (createOnly) {
     try {
       await fs.writeFile(target, JSON.stringify(config, null, 2) + "\n", { flag: "wx", mode: 0o600 });
+      await restrictWslPath(target, false);
       return config;
     } catch (error) {
       if (error.code === "EEXIST") return readConfig(directory);
@@ -190,6 +215,8 @@ async function ensureSessionDefaults(directory) {
   }
   try {
     await fs.lstat(path.join(directory, "config.json"));
+    await secureWslDirectories(directory);
+    await secureExistingWslPath(path.join(directory, "config.json"), false);
     return readConfig(directory);
   } catch (error) {
     if (error.code !== "ENOENT") throw error;
@@ -321,26 +348,85 @@ async function readEventOffset(directory) {
   }
 }
 
-async function readEventsSince(directory, offset) {
+async function eventCursor(file, offset) {
+  const details = await file.stat();
+  if (!details.isFile()) throw new Error("Unsafe Jev activity index");
+  const length = Math.min(offset, 8192);
+  const buffer = Buffer.alloc(length);
+  const { bytesRead } = await file.read(buffer, 0, length, offset - length);
+  const tail = buffer.subarray(0, bytesRead);
+  const previousLine = tail.lastIndexOf(10, tail.length - (tail.at(-1) === 10 ? 2 : 1));
+  // Include the record ID, not only its tail: two different completion
+  // events can end with identical counters or repeated fixture padding.
+  const anchor = previousLine >= 0 || offset <= length ? tail.subarray(previousLine + 1) : Buffer.alloc(0);
+  return { offset, identity: `${details.dev}:${details.ino}:${details.birthtimeMs}`,
+    anchor: anchor.toString("hex") };
+}
+
+async function readEventCursor(directory) {
   let file;
   try {
-    file = await fs.open(await activityLogPath(directory), "r");
+    file = await fs.open(await activityLogPath(directory), constants.O_RDONLY | (constants.O_NOFOLLOW || 0));
+    return await eventCursor(file, (await file.stat()).size);
   } catch (error) {
-    if (error.code === "ENOENT") return { events: [], offset: 0, reset: offset > 0 };
+    if (error.code === "ENOENT") return { offset: 0, identity: null, anchor: "" };
+    throw error;
+  } finally { await file?.close(); }
+}
+
+async function readEventsSince(directory, position) {
+  const tracked = typeof position === "object" && position !== null;
+  let offset = tracked ? position.offset : position;
+  const result = async (events, reset, file) => ({ events, offset, reset,
+    ...(tracked ? { cursor: file ? await eventCursor(file, offset) : { ...position, offset } } : {}) });
+  let file;
+  try {
+    file = await fs.open(await activityLogPath(directory), constants.O_RDONLY | (constants.O_NOFOLLOW || 0));
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      const reset = offset > 0;
+      offset = 0;
+      return result([], reset);
+    }
     throw error;
   }
   try {
-    const { size } = await file.stat();
-    if (offset < 0 || offset > size) return { events: [], offset: size, reset: true };
+    const details = await file.stat();
+    if (!details.isFile()) throw new Error("Unsafe Jev activity index");
+    const { size } = details;
+    let reset = offset < 0 || offset > size;
+    if (tracked) {
+      const identity = `${details.dev}:${details.ino}:${details.birthtimeMs}`;
+      const anchor = Buffer.from(position.anchor, "hex");
+      if (position.identity !== null && position.identity !== identity) reset = true;
+      if (!reset && anchor.length) {
+        const previous = Buffer.alloc(anchor.length);
+        const { bytesRead } = await file.read(previous, 0, anchor.length, Math.max(0, offset - anchor.length));
+        if (bytesRead !== anchor.length || !previous.equals(anchor)) reset = true;
+      }
+      if (reset) {
+        // The hook retains at most a 1 MiB tail on compaction. Resume after
+        // the last consumed bytes when they remain in that tail, preserving
+        // this view's counters and avoiding duplicate retained events.
+        const retained = Buffer.alloc(Math.min(size, 1_048_576));
+        const { bytesRead } = await file.read(retained, 0, retained.length, 0);
+        const found = anchor.length ? retained.subarray(0, bytesRead).lastIndexOf(anchor) : -1;
+        offset = found >= 0 ? found + anchor.length : 0;
+      }
+    } else if (reset) {
+      offset = size;
+      return await result([], true, file);
+    }
     const length = Math.min(size - offset, 262_144);
-    if (!length) return { events: [], offset, reset: false };
+    if (!length) return await result([], reset, file);
     const buffer = Buffer.alloc(length);
     const { bytesRead } = await file.read(buffer, 0, length, offset);
     const end = buffer.subarray(0, bytesRead).lastIndexOf(10);
-    if (end < 0) return { events: [], offset, reset: false };
+    if (end < 0) return await result([], reset, file);
     const complete = buffer.subarray(0, end + 1);
     const events = complete.toString("utf8").split("\n").map(parseLogLine).filter(Boolean);
-    return { events, offset: offset + complete.length, reset: false };
+    offset += complete.length;
+    return await result(events, reset, file);
   } finally {
     await file.close();
   }
@@ -394,14 +480,17 @@ async function readLifetimeStats(directory) {
       if (!event) continue;
       if (event.status === "calling") totals.calls += 1;
       else totals.calls += event.requests;
+      if ((isJevOutcome(event) || event.reason === "choice_kept_full_output") &&
+          Number.isFinite(event.elapsed_ms) && event.elapsed_ms > 0) {
+        // Legacy calling/outcome pairs represent one request. Current completion
+        // events contain the total elapsed time for all requests in the result.
+        timed += event.requests || 1;
+        elapsedMs += event.elapsed_ms;
+      }
       if (!isJevOutcome(event)) continue;
       totals.completed += 1;
       if (event.status === "replace") totals.replaced += 1;
       totals.savedChars += savedCharacters(event);
-      if (Number.isFinite(event.elapsed_ms) && event.elapsed_ms > 0) {
-        timed += 1;
-        elapsedMs += event.elapsed_ms;
-      }
     }
   } finally {
     lines.close();
@@ -600,7 +689,7 @@ module.exports = {
   completeSearchRelevance, DEFAULT_SEARCH_RELEVANCE,
   decisionSummary, defaultDataDirectory, estimateTokensSaved,
   isJevOutcome, outcomeLine, parseHealthOutput, readConfig,
-  readApiKey, readEventOffset, readEventsSince, readLifetimeStats,
+  readApiKey, readEventOffset, readEventCursor, readEventsSince, readLifetimeStats,
   savedCharacters, writeApiKey, writeSelection,
   ensureSessionDefaults,
   DEFAULT_SETTINGS, readGlobalSettings, writeGlobalSettings, readInstallationStats,

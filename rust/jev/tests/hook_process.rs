@@ -18,6 +18,46 @@ fn scoped(data: &Path, session: &str) -> PathBuf {
 }
 
 #[test]
+fn invalid_session_configuration_records_an_actionable_hook_error() {
+    let root = tempfile::tempdir().unwrap();
+    let data = root.path().join("data");
+    let session = scoped(&data, "invalid-settings");
+    for folder in [&data, &data.join("sessions"), &session] {
+        fs::create_dir(folder).unwrap();
+        fs::set_permissions(folder, fs::Permissions::from_mode(0o700)).unwrap();
+    }
+    fs::write(session.join("config.json"), "{invalid").unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_jev-hook"))
+        .env("PLUGIN_DATA", &data)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(
+            json!({"session_id":"invalid-settings"})
+                .to_string()
+                .as_bytes(),
+        )
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success());
+    assert_eq!(
+        serde_json::from_slice::<Value>(&output.stdout).unwrap(),
+        json!({})
+    );
+    let health: Value =
+        serde_json::from_slice(&fs::read(session.join("logs/hook-health.json")).unwrap()).unwrap();
+    assert_eq!(health["last_error"], "invalid config");
+    assert_eq!(health["last_error_ms"], health["last_seen_ms"]);
+    assert!(!session.join("stats.json").exists());
+}
+
+#[test]
 fn linked_session_directory_fails_open_and_reports_the_problem() {
     let root = tempfile::tempdir().unwrap();
     let data = root.path().join("data");

@@ -1,12 +1,10 @@
-use super::bridge::{image_bridge, marketplace_bridge, wslpath};
+use super::bridge::{image_bridge, marketplace_bridge, Bridges};
 use super::lifecycle::{apply, restore, update};
 use super::*;
 
 #[test]
 fn pinned_patch_applies_updates_rejects_tampering_and_restores() {
-    if image_bridge().is_err() {
-        return;
-    }
+    let bridges = fixture_bridges();
     let directory = tempfile::tempdir().unwrap();
     let root = directory.path().join(format!("openai.chatgpt-{VERSION}"));
     let backup = directory.path().join("rollback");
@@ -28,7 +26,7 @@ fn pinned_patch_applies_updates_rejects_tampering_and_restores() {
         fs::create_dir_all(target.parent().unwrap()).unwrap();
         fs::write(target, bytes).unwrap();
     }
-    apply(&repo, &root, &backup, &spec).unwrap();
+    apply(&repo, &root, &backup, &spec, &bridges).unwrap();
     let first = exact(&backup, "manifest.json").unwrap();
     assert!(as_text(&exact(&root, HOST).unwrap())
         .unwrap()
@@ -40,14 +38,14 @@ fn pinned_patch_applies_updates_rejects_tampering_and_restores() {
         exact(&root, CONTROL).unwrap(),
         exact(&repo, "vscode-control/webview/jev-control.js").unwrap()
     );
-    update(&repo, &root, &backup, &spec).unwrap();
+    update(&repo, &root, &backup, &spec, &bridges).unwrap();
     assert_eq!(first, exact(&backup, "manifest.json").unwrap());
     let host = root.join(HOST);
     fs::write(&host, "tampered").unwrap();
-    assert!(update(&repo, &root, &backup, &spec).is_err());
+    assert!(update(&repo, &root, &backup, &spec, &bridges).is_err());
     fs::write(
         &host,
-        changed(&repo, &source, &spec).unwrap()[HOST].as_slice(),
+        changed(&repo, &source, &spec, &bridges).unwrap()[HOST].as_slice(),
     )
     .unwrap();
     restore(&root, &backup, &spec).unwrap();
@@ -130,10 +128,9 @@ fn bridge_fragments_publish_routes_and_validate_settings_messages() {
 
 #[test]
 fn wsl_bridges_rewrite_only_owned_paths() {
-    let Ok(image) = image_bridge() else {
-        return;
-    };
-    let home = std::env::var("HOME").unwrap();
+    let bridges = fixture_bridges();
+    let image = bridges.image;
+    let home = "/home/fixture";
     for (incoming, should_rewrite) in [
         (format!("{home}/plugins/codex-jev/assets/icon.png"), true),
         (
@@ -152,14 +149,14 @@ fn wsl_bridges_rewrite_only_owned_paths() {
         let result = String::from_utf8(output.stdout).unwrap();
         assert_eq!(result != incoming, should_rewrite);
     }
-    let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let fragment = marketplace_bridge(&repo);
-    if fragment.is_empty() {
-        return;
-    }
-    let marketplace = PathBuf::from(home).join(".agents/plugins/marketplace.json");
-    let windows = wslpath(&marketplace).unwrap();
-    for (name, should_rewrite) in [("codex-jev", true), ("unrelated", false)] {
+    let fragment = bridges.marketplace;
+    assert!(!fragment.is_empty());
+    let windows = r"\\wsl.localhost\Fixture\home\fixture\.agents\plugins\marketplace.json";
+    for (name, should_rewrite) in [
+        ("codex-jev", true),
+        ("codex-chime", true),
+        ("unrelated", false),
+    ] {
         let message = json!({"type":"mcp-request","request":{"method":"plugin/read",
                 "params":{"marketplacePath":windows,"pluginName":name}}});
         let script = format!(
@@ -174,4 +171,36 @@ fn wsl_bridges_rewrite_only_owned_paths() {
         let result = String::from_utf8(output.stdout).unwrap();
         assert_eq!(result != windows, should_rewrite);
     }
+}
+
+fn fixture_bridges() -> Bridges {
+    let marketplace = Path::new("/home/fixture/.agents/plugins/marketplace.json");
+    Bridges {
+        image: image_bridge("/home/fixture", r"\\wsl.localhost\Fixture\").unwrap(),
+        marketplace: marketplace_bridge(
+            marketplace,
+            br#"{"plugins":[{"name":"codex-jev"},{"name":"codex-chime"},{"name":"unrelated"}]}"#,
+            r"\\wsl.localhost\Fixture\home\fixture\.agents\plugins\marketplace.json",
+            Some("Fixture"),
+        ),
+    }
+}
+
+#[test]
+fn invalid_bridge_paths_never_expand_rewrites() {
+    assert!(image_bridge("/home/fixture", r"C:\").is_err());
+    assert!(marketplace_bridge(
+        Path::new("relative.json"),
+        br#"{"plugins":[{"name":"codex-jev"}]}"#,
+        r"C:\marketplace.json",
+        None
+    )
+    .is_empty());
+    assert!(marketplace_bridge(
+        Path::new("/fixture.json"),
+        br#"{"plugins":[{"name":"unrelated"}]}"#,
+        r"C:\marketplace.json",
+        None
+    )
+    .is_empty());
 }

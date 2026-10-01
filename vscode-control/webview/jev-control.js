@@ -368,10 +368,16 @@
     const choiceKeptFull = seen && hook?.last_skip === "choice_kept_full_output" &&
       Number(hook.last_skip_ms || 0) >= Number(hook.last_success_ms || 0) &&
       Number(hook.last_skip_ms || 0) >= Number(state.viewStartedAt || Infinity);
+    const hookWaiting = state.enabled && !noSession && !seen &&
+      Date.now() - Number(state.viewStartedAt || Date.now()) >= 60_000;
     const failed = Boolean(bridgeFault) || state.health?.ok === false;
     const visual = failed ? "failed" : state.health?.ok === true ? "healthy" : "pending";
     button.style.color = colors[visual];
-    root.dataset.observe = String(state.enabled && state.mode === "observe");
+    const observe = String(state.enabled && state.mode === "observe");
+    if (root.dataset.observe !== observe) {
+      root.dataset.observe = observe;
+      schedulePosition();
+    }
     button.setAttribute("aria-expanded", String(menuOpen));
     root.dataset.menu = String(menuOpen);
     root.querySelector("#codex-jev-menu").dataset.open = String(menuOpen);
@@ -384,18 +390,20 @@
     root.querySelector("#codex-jev-tip").dataset.needsKey = String(needsSetup);
     const healthRow = root.querySelector("#codex-jev-health-row");
     healthRow.hidden = !failed && !checking && !needsSetup && !state.configurationError && !state.panelFault &&
-      !hookFailed && !versionMismatch && !choiceKeptFull;
+      !hookFailed && !versionMismatch && !choiceKeptFull && !hookWaiting;
     healthRow.querySelector("strong").textContent = healthRow.hidden ? "" :
       bridgeFault ? status : state.configurationError ? "Jev configuration error" : state.panelFault ? "Jev view unavailable" :
       versionMismatch ? "Jev hook version mismatch" : hookFailed ? "Jev hook failed" :
+      hookWaiting && !failed && !checking && !needsSetup ? "No Jev hook activity" :
       needsSetup ? "Jev API key required" : status;
     const unavailable = failed || Boolean(state.configurationError || state.panelFault || hookFailed || versionMismatch);
     const reason = root.querySelector("#codex-jev-health-reason");
-    reason.textContent = (unavailable || choiceKeptFull) && !needsSetup ? `${bridgeFault || state.configurationError || state.panelFault ||
+    reason.textContent = (unavailable || choiceKeptFull || hookWaiting) && !needsSetup ? `${bridgeFault || state.configurationError || state.panelFault ||
       (versionMismatch ? "Update the Jev plugin and control together" :
         hookFailed ? (hook.fault || hook.last_error || "Tool output was left unchanged") :
-        choiceKeptFull ? "Choice kept the latest output complete" : healthReason(state.health?.reason))}` : "";
-    reason.style.display = (unavailable || choiceKeptFull) && !needsSetup ? "block" : "none";
+        choiceKeptFull ? "Choice kept the latest output complete" :
+          hookWaiting && !failed && !checking ? "Run a local command. If activity stays empty, check /hooks and reload VS Code." : healthReason(state.health?.reason))}` : "";
+    reason.style.display = (unavailable || choiceKeptFull || hookWaiting) && !needsSetup ? "block" : "none";
     const retry = root.querySelector("#codex-jev-retry");
     retry.style.display = bridgeFault || (!state.configurationError && (needsSetup || state.health?.ok === false)) ? "inline-block" : "none";
     retry.disabled = Boolean(retryRequestId);
@@ -604,11 +612,12 @@
       (compactAtWidth > 0 && paneWidth <= compactAtWidth + 16));
     const width = button.getBoundingClientRect().width;
     const fits = available >= width;
-    const idealLeft = fits ? rightEdge - width : leftEdge + (available - width) / 2;
+    const idealLeft = rightEdge - width;
     const buttonLeft = Math.max(12, Math.min(idealLeft, window.innerWidth - width - 12));
     item.style.left = "auto";
     item.style.right = `${Math.round(window.innerWidth - buttonLeft - width)}px`;
-    item.style.top = `${Math.round(anchor.rect.top + anchor.rect.height / 2 - button.getBoundingClientRect().height / 2)}px`;
+    const rowTop = anchor.rect.top + anchor.rect.height / 2 - button.getBoundingClientRect().height / 2;
+    item.style.top = `${Math.round(fits ? rowTop : Math.min(anchor.rect.top, model?.rect.top ?? anchor.rect.top) - buttonHeight - 8)}px`;
     alignPopup(item.querySelector("#codex-jev-menu"), 296, buttonLeft, buttonLeft + width);
     alignPopup(item.querySelector("#codex-jev-tip"), state.needsKey ? 252 : 420, buttonLeft, buttonLeft + width);
     item.style.visibility = "";

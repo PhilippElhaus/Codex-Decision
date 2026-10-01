@@ -66,7 +66,13 @@ fn rollback(root: &Path, original: &BTreeMap<&'static str, Vec<u8>>, assets: &[&
     }
 }
 
-pub(super) fn apply(repo: &Path, root: &Path, backup: &Path, spec: &Spec) -> Result<(), String> {
+pub(super) fn apply(
+    repo: &Path,
+    root: &Path,
+    backup: &Path,
+    spec: &Spec,
+    bridges: &bridge::Bridges,
+) -> Result<(), String> {
     let exists = backup.exists();
     if exists {
         let _ = manifest(backup, spec)?;
@@ -78,7 +84,7 @@ pub(super) fn apply(repo: &Path, root: &Path, backup: &Path, spec: &Spec) -> Res
         }
     }
     let original = originals(root)?;
-    let files = changed(repo, &original, spec)?;
+    let files = changed(repo, &original, spec, bridges)?;
     if !exists {
         fs::create_dir(backup).map_err(|error| error.to_string())?;
         for (path, bytes) in &original {
@@ -108,7 +114,13 @@ pub(super) fn apply(repo: &Path, root: &Path, backup: &Path, spec: &Spec) -> Res
     result
 }
 
-pub(super) fn update(repo: &Path, root: &Path, backup: &Path, spec: &Spec) -> Result<(), String> {
+pub(super) fn update(
+    repo: &Path,
+    root: &Path,
+    backup: &Path,
+    spec: &Spec,
+    bridges: &bridge::Bridges,
+) -> Result<(), String> {
     let mut metadata = manifest(backup, spec)?;
     validate_patched(root, &metadata)?;
     validate_originals(backup, spec)?;
@@ -122,7 +134,7 @@ pub(super) fn update(repo: &Path, root: &Path, backup: &Path, spec: &Spec) -> Re
         };
         original.insert(path, bytes);
     }
-    let files = changed(repo, &original, spec)?;
+    let files = changed(repo, &original, spec, bridges)?;
     for asset in [CONTROL, SETTINGS, ICON] {
         if metadata["patched"].get(asset).is_none()
             && (root.join(asset).exists() || root.join(asset).is_symlink())
@@ -205,8 +217,8 @@ pub fn run(action: &str, repo: &Path, extension: &Path, backup: &Path) -> Result
     }
     let spec = Spec::production();
     match action {
-        "apply" => apply(repo, extension, backup, &spec),
-        "update" => update(repo, extension, backup, &spec),
+        "apply" => apply(repo, extension, backup, &spec, &bridge::bridges(repo)?),
+        "update" => update(repo, extension, backup, &spec, &bridge::bridges(repo)?),
         "restore" => restore(extension, backup, &spec),
         _ => Err("unknown patch action".into()),
     }?;

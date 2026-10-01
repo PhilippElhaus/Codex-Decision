@@ -7,7 +7,7 @@ const EXPECTED_HOOK_VERSION = require("./package.json").codexJevHookVersion;
 const { LatestDecisionProvider, VIEW_ID } = require("./panel");
 const {
   checkHealth, decisionSummary, defaultDataDirectory, estimateTokensSaved,
-  isJevOutcome, outcomeLine, readConfig, readEventOffset, readEventsSince, savedCharacters,
+  isJevOutcome, outcomeLine, readConfig, readEventCursor, readEventsSince, savedCharacters,
   readApiKey, writeApiKey, writeSelection,
   completeLinePolicy, completeSearchRelevance,
   sessionDirectory, readHookHealth, ensureSessionDefaults,
@@ -20,7 +20,7 @@ function emptyStats() {
 }
 
 function createController(dataDirectory) {
-  const state = { enabled: false, outputEnabled: false, testBuildEnabled: false, searchListingEnabled: false, needsKey: false, mode: "replace", health: null, hookHealth: null, panelFault: null, configurationError: null, sessionPending: true, viewStartedAt: Date.now(), recent: null, history: [], stats: emptyStats(), busyUntil: 0, eventSize: -1, checking: false, polling: null, callingSeen: false, viewId: null, sessionId: null, generation: 0, eventDirectory: null };
+  const state = { enabled: false, outputEnabled: false, testBuildEnabled: false, searchListingEnabled: false, needsKey: false, mode: "replace", health: null, hookHealth: null, panelFault: null, configurationError: null, sessionPending: true, viewStartedAt: Date.now(), recent: null, history: [], stats: emptyStats(), busyUntil: 0, eventSize: -1, eventCursor: null, checking: false, polling: null, callingSeen: false, viewId: null, sessionId: null, generation: 0, eventDirectory: null };
   let selectionQueue = Promise.resolve();
   let viewBaseline = Promise.resolve();
   let entering = Promise.resolve();
@@ -105,8 +105,8 @@ function createController(dataDirectory) {
     clearActivity();
     viewBaseline = (async () => {
       try {
-        const offset = await readEventOffset(activeDirectory());
-        if (state.generation === generation) state.eventSize = offset;
+        const cursor = await readEventCursor(activeDirectory());
+        if (state.generation === generation) { state.eventCursor = cursor; state.eventSize = cursor.offset; }
       } catch {
         if (state.generation === generation) state.eventSize = -1;
       }
@@ -206,17 +206,18 @@ function createController(dataDirectory) {
       try {
         const directory = activeDirectory();
         if (state.eventSize < 0) {
-          const offset = await readEventOffset(directory);
+          const cursor = await readEventCursor(directory);
           if (generation !== state.generation) return;
-          state.eventSize = offset;
+          state.eventCursor = cursor;
+          state.eventSize = cursor.offset;
           const health = await readHookHealth(directory);
           if (generation === state.generation) state.hookHealth = health;
           return;
         }
-        const batch = await readEventsSince(directory, state.eventSize);
+        const batch = await readEventsSince(directory, state.eventCursor);
         if (generation !== state.generation) return;
         state.eventSize = batch.offset;
-        if (batch.reset) clearActivity();
+        state.eventCursor = batch.cursor;
         for (const event of batch.events) {
           if (event.status === "calling") {
             state.stats.calls += 1;

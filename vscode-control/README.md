@@ -7,8 +7,8 @@ This optional extension adds Jev switches to the Codex composer, detailed Jev se
 From this directory in WSL:
 
 ```bash
-npx @vscode/vsce package --no-dependencies --out ../.local/submission/codex-jev-control-0.7.6.vsix
-code --install-extension "$(wslpath -w ../.local/submission/codex-jev-control-0.7.6.vsix)" --force
+../scripts/build_control.sh
+code --install-extension "$(wslpath -w ../.local/submission/codex-jev-control-0.7.7.vsix)" --force
 ```
 
 The composer and Codex settings page require the separate local patch for Codex VS Code extension `26.928.31416`. It checks exact host hashes and keeps rollback files outside this repository:
@@ -27,7 +27,7 @@ The three composer switches cover other local output, test/build logs, and searc
 
 Each open Codex view keeps its own control state. A home view or another thread in the same VS Code window cannot reset the active thread's color, counters, or selection. Older status replies cannot replace newer ones. Each selection waits for its host acknowledgement before accepting another click on that switch. If the host does not reply within ten seconds, the menu reports the connection failure and the control offers Retry.
 
-The indicator is green after a small successful Jev API request, red on a missing key or failed request, and amber while that check is pending. It checks the API even on the home screen or when every filter is off. The activity tooltip is hidden on the home screen. Hook and session errors appear in the tooltip during a thread. An API check does not verify hook trust; review `/hooks` after installing or updating the hook. Short, sensitive, and unsupported results are intentionally skipped.
+The indicator is green after a small successful Jev API request, red on a missing key or failed request, and amber while that check is pending. It checks the API even on the home screen or when every filter is off. The activity tooltip is hidden on the home screen. Hook and session errors appear in the tooltip during a thread. An API check does not verify hook trust; review `/hooks` after installing or updating the hook. After a minute without a hook receipt, the tooltip explains how to check the hook. Windows WSL paths receive private Linux permissions, including existing session folders created by older controls. Short, sensitive, and unsupported results are intentionally skipped.
 
 Open **Codex settings → Jev** from any screen to choose Monitor or Filter, adjust line cutoffs, control the Choice gate for long general output, test or replace the key, and open the plugin data directory. These settings apply to every session. Monitor records decisions but leaves full output visible. Filter can shorten only eligible text after the local evidence checks pass; every shortened result links to its exact original.
 

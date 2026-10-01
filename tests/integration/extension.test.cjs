@@ -89,7 +89,7 @@ test("composer bridge selects integrations and reports view-scoped activity with
     browserAvailable = true;
     const firstSelection = await bridge({ action: "setSelection", feature: "output", enabled: true, viewId: "view-one" });
     assert.equal(firstSelection.needsKey, true);
-    assert.equal(firstSelection.expectedHookVersion, "0.8.1");
+    assert.equal(firstSelection.expectedHookVersion, require("../../vscode-control/package.json").codexJevHookVersion);
     const firstTest = await bridge({ action: "testApiKey", key: "example-test-key", viewId: "view-one" });
     assert.equal(firstTest.keyTest.ok, true);
     assert.equal(suppliedKey, "example-test-key");

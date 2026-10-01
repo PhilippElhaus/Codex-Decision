@@ -18,6 +18,7 @@
     .settings-nav button svg, .settings-nav button img { display: inline-block; width: 16px; height: 16px; margin-right: 10px; vertical-align: middle; }
     .settings-nav [aria-current=page] { background: #303030; }
     .settings-content { position: absolute; inset: 0 0 0 190px; overflow: auto; padding: 30px; }
+    @media (max-width: 500px) { .settings-nav { width: 96px; padding: 12px 6px; } .settings-content { left: 96px; padding: 16px; } }
   </style>
   <script>
     let outputEnabled = false, testBuildEnabled = false, searchListingEnabled = false, needsKey = false, health = { ok: true, model: "jev-1.13.0" }, busy = false, mode = "replace";
@@ -35,6 +36,9 @@
     window.__jevHarnessHoldNextStatus = false;
     window.__jevHarnessHeldStatus = null;
     window.__jevHarnessDropReplies = false;
+    window.__jevHarnessDropSettingsReplies = false;
+    window.__jevHarnessHeldSettings = null;
+    window.__jevHarnessThrowSettings = false;
     window.__jevHarnessSettingsRead = 0;
     window.__jevHarnessLastSettingsSave = null;
     window.__jevHarnessNeverDelete = false;
@@ -48,6 +52,10 @@
       window.__jevHarnessLastAction = request.action;
       window.__jevHarnessLastSessionId = request.sessionId;
       if (window.__jevHarnessDropReplies) return;
+      if (request.action.startsWith("settings")) {
+        if (window.__jevHarnessThrowSettings) throw new Error("synthetic transport failure");
+        if (window.__jevHarnessDropSettingsReplies) { window.__jevHarnessHeldSettings = request; return; }
+      }
       if (request.action === "settingsRead") window.__jevHarnessSettingsRead += 1;
       if (request.action === "settingsSave") window.__jevHarnessLastSettingsSave = request;
       if (request.action === "settingsSetNeverDeleteLogs" && !window.__jevHarnessFailNeverDelete) {
@@ -110,6 +118,8 @@
   </div>
   <div class="settings-screen" id="settings-screen"><div class="app-shell-left-panel"><nav class="settings-nav" aria-label="Settings"><div class="settings-items"><div class="settings-item"><button aria-label="General">General</button></div><div class="settings-item"><button aria-label="Voice" aria-current="page"><svg aria-hidden="true" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5" fill="currentColor"/></svg><span>Voice</span></button></div><div class="settings-item"><button aria-label="Configuration">Configuration</button></div></div></nav></div><div class="settings-content"><main><h1>Voice</h1><p>Voice settings</p></main></div></div>
   <script>
+    const fixtureModelLabel = innerWidth < 500 ? "GPT-6 Sol" : "GPT-6 Sol Extra High";
+    document.querySelector(".model").textContent = fixtureModelLabel;
     const api = acquireVsCodeApi();
     const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     const check = (condition, label) => { if (!condition) throw new Error(label); };
@@ -150,14 +160,17 @@
       for (const height of [30, 38, 34]) {
         modelControl.style.height = `${height}px`;
         await until(() => Math.abs(button.getBoundingClientRect().height - height) <= 1 &&
-          Math.abs(button.getBoundingClientRect().top - modelControl.getBoundingClientRect().top) <= 1,
-          `Jev button tracks ${height}px model height and vertical alignment`);
+          (Math.abs(button.getBoundingClientRect().top - modelControl.getBoundingClientRect().top) <= 1 ||
+            button.getBoundingClientRect().bottom <= modelControl.getBoundingClientRect().top - 7),
+          `Jev button tracks ${height}px model height without overlapping the toolbar`);
       }
       const anchor = () => document.querySelector(".access").getBoundingClientRect();
       const model = () => document.querySelector(".model").getBoundingClientRect();
       const rect = () => button.getBoundingClientRect();
       const docked = () => model().left - rect().right;
-      check(rect().left > anchor().right && docked() >= 7 && docked() <= 10, "right-docked placement");
+      check(docked() >= 7 && docked() <= 10 &&
+        (rect().left > anchor().right || rect().bottom <= Math.min(anchor().top, model().top) - 7),
+        "right-docked placement avoids overlapping a cramped toolbar");
       if (innerWidth >= 1600) {
         const toolbar = document.querySelector(".toolbar");
         const decoration = document.createElement("span");
@@ -231,11 +244,12 @@
         "Jev stays compact and docked after both Codex controls shrink");
       accessControl.textContent = "Full access";
       accessControl.removeAttribute("aria-label");
-      modelControl.textContent = "GPT-6 Sol Extra High";
+      modelControl.textContent = fixtureModelLabel;
       composer.style.width = `${wideWidth - (gap - 12)}px`;
-      await until(() => root.dataset.compact === "true" && root.style.display === "block", "compact control when toolbar gap closes");
-      check(Math.abs(rect().top + rect().height / 2 - anchor().top - anchor().height / 2) <= 1,
-        "compact control stays on the toolbar row when the gap closes");
+      await until(() => root.dataset.compact === "true" && root.style.display === "block" &&
+        rect().bottom <= Math.min(anchor().top, model().top) - 7, "compact control when toolbar gap closes");
+      check(rect().bottom <= Math.min(anchor().top, model().top) - 7,
+        "compact control moves above a closed toolbar gap without overlapping controls");
       document.documentElement.style.width = "";
       composer.style.width = "";
       await until(() => root.style.display === "block" && root.dataset.compact === "false", "restore full control after resize");
@@ -260,7 +274,7 @@
       document.documentElement.style.width = "";
       composer.style.width = "";
       accessControl.textContent = "Full access";
-      modelControl.textContent = "GPT-6 Sol Extra High";
+      modelControl.textContent = fixtureModelLabel;
       await until(() => root.dataset.compact === "false", "text controls restore normal position");
       document.documentElement.style.width = `${paneWidth - 80}px`;
       modelControl.removeAttribute("role");
@@ -272,7 +286,7 @@
       check(root.dataset.compact === "true" && getComputedStyle(label).display === "none",
         "Jev stays compact when the model icon returns at a narrower width");
       document.documentElement.style.width = "";
-      modelControl.textContent = "GPT-6 Sol Extra High";
+      modelControl.textContent = fixtureModelLabel;
       await until(() => root.dataset.compact === "false", "wider pane restores full Jev label");
       button.click();
       check(button.getAttribute("aria-expanded") === "true", "menu opens");
@@ -330,16 +344,19 @@
       check(getComputedStyle(observeBadge).display === "none", "replacement mode has no observe badge");
       mode = "observe";
       await until(() => root.dataset.observe === "true", "observe mode arrives from settings");
-      check(getComputedStyle(observeBadge).display !== "none" && observeBadge.textContent === "MON", "monitor badge visible");
+      await pause(40);
+      check((innerWidth < 500 ? getComputedStyle(observeBadge).display === "none" :
+        getComputedStyle(observeBadge).display !== "none") && observeBadge.textContent === "MON", "monitor badge fits the toolbar");
       check(button.style.color === "rgb(135, 205, 164)", "observe mode preserves health color");
       document.documentElement.style.width = `${paneWidth - 80}px`;
       composer.style.width = `${wideWidth - (gap - fullWidth + 4)}px`;
-      await until(() => root.dataset.compact === "true" && root.style.display === "block", "observe mode fits compact control");
+      await until(() => root.dataset.compact === "true" && root.style.display === "block" &&
+        docked() >= 7 && docked() <= 10, "observe mode fits compact control");
       check(getComputedStyle(observeBadge).display === "none" && rect().right < model().left - 3,
         "compact observe mode shows only the dot and stays clear of the model");
       document.documentElement.style.width = "";
       composer.style.width = "";
-      await until(() => root.dataset.compact === "false", "observe control restores after resize");
+      await until(() => root.dataset.compact === String(innerWidth < 500), "observe control fits after resize");
       mode = "replace";
       await until(() => root.dataset.observe === "false", "replacement mode restored");
       const tooltip = document.getElementById("codex-jev-tip");
@@ -466,6 +483,20 @@
       await until(() => button.style.color === "rgb(135, 205, 164)", "disabled filters preserve healthy API state");
       check(healthRow.hidden && tooltip.innerText.includes("Filtering is off for this session"),
         "healthy disabled tooltip stays readable");
+      const previousHook = hookHealth;
+      const previousNow = Date.now;
+      hookHealth = null;
+      outputEnabled = true;
+      Date.now = () => previousNow() + 61_000;
+      window.dispatchEvent(new Event("focus"));
+      await until(() => healthRow.querySelector("strong").textContent === "No Jev hook activity",
+        "API connectivity without a hook receipt explains the missing activity");
+      check(tooltip.innerText.includes("check /hooks and reload VS Code"), "missing hook activity explains recovery");
+      hookHealth = previousHook;
+      outputEnabled = false;
+      Date.now = previousNow;
+      window.dispatchEvent(new Event("focus"));
+      await until(() => healthRow.hidden, "a hook receipt clears the missing activity message");
       button.blur();
       check(getComputedStyle(tooltip).display === "none", "tooltip closes when focus leaves Jev");
       button.click();
@@ -601,8 +632,9 @@
       const settingsActions = reset.parentElement;
       check(settingsActions.classList.contains("save-actions") &&
         Math.abs(reset.getBoundingClientRect().right - settingsActions.getBoundingClientRect().right) <= 2 &&
-        reset.getBoundingClientRect().left > saveSettings.getBoundingClientRect().right + 12,
-        "Reset defaults is right aligned in the settings action row");
+        (reset.getBoundingClientRect().top >= saveSettings.getBoundingClientRect().bottom ||
+          reset.getBoundingClientRect().left >= saveSettings.getBoundingClientRect().right + 11),
+        "Reset defaults is right aligned and wraps when the settings pane is narrow");
       const keyField = settingsScreen.querySelector("#codex-jev-settings-key");
       check(keyField.placeholder.length === 32 && /^•+$/.test(keyField.placeholder),
         "saved key mask uses the exact stored key length");
@@ -666,6 +698,31 @@
         window.__jevHarnessLastSettingsSave.neverDeleteLogs === false &&
         window.__jevHarnessLastSettingsSave.linePolicy.test_build.omit_min === 95,
         "save submits the reset line policy");
+      const settingsTest = settingsScreen.querySelector("#codex-jev-settings-test");
+      const settingsMessage = settingsScreen.querySelector("#codex-jev-settings-message");
+      for (const control of [settingsTest, saveSettings, neverDelete]) {
+        window.__jevHarnessDropSettingsReplies = true;
+        control.click();
+        check(settingsTest.disabled && saveSettings.disabled, "settings waits for its host acknowledgement");
+        const dropped = window.__jevHarnessHeldSettings;
+        Date.now = () => actualNow() + 11000;
+        await until(() => !saveSettings.disabled && settingsMessage.textContent.includes("Codex did not reply"),
+          "missing settings reply times out and releases all controls");
+        Date.now = actualNow;
+        check(!neverDelete.checked && !logLimit.disabled, "timed out retention restores the saved checkbox");
+        window.__jevHarnessDropSettingsReplies = false;
+        settingsTest.click();
+        await until(() => settingsScreen.querySelector("#codex-jev-settings-test-status").textContent === "OK",
+          "settings request works after timeout");
+        window.dispatchEvent(new MessageEvent("message", { data: { type: "codex-jev-reply", id: dropped.id,
+          status: { settings: { action: "error", message: "obsolete reply" } } } }));
+        check(!settingsMessage.textContent.includes("obsolete reply"), "late settings replies cannot replace recovery");
+      }
+      window.__jevHarnessThrowSettings = true;
+      settingsTest.click();
+      check(!saveSettings.disabled && settingsMessage.textContent.includes("Codex did not reply"),
+        "synchronous settings transport failure releases the request");
+      window.__jevHarnessThrowSettings = false;
       logLimit.value = "9999";
       neverDelete.click();
       await until(() => window.__jevHarnessNeverDelete && !neverDelete.disabled, "checkbox saved before full save");
@@ -718,10 +775,11 @@
       const footer = setup.querySelector("#codex-jev-connect-footer");
       const saveButton = setup.querySelector("#codex-jev-save-key");
       const skipButton = setup.querySelector("#codex-jev-skip-key");
-      check(Math.abs(saveButton.getBoundingClientRect().top - skipButton.getBoundingClientRect().top) < 1 &&
+      check((innerWidth <= 420 ? skipButton.getBoundingClientRect().top >= saveButton.getBoundingClientRect().bottom :
+        Math.abs(saveButton.getBoundingClientRect().top - skipButton.getBoundingClientRect().top) < 1) &&
         footer.contains(saveButton) && footer.contains(skipButton) &&
         Math.abs(skipButton.getBoundingClientRect().right - footer.getBoundingClientRect().right) < 2,
-        "Skip is right aligned beside Save in a wide panel");
+        "Connect actions fit the panel width");
       setup.style.width = "300px";
       setup.style.right = "auto";
       await pause(30);

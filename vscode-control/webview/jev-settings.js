@@ -34,6 +34,18 @@
   let defaults = null;
   let savedLogLimit = 50;
   let savedNeverDeleteLogs = false;
+  const REPLY_TIMEOUT_MS = 10_000;
+
+  function failRequest(id) {
+    if (pending?.id !== id) return;
+    const action = pending.action;
+    clearTimeout(pending.timer);
+    pending = null;
+    setBusy(false);
+    if (action === "settingsSetNeverDeleteLogs") showNeverDeleteLogs(savedNeverDeleteLogs);
+    if (action === "settingsTest") showTest("Connection timed out", "error");
+    showMessage("Codex did not reply. Reopen Jev settings to check saved values, then try again.", "error");
+  }
 
   function visible(element) {
     const rect = element.getBoundingClientRect();
@@ -85,11 +97,17 @@
     const api = window.__codexJevApi;
     if (!api || pending) return false;
     const id = `jev-settings-${++nextId}`;
-    pending = { id, action };
-    api.postMessage({ type: "codex-jev", id, action,
-      viewId: window.__codexJevViewId?.(), sessionId: window.__codexJevSessionId?.() || null,
-      expectsLocalSession: false,
-      ...payload });
+    pending = { id, action, deadline: Date.now() + REPLY_TIMEOUT_MS,
+      timer: setTimeout(() => failRequest(id), REPLY_TIMEOUT_MS) };
+    try {
+      api.postMessage({ type: "codex-jev", id, action,
+        viewId: window.__codexJevViewId?.(), sessionId: window.__codexJevSessionId?.() || null,
+        expectsLocalSession: false,
+        ...payload });
+    } catch {
+      failRequest(id);
+      return false;
+    }
     return true;
   }
 
@@ -390,6 +408,7 @@
   function handleReply(data) {
     if (!pending || data?.type !== "codex-jev-reply" || data.id !== pending.id) return;
     const action = pending.action;
+    clearTimeout(pending.timer);
     pending = null;
     setBusy(false);
     const reply = data.status?.settings;
@@ -445,6 +464,7 @@
   }
 
   function sync() {
+    if (pending && Date.now() >= pending.deadline) failRequest(pending.id);
     const voice = voiceTab();
     if (!voice) { active = false; restoreContent(); navAnchor?.remove(); navItem = null; navAnchor = null; return; }
     const anchor = navigationAnchor(voice);

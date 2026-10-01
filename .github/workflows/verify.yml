@@ -20,3 +20,13 @@ jobs:
       - run: cargo +stable clippy --locked --all-targets -- -D warnings
       - run: npm test --prefix vscode-control
       - run: python3 -m unittest discover -s tests -p 'test_*.py'
+      - run: ./scripts/build_submission.sh
+      - run: ./scripts/build_control.sh
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - run: python3 -m pip install playwright==1.63.0
+      - run: python3 -m playwright install --with-deps chromium
+      - run: python3 vscode-control/scripts/browser_smoke.py --browser chromium

@@ -14,14 +14,18 @@ pub(super) fn wslpath(path: &Path) -> Result<String, String> {
         .map_err(|_| "invalid Windows path".into())
 }
 
-pub(super) fn image_bridge() -> Result<String, String> {
-    let root = wslpath(Path::new("/"))?.trim_end_matches('\\').to_owned();
+pub(super) struct Bridges {
+    pub(super) image: String,
+    pub(super) marketplace: String,
+}
+
+pub(super) fn image_bridge(home: &str, windows_root: &str) -> Result<String, String> {
+    let root = windows_root.trim_end_matches('\\');
     if !root.to_ascii_lowercase().starts_with("\\\\wsl.localhost\\")
         && !root.to_ascii_lowercase().starts_with("\\\\wsl$\\")
     {
         return Err("WSL image path is unavailable".into());
     }
-    let home = std::env::var("HOME").map_err(|_| "HOME is unavailable")?;
     let local = format!("{home}/plugins/codex-jev/");
     let cache = format!("{home}/.codex/plugins/cache/personal");
     Ok(format!("if(o.startsWith({})||o.startsWith({})||o.startsWith({}))o={}+o.replaceAll(\"/\",\"\\\\\");",
@@ -29,21 +33,16 @@ pub(super) fn image_bridge() -> Result<String, String> {
         json!(format!("{cache}/codex-chime/")), json!(root)))
 }
 
-pub(super) fn marketplace_bridge(repo: &Path) -> String {
-    let personal = std::env::var("HOME")
-        .ok()
-        .map(|home| PathBuf::from(home).join(".agents/plugins/marketplace.json"));
-    let chosen = std::env::var_os("CODEX_JEV_MARKETPLACE_PATH")
-        .map(PathBuf::from)
-        .or_else(|| personal.filter(|path| path.is_file()))
-        .unwrap_or_else(|| repo.join(".agents/plugins/marketplace.json"));
-    if !chosen.is_absolute() || !chosen.is_file() {
+pub(super) fn marketplace_bridge(
+    chosen: &Path,
+    bytes: &[u8],
+    converted: &str,
+    distro: Option<&str>,
+) -> String {
+    if !chosen.is_absolute() || bytes.len() > 64_000 {
         return String::new();
     }
-    let Ok(bytes) = fs::read(&chosen) else {
-        return String::new();
-    };
-    let Ok(value) = serde_json::from_slice::<Value>(&bytes) else {
+    let Ok(value) = serde_json::from_slice::<Value>(bytes) else {
         return String::new();
     };
     let names: Vec<&str> = value["plugins"]
@@ -56,9 +55,6 @@ pub(super) fn marketplace_bridge(repo: &Path) -> String {
     if names.is_empty() {
         return String::new();
     }
-    let Ok(converted) = wslpath(&chosen) else {
-        return String::new();
-    };
     let lower = converted.to_ascii_lowercase();
     if !(lower.starts_with("\\\\wsl.localhost\\")
         || lower.starts_with("\\\\wsl$\\")
@@ -67,7 +63,7 @@ pub(super) fn marketplace_bridge(repo: &Path) -> String {
         return String::new();
     }
     let mut aliases = vec![lower];
-    if let Ok(distro) = std::env::var("WSL_DISTRO_NAME") {
+    if let Some(distro) = distro {
         if !distro.is_empty()
             && distro
                 .bytes()
@@ -86,10 +82,42 @@ pub(super) fn marketplace_bridge(repo: &Path) -> String {
         json!(aliases), json!(names), json!(chosen.display().to_string()))
 }
 
+pub(super) fn bridges(repo: &Path) -> Result<Bridges, String> {
+    let home = std::env::var("HOME").map_err(|_| "HOME is unavailable")?;
+    let personal = PathBuf::from(&home).join(".agents/plugins/marketplace.json");
+    let chosen = std::env::var_os("CODEX_JEV_MARKETPLACE_PATH")
+        .map(PathBuf::from)
+        .or_else(|| personal.is_file().then_some(personal))
+        .unwrap_or_else(|| repo.join(".agents/plugins/marketplace.json"));
+    let marketplace = if chosen.is_absolute() && chosen.is_file() && !chosen.is_symlink() {
+        fs::metadata(&chosen)
+            .ok()
+            .filter(|details| details.len() <= 64_000)
+            .and_then(|_| fs::read(&chosen).ok())
+            .zip(wslpath(&chosen).ok())
+            .map(|(bytes, converted)| {
+                marketplace_bridge(
+                    &chosen,
+                    &bytes,
+                    &converted,
+                    std::env::var("WSL_DISTRO_NAME").ok().as_deref(),
+                )
+            })
+            .unwrap_or_default()
+    } else {
+        String::new()
+    };
+    Ok(Bridges {
+        image: image_bridge(&home, &wslpath(Path::new("/"))?)?,
+        marketplace,
+    })
+}
+
 pub(super) fn changed(
     repo: &Path,
     originals: &BTreeMap<&'static str, Vec<u8>>,
     spec: &Spec,
+    bridges: &Bridges,
 ) -> Result<BTreeMap<&'static str, Vec<u8>>, String> {
     for (path, bytes) in originals {
         if hash(bytes) != spec.hash(path) {
@@ -108,7 +136,7 @@ pub(super) fn changed(
     let fragment = replace_once(
         &fragment,
         "if(s.markMessageReceived()",
-        &format!("{}if(s.markMessageReceived()", marketplace_bridge(repo)),
+        &format!("{}if(s.markMessageReceived()", bridges.marketplace),
     )?;
     let route_fragment = as_text(&exact(
         repo,
@@ -127,7 +155,7 @@ pub(super) fn changed(
         replace_once(
             image,
             IMAGE_ANCHOR,
-            &IMAGE_ANCHOR.replacen("try{", &format!("{}try{{", image_bridge()?), 1),
+            &IMAGE_ANCHOR.replacen("try{", &format!("{}try{{", bridges.image), 1),
         )?
         .into_bytes(),
     );

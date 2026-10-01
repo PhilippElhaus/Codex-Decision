@@ -59,12 +59,6 @@ impl Default for LinePolicy {
     }
 }
 
-impl LinePolicy {
-    pub fn valid(&self) -> bool {
-        self.omit_min <= 100 && self.exact_max <= 100
-    }
-}
-
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default, deny_unknown_fields)]
 pub struct SearchRelevancePolicy {
@@ -82,12 +76,6 @@ impl Default for SearchRelevancePolicy {
                 .as_u64()
                 .unwrap() as u8,
         }
-    }
-}
-
-impl SearchRelevancePolicy {
-    pub fn valid(&self) -> bool {
-        self.relevant_max <= 100
     }
 }
 
@@ -146,13 +134,6 @@ pub struct BatchRecord {
     pub request: Value,
     pub response: Value,
     pub elapsed_ms: u64,
-}
-
-#[derive(Clone, Debug)]
-pub struct Judged {
-    pub lines: Vec<SourceLine>,
-    pub decisions: Vec<LineDecision>,
-    pub batches: Vec<BatchRecord>,
 }
 
 pub type LineProbabilities = (f64, f64, Option<f64>, usize);

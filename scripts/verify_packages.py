@@ -1,0 +1,87 @@
+"""Check exact release contents, source bytes, versions, and binary targets."""
+
+import argparse
+import json
+from pathlib import Path
+import xml.etree.ElementTree as ET
+import zipfile
+
+
+ROOT = Path(__file__).resolve().parents[1]
+PLUGIN_FILES = (
+    ".codex-plugin/plugin.json", "skills/jev-output/SKILL.md", "hooks/hooks.json",
+    "hooks/bin/linux-x86_64/jev-hook", "hooks/bin/linux-x86_64/jevctl",
+    "assets/logo.png", "assets/icon.png", "config.example.json", "LICENSE",
+)
+CONTROL_FILES = (
+    "config-contract.json", "core.js", "extension.js", "icon.png", "package.json",
+    "panel-state.js", "panel.js", "schema.js", "private-paths.js", "media/jev-panel.svg",
+    "webview/jev-control.js", "webview/jev-panel.css", "webview/jev-panel.js",
+    "webview/jev-settings.js",
+)
+
+
+def check_entries(archive, expected):
+    names = archive.namelist()
+    if len(names) != len(set(names)) or set(names) != set(expected):
+        raise ValueError("Archive contents differ from the release allowlist")
+    if sum(item.file_size for item in archive.infolist()) > 100_000_000:
+        raise ValueError("Archive exceeds the uncompressed size limit")
+
+
+def check_bytes(archive, mapping, root):
+    for archived, source in mapping.items():
+        path = root / source
+        if path.is_symlink() or archive.read(archived) != path.read_bytes():
+            raise ValueError(f"Packaged file differs from source: {source}")
+
+
+def check_elf(data):
+    if len(data) < 64 or data[:6] != b"\x7fELF\x02\x01" or data[18:20] != b"\x3e\x00":
+        raise ValueError("Package requires Linux x86_64 ELF binaries")
+
+
+def verify_plugin(path, root=ROOT):
+    mapping = {f"codex-jev/{name}": name for name in PLUGIN_FILES}
+    with zipfile.ZipFile(path) as archive:
+        check_entries(archive, mapping)
+        check_bytes(archive, mapping, root)
+        manifest = json.loads(archive.read("codex-jev/.codex-plugin/plugin.json"))
+        control = json.loads((root / "vscode-control/package.json").read_text())
+        if manifest["name"] != "codex-jev" or manifest["version"].split("+", 1)[0] != control["codexJevHookVersion"]:
+            raise ValueError("Plugin and control hook versions differ")
+        for binary in ("jev-hook", "jevctl"):
+            name = f"codex-jev/hooks/bin/linux-x86_64/{binary}"
+            check_elf(archive.read(name))
+            if not (archive.getinfo(name).external_attr >> 16) & 0o111:
+                raise ValueError(f"Packaged binary is not executable: {binary}")
+
+
+def verify_control(path, root=ROOT):
+    mapping = {f"extension/{name}": f"vscode-control/{name}" for name in CONTROL_FILES}
+    mapping.update({"extension/LICENSE.txt": "vscode-control/LICENSE",
+                    "extension/readme.md": "vscode-control/README.md"})
+    with zipfile.ZipFile(path) as archive:
+        check_entries(archive, {*mapping, "extension.vsixmanifest", "[Content_Types].xml"})
+        check_bytes(archive, mapping, root)
+        package = json.loads(archive.read("extension/package.json"))
+        identity = ET.fromstring(archive.read("extension.vsixmanifest")).find(".//{*}Identity")
+        if identity is None or identity.get("Version") != package["version"] or identity.get("Publisher") != package["publisher"]:
+            raise ValueError("VSIX identity differs from the control package")
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--plugin", type=Path)
+    parser.add_argument("--vsix", type=Path)
+    args = parser.parse_args()
+    if not args.plugin and not args.vsix:
+        parser.error("provide --plugin or --vsix")
+    for archive, verify in ((args.plugin, verify_plugin), (args.vsix, verify_control)):
+        if archive:
+            verify(archive)
+            print(f"Verified {archive.name}: exact contents and source bytes")
+
+
+if __name__ == "__main__":
+    main()
