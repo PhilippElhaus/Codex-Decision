@@ -412,7 +412,9 @@ function activate(context) {
     vscode.commands.executeCommand(`${VIEW_ID}.focus`)));
   context.subscriptions.push(vscode.commands.registerCommand("codexJev.bridge", async (request) => {
     const controller = controllerFor(request?.viewId);
-    active = controller;
+    if (request?.focused === true || request?.action === "setSelection") {
+      active = controller;
+    }
     const reply = await controller.bridge(request);
     const settingsSaved = request?.action === "settingsSave" && reply.settings?.action === "saved";
     const changed = request?.action === "setSelection" || request?.action === "saveApiKey" ||
@@ -450,7 +452,7 @@ function activate(context) {
     return [...controllers.values()].filter((entry) => now - entry.lastSeen < 10_000)
       .map((entry) => entry.controller);
   };
-  const eventTimer = setInterval(() => { for (const controller of live()) void controller.pollEvent(); }, 250);
+  const eventTimer = setInterval(() => { for (const controller of live()) void controller.pollEvent(); }, 1000);
   const configTimer = setInterval(() => { for (const controller of live()) void controller.sync(); }, 10_000);
   const healthTimer = setInterval(() => { for (const controller of live()) void controller.probe(); }, 5 * 60_000);
   const retryTimer = setInterval(() => {

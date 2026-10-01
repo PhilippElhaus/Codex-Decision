@@ -20,6 +20,7 @@ class LatestDecisionProvider {
     this.view = null;
     this.timer = null;
     this.pending = null;
+    this.cache = {};
     this.lastMessage = "";
     this.lastDecisionId = null;
     this.nextDecisionAt = 0;
@@ -55,7 +56,7 @@ class LatestDecisionProvider {
   }
 
   start() {
-    if (!this.timer) this.timer = setInterval(() => { void this.refresh(); }, 500);
+    if (!this.timer) this.timer = setInterval(() => { void this.refresh(); }, 1000);
     void this.refresh();
   }
 
@@ -73,7 +74,7 @@ class LatestDecisionProvider {
       let message;
       try {
         const directory = this.dataDirectory();
-        const decision = directory ? await readLatestPanelDecision(directory) : null;
+        const decision = directory ? await readLatestPanelDecision(directory, this.cache) : null;
         this.onFault(null);
         message = { type: "decision", decision: decision && Date.parse(decision.at) >= this.startedAt ? decision : null };
       } catch (error) {

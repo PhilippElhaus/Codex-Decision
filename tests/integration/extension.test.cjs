@@ -27,12 +27,13 @@ test("composer bridge selects integrations and reports view-scoped activity with
   let executedCommand;
   let browserAvailable = true;
   let configListener;
+  let panel;
   const fake = {
     window: {
       createStatusBarItem: () => { throw new Error("Status bar item must not be created"); },
       showInformationMessage: () => {},
       createWebviewPanel: () => { throw new Error("Jev settings must stay in Codex settings"); },
-      registerWebviewViewProvider: () => ({ dispose() {} }),
+      registerWebviewViewProvider: (_id, provider) => { panel = provider; return { dispose() {} }; },
     },
     Uri: { joinPath: () => ({}), file: (filename) => ({ fsPath: filename }), parse: (uri) => ({ toString: () => uri }) }, ViewColumn: { Active: 1 }, ConfigurationTarget: { Global: 1 },
     env: { openExternal: async (uri) => { openedExternal = uri.fsPath || uri.toString(); return browserAvailable; } },
@@ -70,7 +71,7 @@ test("composer bridge selects integrations and reports view-scoped activity with
     const rawBridge = commands.get("codexJev.bridge");
     const sessionId = "fixture-session";
     const scoped = core.sessionDirectory(directory, sessionId);
-    const bridge = (request) => rawBridge({ sessionId, viewId: "view-one", ...request });
+    const bridge = (request) => rawBridge({ sessionId, viewId: "view-one", focused: true, ...request });
     const initialReplies = await Promise.all(Array.from({ length: 12 },
       () => bridge({ action: "status", viewId: "view-one" })));
     const defaultView = initialReplies[0];
@@ -88,7 +89,7 @@ test("composer bridge selects integrations and reports view-scoped activity with
     browserAvailable = true;
     const firstSelection = await bridge({ action: "setSelection", feature: "output", enabled: true, viewId: "view-one" });
     assert.equal(firstSelection.needsKey, true);
-    assert.equal(firstSelection.expectedHookVersion, "0.8.0");
+    assert.equal(firstSelection.expectedHookVersion, "0.8.1");
     const firstTest = await bridge({ action: "testApiKey", key: "example-test-key", viewId: "view-one" });
     assert.equal(firstTest.keyTest.ok, true);
     assert.equal(suppliedKey, "example-test-key");
@@ -141,12 +142,14 @@ test("composer bridge selects integrations and reports view-scoped activity with
     assert.equal(newView.stats.completed, 0);
     assert.equal(newView.stats.estimatedTokensSaved, 0);
     assert.deepEqual(newView.history, []);
+    assert.equal(panel.dataDirectory(), scoped);
     for (let index = 0; index < 8; index += 1) {
       const [homeStatus, threadStatus] = await Promise.all([
         rawBridge({ action: "status", viewId: "background-home", sessionId: null,
           expectsLocalSession: false }),
         bridge({ action: "status", viewId: "view-one" }),
       ]);
+      assert.equal(panel.dataDirectory(), scoped, "background status cannot switch the panel");
       assert.equal(homeStatus.enabled, false, "background home view stays neutral");
       assert.equal(threadStatus.enabled, true, "background view cannot turn off the thread");
       assert.equal(threadStatus.stats.replaced, 1, "background view cannot erase thread activity");

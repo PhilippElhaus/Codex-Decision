@@ -22,7 +22,7 @@
   <script>
     let outputEnabled = false, testBuildEnabled = false, searchListingEnabled = false, needsKey = false, health = { ok: true, model: "jev-1.13.0" }, busy = false, mode = "replace";
     const viewStartedAt = Date.now() - 1000;
-    let hookHealth = { version: 1, hook_version: "0.8.0", last_seen_ms: Date.now(), last_success_ms: Date.now() };
+    let hookHealth = { version: 1, hook_version: "0.8.1", last_seen_ms: Date.now(), last_success_ms: Date.now() };
     const stats = { calls: 7, candidates: 4, kept: 2, replaced: 1, checkedChars: 90640, savedChars: 6058, estimatedTokensSaved: 1515, elapsedMs: 8120, completed: 7 };
     const history = [
       "replaced · test/build · 6,367 chars · -95%",
@@ -91,7 +91,7 @@
             request.action === "settingsOpenLogs" ? { action: "openedLogs" } : undefined;
       queueMicrotask(() => window.dispatchEvent(new MessageEvent("message", { data: {
         type: "codex-jev-reply", id: request.id,
-        status: { enabled: !waitingForThread && (outputEnabled || testBuildEnabled || searchListingEnabled), outputEnabled: !waitingForThread && outputEnabled, testBuildEnabled: !waitingForThread && testBuildEnabled, searchListingEnabled: !waitingForThread && searchListingEnabled, sessionPending: waitingForThread, configurationError: waitingForThread && request.expectsLocalSession ? "Codex session could not be identified" : null, needsKey, keyTest, keySaved, externalOpen: request.action === "openTypeSafe" ? window.__jevHarnessExternalOpen : undefined, settings, health, hookHealth, expectedHookVersion: "0.8.0", viewStartedAt, busy, mode, recent: freshView ? "No decision recorded yet" : history[0],
+        status: { enabled: !waitingForThread && (outputEnabled || testBuildEnabled || searchListingEnabled), outputEnabled: !waitingForThread && outputEnabled, testBuildEnabled: !waitingForThread && testBuildEnabled, searchListingEnabled: !waitingForThread && searchListingEnabled, sessionPending: waitingForThread, configurationError: waitingForThread && request.expectsLocalSession ? "Codex session could not be identified" : null, needsKey, keyTest, keySaved, externalOpen: request.action === "openTypeSafe" ? window.__jevHarnessExternalOpen : undefined, settings, health, hookHealth, expectedHookVersion: "0.8.1", viewStartedAt, busy, mode, recent: freshView ? "No decision recorded yet" : history[0],
           history: freshView ? [] : history,
           stats: freshView ? { calls: 0, candidates: 0, kept: 0, replaced: 0, checkedChars: 0, elapsedMs: 0, completed: 0 } : stats },
       } })));
@@ -112,7 +112,7 @@
     const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     const check = (condition, label) => { if (!condition) throw new Error(label); };
     async function until(predicate, label) {
-      for (let attempt = 0; attempt < 25; attempt += 1) {
+      for (let attempt = 0; attempt < 125; attempt += 1) {
         if (predicate()) return;
         await pause(20);
       }
@@ -302,7 +302,7 @@
       check(healthRow.hidden && getComputedStyle(healthReason).display === "none" &&
         !tip.textContent.includes("Run a local tool"), "no unverified hook error is shown");
       tip.style.removeProperty("display");
-      hookHealth = { version: 1, hook_version: "0.8.0", last_seen_ms: Date.now(), last_skip_ms: Date.now(), last_skip: "small" };
+      hookHealth = { version: 1, hook_version: "0.8.1", last_seen_ms: Date.now(), last_skip_ms: Date.now(), last_skip: "small" };
       await until(() => button.style.color === "rgb(135, 205, 164)", "observed skip verifies hook invocation");
       hookHealth = { ...hookHealth, last_error_ms: Date.now() + 1, last_error: "invalid Jev response" };
       await until(() => document.getElementById("codex-jev-health-reason").textContent.includes("invalid Jev response"),
@@ -318,7 +318,7 @@
       check(button.style.color === "rgb(135, 205, 164)", "old hook binary does not change API color");
       check(document.getElementById("codex-jev-health-reason").textContent.includes("Update the Jev plugin"),
         "version mismatch has a recovery step");
-      hookHealth = { ...hookHealth, hook_version: "0.8.0", last_seen_ms: Date.now() + 4 };
+      hookHealth = { ...hookHealth, hook_version: "0.8.1", last_seen_ms: Date.now() + 4 };
       await until(() => button.style.color === "rgb(135, 205, 164)", "matching hook restores health");
       health = { ok: false, reason: "JEV_NETWORK_ERROR" };
       await until(() => button.style.color === "rgb(233, 148, 144)", "unreachable API is red");
@@ -356,11 +356,11 @@
         "test/build outcome fits on one line");
       check(getComputedStyle(button).transitionDuration.includes("0.22s"), "status color has eased transition");
       busy = true;
-      await pause(150);
+      await pause(1100);
       check(button.style.color === "rgb(135, 205, 164)", "busy activity keeps API green");
       busy = false;
       health = { ok: false, reason: "JEV_HTTP_401" };
-      await pause(150);
+      await pause(1100);
       check(button.style.color === "rgb(233, 148, 144)", "failure red");
       const retry = document.getElementById("codex-jev-retry");
       check(tooltip.textContent.includes("API key rejected") && retry.style.display !== "none" &&
@@ -383,7 +383,7 @@
       check(menu.dataset.open === "true", "menu stays open for a second selection");
       check(button.style.color === "rgb(233, 148, 144)", "test/build filter reflects failed Jev health");
       health = { ok: true, model: "jev-1.13.0" };
-      await pause(150);
+      await pause(1100);
       check(button.style.color === "rgb(135, 205, 164)" &&
         document.getElementById("codex-jev-health-row").hidden, "test/build filter requires Jev health");
       check(button.getAttribute("aria-label").includes("Jev API connected") &&

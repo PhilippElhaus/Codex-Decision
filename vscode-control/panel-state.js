@@ -3,7 +3,7 @@
 const fs = require("node:fs/promises");
 const { constants } = require("node:fs");
 const path = require("node:path");
-const { validateSessionPath } = require("./core");
+const { validateSessionPath, validateDirectoryPath } = require("./core");
 
 const FILTERS = new Set(["output", "test_build", "search_listing"]);
 function probability(value) {
@@ -71,22 +71,27 @@ function parseBatchDecision(value) {
       target_count: batch.target_count }, rows, totals, batch_elapsed_ms: value.batch_elapsed_ms };
 }
 
-async function readLatestPanelDecision(directory) {
+async function readLatestPanelDecision(directory, cache = null) {
   const filename = path.join(directory, "logs", "latest-decision.json");
   let file;
   try {
     await validateSessionPath(directory);
+    await validateDirectoryPath(path.dirname(filename));
     const details = await fs.lstat(filename);
     if (!details.isFile() || details.isSymbolicLink() || details.size > 256 * 1024) {
       throw new Error("Unsafe Jev panel decision file");
     }
+    const fingerprint = `${filename}:${details.dev}:${details.ino}:${details.mtimeMs}:${details.ctimeMs}:${details.size}`;
+    if (cache?.fingerprint === fingerprint) return cache.value;
     file = await fs.open(filename, constants.O_RDONLY | (constants.O_NOFOLLOW || 0));
     const opened = await file.stat();
     if (!opened.isFile() || opened.size > 256 * 1024) throw new Error("Unsafe Jev panel decision file");
     const value = JSON.parse(await file.readFile("utf8"));
-    return parsePanelDecision(value);
+    const parsed = parsePanelDecision(value);
+    if (cache) { cache.fingerprint = fingerprint; cache.value = parsed; }
+    return parsed;
   } catch (error) {
-    if (error.code === "ENOENT") return null;
+    if (error.code === "ENOENT") { if (cache) cache.fingerprint = null; return null; }
     throw error;
   } finally {
     await file?.close();

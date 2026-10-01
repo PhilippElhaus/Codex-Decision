@@ -527,7 +527,7 @@
     window.addEventListener("message", (event) => handleReply(event.data));
     new MutationObserver(schedule).observe(document.body, { subtree: true, childList: true, characterData: true });
     window.addEventListener("popstate", schedule);
-    setInterval(schedule, 400);
+    setInterval(schedule, 1500);
     schedule();
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start, { once: true });

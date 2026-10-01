@@ -70,8 +70,8 @@
           health: demo === "onboarding" || demo === "missing-key" ? { ok: false, reason: "JEV_KEY_MISSING" } :
             demo === "unavailable" ? { ok: false, reason: "JEV_TIMEOUT" } : { ok: true, model: "jev-1.13.0" },
           hookHealth: demo === "pending" ? null :
-            { version: 1, hook_version: "0.8.0", last_seen_ms: Date.now(), last_success_ms: Date.now() },
-          expectedHookVersion: "0.8.0",
+            { version: 1, hook_version: "0.8.1", last_seen_ms: Date.now(), last_success_ms: Date.now() },
+          expectedHookVersion: "0.8.1",
           viewStartedAt: Date.now() - 1000,
           busy: demo === "pulse", mode: "replace", recent: history[0], history,
           stats: { calls: 1, candidates: 1, kept: 0, replaced: 1, checkedChars: 6367, savedChars: 6058, estimatedTokensSaved: 1515, elapsedMs: 1263, completed: 1 },

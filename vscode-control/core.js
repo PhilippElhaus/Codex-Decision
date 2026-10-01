@@ -9,53 +9,13 @@ const { execFile } = require("node:child_process");
 const { promisify } = require("node:util");
 const runFile = promisify(execFile);
 const JEV_ENDPOINT = "https://api.typesafe.ai/v1/systemone";
-const DEFAULT_LINE_POLICY = Object.freeze({
-  output: { omit_min: 95, exact_max: 5 },
-  test_build: { omit_min: 95, exact_max: 5 },
-  search_listing: { omit_min: 95, exact_max: 5 },
-});
-const DEFAULT_SEARCH_RELEVANCE = Object.freeze({ guard_enabled: false, relevant_max: 5 });
-const DEFAULT_SETTINGS = Object.freeze({ mode: "replace", line_policy: DEFAULT_LINE_POLICY,
-  search_relevance: DEFAULT_SEARCH_RELEVANCE, choice_gate_enabled: true,
-  log_limit_mb: 50, never_delete_logs: false });
-const CONFIG_KEYS = new Set([
-  "enabled", "test_build_enabled", "search_listing_enabled", "mode", "min_chars", "max_chars",
-  "timeout_seconds", "model", "allow_mcp_replacement",
-  "log_limit_mb", "never_delete_logs", "schema_version", "line_policy", "search_relevance",
-  "choice_gate_enabled",
-]);
-
-function completeSearchRelevance(value = {}) {
-  if (!value || typeof value !== "object" || Array.isArray(value) ||
-      Object.keys(value).some((key) => !Object.hasOwn(DEFAULT_SEARCH_RELEVANCE, key))) {
-    throw new Error("Invalid search relevance policy");
-  }
-  const policy = { ...DEFAULT_SEARCH_RELEVANCE, ...value };
-  if (typeof policy.guard_enabled !== "boolean" || !Number.isInteger(policy.relevant_max) ||
-      policy.relevant_max < 0 || policy.relevant_max > 100) {
-    throw new Error("Invalid search relevance policy");
-  }
-  return policy;
-}
-
-function completeLinePolicy(value = {}) {
-  if (!value || typeof value !== "object" || Array.isArray(value) ||
-      Object.keys(value).some((route) => !Object.hasOwn(DEFAULT_LINE_POLICY, route))) {
-    throw new Error("Invalid Jev line policy");
-  }
-  return Object.fromEntries(Object.entries(DEFAULT_LINE_POLICY).map(([route, defaults]) => {
-    const entered = value[route] ?? {};
-    if (!entered || typeof entered !== "object" || Array.isArray(entered) ||
-        Object.keys(entered).some((key) => !Object.hasOwn(defaults, key))) {
-      throw new Error("Invalid Jev line policy");
-    }
-    const merged = { ...defaults, ...entered };
-    if (Object.values(merged).some((number) => !Number.isInteger(number) || number < 0 || number > 100)) {
-      throw new Error("Jev line policy requires whole percentages from 0 to 100");
-    }
-    return [route, merged];
-  }));
-}
+const { defaults, validate } = require("./schema");
+const DEFAULT_LINE_POLICY = Object.freeze(defaults("config").line_policy);
+const DEFAULT_SEARCH_RELEVANCE = Object.freeze(defaults("config").search_relevance);
+const { schema_version: _schemaVersion, ...settingsDefaults } = defaults("settings");
+const DEFAULT_SETTINGS = Object.freeze(settingsDefaults);
+function completeSearchRelevance(value = {}) { return validate("search_relevance", value); }
+function completeLinePolicy(value = {}) { return validate("line_policy", { ...DEFAULT_LINE_POLICY, ...value }); }
 
 function defaultDataDirectory() {
   return process.env.CODEX_JEV_DATA_DIRECTORY || "";
@@ -68,15 +28,69 @@ function sessionDirectory(directory, sessionId) {
   return path.join(directory, "sessions", crypto.createHash("sha256").update(sessionId).digest("hex"));
 }
 
-async function validateSessionPath(directory) {
-  const parent = path.dirname(directory);
-  if (path.basename(parent) !== "sessions") return;
-  for (const folder of [parent, directory]) {
-    const details = await fs.lstat(folder);
-    if (!details.isDirectory() || details.isSymbolicLink() ||
-        (process.platform !== "win32" && (details.mode & 0o077))) {
-      throw new Error("Unsafe Jev session directory");
+// Inspect every directory component, including roots and logs, before accessing state.
+async function validateDirectoryPath(directory) {
+  const absolute = path.resolve(directory);
+  let current = path.parse(absolute).root;
+  for (const part of absolute.slice(current.length).split(path.sep).filter(Boolean)) {
+    current = path.join(current, part);
+    let details;
+    try { details = await fs.lstat(current); }
+    catch (error) { if (error.code === "ENOENT") return; throw error; }
+    if (!details.isDirectory() || details.isSymbolicLink()) {
+      throw new Error("Unsafe Jev session directory path");
     }
+  }
+}
+
+async function validateSessionPath(directory) {
+  await validateDirectoryPath(directory);
+  const parent = path.dirname(directory);
+  const folders = path.basename(parent) === "sessions" ? [path.dirname(parent), parent, directory] : [directory];
+  for (const folder of folders) {
+    let details;
+    try { details = await fs.lstat(folder); }
+    catch (error) { if (error.code === "ENOENT") return; throw error; }
+    if (process.platform !== "win32" && (details.mode & 0o077)) {
+      throw new Error("Unsafe Jev session directory permissions");
+    }
+  }
+}
+
+// A directory lock works across extension hosts as well as overlapping controllers.
+// A crashed owner's lock fails closed; it is never silently stolen.
+async function withWriteLock(directory, operation) {
+  await validateSessionPath(directory);
+  await fs.mkdir(directory, { recursive: true, mode: 0o700 });
+  await validateSessionPath(directory);
+  const lock = path.join(directory, ".jev-write.lock");
+  const deadline = performance.now() + 2000;
+  while (true) {
+    try { await fs.mkdir(lock, { mode: 0o700 }); break; }
+    catch (error) {
+      if (error.code !== "EEXIST") throw error;
+      let details;
+      try { details = await fs.lstat(lock); }
+      catch (statError) { if (statError.code === "ENOENT") continue; throw statError; }
+      if (!details.isDirectory() || details.isSymbolicLink()) throw new Error("Unsafe Jev write lock");
+      if (performance.now() >= deadline) throw new Error("Jev settings write lock timed out");
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  }
+  try { return await operation(); }
+  finally { await fs.rmdir(lock); }
+}
+
+async function atomicWrite(target, content) {
+  const temporary = path.join(path.dirname(target), `.jev-${crypto.randomUUID()}.tmp`);
+  let owned = false;
+  try {
+    const file = await fs.open(temporary, "wx", 0o600);
+    owned = true;
+    try { await file.writeFile(content); await file.sync(); } finally { await file.close(); }
+    await fs.rename(temporary, target);
+  } finally {
+    if (owned) await fs.rm(temporary, { force: true });
   }
 }
 
@@ -84,6 +98,7 @@ async function readHookHealth(directory) {
   const filename = path.join(directory, "logs", "hook-health.json");
   try {
     await validateSessionPath(directory);
+    await validateDirectoryPath(path.join(directory, "logs"));
     const logs = await fs.lstat(path.dirname(filename));
     if (!logs.isDirectory() || logs.isSymbolicLink()) throw new Error("Unsafe Jev hook health directory");
     const details = await fs.lstat(filename);
@@ -116,33 +131,7 @@ async function readConfig(directory) {
       throw new Error("Unsafe Jev config");
     }
     const raw = JSON.parse(await fs.readFile(filename, "utf8"));
-    const merged = {
-      enabled: false, test_build_enabled: false, search_listing_enabled: false, mode: "replace", min_chars: 256, max_chars: 2_000_000,
-      timeout_seconds: 3, model: "jev-latest",
-      allow_mcp_replacement: false, log_limit_mb: 50, never_delete_logs: false,
-      choice_gate_enabled: true, ...raw,
-    };
-    if (!raw || typeof raw !== "object" || Array.isArray(raw) ||
-        Object.keys(raw).some((key) => !CONFIG_KEYS.has(key)) ||
-        ["enabled", "test_build_enabled", "search_listing_enabled", "mode"].some((key) => !Object.hasOwn(raw, key)) ||
-        !raw.line_policy || typeof raw.line_policy !== "object" || Array.isArray(raw.line_policy) ||
-        ["output", "test_build", "search_listing"].some((key) => !Object.hasOwn(raw.line_policy, key)) ||
-        typeof merged.enabled !== "boolean" || typeof merged.test_build_enabled !== "boolean" ||
-        typeof merged.search_listing_enabled !== "boolean" ||
-        !["observe", "replace"].includes(merged.mode) ||
-        !Number.isInteger(merged.min_chars) || !Number.isInteger(merged.max_chars) ||
-        merged.min_chars < 256 || merged.min_chars > merged.max_chars || merged.max_chars > 2_000_000 ||
-        typeof merged.timeout_seconds !== "number" || merged.timeout_seconds < 0.1 || merged.timeout_seconds > 4 ||
-        typeof merged.model !== "string" || !/^jev-[\w.-]{1,40}$/.test(merged.model) ||
-        typeof merged.allow_mcp_replacement !== "boolean" ||
-        typeof merged.choice_gate_enabled !== "boolean" ||
-        !Number.isInteger(merged.log_limit_mb) || merged.log_limit_mb < 1 || merged.log_limit_mb > 9999 ||
-        typeof merged.never_delete_logs !== "boolean" ||
-        merged.schema_version !== 2) {
-      throw new Error("Invalid Jev config");
-    }
-    completeLinePolicy(merged.line_policy);
-    completeSearchRelevance(merged.search_relevance);
+    validate("config", raw);
     return { enabled: false, test_build_enabled: false, search_listing_enabled: false, mode: "replace", ...raw };
   } catch (error) {
     if (error.code === "ENOENT") return { enabled: false, test_build_enabled: false, search_listing_enabled: false, mode: "replace" };
@@ -151,6 +140,10 @@ async function readConfig(directory) {
 }
 
 async function writeConfig(directory, updates, createOnly = false) {
+  return withWriteLock(directory, () => updateConfig(directory, updates, createOnly));
+}
+
+async function updateConfig(directory, updates, createOnly) {
   const old = await readConfig(directory);
   const config = { ...old, ...updates, schema_version: 2,
     line_policy: completeLinePolicy(updates.line_policy ?? old.line_policy),
@@ -187,13 +180,7 @@ async function writeConfig(directory, updates, createOnly = false) {
       throw error;
     }
   }
-  const temporary = path.join(directory, `.config-${process.pid}-${Date.now()}.tmp`);
-  try {
-    await fs.writeFile(temporary, JSON.stringify(config, null, 2) + "\n", { flag: "wx", mode: 0o600 });
-    await fs.rename(temporary, target);
-  } finally {
-    await fs.rm(temporary, { force: true });
-  }
+  await atomicWrite(target, JSON.stringify(config, null, 2) + "\n");
   return config;
 }
 
@@ -211,11 +198,6 @@ async function ensureSessionDefaults(directory) {
     search_listing_enabled: true }, true);
 }
 
-async function writeEnabled(directory, enabled) {
-  if (typeof enabled !== "boolean") throw new TypeError("enabled must be boolean");
-  return writeConfig(directory, { enabled });
-}
-
 async function writeSelection(directory, outputEnabled, testBuildEnabled, searchListingEnabled) {
   if (typeof outputEnabled !== "boolean" || typeof testBuildEnabled !== "boolean" ||
       (searchListingEnabled !== undefined && typeof searchListingEnabled !== "boolean")) {
@@ -227,28 +209,15 @@ async function writeSelection(directory, outputEnabled, testBuildEnabled, search
   });
 }
 
-async function writeMode(directory, mode) {
-  if (!["replace", "observe"].includes(mode)) throw new TypeError("invalid Jev mode");
-  return writeConfig(directory, { mode });
-}
-
 function completeSettings(value) {
-  if (!value || typeof value !== "object" || Array.isArray(value) ||
-      Object.keys(value).some((key) => !Object.hasOwn(DEFAULT_SETTINGS, key))) {
-    throw new Error("Invalid Jev settings");
-  }
-  const settings = { ...DEFAULT_SETTINGS, ...value };
-  if (!["observe", "replace"].includes(settings.mode) ||
-      !Number.isInteger(settings.log_limit_mb) || settings.log_limit_mb < 1 ||
-      settings.log_limit_mb > 9999 || typeof settings.never_delete_logs !== "boolean" ||
-      typeof settings.choice_gate_enabled !== "boolean") {
-    throw new Error("Invalid Jev settings");
-  }
-  return { ...settings, line_policy: completeLinePolicy(settings.line_policy),
-    search_relevance: completeSearchRelevance(settings.search_relevance) };
+  const { schema_version: _version, ...settings } = validate("settings", {
+    schema_version: 1, ...DEFAULT_SETTINGS, ...value,
+  });
+  return settings;
 }
 
 async function readGlobalSettings(directory) {
+  await validateSessionPath(directory);
   const filename = path.join(directory, "settings.json");
   try {
     const details = await fs.lstat(filename);
@@ -257,8 +226,8 @@ async function readGlobalSettings(directory) {
     }
     const raw = JSON.parse(await fs.readFile(filename, "utf8"));
     if (raw?.schema_version !== 1) throw new Error("Invalid Jev settings version");
-    const { schema_version: _version, ...settings } = raw;
-    return completeSettings(settings);
+    const { schema_version: _version, ...settings } = validate("settings", raw);
+    return settings;
   } catch (error) {
     if (error.code === "ENOENT") return completeSettings({});
     throw error;
@@ -266,24 +235,16 @@ async function readGlobalSettings(directory) {
 }
 
 async function writeGlobalSettings(directory, changes) {
-  const settings = completeSettings({ ...await readGlobalSettings(directory), ...changes });
-  const root = await fs.lstat(directory);
-  if (!root.isDirectory() || root.isSymbolicLink()) throw new Error("Unsafe Jev data directory");
-  const filename = path.join(directory, "settings.json");
-  const temporary = path.join(directory, `.settings-${process.pid}-${Date.now()}.tmp`);
-  try {
-    await fs.writeFile(temporary, JSON.stringify({ schema_version: 1, ...settings }, null, 2) + "\n",
-      { flag: "wx", mode: 0o600 });
-    await fs.rename(temporary, filename);
-  } finally {
-    await fs.rm(temporary, { force: true });
-  }
-  return settings;
+  return withWriteLock(directory, async () => {
+    const settings = completeSettings({ ...await readGlobalSettings(directory), ...changes });
+    await atomicWrite(path.join(directory, "settings.json"),
+      JSON.stringify({ schema_version: 1, ...settings }, null, 2) + "\n");
+    return settings;
+  });
 }
 
 async function readInstallationStats(directory) {
   const totals = await readLifetimeStats(directory);
-  totals.averageMs *= totals.completed;
   let entries;
   try {
     const parent = await fs.lstat(path.join(directory, "sessions"));
@@ -303,9 +264,8 @@ async function readInstallationStats(directory) {
       if (key === "averageMs") continue;
       totals[key] += stats[key];
     }
-    totals.averageMs += stats.averageMs * stats.completed;
   }
-  totals.averageMs = totals.completed ? Math.round(totals.averageMs / totals.completed) : 0;
+  totals.averageMs = totals.timed ? Math.round(totals.elapsedMs / totals.timed) : 0;
   return totals;
 }
 
@@ -313,6 +273,7 @@ async function activityLogPath(directory) {
   const current = path.join(directory, "logs", "events.jsonl");
   try {
     await validateSessionPath(directory);
+    await validateDirectoryPath(path.join(directory, "logs"));
     const logs = await fs.lstat(path.join(directory, "logs"));
     if (!logs.isDirectory() || logs.isSymbolicLink()) throw new Error("Unsafe Jev logs directory");
     const index = await fs.lstat(current);
@@ -326,11 +287,6 @@ async function activityLogPath(directory) {
 
 function isJevOutcome(event) {
   return ["candidate", "keep", "replace"].includes(event.status);
-}
-
-function isInformativeEvent(event) {
-  return event.status !== "calling" &&
-    !(event.status === "skip" && ["small", "unsupported_event", "unsupported_result"].includes(event.reason));
 }
 
 function parseLogLine(line) {
@@ -354,59 +310,6 @@ function parseLogLine(line) {
         ? row.lines_relevance_kept : null,
     };
   } catch { return null; }
-}
-
-async function readLatestEvent(directory, { informativeOnly = false } = {}) {
-  const filename = await activityLogPath(directory);
-  let file;
-  try {
-    file = await fs.open(filename, "r");
-  } catch (error) {
-    if (error.code === "ENOENT") return null;
-    throw error;
-  }
-  try {
-    const { size } = await file.stat();
-    const length = Math.min(size, 32768);
-    if (!length) return null;
-    const buffer = Buffer.alloc(length);
-    await file.read(buffer, 0, length, size - length);
-    const lines = buffer.toString("utf8").split("\n");
-    for (let index = lines.length - 1; index >= (size > length ? 1 : 0); index -= 1) {
-      if (!lines[index].trim()) continue;
-      const event = parseLogLine(lines[index]);
-      if (event && (!informativeOnly || isInformativeEvent(event))) return event;
-    }
-    return null;
-  } finally {
-    await file.close();
-  }
-}
-
-async function readRecentOutcomes(directory, limit = 3) {
-  let file;
-  try {
-    file = await fs.open(await activityLogPath(directory), "r");
-  } catch (error) {
-    if (error.code === "ENOENT") return { outcomes: [], offset: 0 };
-    throw error;
-  }
-  try {
-    const { size } = await file.stat();
-    const length = Math.min(size, 1_048_576);
-    if (!length) return { outcomes: [], offset: size };
-    const buffer = Buffer.alloc(length);
-    await file.read(buffer, 0, length, size - length);
-    const lines = buffer.toString("utf8").split("\n");
-    const outcomes = [];
-    for (let index = lines.length - 1; index >= (size > length ? 1 : 0) && outcomes.length < limit; index -= 1) {
-      const event = parseLogLine(lines[index]);
-      if (event && isJevOutcome(event)) outcomes.push(event);
-    }
-    return { outcomes, offset: size };
-  } finally {
-    await file.close();
-  }
 }
 
 async function readEventOffset(directory) {
@@ -445,7 +348,7 @@ async function readEventsSince(directory, offset) {
 
 async function readLifetimeStats(directory) {
   const totals = { calls: 0, completed: 0, replaced: 0, savedChars: 0,
-    estimatedTokensSaved: 0, averageMs: 0, linesSeen: 0, linesJudged: 0,
+    estimatedTokensSaved: 0, averageMs: 0, timed: 0, elapsedMs: 0, linesSeen: 0, linesJudged: 0,
     linesKept: 0, linesOmitted: 0, linesProtected: 0, linesUnjudged: 0,
     linesRelevanceJudged: 0, linesBelowOmitCutoff: 0, linesRelevanceKept: 0 };
   const statsFile = path.join(directory, "stats.json");
@@ -467,7 +370,7 @@ async function readLifetimeStats(directory) {
     }));
     return { calls: stats.calls, completed: stats.completed, replaced: stats.replaced,
       savedChars, estimatedTokensSaved: estimateTokensSaved(savedChars),
-      averageMs: stats.timed ? Math.round(stats.elapsedMs / stats.timed) : 0, ...lineStats };
+      averageMs: stats.timed ? Math.round(stats.elapsedMs / stats.timed) : 0, timed: stats.timed, elapsedMs: stats.elapsedMs, ...lineStats };
   } catch (error) {
     if (error.code !== "ENOENT") throw error;
   }
@@ -505,6 +408,7 @@ async function readLifetimeStats(directory) {
     await file.close();
   }
   totals.estimatedTokensSaved = estimateTokensSaved(totals.savedChars);
+  totals.timed = timed; totals.elapsedMs = elapsedMs;
   totals.averageMs = timed ? Math.round(elapsedMs / timed) : 0;
   return totals;
 }
@@ -543,13 +447,6 @@ function formatDuration(elapsedMs) {
     : `${Math.round(milliseconds)} ms`;
 }
 
-function activitySummary(stats) {
-  const replaced = Number(stats.replaced) || 0;
-  const completed = Number(stats.completed) || 0;
-  const average = completed ? formatDuration((Number(stats.elapsedMs) || 0) / completed) : "—";
-  return `${completed} checked · ${replaced} replaced · ${average} avg`;
-}
-
 function decisionSummary(event) {
   if (!event) return "No hook decision recorded yet";
   if (event.status === "calling") return `Checking ${event.tool || "tool"} output with Jev`;
@@ -572,6 +469,7 @@ function parseHealthOutput(stdout) {
 }
 
 async function readApiKey(directory) {
+  await validateSessionPath(directory);
   const filename = path.join(directory, ".env");
   const details = await fs.lstat(filename);
   if (!details.isFile() || details.isSymbolicLink() || details.size > 8192 ||
@@ -586,6 +484,28 @@ async function readApiKey(directory) {
     throw new Error("Jev API key is missing or invalid");
   }
   return values[0];
+}
+
+async function boundedResponse(response, limit) {
+  if (!response.body?.getReader) {
+    // Small injected responses used by callers without a Fetch stream.
+    const text = await response.text();
+    if (Buffer.byteLength(text) > limit) throw new Error("Jev response too large");
+    return text;
+  }
+  const reader = response.body.getReader();
+  const chunks = [];
+  let size = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > limit) { await reader.cancel(); throw new Error("Jev response too large"); }
+      chunks.push(Buffer.from(value));
+    }
+    return Buffer.concat(chunks).toString("utf8");
+  } finally { reader.releaseLock(); }
 }
 
 async function checkHealth(dataDirectory, send = globalThis.fetch, suppliedKey = null) {
@@ -616,7 +536,7 @@ async function checkHealth(dataDirectory, send = globalThis.fetch, suppliedKey =
   if (!response.ok) {
     if ([401, 403].includes(response.status) && typeof response.text === "function") {
       try {
-        const error = JSON.parse((await response.text()).slice(0, 4096));
+        const error = JSON.parse(await boundedResponse(response, 4096));
         const details = [error.code, error.message, error.error?.code, error.error?.message];
         if (details.some((value) => typeof value === "string" && /expir/i.test(value))) {
           return { ok: false, reason: "JEV_KEY_EXPIRED" };
@@ -626,8 +546,7 @@ async function checkHealth(dataDirectory, send = globalThis.fetch, suppliedKey =
     return { ok: false, reason: `JEV_HTTP_${response.status}` };
   }
   try {
-    const output = await response.text();
-    if (output.length > 262144) throw new Error("Jev health response is too large");
+    const output = await boundedResponse(response, 262144);
     return parseHealthOutput(output);
   } catch {
     return { ok: false, reason: "JEV_INVALID_RESPONSE" };
@@ -642,11 +561,16 @@ function validateApiKey(key) {
 }
 
 async function writeApiKey(directory, key) {
+  return withWriteLock(directory, () => updateApiKey(directory, key));
+}
+
+async function updateApiKey(directory, key) {
   validateApiKey(key);
   await fs.mkdir(directory, { recursive: true, mode: 0o700 });
   if (!(await fs.lstat(directory)).isDirectory() || (await fs.lstat(directory)).isSymbolicLink()) {
     throw new Error("Unsafe plugin data directory");
   }
+  await validateSessionPath(directory);
   const target = path.join(directory, ".env");
   let lines = [];
   try {
@@ -660,9 +584,12 @@ async function writeApiKey(directory, key) {
   }
   const content = [...lines.filter(Boolean), `JEV_API_KEY=${key}`].join("\n") + "\n";
   if (Buffer.byteLength(content) > 8192) throw new Error("Jev credential file is too large");
-  const temporary = path.join(directory, `.env-${process.pid}-${Date.now()}.tmp`);
+  const temporary = path.join(directory, `.env-${crypto.randomUUID()}.tmp`);
+  let owned = false;
   try {
-    await fs.writeFile(temporary, content, { flag: "wx", mode: 0o600 });
+    const file = await fs.open(temporary, "wx", 0o600);
+    owned = true;
+    try { await file.writeFile(content); await file.sync(); } finally { await file.close(); }
     await fs.chmod(temporary, 0o600);
     if (process.platform === "win32") {
       const match = /^\\\\(?:wsl\.localhost|wsl\$)\\([A-Za-z0-9_-]+)\\(.+)$/i.exec(temporary);
@@ -670,18 +597,18 @@ async function writeApiKey(directory, key) {
     }
     await fs.rename(temporary, target);
   } finally {
-    await fs.rm(temporary, { force: true });
+    if (owned) await fs.rm(temporary, { force: true });
   }
 }
 
 module.exports = {
-  activitySummary, checkHealth, sessionDirectory, validateSessionPath, readHookHealth,
+  checkHealth, sessionDirectory, validateSessionPath, validateDirectoryPath, readHookHealth,
   completeLinePolicy, DEFAULT_LINE_POLICY,
   completeSearchRelevance, DEFAULT_SEARCH_RELEVANCE,
   decisionSummary, defaultDataDirectory, estimateTokensSaved, formatDuration,
-  isInformativeEvent, isJevOutcome, outcomeLine, parseHealthOutput, readConfig,
-  readApiKey, readEventOffset, readEventsSince, readLatestEvent, readLifetimeStats, readRecentOutcomes,
-  savedCharacters, writeApiKey, writeEnabled, writeMode, writeSelection,
+  isJevOutcome, outcomeLine, parseHealthOutput, readConfig,
+  readApiKey, readEventOffset, readEventsSince, readLifetimeStats,
+  savedCharacters, writeApiKey, writeSelection,
   ensureSessionDefaults,
   DEFAULT_SETTINGS, readGlobalSettings, writeGlobalSettings, readInstallationStats,
 };

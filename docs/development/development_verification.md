@@ -12,4 +12,6 @@ For reviewed quality cases, create a private JSON array such as:
 [{"id":"failing-test-1","split":"holdout","receipt":"/private/receipt.json","required_lines":[5,6,9],"task_solved":true,"baseline_task_solved":true}]
 ```
 
-Run `jevctl evaluate-quality --cases <private-cases.json>`. It reports required lines lost, characters saved, and gate trials per route and split. These trials do not change settings or prove future task success. Receipts may contain private tool output; keep cases outside the repository. The optional ignored live Rust test makes a small number of real Jev requests with synthetic output and a private key file.
+Run `jevctl evaluate-quality --cases <private-cases.json>`. It reports actual required lines lost, proposed omissions and required losses separately, characters saved, and gate trials per route and split. Monitor and rejected candidates never count as actual evidence loss. These trials do not change settings or prove future task success. Receipts may contain private tool output; keep cases outside the repository. The optional ignored live Rust test makes a small number of real Jev requests with synthetic output and a private key file.
+
+The [live demo](quality_demo.md) records token usage, elapsed time, exact-original checks, and required-line retention across reviewed fixtures. The 70/25 trial is a calibration profile, not a replacement for the conservative installed defaults. Release builds strip symbols and disable unused regex, JSON-helper, gzip, and Chrono serialization dependencies while keeping HTTPS.

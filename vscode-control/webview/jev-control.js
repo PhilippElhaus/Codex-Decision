@@ -78,7 +78,7 @@
     const current = currentViewId();
     sentViews.set(id, current);
     if (sentViews.size > 50) sentViews.delete(sentViews.keys().next().value);
-    api.postMessage({ type: "codex-jev", action, enabled, feature, ...(key === undefined ? {} : { key }), viewId: current, sessionId: sessionId(), expectsLocalSession: expectsLocalSession(), id });
+    api.postMessage({ type: "codex-jev", action, enabled, feature, focused: document.hasFocus() && document.visibilityState === "visible", ...(key === undefined ? {} : { key }), viewId: current, sessionId: sessionId(), expectsLocalSession: expectsLocalSession(), id });
     return id;
   }
 
@@ -580,8 +580,12 @@
     create();
     position();
     if (typeof ResizeObserver === "function") layoutObserver = new ResizeObserver(schedulePosition);
-    const observer = new MutationObserver(schedulePosition);
-    observer.observe(document.body, { subtree: true, childList: true, characterData: true });
+    const observer = new MutationObserver((records) => {
+      if (records.some((record) => !root?.contains(record.target) && !setup?.contains(record.target))) schedulePosition();
+    });
+    observer.observe(document.body, { subtree: true, childList: true, characterData: true,
+      attributes: true, attributeFilter: ["class", "style", "hidden", "aria-label"] });
+    schedulePosition();
     window.addEventListener("resize", schedulePosition);
     window.addEventListener("scroll", schedulePosition, true);
     window.addEventListener("message", (event) => {
@@ -615,8 +619,11 @@
         render();
       }
     });
-    setInterval(() => { if (!retryRequestId) send("status"); }, 120);
-    setInterval(schedulePosition, 300);
+    setInterval(() => { if (!retryRequestId) send("status"); }, 1000);
+    window.addEventListener("focus", () => send("status"));
+    document.addEventListener("visibilitychange", () => send("status"));
+    window.addEventListener("codex-jev-route", () => send("status"));
+    setInterval(schedulePosition, 1500);
     send("status");
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start, { once: true });

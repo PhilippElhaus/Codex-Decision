@@ -97,7 +97,7 @@ fn bridge_fragments_publish_routes_and_validate_settings_messages() {
         ("/remote/remote-task", "remote", None),
         ("/settings", "none", None),
     ] {
-        let script = format!("let document={{documentElement:{{dataset:{{codexJevSessionId:'stale'}}}}}};let ZK={{}},TK={{useContext:()=>({{location:{{pathname:{}}}}})}},WG=()=>{{}},_K=()=>true;{route}vK();process.stdout.write(JSON.stringify(document.documentElement.dataset));", json!(pathname));
+        let script = format!("let window={{dispatchEvent:()=>{{}}}};let document={{documentElement:{{dataset:{{codexJevSessionId:'stale'}}}}}};let ZK={{}},TK={{useContext:()=>({{location:{{pathname:{}}}}})}},WG=()=>{{}},_K=()=>true;{route}vK();process.stdout.write(JSON.stringify(document.documentElement.dataset));", json!(pathname));
         let output = Command::new("node").arg("-e").arg(script).output().unwrap();
         assert!(
             output.status.success(),

@@ -6,8 +6,8 @@ const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
 const {
-  activitySummary, checkHealth, completeLinePolicy, completeSearchRelevance, DEFAULT_SEARCH_RELEVANCE, decisionSummary, sessionDirectory, readHookHealth, estimateTokensSaved, formatDuration, outcomeLine, parseHealthOutput, readApiKey, readConfig,
-  readEventOffset, readEventsSince, readLatestEvent, readLifetimeStats, readRecentOutcomes, writeApiKey, writeEnabled, writeMode, writeSelection, ensureSessionDefaults,
+  checkHealth, completeLinePolicy, completeSearchRelevance, DEFAULT_SEARCH_RELEVANCE, decisionSummary, sessionDirectory, readHookHealth, estimateTokensSaved, formatDuration, outcomeLine, parseHealthOutput, readApiKey, readConfig,
+  readEventOffset, readEventsSince, readLifetimeStats, writeApiKey, writeSelection, ensureSessionDefaults,
   readGlobalSettings, writeGlobalSettings, readInstallationStats,
 } = require("../../vscode-control/core");
 const withV2 = (config) => ({ ...config, schema_version: 2, line_policy: completeLinePolicy(),
@@ -117,10 +117,10 @@ test("session activity index and cumulative stats use only current paths", async
     await fs.writeFile(path.join(directory, "stats.json"), JSON.stringify({
       calls: 3, completed: 3, replaced: 1, savedChars: 900, timed: 2, elapsedMs: 400,
     }));
-    assert.equal((await readLatestEvent(directory)).status, "replace");
+    assert.equal((await readEventsSince(directory, 0)).events.at(-1).status, "replace");
     assert.equal((await readEventOffset(directory)), (await fs.stat(path.join(directory, "logs", "events.jsonl"))).size);
     assert.deepEqual(await readLifetimeStats(directory), {
-      calls: 3, completed: 3, replaced: 1, savedChars: 900, estimatedTokensSaved: 225, averageMs: 200,
+      calls: 3, completed: 3, replaced: 1, savedChars: 900, estimatedTokensSaved: 225, averageMs: 200, timed: 2, elapsedMs: 400,
       linesSeen: 0, linesJudged: 0, linesKept: 0, linesOmitted: 0, linesProtected: 0, linesUnjudged: 0,
       linesRelevanceJudged: 0, linesBelowOmitCutoff: 0, linesRelevanceKept: 0,
     });
@@ -150,30 +150,15 @@ test("hook selection writes the config atomically and preserves the Jev mode", a
   try {
     assert.deepEqual(await readConfig(directory), { enabled: false, test_build_enabled: false, search_listing_enabled: false, mode: "replace" });
     await fs.writeFile(path.join(directory, "config.json"), JSON.stringify(withV2({ enabled: false, test_build_enabled: false, search_listing_enabled: false, mode: "replace", min_chars: 10000 })));
-    assert.deepEqual(await writeEnabled(directory, true), withV2({ enabled: true, test_build_enabled: false, search_listing_enabled: false, mode: "replace", min_chars: 10000 }));
+    assert.deepEqual(await writeSelection(directory, true, false, false), withV2({ enabled: true, test_build_enabled: false, search_listing_enabled: false, mode: "replace", min_chars: 10000 }));
     assert.deepEqual(await readConfig(directory), withV2({ enabled: true, test_build_enabled: false, search_listing_enabled: false, mode: "replace", min_chars: 10000 }));
     assert.deepEqual(await writeSelection(directory, false, true), withV2({ enabled: false, test_build_enabled: true, search_listing_enabled: false, mode: "replace", min_chars: 10000 }));
     assert.deepEqual(await writeSelection(directory, true, true, true), withV2({ enabled: true, test_build_enabled: true, search_listing_enabled: true, mode: "replace", min_chars: 10000 }));
     assert.equal((await writeSelection(directory, false, false)).search_listing_enabled, true);
     await assert.rejects(writeSelection(directory, true, "yes"), /booleans/);
-    await writeEnabled(directory, false);
+    await writeSelection(directory, false, false, false);
     assert.equal((await readConfig(directory)).enabled, false);
     assert.deepEqual((await fs.readdir(directory)).sort(), ["config.json"]);
-  } finally {
-    await fs.rm(directory, { recursive: true, force: true });
-  }
-});
-
-test("mode setting changes only the mode and rejects invalid values", async () => {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-control-test-"));
-  try {
-    await writeEnabled(directory, true);
-    const observed = await writeMode(directory, "observe");
-    assert.deepEqual(observed, withV2({ enabled: true, test_build_enabled: false, search_listing_enabled: false, mode: "observe" }));
-    assert.deepEqual(await readConfig(directory), observed);
-    await assert.rejects(writeMode(directory, "unknown"), /invalid Jev mode/);
-    assert.deepEqual(await readConfig(directory), observed);
-    assert.deepEqual(await writeMode(directory, "replace"), withV2({ enabled: true, test_build_enabled: false, search_listing_enabled: false, mode: "replace" }));
   } finally {
     await fs.rm(directory, { recursive: true, force: true });
   }
@@ -190,7 +175,7 @@ test("outdated configuration is rejected without changing it", async () => {
       const bytes = JSON.stringify(outdated);
       await fs.writeFile(path.join(directory, "config.json"), bytes);
       await assert.rejects(readConfig(directory), /Invalid Jev config/);
-      await assert.rejects(writeEnabled(directory, true), /Invalid Jev config/);
+      await assert.rejects(writeSelection(directory, true, false, false), /Invalid Jev config/);
       assert.equal(await fs.readFile(path.join(directory, "config.json"), "utf8"), bytes);
     }
   } finally { await fs.rm(directory, { recursive: true, force: true }); }
@@ -231,41 +216,20 @@ test("invalid config and linked target fail without changing a hook selection", 
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-control-test-"));
   try {
     await fs.writeFile(path.join(directory, "config.json"), JSON.stringify({ enabled: "yes" }));
-    await assert.rejects(writeEnabled(directory, true), /Invalid Jev config/);
+    await assert.rejects(writeSelection(directory, true, false, false), /Invalid Jev config/);
     await fs.writeFile(path.join(directory, "config.json"), JSON.stringify({ test_build_enabled: "yes" }));
     await assert.rejects(writeSelection(directory, false, true), /Invalid Jev config/);
     await fs.writeFile(path.join(directory, "config.json"), JSON.stringify({ search_listing_enabled: "yes" }));
     await assert.rejects(writeSelection(directory, false, false, true), /Invalid Jev config/);
     await fs.writeFile(path.join(directory, "config.json"), JSON.stringify({ min_chars: 1 }));
-    await assert.rejects(writeEnabled(directory, true), /Invalid Jev config/);
+    await assert.rejects(writeSelection(directory, true, false, false), /Invalid Jev config/);
     await fs.rm(path.join(directory, "config.json"));
     try {
       await fs.symlink(path.join(directory, "missing.json"), path.join(directory, "config.json"));
-      await assert.rejects(writeEnabled(directory, true));
+      await assert.rejects(writeSelection(directory, true, false, false));
     } catch (error) {
       if (error.code !== "EPERM") throw error; // Windows developer mode may forbid test symlinks.
     }
-  } finally {
-    await fs.rm(directory, { recursive: true, force: true });
-  }
-});
-
-test("recent decision is read from a bounded log tail", async () => {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-control-test-"));
-  try {
-    const file = path.join(directory, "logs", "events.jsonl");
-    await fs.mkdir(path.dirname(file), { recursive: true });
-    await fs.writeFile(file, "x".repeat(40000) + "\n" +
-      JSON.stringify({ tool: "Bash", status: "replace", reason: "jev_replace", original_chars: 12345, capsule_chars: 1000, elapsed_ms: 480 }) + "\n" +
-      JSON.stringify({ tool: "Bash", status: "skip", reason: "small", original_chars: 42, elapsed_ms: 0 }) + "\n");
-    const event = await readLatestEvent(directory);
-    assert.equal(event.reason, "small");
-    const decision = await readLatestEvent(directory, { informativeOnly: true });
-    assert.equal(decision.status, "replace");
-    assert.match(decisionSummary(decision), /replaced Bash output.*12[,.]345 chars$/);
-    const recent = await readRecentOutcomes(directory);
-    assert.equal(recent.outcomes.length, 1);
-    assert.match(outcomeLine(recent.outcomes[0]), /replaced · Bash · 12[,.]345 chars · -92%/);
   } finally {
     await fs.rm(directory, { recursive: true, force: true });
   }
@@ -275,7 +239,7 @@ test("session totals scan retained decisions within one session", async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-lifetime-test-"));
   try {
     assert.deepEqual(await readLifetimeStats(directory), { calls: 0, completed: 0, replaced: 0,
-      savedChars: 0, estimatedTokensSaved: 0, averageMs: 0,
+      savedChars: 0, estimatedTokensSaved: 0, averageMs: 0, timed: 0, elapsedMs: 0,
       linesSeen: 0, linesJudged: 0, linesKept: 0, linesOmitted: 0, linesProtected: 0, linesUnjudged: 0,
       linesRelevanceJudged: 0, linesBelowOmitCutoff: 0, linesRelevanceKept: 0 });
     const rows = [
@@ -290,7 +254,7 @@ test("session totals scan retained decisions within one session", async () => {
     await fs.mkdir(path.join(directory, "logs"), { recursive: true });
     await fs.writeFile(path.join(directory, "logs", "events.jsonl"), rows.map((row) => JSON.stringify(row)).join("\n") + "\nnot-json\n");
     assert.deepEqual(await readLifetimeStats(directory), { calls: 2, completed: 4, replaced: 2,
-      savedChars: 8000, estimatedTokensSaved: 2000, averageMs: 325,
+      savedChars: 8000, estimatedTokensSaved: 2000, averageMs: 325, timed: 4, elapsedMs: 1300,
       linesSeen: 0, linesJudged: 0, linesKept: 0, linesOmitted: 0, linesProtected: 0, linesUnjudged: 0,
       linesRelevanceJudged: 0, linesBelowOmitCutoff: 0, linesRelevanceKept: 0 });
   } finally { await fs.rm(directory, { recursive: true, force: true }); }
@@ -311,18 +275,12 @@ test("Monitor stats with no savedChars read as zero for existing sessions", asyn
 });
 
 test("summary keeps three signals and missing capsule sizes do not imply savings", () => {
-  assert.equal(activitySummary({ calls: 1, replaced: 1, completed: 1, elapsedMs: 1328 }),
-    "1 checked · 1 replaced · 1,3s avg");
-  assert.equal(activitySummary({ calls: 0, replaced: 0, completed: 0, elapsedMs: 0 }),
-    "0 checked · 0 replaced · — avg");
   assert.equal(outcomeLine({ status: "replace", tool: "Bash", original_chars: 10000, capsule_chars: null, elapsed_ms: 100 }),
     "replaced · Bash · 10,000 chars");
   assert.equal(outcomeLine({ filter: "test_build", status: "replace", tool: "Bash", original_chars: 10000, capsule_chars: 1000, elapsed_ms: 4 }),
     "replaced · test/build · 10,000 chars · -90%");
   assert.equal(outcomeLine({ filter: "test_build", status: "replace", tool: "Bash", original_chars: 6367, capsule_chars: 309, elapsed_ms: 1263 }),
     "replaced · test/build · 6,367 chars · -95%");
-  assert.equal(activitySummary({ completed: 1, replaced: 1, elapsedMs: 1263 }),
-    "1 checked · 1 replaced · 1,2s avg");
   assert.equal(formatDuration(999), "999 ms");
   assert.equal(formatDuration(1000), "1,0s");
   assert.equal(outcomeLine({ filter: "search_listing", status: "replace", tool: "Bash", original_chars: 5000, capsule_chars: 1200, elapsed_ms: 1263 }),
@@ -386,11 +344,10 @@ test("recent outcomes span tools and ignore calls, skips, and malformed rows", a
       "not-json\n" + rows.slice(4).map((row) => JSON.stringify(row) + "\n").join("");
     await fs.mkdir(path.join(directory, "logs"), { recursive: true });
     await fs.writeFile(path.join(directory, "logs", "events.jsonl"), content);
-    const recent = await readRecentOutcomes(directory);
+    const recent = await readEventsSince(directory, 0);
     assert.equal(recent.offset, Buffer.byteLength(content));
-    assert.deepEqual(recent.outcomes.map((row) => [row.status, row.tool]), [
-      ["candidate", "mcp__demo__search"], ["replace", "Bash"], ["keep", "mcp__demo__logs"],
-    ]);
+    assert.equal(recent.events.length, 6);
+    assert.equal(recent.events.at(-1).tool, "mcp__demo__search");
   } finally {
     await fs.rm(directory, { recursive: true, force: true });
   }

@@ -5,7 +5,7 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashSet};
 use std::fs::{self, OpenOptions};
-use std::io::{self, Write};
+use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -17,10 +17,11 @@ mod release;
 mod trust;
 
 fn write_private(path: &Path, data: &[u8]) -> Result<(), String> {
+    codex_jev::check_ancestors(path.parent().ok_or("missing file parent")?)?;
     if path.is_symlink() {
         return Err("linked file".into());
     }
-    let temp = path.with_extension(format!("jev-{}.tmp", std::process::id()));
+    let temp = path.with_extension(format!("jev-{}.tmp", uuid::Uuid::new_v4()));
     let mut options = OpenOptions::new();
     options.write(true).create_new(true);
     #[cfg(unix)]
@@ -184,6 +185,7 @@ fn package(root: &Path) -> Result<(), String> {
 }
 
 fn read_json(path: &Path, max_bytes: u64) -> Result<Value, String> {
+    codex_jev::check_ancestors(path.parent().ok_or("missing file parent")?)?;
     if path.is_symlink() {
         return Err(format!("linked input: {}", path.display()));
     }
@@ -191,8 +193,16 @@ fn read_json(path: &Path, max_bytes: u64) -> Result<Value, String> {
     if !details.is_file() || details.len() > max_bytes {
         return Err("invalid input size".into());
     }
-    serde_json::from_slice(&fs::read(path).map_err(|error| error.to_string())?)
-        .map_err(|error| error.to_string())
+    let mut bytes = Vec::new();
+    fs::File::open(path)
+        .map_err(|error| error.to_string())?
+        .take(max_bytes + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|error| error.to_string())?;
+    if bytes.len() as u64 > max_bytes {
+        return Err("invalid input size".into());
+    }
+    serde_json::from_slice(&bytes).map_err(|error| error.to_string())
 }
 
 fn evaluate_case(receipt: &Value, required: &[usize]) -> Result<Value, String> {
@@ -241,7 +251,9 @@ fn evaluate_case(receipt: &Value, required: &[usize]) -> Result<Value, String> {
         .and_then(Value::as_str)
         .ok_or("status missing")?;
     Ok(
-        json!({"required":labels.len(),"omitted":omitted.len(),"false_omissions":false_omissions,
+        json!({"required":labels.len(),"omitted":if status == "replace" { omitted.len() } else { 0 },
+        "proposed_omissions":omitted.len(),"proposed_required_losses":false_omissions,
+        "false_omissions":if status == "replace" { false_omissions } else { vec![] },
         "saved_chars":if status == "replace" { original.saturating_sub(visible) } else { 0 },
         "lines_seen":seen,"lines_judged":manifest.get("lines_judged"),
         "lines_protected":manifest.get("lines_protected"),
@@ -392,11 +404,20 @@ fn evaluate_quality(cases_path: &Path) -> Result<(), String> {
             .pointer("/manifest/requests")
             .and_then(Value::as_u64)
             .unwrap_or(0);
-        if id.len() == 32 && id.bytes().all(|byte| byte.is_ascii_hexdigit()) && requests <= 12 {
+        if id.len() == 32 && id.bytes().all(|byte| byte.is_ascii_hexdigit()) && requests <= 13 {
             let mut input_tokens = 0u64;
             let mut output_tokens = 0u64;
             let mut measured = 0u64;
-            for index in 1..=requests {
+            let gate = u64::from(
+                receipt
+                    .pointer("/manifest/choice_gate_ran")
+                    .and_then(Value::as_bool)
+                    == Some(true),
+            );
+            if gate > requests {
+                return Err("invalid request count".into());
+            }
+            for index in (1 - gate)..=(requests - gate) {
                 let batch = receipt_path
                     .parent()
                     .ok_or("receipt has no parent")?
@@ -572,6 +593,17 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn monitor_reports_proposals_without_claiming_evidence_was_lost() {
+        let receipt = json!({"version":2,"manifest":{"lines_seen":2,"status":"candidate","original_chars":100,"visible_chars":100},
+            "decisions":[{"number":1,"action":"keep"},{"number":2,"action":"omit"}]});
+        let report = evaluate_case(&receipt, &[2]).unwrap();
+        assert_eq!(report["false_omissions"], json!([]));
+        assert_eq!(report["omitted"], 0);
+        assert_eq!(report["proposed_required_losses"], json!([2]));
+        assert_eq!(report["proposed_omissions"], 1);
+    }
+
     #[test]
     fn quality_audit_counts_required_lines_lost_by_filter() {
         let receipt = json!({"version":2,

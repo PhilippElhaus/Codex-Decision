@@ -5,7 +5,7 @@ const fs = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
-const { readEventsSince, readLifetimeStats, readRecentOutcomes } = require("../../vscode-control/core");
+const { readEventsSince, readLifetimeStats } = require("../../vscode-control/core");
 
 test("a large decision log is read in bounded batches without loss or duplication", async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-log-load-"));
@@ -34,7 +34,6 @@ test("a large decision log is read in bounded batches without loss or duplicatio
     assert.equal(lifetime.completed, 4500);
     assert.equal(lifetime.replaced, 1500);
     assert.equal(lifetime.averageMs, 10);
-    const recent = await readRecentOutcomes(directory);
-    assert.deepEqual(recent.outcomes.map((event) => event.status), ["candidate", "keep", "replace"]);
+
   } finally { await fs.rm(directory, { recursive: true, force: true }); }
 });

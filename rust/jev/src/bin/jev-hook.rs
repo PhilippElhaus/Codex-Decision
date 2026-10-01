@@ -2,11 +2,10 @@
 
 use chrono::Utc;
 use codex_jev::{
-    apply_probabilities, pack_batches, parse_probabilities, protect_neighbors, render,
-    source_lines, Action, BatchRecord, LinePolicy, SearchRelevancePolicy, SourceLine,
+    apply_probabilities, check_ancestors, pack_batches, parse_probabilities, protect_neighbors,
+    render, source_lines, Action, BatchRecord, LinePolicy, SearchRelevancePolicy, SourceLine,
     MAX_REQUEST_BYTES,
 };
-use regex::Regex;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -18,6 +17,18 @@ use std::time::{Duration, Instant};
 use uuid::Uuid;
 
 const PANEL_SNAPSHOT_MAX_BYTES: usize = 256 * 1024;
+const MAX_SOURCE_LINES: usize = 10_000;
+const MAX_RECEIPT_BYTES: usize = 8 * 1024 * 1024;
+thread_local! { static HOOK_STARTED: std::cell::Cell<Option<Instant>> = const { std::cell::Cell::new(None) }; }
+fn remaining() -> Result<Duration, String> {
+    HOOK_STARTED
+        .with(|started| {
+            Duration::from_secs(45)
+                .checked_sub(started.get().map_or(Duration::ZERO, |time| time.elapsed()))
+        })
+        .filter(|duration| !duration.is_zero())
+        .ok_or_else(|| "hook deadline".into())
+}
 
 #[derive(Clone)]
 struct Config {
@@ -41,7 +52,8 @@ struct Config {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct SharedSettings {
-    schema_version: u64,
+    #[serde(rename = "schema_version")]
+    _schema_version: u64,
     mode: String,
     line_policy: BTreeMap<String, LinePolicy>,
     search_relevance: SearchRelevancePolicy,
@@ -61,24 +73,10 @@ fn apply_shared_settings(data_dir: &Path, config: &mut Config) -> Result<(), Str
         return Err("unsafe shared settings".into());
     }
     let bytes = fs::read(&path).map_err(|_| "settings read failed")?;
+    let raw: Value = serde_json::from_slice(&bytes).map_err(|_| "invalid shared settings")?;
     let settings: SharedSettings =
-        serde_json::from_slice(&bytes).map_err(|_| "invalid shared settings")?;
-    if settings.schema_version != 1
-        || !matches!(settings.mode.as_str(), "replace" | "observe")
-        || !(1..=9999).contains(&settings.log_limit_mb)
-        || settings.line_policy.len() != 3
-        || ["output", "test_build", "search_listing"]
-            .iter()
-            .any(|route| {
-                !settings
-                    .line_policy
-                    .get(*route)
-                    .is_some_and(LinePolicy::valid)
-            })
-        || !settings.search_relevance.valid()
-    {
-        return Err("invalid shared settings".into());
-    }
+        serde_json::from_value(codex_jev::contract::validate("settings", &raw)?)
+            .map_err(|_| "invalid shared settings")?;
     config.mode = settings.mode;
     config.policy = settings.line_policy;
     config.search_relevance = settings.search_relevance;
@@ -89,7 +87,15 @@ fn apply_shared_settings(data_dir: &Path, config: &mut Config) -> Result<(), Str
 }
 
 fn config(data_dir: &Path) -> Result<Option<Config>, String> {
+    check_ancestors(data_dir)?;
     let path = data_dir.join("config.json");
+    match fs::symlink_metadata(&path) {
+        Ok(meta) if !meta.is_file() || meta.len() > 64_000 => return Err("unsafe config".into()),
+        Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
+            return Err("config stat failed".into())
+        }
+        _ => {}
+    }
     if path.is_symlink() {
         return Err("linked config".into());
     }
@@ -102,137 +108,28 @@ fn config(data_dir: &Path) -> Result<Option<Config>, String> {
         return Err("config too large".into());
     }
     let raw: Value = serde_json::from_slice(&bytes).map_err(|_| "invalid config")?;
-    if raw.get("schema_version").and_then(Value::as_u64) != Some(2) {
+    if raw.get("schema_version").and_then(Value::as_f64) != Some(2.0) {
         return Err("unsupported config version".into());
     }
-    let object = raw.as_object().ok_or("invalid config")?;
-    const ALLOWED: &[&str] = &[
-        "schema_version",
-        "scope",
-        "enabled",
-        "test_build_enabled",
-        "search_listing_enabled",
-        "choice_gate_enabled",
-        "mode",
-        "min_chars",
-        "max_chars",
-        "model",
-        "timeout_seconds",
-        "allow_mcp_replacement",
-        "line_policy",
-        "search_relevance",
-        "log_limit_mb",
-        "never_delete_logs",
-    ];
-    if object.keys().any(|key| !ALLOWED.contains(&key.as_str())) {
-        return Err("unknown config field".into());
-    }
-    if raw.get("scope").is_some() && raw.get("scope").and_then(Value::as_str) != Some("global") {
-        return Err("unsupported config scope".into());
-    }
-    let optional_u64 = |key: &str, default| -> Result<u64, String> {
-        match raw.get(key) {
-            None => Ok(default),
-            Some(value) => value.as_u64().ok_or_else(|| format!("invalid {key}")),
-        }
-    };
-    let optional_bool = |key: &str, default| -> Result<bool, String> {
-        match raw.get(key) {
-            None => Ok(default),
-            Some(value) => value.as_bool().ok_or_else(|| format!("invalid {key}")),
-        }
-    };
-    let boolean = |key: &str| {
-        raw.get(key)
-            .and_then(Value::as_bool)
-            .ok_or_else(|| format!("invalid {key}"))
-    };
-    let output = boolean("enabled")?;
-    let test_build = boolean("test_build_enabled")?;
-    let search_listing = boolean("search_listing_enabled")?;
-    let mode = raw
-        .get("mode")
-        .and_then(Value::as_str)
-        .ok_or("invalid mode")?
-        .to_owned();
-    if !matches!(mode.as_str(), "replace" | "observe") {
-        return Err("invalid mode".into());
-    }
-    let min_chars = optional_u64("min_chars", 256)? as usize;
-    let max_chars = optional_u64("max_chars", 2_000_000)? as usize;
-    if !(256..=2_000_000).contains(&min_chars) || min_chars > max_chars || max_chars > 2_000_000 {
-        return Err("invalid size bounds".into());
-    }
-    let model = match raw.get("model") {
-        None => "jev-latest",
-        Some(value) => value.as_str().ok_or("invalid model")?,
-    }
-    .to_owned();
-    if !model.starts_with("jev-")
-        || !(5..=44).contains(&model.len())
-        || !model[4..]
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || b".-_".contains(&byte))
-    {
-        return Err("invalid model".into());
-    }
-    let timeout = match raw.get("timeout_seconds") {
-        None => 3.0,
-        Some(value) => value.as_f64().ok_or("invalid timeout")?,
-    };
-    if !(0.1..=4.0).contains(&timeout) {
-        return Err("invalid timeout".into());
-    }
-    let mut policy = BTreeMap::new();
-    let entered = raw
-        .get("line_policy")
-        .and_then(Value::as_object)
-        .ok_or("missing line policy")?;
-    if entered.len() != 3
-        || entered
-            .keys()
-            .any(|key| !["output", "test_build", "search_listing"].contains(&key.as_str()))
-    {
-        return Err("invalid line policy routes".into());
-    }
-    for route in ["output", "test_build", "search_listing"] {
-        let value = entered.get(route).ok_or("missing route policy")?;
-        let item: LinePolicy =
-            serde_json::from_value(value.clone()).map_err(|_| "invalid route policy")?;
-        if !item.valid() {
-            return Err("invalid route threshold".into());
-        }
-        policy.insert(route.to_owned(), item);
-    }
-    let search_relevance: SearchRelevancePolicy = serde_json::from_value(
-        raw.get("search_relevance")
-            .cloned()
-            .unwrap_or_else(|| json!({})),
-    )
-    .map_err(|_| "invalid search relevance policy")?;
-    if !search_relevance.valid() {
-        return Err("invalid search relevance threshold".into());
-    }
-    let log_limit_mb = optional_u64("log_limit_mb", 50)?;
-    if !(1..=9999).contains(&log_limit_mb) {
-        return Err("invalid log limit".into());
-    }
+    let raw = codex_jev::contract::validate("config", &raw)?;
     Ok(Some(Config {
-        global_scope: raw.get("scope").and_then(Value::as_str) == Some("global"),
-        output,
-        test_build,
-        search_listing,
-        choice_gate_enabled: optional_bool("choice_gate_enabled", true)?,
-        mode,
-        min_chars,
-        max_chars,
-        model,
-        timeout,
-        allow_mcp_replacement: optional_bool("allow_mcp_replacement", false)?,
-        policy,
-        search_relevance,
-        log_limit_mb,
-        never_delete_logs: optional_bool("never_delete_logs", false)?,
+        global_scope: raw["scope"] == "global",
+        output: raw["enabled"].as_bool().unwrap(),
+        test_build: raw["test_build_enabled"].as_bool().unwrap(),
+        search_listing: raw["search_listing_enabled"].as_bool().unwrap(),
+        choice_gate_enabled: raw["choice_gate_enabled"].as_bool().unwrap(),
+        mode: raw["mode"].as_str().unwrap().into(),
+        min_chars: raw["min_chars"].as_u64().unwrap() as usize,
+        max_chars: raw["max_chars"].as_u64().unwrap() as usize,
+        model: raw["model"].as_str().unwrap().into(),
+        timeout: raw["timeout_seconds"].as_f64().unwrap(),
+        allow_mcp_replacement: raw["allow_mcp_replacement"].as_bool().unwrap(),
+        policy: serde_json::from_value(raw["line_policy"].clone())
+            .map_err(|_| "invalid line policy")?,
+        search_relevance: serde_json::from_value(raw["search_relevance"].clone())
+            .map_err(|_| "invalid search relevance")?,
+        log_limit_mb: raw["log_limit_mb"].as_u64().unwrap(),
+        never_delete_logs: raw["never_delete_logs"].as_bool().unwrap(),
     }))
 }
 
@@ -892,7 +789,7 @@ fn apply_route_structure(route: &str, tool: &str, command: &str, lines: &mut [So
         let paths = executable == "rg" && flag("--files")
             || executable == "git" && action == "ls-files"
             || matches!(executable, "find" | "fd" | "ls");
-        let match_line = Regex::new(r"^.+:[1-9][0-9]*:.*$").ok();
+
         for line in lines {
             if jsonl {
                 let Ok(row) = serde_json::from_str::<Value>(&line.model_text) else {
@@ -925,10 +822,7 @@ fn apply_route_structure(route: &str, tool: &str, command: &str, lines: &mut [So
                 if line.model_text.is_empty() || line.model_text.chars().any(char::is_control) {
                     return false;
                 }
-            } else if (numbered
-                && !match_line
-                    .as_ref()
-                    .is_some_and(|pattern| pattern.is_match(&line.model_text)))
+            } else if (numbered && !numbered_match(&line.model_text))
                 || line.model_text.contains('\0')
             {
                 return false;
@@ -940,14 +834,30 @@ fn apply_route_structure(route: &str, tool: &str, command: &str, lines: &mut [So
     true
 }
 
-fn evaluate(request: &Value, key: &str, timeout: f64) -> Result<Value, String> {
+fn numbered_match(text: &str) -> bool {
+    text.match_indices(':').any(|(index, _)| {
+        if index == 0 {
+            return false;
+        }
+        text[index + 1..]
+            .split_once(':')
+            .is_some_and(|(number, _)| {
+                number.starts_with(|c: char| ('1'..='9').contains(&c))
+                    && number.bytes().all(|b| b.is_ascii_digit())
+            })
+    })
+}
+
+fn evaluate(
+    agent: &ureq::Agent,
+    request: &Value,
+    key: &str,
+    timeout: f64,
+) -> Result<Value, String> {
     let encoded = serde_json::to_vec(request).map_err(|_| "request encoding")?;
     if encoded.len() > MAX_REQUEST_BYTES {
         return Err("request too large".into());
     }
-    let agent = ureq::AgentBuilder::new()
-        .timeout(Duration::from_secs_f64(timeout))
-        .build();
     #[cfg(debug_assertions)]
     let endpoint = std::env::var("CODEX_JEV_TEST_ENDPOINT")
         .ok()
@@ -957,6 +867,7 @@ fn evaluate(request: &Value, key: &str, timeout: f64) -> Result<Value, String> {
     let endpoint = "https://api.typesafe.ai/v1/systemone".to_owned();
     let response = agent
         .post(&endpoint)
+        .timeout(Duration::from_secs_f64(timeout))
         .set("Authorization", &format!("Bearer {key}"))
         .set("Content-Type", "application/json")
         .send_bytes(&encoded)
@@ -1053,6 +964,7 @@ fn choice_allows_line_filter(response: &Value) -> Result<bool, String> {
 }
 
 fn ensure_dir(path: &Path) -> Result<(), String> {
+    check_ancestors(path)?;
     if path.is_symlink() {
         return Err("linked directory".into());
     }
@@ -1080,6 +992,7 @@ fn ensure_dir(path: &Path) -> Result<(), String> {
 }
 
 fn check_dir_if_exists(path: &Path) -> Result<(), String> {
+    check_ancestors(path)?;
     let metadata = match fs::symlink_metadata(path) {
         Ok(metadata) => metadata,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
@@ -1144,8 +1057,16 @@ fn lock_logs(logs: &Path) -> Result<File, String> {
     #[cfg(unix)]
     {
         use std::os::fd::AsRawFd;
-        if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX) } != 0 {
-            return Err("log lock failed".into());
+        let deadline = Instant::now() + remaining()?.min(Duration::from_secs(2));
+        while unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
+            let error = std::io::Error::last_os_error();
+            if error.kind() != std::io::ErrorKind::WouldBlock {
+                return Err("log lock failed".into());
+            }
+            if Instant::now() >= deadline {
+                return Err("log lock timeout".into());
+            }
+            std::thread::sleep(Duration::from_millis(10));
         }
     }
     Ok(file)
@@ -1483,11 +1404,12 @@ fn record(
     lines: &[SourceLine],
     decisions: &[codex_jev::LineDecision],
     batches: &[BatchRecord],
-    gate_elapsed_ms: Option<u64>,
+    gate_record: Option<&BatchRecord>,
     config: &Config,
     receipt_id: &str,
     snapshot_id: &str,
 ) -> Result<(), String> {
+    let gate_elapsed_ms = gate_record.map(|gate| gate.elapsed_ms);
     ensure_dir(data_dir)?;
     let logs = data_dir.join("logs");
     ensure_dir(&logs)?;
@@ -1554,18 +1476,18 @@ fn record(
         "tool_input":event.get("tool_input"),"initial_output":source,
         "visible_output":if status == "replace" { Some(visible) } else { None },
         "decisions":decisions});
-    write_private(
-        &folder.join(format!("receipt-{id}.json")),
-        &serde_json::to_vec_pretty(&receipt).map_err(|_| "receipt encoding")?,
-        false,
-    )?;
-    for batch in batches {
-        let row = json!({"version":2,"receipt_id":id,"batch":batch});
-        write_private(
-            &folder.join(format!("batch-{id}-{}.json", batch.id)),
-            &serde_json::to_vec_pretty(&row).map_err(|_| "batch encoding")?,
-            false,
-        )?;
+    let receipt_bytes = serde_json::to_vec(&receipt).map_err(|_| "receipt encoding")?;
+    if receipt_bytes.len() > MAX_RECEIPT_BYTES {
+        return Err("receipt too large".into());
+    }
+    let mut artifacts = vec![(folder.join(format!("receipt-{id}.json")), receipt_bytes)];
+    for batch in gate_record.into_iter().chain(batches.iter()) {
+        let bytes = serde_json::to_vec(&json!({"version":2,"receipt_id":id,"batch":batch}))
+            .map_err(|_| "batch encoding")?;
+        if bytes.len() > 2 * 1024 * 1024 {
+            return Err("batch record too large".into());
+        }
+        artifacts.push((folder.join(format!("batch-{id}-{}.json", batch.id)), bytes));
     }
     let last_batch = batches.last().ok_or("missing batch")?;
     let snapshot = line_snapshot(
@@ -1590,8 +1512,15 @@ fn record(
         use std::os::unix::fs::OpenOptionsExt;
         event_options.mode(0o600).custom_flags(libc::O_NOFOLLOW);
     }
-    let mut event_file = event_options.open(event_path).map_err(|_| "event log")?;
-    writeln!(event_file, "{}", summary).map_err(|_| "event log write")?;
+    let mut event_file = event_options.open(&event_path).map_err(|_| "event log")?;
+    let event_size = event_file.metadata().map_err(|_| "event log stat")?.len();
+    if !event_file
+        .metadata()
+        .map_err(|_| "event log stat")?
+        .is_file()
+    {
+        return Err("unsafe event log".into());
+    }
     let stats_path = data_dir.join("stats.json");
     let mut stats = load_stats(&stats_path)?;
     for (key, increment) in [
@@ -1613,7 +1542,10 @@ fn record(
         (
             "savedChars",
             if status == "replace" {
-                source.len().saturating_sub(visible.len()) as u64
+                source
+                    .chars()
+                    .count()
+                    .saturating_sub(visible.chars().count()) as u64
             } else {
                 0
             },
@@ -1634,21 +1566,65 @@ fn record(
             .unwrap_or(0)
             .saturating_add(increment));
     }
-    write_private(
-        &stats_path,
-        &serde_json::to_vec(&stats).map_err(|_| "stats encoding")?,
-        true,
-    )?;
+    let snapshot_path = logs.join("latest-decision.json");
+    let snapshot_bytes = serde_json::to_vec(&snapshot).map_err(|_| "snapshot encoding")?;
+    if snapshot_bytes.len() > PANEL_SNAPSHOT_MAX_BYTES {
+        return Err("panel snapshot too large".into());
+    }
+    let stats_bytes = serde_json::to_vec(&stats).map_err(|_| "stats encoding")?;
+    let previous_stats = private_backup(&stats_path, 8192)?;
+    let previous_snapshot = private_backup(&snapshot_path, PANEL_SNAPSHOT_MAX_BYTES)?;
+    let mut created = Vec::new();
+    let result = (|| -> Result<(), String> {
+        remaining()?;
+        for (path, bytes) in artifacts {
+            write_private(&path, &bytes, false)?;
+            created.push(path);
+        }
+        write_private(&stats_path, &stats_bytes, true)?;
+        write_private(&snapshot_path, &snapshot_bytes, true)?;
+        // Append the completion event only after every required artifact exists.
+        // No fallible operation may cancel the output after this commit point.
+        writeln!(event_file, "{}", summary).map_err(|_| "event log write")?;
+        event_file.sync_all().map_err(|_| "event log sync")?;
+        Ok(())
+    })();
+    if let Err(error) = result {
+        let _ = event_file.set_len(event_size);
+        restore_private(&stats_path, previous_stats);
+        restore_private(&snapshot_path, previous_snapshot);
+        for path in created {
+            let _ = fs::remove_file(path);
+        }
+        return Err(error);
+    }
     if !config.never_delete_logs {
         prune(&logs, config.log_limit_mb * 1_000_000);
     }
-    // Publish last: a partially written receipt or stats update must never appear as a live result.
-    let bytes = serde_json::to_vec(&snapshot).map_err(|_| "snapshot encoding")?;
-    if bytes.len() > PANEL_SNAPSHOT_MAX_BYTES {
-        return Err("panel snapshot too large".into());
-    }
-    write_private(&logs.join("latest-decision.json"), &bytes, true)?;
     Ok(())
+}
+
+fn private_backup(path: &Path, limit: usize) -> Result<Option<Vec<u8>>, String> {
+    match fs::symlink_metadata(path) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Ok(metadata)
+            if metadata.is_file()
+                && !metadata.file_type().is_symlink()
+                && metadata.len() <= limit as u64 =>
+        {
+            fs::read(path)
+                .map(Some)
+                .map_err(|_| "state backup read".into())
+        }
+        _ => Err("unsafe state backup".into()),
+    }
+}
+fn restore_private(path: &Path, previous: Option<Vec<u8>>) {
+    if let Some(bytes) = previous {
+        let _ = write_private(path, &bytes, true);
+    } else {
+        let _ = fs::remove_file(path);
+    }
 }
 
 fn prune(logs: &Path, budget: u64) {
@@ -1717,6 +1693,7 @@ fn prune(logs: &Path, budget: u64) {
 }
 
 fn execute() -> Result<Value, String> {
+    HOOK_STARTED.with(|started| started.set(Some(Instant::now())));
     let data_dir = std::env::var_os("PLUGIN_DATA")
         .map(PathBuf::from)
         .ok_or("missing plugin data")?;
@@ -1792,12 +1769,25 @@ fn process_event(
     if sensitive(&source) || sensitive(command(event)) || sensitive_input(event) {
         return skip(scoped, "sensitive");
     }
+    if serde_json::to_vec(&event["tool_input"])
+        .map_err(|_| "tool input encoding")?
+        .len()
+        > 256 * 1024
+    {
+        return skip(scoped, "tool_input_budget");
+    }
     let user_task = match task_context(event) {
         Ok(task) => task,
         Err(()) => return skip(scoped, "unsafe_task_context"),
     };
     let has_user_task = user_task.is_some();
     let task = user_task.unwrap_or_else(|| fallback_task(event));
+    let line_count =
+        source.bytes().filter(|byte| *byte == b'\n').count() + usize::from(!source.ends_with('\n'));
+    if line_count > MAX_SOURCE_LINES {
+        return skip(scoped, "line_budget");
+    }
+    remaining()?;
     let mut lines = source_lines(&source);
     if lines.is_empty()
         || !apply_route_structure(
@@ -1821,30 +1811,44 @@ fn process_event(
         return skip(scoped, "no_eligible_lines");
     }
     let api_key = key(data_dir)?;
-    let mut gate_elapsed_ms = None;
+    let agent = ureq::AgentBuilder::new().build();
+    let mut gate_record = None;
     if config.choice_gate_enabled && route == "output" && batches.len() >= 2 {
         let request = choice_request(&task, command(event), &lines, &config.model);
         let before = Instant::now();
-        let response = evaluate(&request, &api_key, config.timeout)?;
+        let response = evaluate(
+            &agent,
+            &request,
+            &api_key,
+            config.timeout.min(remaining()?.as_secs_f64()),
+        )?;
         let elapsed_ms = before.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
         if !choice_allows_line_filter(&response)? {
             record_gate_skip(scoped, event, source.chars().count(), elapsed_ms)?;
             return skip(scoped, "choice_kept_full_output");
         }
-        gate_elapsed_ms = Some(elapsed_ms);
+        gate_record = Some(BatchRecord {
+            id: 0,
+            target_numbers: vec![],
+            request,
+            response,
+            elapsed_ms,
+        });
     }
     let receipt_id = Uuid::new_v4().simple().to_string();
     let mut progress = ProgressSnapshot::new(scoped, receipt_id.clone())?;
-    let started = Instant::now();
     let mut probabilities = BTreeMap::new();
     let mut records = Vec::new();
     let batch_count = batches.len();
     for batch in batches {
-        if started.elapsed() > Duration::from_secs(45) {
-            return Err("hook deadline".into());
-        }
+        remaining()?;
         let before = Instant::now();
-        let response = evaluate(&batch.request, &api_key, config.timeout)?;
+        let response = evaluate(
+            &agent,
+            &batch.request,
+            &api_key,
+            config.timeout.min(remaining()?.as_secs_f64()),
+        )?;
         let parsed = parse_probabilities(&batch, &response)?;
         for (number, (omit, exact, relevant)) in parsed {
             probabilities.insert(number, (omit, exact, relevant, batch.id));
@@ -1925,12 +1929,15 @@ fn process_event(
         &lines,
         &decisions,
         &records,
-        gate_elapsed_ms,
+        gate_record.as_ref(),
         config,
         &receipt_id,
         &progress.last_snapshot_id,
     )?;
-    hook_health(scoped, "success", "")?;
+    // The committed output must survive a later telemetry failure.
+    if let Err(error) = hook_health(scoped, "success", "") {
+        eprintln!("Codex Jev status write failed: {error}");
+    }
     progress.active = false;
     if replace {
         Ok(
@@ -2087,6 +2094,116 @@ mod tests {
             json!({"answers":{"line_filter_fit":{"type":"choice","choice":"line_filter"}}}),
         ] {
             assert!(choice_allows_line_filter(&bad).is_err());
+        }
+    }
+
+    #[test]
+    fn failed_record_never_publishes_a_replace_event_or_receipt() {
+        for failure in ["stats", "snapshot", "artifact"] {
+            let root = tempfile::tempdir().unwrap();
+            let data = root.path().join("data");
+            ensure_dir(&data).unwrap();
+            let logs = data.join("logs");
+            ensure_dir(&logs).unwrap();
+            let event = json!({"session_id":"transaction","tool_name":"Bash","tool_input":{"command":"echo progress"}});
+            let source = "routine progress\nsummary\n";
+            let lines = source_lines(source);
+            let batch = pack_batches(
+                "output",
+                "Check progress",
+                "echo progress",
+                &lines,
+                "jev-latest",
+            )
+            .remove(0);
+            let probabilities = lines
+                .iter()
+                .map(|line| (line.number, (0.99, 0.01, None, 1)))
+                .collect();
+            let decisions = apply_probabilities(
+                &lines,
+                &probabilities,
+                &LinePolicy::default(),
+                &SearchRelevancePolicy::default(),
+            );
+            let records = vec![BatchRecord {
+                id: 1,
+                target_numbers: batch.target_numbers,
+                request: batch.request,
+                response: json!({}),
+                elapsed_ms: 1,
+            }];
+            let mut config = enabled();
+            config.mode = "replace".into();
+            config.policy.insert("output".into(), LinePolicy::default());
+            if failure == "stats" {
+                fs::write(data.join("stats.json"), "{\"calls\":\"invalid\"}").unwrap();
+            }
+            if failure == "snapshot" {
+                fs::create_dir(logs.join("latest-decision.json")).unwrap();
+            }
+            if failure == "artifact" {
+                let hash = format!("{:x}", Sha256::digest(b"transaction"));
+                let folder =
+                    logs.join(format!("{}-{}", Utc::now().format("%Y-%m-%d"), &hash[..10]));
+                ensure_dir(&folder).unwrap();
+                fs::write(
+                    folder.join("batch-receipt-1.json"),
+                    "user-owned existing file",
+                )
+                .unwrap();
+            }
+            assert!(record(
+                &data,
+                &event,
+                "output",
+                "replace",
+                source,
+                "summary\n",
+                &lines,
+                &decisions,
+                &records,
+                None,
+                &config,
+                "receipt",
+                "snapshot"
+            )
+            .is_err());
+            assert!(
+                !logs.join("events.jsonl").exists()
+                    || fs::read(logs.join("events.jsonl")).unwrap().is_empty()
+            );
+            assert!(
+                !data.join("stats.json").exists()
+                    || fs::read_to_string(data.join("stats.json")).unwrap()
+                        == "{\"calls\":\"invalid\"}"
+            );
+            for entry in fs::read_dir(&logs)
+                .unwrap()
+                .flatten()
+                .filter(|entry| entry.path().is_dir())
+            {
+                assert!(!entry.path().join("receipt-receipt.json").exists());
+            }
+        }
+    }
+
+    #[test]
+    fn ancestor_links_and_contended_log_locks_fail_within_a_bound() {
+        let root = tempfile::tempdir().unwrap();
+        let data = root.path().join("data");
+        ensure_dir(&data).unwrap();
+        #[cfg(unix)]
+        {
+            let linked = root.path().join("linked");
+            std::os::unix::fs::symlink(&data, &linked).unwrap();
+            assert!(ensure_dir(&linked.join("child")).is_err());
+            assert!(!data.join("child").exists());
+            let first = lock_logs(&data).unwrap();
+            let started = Instant::now();
+            assert!(lock_logs(&data).is_err());
+            assert!(started.elapsed() < Duration::from_secs(3));
+            drop(first);
         }
     }
 

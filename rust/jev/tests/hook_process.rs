@@ -855,3 +855,23 @@ fn live_choice_gate_accepts_typesafe_choice_response() {
         health["last_success_ms"].is_number() || health["last_skip"] == "choice_kept_full_output"
     );
 }
+
+#[test]
+fn excessive_physical_lines_keep_full_output_before_any_api_request() {
+    let root = tempfile::tempdir().unwrap();
+    let data = root.path();
+    fs::set_permissions(data, fs::Permissions::from_mode(0o700)).unwrap();
+    fs::write(data.join("config.json"), json!({"schema_version":2,"scope":"global","enabled":true,"test_build_enabled":true,
+        "search_listing_enabled":true,"mode":"replace","line_policy":{"output":{},"test_build":{},"search_listing":{}}}).to_string()).unwrap();
+    let event = json!({"hook_event_name":"PostToolUse","tool_name":"Bash","session_id":"line-budget","tool_use_id":"budget",
+        "tool_input":{"command":"cat progress.log"},"tool_response":"x\n".repeat(100_000)});
+    let reply = send_event(data, "http://127.0.0.1:1/", &event);
+    assert_eq!(reply, json!({}));
+    let health: Value = serde_json::from_slice(
+        &fs::read(scoped(data, "line-budget").join("logs/hook-health.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(health["last_skip"], "line_budget");
+    assert!(health.get("last_error").is_none());
+    assert!(!scoped(data, "line-budget").join("stats.json").exists());
+}
