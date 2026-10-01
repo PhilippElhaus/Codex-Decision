@@ -11,12 +11,12 @@ npx @vscode/vsce package --no-dependencies --out ../.local/submission/codex-jev-
 code --install-extension "$(wslpath -w ../.local/submission/codex-jev-control-0.7.4.vsix)" --force
 ```
 
-The composer and Codex settings page require the separate local patch for Codex VS Code extension `26.917.62051`. It checks exact host hashes and keeps rollback files outside this repository:
+The composer and Codex settings page require the separate local patch for Codex VS Code extension `26.928.31416`. It checks exact host hashes and keeps rollback files outside this repository:
 
 ```bash
 ../hooks/bin/linux-x86_64/jevctl patch-webview update --root .. \
-  --extension '/mnt/c/Users/<user>/.vscode/extensions/openai.chatgpt-26.917.62051-win32-x64' \
-  --backup '/mnt/c/Users/<user>/AppData/Local/Codex/codex-jev/rollback/26.917.62051'
+  --extension '/mnt/c/Users/<user>/.vscode/extensions/openai.chatgpt-26.928.31416-win32-x64' \
+  --backup '/mnt/c/Users/<user>/AppData/Local/Codex/codex-jev/rollback/26.928.31416'
 ```
 
 Use `apply` for the first installation, `update` after a control upgrade, or `restore` to remove the patch. Reload VS Code after installing both pieces. Start a new Codex thread after a plugin hook upgrade and review the hook in `/hooks` again if its definition changed.

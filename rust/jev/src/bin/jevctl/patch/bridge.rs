@@ -24,7 +24,7 @@ pub(super) fn image_bridge() -> Result<String, String> {
     let home = std::env::var("HOME").map_err(|_| "HOME is unavailable")?;
     let local = format!("{home}/plugins/codex-jev/");
     let cache = format!("{home}/.codex/plugins/cache/personal");
-    Ok(format!("if(i.startsWith({})||i.startsWith({})||i.startsWith({}))i={}+i.replaceAll(\"/\",\"\\\\\");",
+    Ok(format!("if(o.startsWith({})||o.startsWith({})||o.startsWith({}))o={}+o.replaceAll(\"/\",\"\\\\\");",
         json!(local), json!(format!("{cache}/codex-jev/")),
         json!(format!("{cache}/codex-chime/")), json!(root)))
 }

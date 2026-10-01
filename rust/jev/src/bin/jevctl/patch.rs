@@ -5,36 +5,36 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-const VERSION: &str = "26.917.62051";
+const VERSION: &str = "26.928.31416";
 const HOST: &str = "out/extension.js";
 const INDEX: &str = "webview/index.html";
-const IMAGE: &str = "webview/assets/app-initial-de4359f78ed1.js";
-const ROUTE: &str = "webview/assets/app-initial-113eb9b2c1a2.js";
+const IMAGE: &str = "webview/assets/app-initial-4bd9e54bcd58.js";
+const ROUTE: &str = "webview/assets/app-initial-9f7d97690e9b.js";
 const CONTROL: &str = "webview/assets/jev-control.js";
 const SETTINGS: &str = "webview/assets/jev-settings.js";
 const ICON: &str = "webview/assets/jev-icon.png";
 const HOST_ANCHOR: &str =
     "let a=e.onDidReceiveMessage(u=>{if(s.markMessageReceived(),u.type===\"chunked-message-ack\")";
 const INDEX_ANCHOR: &str =
-    "<script type=\"module\" crossorigin src=\"./assets/index-78f8e71b3851.js\"></script>";
-const IMAGE_ANCHOR: &str = "let i=SS(e);if(i==null)return null;try{let e={path:i,hostId:t}";
-const ROUTE_ANCHOR: &str = "function BV(){return kV(zV(),`useLocation() may be used only in the context of a <Router> component.`),tH.useContext(vH).location}";
+    "<script type=\"module\" crossorigin src=\"./assets/index-125259e22935.js\"></script>";
+const IMAGE_ANCHOR: &str = "let o=JC(e);if(o==null)return null;try{let e={path:o,hostId:t,conversationId:i,environmentId:a}";
+const ROUTE_ANCHOR: &str = "function vK(){return WG(_K(),`useLocation() may be used only in the context of a <Router> component.`),TK.useContext(ZK).location}";
 const ORIGINAL: [(&str, &str); 4] = [
     (
         HOST,
-        "7ba6208c447c393e050a8ba46893e9e1aa4abd718cb4a8610fa87b12942633bc",
+        "550b03e76ac5a83cb25788aa3240ba445d0e7c7d4e76af8331442687529617ef",
     ),
     (
         INDEX,
-        "d91ea97a8bd9e9d67dd048f5496614af4e9eeb33a0dd4b412a6293e06bb3fc02",
+        "29ac12b60870294814cdcf3916d5171053d930c49f2c030fbde50200039e42bc",
     ),
     (
         IMAGE,
-        "ffdf480c63b5c99009ae0b618cad846ac5f33af42af4cec900f633586370a9dc",
+        "48e766bf42c5642cca7b8c9f9b3906d840d5e7c9378039882500e9d3b6ebb8f6",
     ),
     (
         ROUTE,
-        "acf372e1e1c64679915cad75014f766a1604004955eb8068c718e6e1f62d0b9e",
+        "9fbb5f7d948509655dfe6898088365fcfaa44e11af7698add930411d78f0a5c5",
     ),
 ];
 

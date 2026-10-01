@@ -97,7 +97,7 @@ fn bridge_fragments_publish_routes_and_validate_settings_messages() {
         ("/remote/remote-task", "remote", None),
         ("/settings", "none", None),
     ] {
-        let script = format!("let document={{documentElement:{{dataset:{{codexJevSessionId:'stale'}}}}}};let vH={{}},tH={{useContext:()=>({{location:{{pathname:{}}}}})}},kV=()=>{{}},zV=()=>true;{route}BV();process.stdout.write(JSON.stringify(document.documentElement.dataset));", json!(pathname));
+        let script = format!("let document={{documentElement:{{dataset:{{codexJevSessionId:'stale'}}}}}};let ZK={{}},TK={{useContext:()=>({{location:{{pathname:{}}}}})}},WG=()=>{{}},_K=()=>true;{route}vK();process.stdout.write(JSON.stringify(document.documentElement.dataset));", json!(pathname));
         let output = Command::new("node").arg("-e").arg(script).output().unwrap();
         assert!(
             output.status.success(),
@@ -142,7 +142,7 @@ fn wsl_bridges_rewrite_only_owned_paths() {
         ),
         ("/tmp/other.png".to_owned(), false),
     ] {
-        let script = format!("let i={};{image}process.stdout.write(i);", json!(incoming));
+        let script = format!("let o={};{image}process.stdout.write(o);", json!(incoming));
         let output = Command::new("node").arg("-e").arg(script).output().unwrap();
         assert!(
             output.status.success(),
