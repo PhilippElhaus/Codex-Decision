@@ -31,7 +31,7 @@ The VS Code control selects all three filters for a new local thread. In the **j
 
 ### 3. Adjust the details
 
-Open **Codex settings → Jev** to choose **Monitor** (show decisions, keep full output) or **Filter** (shorten approved output). You can also review this session's activity, change its cutoffs, or open its logs. For long general output, a Jev choice check can decide whether line filtering is useful; uncertain output stays complete. You can turn this check off in settings.
+Open **Codex settings → Jev** at any time to choose **Monitor** (show decisions, keep full output) or **Filter** (shorten approved output). The mode, cutoffs, log retention, and API key apply to all sessions. The page shows installation totals. For long general output, a Jev choice check can decide whether line filtering is useful; uncertain output stays complete. You can turn this check off in settings.
 
 <img src="docs/images/jev-settings-overview.png" width="760" alt="Codex Jev settings showing activity, API key controls, and log options">
 
@@ -43,7 +43,7 @@ The **Jev** panel shows the latest decision from this session. Blue lines were c
 
 <img src="docs/images/jev-panel.png" width="1000" alt="Jev panel showing 3 kept lines and 47 omitted lines from a synthetic 50-line result">
 
-The composer indicator is **amber** until the hook runs in this session, **green** after a recent hook invocation and successful API check, and **red** if the key, connection, configuration, or hook fails. A short or protected result may be skipped normally; the indicator still confirms the hook was invoked.
+The composer indicator is **green** when a small Jev API check succeeds and **red** when the key or API check fails. It stays amber while the check is pending. A hook error appears in the activity tooltip during a thread. On the home screen, the tooltip stays hidden and the indicator still shows API health.
 
 ![Editable architecture diagram showing the Codex tool, Rust hook, local checks, Jev Choice and line checks, session data, VS Code control, and TypeSafe API](docs/images/jev-architecture.svg)
 

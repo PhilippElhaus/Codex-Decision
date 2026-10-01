@@ -179,6 +179,32 @@ fn two_sessions_keep_switches_decisions_stats_and_health_separate() {
         serde_json::from_slice(&fs::read(monitor.join("stats.json")).unwrap()).unwrap();
     assert_eq!(monitor_stats["completed"], 1);
     assert_eq!(monitor_stats["savedChars"], 0);
+    fs::write(
+        data.join("settings.json"),
+        json!({"schema_version":1,"mode":"observe",
+        "choice_gate_enabled":true,"log_limit_mb":50,"never_delete_logs":false,
+        "line_policy":{"output":{"omit_min":95,"exact_max":5},
+            "test_build":{"omit_min":95,"exact_max":5},
+            "search_listing":{"omit_min":95,"exact_max":5}},
+        "search_relevance":{"guard_enabled":false,"relevant_max":5}})
+        .to_string(),
+    )
+    .unwrap();
+    for session in ["window-one", "window-two"] {
+        assert_eq!(
+            send_event(&data, &endpoint, &make_event(session)),
+            json!({}),
+            "shared Monitor mode keeps output complete in every session"
+        );
+    }
+    let first_after: Value =
+        serde_json::from_slice(&fs::read(first.join("stats.json")).unwrap()).unwrap();
+    let second_after: Value =
+        serde_json::from_slice(&fs::read(second.join("stats.json")).unwrap()).unwrap();
+    assert_eq!(first_after["completed"], 2);
+    assert_eq!(second_after["completed"], 2);
+    assert_eq!(first_after["savedChars"], first_stats["savedChars"]);
+    assert_eq!(second_after["savedChars"], second_stats["savedChars"]);
     stop.store(true, Ordering::Relaxed);
     assert!(thread.join().unwrap() > 1);
 }

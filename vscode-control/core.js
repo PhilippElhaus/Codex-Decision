@@ -15,6 +15,9 @@ const DEFAULT_LINE_POLICY = Object.freeze({
   search_listing: { omit_min: 95, exact_max: 5 },
 });
 const DEFAULT_SEARCH_RELEVANCE = Object.freeze({ guard_enabled: false, relevant_max: 5 });
+const DEFAULT_SETTINGS = Object.freeze({ mode: "replace", line_policy: DEFAULT_LINE_POLICY,
+  search_relevance: DEFAULT_SEARCH_RELEVANCE, choice_gate_enabled: true,
+  log_limit_mb: 50, never_delete_logs: false });
 const CONFIG_KEYS = new Set([
   "enabled", "test_build_enabled", "search_listing_enabled", "mode", "min_chars", "max_chars",
   "timeout_seconds", "model", "allow_mcp_replacement",
@@ -229,21 +232,81 @@ async function writeMode(directory, mode) {
   return writeConfig(directory, { mode });
 }
 
-async function writeSettings(directory, mode, linePolicy, limitMb, neverDelete,
-  searchRelevance = DEFAULT_SEARCH_RELEVANCE, choiceGateEnabled = true) {
-  if (!["replace", "observe"].includes(mode)) throw new TypeError("invalid Jev mode");
-  if (!Number.isInteger(limitMb) || limitMb < 1 || limitMb > 9999 ||
-      typeof neverDelete !== "boolean" || typeof choiceGateEnabled !== "boolean") {
-    throw new TypeError("Log retention must be 1 to 9999 MB");
+function completeSettings(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value) ||
+      Object.keys(value).some((key) => !Object.hasOwn(DEFAULT_SETTINGS, key))) {
+    throw new Error("Invalid Jev settings");
   }
-  return writeConfig(directory, { mode, line_policy: completeLinePolicy(linePolicy),
-    search_relevance: completeSearchRelevance(searchRelevance),
-    choice_gate_enabled: choiceGateEnabled, log_limit_mb: limitMb, never_delete_logs: neverDelete });
+  const settings = { ...DEFAULT_SETTINGS, ...value };
+  if (!["observe", "replace"].includes(settings.mode) ||
+      !Number.isInteger(settings.log_limit_mb) || settings.log_limit_mb < 1 ||
+      settings.log_limit_mb > 9999 || typeof settings.never_delete_logs !== "boolean" ||
+      typeof settings.choice_gate_enabled !== "boolean") {
+    throw new Error("Invalid Jev settings");
+  }
+  return { ...settings, line_policy: completeLinePolicy(settings.line_policy),
+    search_relevance: completeSearchRelevance(settings.search_relevance) };
 }
 
-async function writeNeverDeleteLogs(directory, neverDelete) {
-  if (typeof neverDelete !== "boolean") throw new TypeError("Never delete logs must be a boolean");
-  return writeConfig(directory, { never_delete_logs: neverDelete });
+async function readGlobalSettings(directory) {
+  const filename = path.join(directory, "settings.json");
+  try {
+    const details = await fs.lstat(filename);
+    if (!details.isFile() || details.isSymbolicLink() || details.size > 8192) {
+      throw new Error("Unsafe Jev settings file");
+    }
+    const raw = JSON.parse(await fs.readFile(filename, "utf8"));
+    if (raw?.schema_version !== 1) throw new Error("Invalid Jev settings version");
+    const { schema_version: _version, ...settings } = raw;
+    return completeSettings(settings);
+  } catch (error) {
+    if (error.code === "ENOENT") return completeSettings({});
+    throw error;
+  }
+}
+
+async function writeGlobalSettings(directory, changes) {
+  const settings = completeSettings({ ...await readGlobalSettings(directory), ...changes });
+  const root = await fs.lstat(directory);
+  if (!root.isDirectory() || root.isSymbolicLink()) throw new Error("Unsafe Jev data directory");
+  const filename = path.join(directory, "settings.json");
+  const temporary = path.join(directory, `.settings-${process.pid}-${Date.now()}.tmp`);
+  try {
+    await fs.writeFile(temporary, JSON.stringify({ schema_version: 1, ...settings }, null, 2) + "\n",
+      { flag: "wx", mode: 0o600 });
+    await fs.rename(temporary, filename);
+  } finally {
+    await fs.rm(temporary, { force: true });
+  }
+  return settings;
+}
+
+async function readInstallationStats(directory) {
+  const totals = await readLifetimeStats(directory);
+  totals.averageMs *= totals.completed;
+  let entries;
+  try {
+    const parent = await fs.lstat(path.join(directory, "sessions"));
+    if (!parent.isDirectory() || parent.isSymbolicLink()) throw new Error("Unsafe Jev sessions directory");
+    entries = await fs.readdir(path.join(directory, "sessions"), { withFileTypes: true });
+  }
+  catch (error) {
+    if (error.code === "ENOENT") return totals;
+    throw error;
+  }
+  if (entries.length > 10_000) throw new Error("Too many Jev sessions");
+  for (const entry of entries) {
+    if (!/^[a-f0-9]{64}$/.test(entry.name)) continue;
+    if (!entry.isDirectory() || entry.isSymbolicLink()) throw new Error("Unsafe Jev session directory");
+    const stats = await readLifetimeStats(path.join(directory, "sessions", entry.name));
+    for (const key of Object.keys(totals)) {
+      if (key === "averageMs") continue;
+      totals[key] += stats[key];
+    }
+    totals.averageMs += stats.averageMs * stats.completed;
+  }
+  totals.averageMs = totals.completed ? Math.round(totals.averageMs / totals.completed) : 0;
+  return totals;
 }
 
 async function activityLogPath(directory) {
@@ -619,5 +682,6 @@ module.exports = {
   isInformativeEvent, isJevOutcome, outcomeLine, parseHealthOutput, readConfig,
   readApiKey, readEventOffset, readEventsSince, readLatestEvent, readLifetimeStats, readRecentOutcomes,
   savedCharacters, writeApiKey, writeEnabled, writeMode, writeSelection,
-  writeSettings, writeNeverDeleteLogs, ensureSessionDefaults,
+  ensureSessionDefaults,
+  DEFAULT_SETTINGS, readGlobalSettings, writeGlobalSettings, readInstallationStats,
 };

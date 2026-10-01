@@ -182,15 +182,15 @@ test("composer bridge selects integrations and reports view-scoped activity with
     assert.equal((await core.readConfig(scoped)).mode, "replace");
     const invalidRetention = (await bridge({ action: "settingsSetNeverDeleteLogs", neverDeleteLogs: "true" })).settings;
     assert.equal(invalidRetention.action, "error");
-    assert.equal((await core.readConfig(scoped)).never_delete_logs, true);
+    assert.equal((await core.readGlobalSettings(directory)).never_delete_logs, true);
     assert.equal((await bridge({ action: "settingsSetNeverDeleteLogs", neverDeleteLogs: false })).settings.action,
       "neverDeleteLogsSaved");
     assert.equal((await bridge({ action: "settingsOpenLogs" })).settings.action, "openedLogs");
-    assert.equal(openedExternal, path.join(scoped, "logs"));
-    const missing = (await bridge({ action: "settingsSave", mode: "replace", key: "", logLimitMb: 50, neverDeleteLogs: false, choiceGateEnabled: true,
+    assert.equal(openedExternal, directory);
+    const withoutKey = (await bridge({ action: "settingsSave", mode: "replace", key: "", logLimitMb: 50, neverDeleteLogs: false, choiceGateEnabled: true,
       linePolicy: { output: { omit_min: 95 } } })).settings;
-    assert.equal(missing.action, "error");
-    assert.match(missing.message, /Enter an API key/);
+    assert.equal(withoutKey.action, "saved", "global settings do not require a key or thread");
+    assert.equal(withoutKey.hasKey, false);
     const linePolicy = { output: { omit_min: 97, exact_max: 3 },
       test_build: { omit_min: 95, exact_max: 5 }, search_listing: { omit_min: 95, exact_max: 5 } };
     const savedSettings = (await bridge({ action: "settingsSave", mode: "observe", key: "new-test-key-123", logLimitMb: 9999, neverDeleteLogs: true, choiceGateEnabled: false,
@@ -198,12 +198,12 @@ test("composer bridge selects integrations and reports view-scoped activity with
     assert.equal(savedSettings.action, "saved");
     assert.equal(savedSettings.keyLength, "new-test-key-123".length);
     assert.equal(await core.readApiKey(directory), "new-test-key-123");
-    assert.equal((await core.readConfig(scoped)).line_policy.output.omit_min, 97);
-    assert.equal((await core.readConfig(scoped)).mode, "observe");
-    assert.equal((await core.readConfig(scoped)).log_limit_mb, 9999);
-    assert.equal((await core.readConfig(scoped)).never_delete_logs, true);
-    assert.equal((await core.readConfig(scoped)).choice_gate_enabled, false);
-    assert.deepEqual((await core.readConfig(scoped)).line_policy, linePolicy);
+    assert.equal((await core.readConfig(scoped)).mode, "replace", "session selection remains separate");
+    assert.equal((await core.readGlobalSettings(directory)).mode, "observe");
+    assert.equal((await core.readGlobalSettings(directory)).log_limit_mb, 9999);
+    assert.equal((await core.readGlobalSettings(directory)).never_delete_logs, true);
+    assert.equal((await core.readGlobalSettings(directory)).choice_gate_enabled, false);
+    assert.deepEqual((await core.readGlobalSettings(directory)).line_policy, linePolicy);
     assert.equal(JSON.stringify(savedSettings).includes("new-test-key-123"), false);
     const readyAfterSave = (await bridge({ action: "settingsRead" })).settings;
     assert.equal(readyAfterSave.hasKey, true);
@@ -257,6 +257,25 @@ test("composer bridge selects integrations and reports view-scoped activity with
     assert.equal(home.configurationError, null);
     assert.equal(home.sessionPending, true);
     assert.equal(home.panelFault, null);
+    await until(async () => (await rawBridge({ action: "status", viewId: "home-view",
+      sessionId: null, expectsLocalSession: false })).health?.ok === true);
+    const homeProbeCount = probes;
+    for (let index = 0; index < 3; index += 1) {
+      const status = await rawBridge({ action: "status", viewId: "home-view", sessionId: null,
+        expectsLocalSession: false });
+      assert.equal(status.health.ok, true);
+    }
+    assert.equal(probes, homeProbeCount, "home status polls reuse the API check");
+    const homeSettings = (await rawBridge({ action: "settingsRead", viewId: "home-view",
+      sessionId: null, expectsLocalSession: false })).settings;
+    assert.equal(homeSettings.action, "ready");
+    assert.equal(homeSettings.config.mode, "observe");
+    assert.deepEqual(homeSettings.config.line_policy, linePolicy);
+    const homeSaved = (await rawBridge({ action: "settingsSave", viewId: "home-view", sessionId: null,
+      expectsLocalSession: false, mode: "replace", key: "", logLimitMb: 80,
+      neverDeleteLogs: false, choiceGateEnabled: true, linePolicy })).settings;
+    assert.equal(homeSaved.action, "saved");
+    assert.equal((await core.readGlobalSettings(directory)).log_limit_mb, 80);
     const homeSelection = await rawBridge({ action: "setSelection", viewId: "home-view", sessionId: null,
       expectsLocalSession: false, feature: "output", enabled: true });
     assert.equal(homeSelection.enabled, false);

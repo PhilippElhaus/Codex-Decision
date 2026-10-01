@@ -1,7 +1,7 @@
 **/__pycache__/**
+**/*.py
 **/*.pyc
-tests/**
 scripts/**
+tests/**
 composer-preview.html
-*.vsix
-node_modules/**
+patch-assets/**

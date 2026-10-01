@@ -14,7 +14,7 @@ Open `/hooks` in the same Codex environment that runs your tools. Review and tru
 For every plugin update, run this check before declaring the installation ready:
 
 ```bash
-python3 scripts/check_hook_trust.py
+jevctl check-hook-trust --cwd /absolute/path/to/Codex-Jev
 ```
 
 A nonzero exit means the hook is absent, disabled, changed, or untrusted. Open `/hooks`, review the current definition, then rerun the check. Codex manages its trust records; Jev does not rewrite them or silently trust a changed command. The check is the upgrade gate that prevents an old trust record from being mistaken for a working hook.
@@ -24,14 +24,14 @@ For the optional Windows VS Code control, build and install its VSIX from WSL:
 ```bash
 cd vscode-control
 mkdir -p ../.local/submission
-npx @vscode/vsce package --no-dependencies --out ../.local/submission/codex-jev-control-0.7.3.vsix
-code --install-extension "$(wslpath -w ../.local/submission/codex-jev-control-0.7.3.vsix)" --force
+npx @vscode/vsce package --no-dependencies --out ../.local/submission/codex-jev-control-0.7.4.vsix
+code --install-extension "$(wslpath -w ../.local/submission/codex-jev-control-0.7.4.vsix)" --force
 ```
 
-Set `codexJev.dataDirectory` to the installed plugin's absolute `PLUGIN_DATA` directory. Apply the [version-pinned Codex composer patch](../../vscode-control/README.md#install), then reload VS Code. The control needs the same data directory as the hook. Its pinned bridge reads the active thread from Codex's internal router, which can change while the webview URL stays fixed. The home screen has no thread yet and stays neutral; an unreadable local thread ID shows an error rather than changing shared settings.
+Set `codexJev.dataDirectory` to the installed plugin's absolute `PLUGIN_DATA` directory. Apply the [version-pinned Codex composer patch](../../vscode-control/README.md#install), then reload VS Code. The control needs the same data directory as the hook. Its pinned bridge reads the active thread from Codex's internal router, which can change while the webview URL stays fixed. The home screen has no thread yet; its indicator still checks API health and its settings page remains available. An unreadable local thread ID cannot change another session's switches.
 
-A new local thread in the VS Code control starts with all three filters selected. Its switches, mode, cutoffs, decisions, statistics, and health live under `PLUGIN_DATA/sessions/<sha256-of-session-id>/`. The API key remains shared for the local installation in `PLUGIN_DATA/.env`. The control creates the new session config once and preserves any later changes; plugin-wide enable flags are not inherited. Without the VS Code control, the hook still requires explicit configuration.
+A new local thread in the VS Code control starts with all three filters selected. Its switches, decisions, statistics, and hook health live under `PLUGIN_DATA/sessions/<sha256-of-session-id>/`. Mode, cutoffs, and log retention live in `PLUGIN_DATA/settings.json` and apply to all sessions. The API key remains shared in `PLUGIN_DATA/.env`. The control creates the new session config once and preserves any later switch changes; plugin-wide enable flags are not inherited. Without the VS Code control, the hook still requires explicit configuration.
 
 CLI users without the VS Code control can opt into installation-wide filtering by adding `"scope": "global"` to a schema-2 `PLUGIN_DATA/config.json`, then enabling the desired routes. [config.example.json](../../config.example.json) shows the fields. A session config, when present, overrides this global choice for that session. This global opt-in deliberately affects every session that has no override.
 
-If the control stays amber after a sizeable local text result, check `/hooks`, start a new thread, and confirm that the selected switch matches that tool's route. Red means a configuration, key, API, or hook problem; the original tool result remains visible. [Verification](../development/development_verification.md) gives a repeatable test.
+If the indicator is red, test the key and API connection in settings. If the API is green but no decisions appear after eligible tool output, check `/hooks`, start a new thread, and confirm that the selected switch matches that tool's route. A failed hook keeps the original tool result visible. [Verification](../development/development_verification.md) gives a repeatable test.

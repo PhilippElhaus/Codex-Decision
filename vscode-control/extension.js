@@ -8,9 +8,10 @@ const { LatestDecisionProvider, VIEW_ID } = require("./panel");
 const {
   checkHealth, decisionSummary, defaultDataDirectory, estimateTokensSaved,
   isJevOutcome, outcomeLine, readConfig, readEventOffset, readEventsSince, savedCharacters,
-  readApiKey, readLifetimeStats, writeApiKey, writeSelection, writeSettings, writeNeverDeleteLogs,
-  completeLinePolicy, DEFAULT_LINE_POLICY, completeSearchRelevance, DEFAULT_SEARCH_RELEVANCE,
+  readApiKey, writeApiKey, writeSelection,
+  completeLinePolicy, completeSearchRelevance,
   sessionDirectory, readHookHealth, ensureSessionDefaults,
+  DEFAULT_SETTINGS, readGlobalSettings, writeGlobalSettings, readInstallationStats,
 } = require("./core");
 
 function emptyStats() {
@@ -70,7 +71,9 @@ function createController(dataDirectory) {
       return;
     }
     if (sessionId == null) {
-      if (state.viewId !== viewId || state.sessionId !== null || state.sessionPending === expectsLocalSession) {
+      const changed = state.viewId !== viewId || state.sessionId !== null ||
+        state.sessionPending === expectsLocalSession;
+      if (changed) {
         state.generation += 1;
         state.eventDirectory = null;
         state.eventSize = -1;
@@ -82,11 +85,13 @@ function createController(dataDirectory) {
       state.outputEnabled = false;
       state.testBuildEnabled = false;
       state.searchListingEnabled = false;
-      state.health = null;
+      if (changed) state.health = null;
+      if (changed) state.needsKey = false;
       state.hookHealth = null;
       state.sessionPending = !expectsLocalSession;
       state.configurationError = expectsLocalSession ? "Codex session could not be identified" : null;
       entering = Promise.resolve();
+      if (changed) void probe();
       return;
     }
     if (state.viewId === viewId && state.sessionId === sessionId) return entering;
@@ -132,30 +137,25 @@ function createController(dataDirectory) {
         state.eventDirectory = directory;
         state.health = null;
       }
-      const config = await ensureSessionDefaults(directory);
+      const [config, settings] = await Promise.all([
+        ensureSessionDefaults(directory), readGlobalSettings(dataDirectory()),
+      ]);
       if (generation !== state.generation) return;
       const selected = config.enabled || config.test_build_enabled || config.search_listing_enabled;
       let needsKey = false;
-      if (selected) {
-        try { await readApiKey(dataDirectory()); }
-        catch { needsKey = true; }
-      }
+      try { await readApiKey(dataDirectory()); }
+      catch { needsKey = true; }
       if (generation !== state.generation) return;
       state.configurationError = null;
-      const wasEnabled = state.enabled;
       state.outputEnabled = config.enabled;
       state.testBuildEnabled = config.test_build_enabled;
       state.searchListingEnabled = config.search_listing_enabled;
       state.enabled = selected;
-      state.mode = config.mode;
+      state.mode = settings.mode;
       const wasMissingKey = state.needsKey;
       state.needsKey = needsKey;
       if (state.needsKey) state.health = { ok: false, reason: "JEV_KEY_MISSING" };
-      else if (state.enabled && wasMissingKey) void (probePromise ? probePromise.then(() => probe()) : probe());
-      if (!state.enabled) {
-        state.health = null;
-      }
-      if (state.enabled && !state.needsKey && (!wasEnabled || directoryChanged)) {
+      if (!state.needsKey && (wasMissingKey || directoryChanged || !state.health)) {
         void (probePromise ? probePromise.then(() => probe()) : probe());
       }
     } catch (error) {
@@ -172,25 +172,26 @@ function createController(dataDirectory) {
   }
 
   function probe() {
-    if (!state.enabled || state.needsKey) return Promise.resolve();
     if (probePromise) return probePromise;
+    const generation = state.generation;
     state.checking = true;
     pulse();
     probePromise = (async () => {
-      let active;
       try {
-        const directory = dataDirectory();
-        active = activeDirectory();
-        const result = await checkHealth(directory);
-        if (state.enabled && state.eventDirectory === active) state.health = result;
+        const result = await checkHealth(dataDirectory());
+        if (generation === state.generation) {
+          state.health = result;
+          state.needsKey = result.reason === "JEV_KEY_MISSING";
+        }
       } catch {
-        if (state.enabled && (!active || state.eventDirectory === active)) {
+        if (generation === state.generation) {
           state.health = { ok: false, reason: "JEV_CONFIG_ERROR" };
         }
       }
     })().finally(() => {
       state.checking = false;
       probePromise = null;
+      if (generation !== state.generation) void probe();
     });
     return probePromise;
   }
@@ -241,7 +242,8 @@ function createController(dataDirectory) {
             state.recent = event;
             pulse();
           }
-          if (event.reason === "no_evaluator" || event.reason === "evaluator_unavailable") {
+          if (!state.needsKey && (event.reason === "no_evaluator" ||
+              event.reason === "evaluator_unavailable")) {
             // A hook failure may be transient or unrelated to connection health.
             // Check the connection instead of leaving this window red for minutes.
             void probe();
@@ -277,32 +279,20 @@ function createController(dataDirectory) {
 
   async function settingsReply(request) {
     try {
-      const directory = activeDirectory();
+      const directory = dataDirectory();
       if (request.action === "settingsRead") {
-        const config = await readConfig(directory);
+        const config = await readGlobalSettings(directory);
         let keyLength = 0;
         try { keyLength = (await readApiKey(dataDirectory())).length; } catch { /* no usable key */ }
-        const lifetime = await readLifetimeStats(directory);
-        return { action: "ready", config: { ...config, line_policy: completeLinePolicy(config.line_policy),
-          search_relevance: completeSearchRelevance(config.search_relevance),
-          choice_gate_enabled: config.choice_gate_enabled ?? true,
-          log_limit_mb: config.log_limit_mb ?? 50, never_delete_logs: config.never_delete_logs ?? false },
-          defaults: { mode: "replace", line_policy: DEFAULT_LINE_POLICY, search_relevance: DEFAULT_SEARCH_RELEVANCE,
-            choice_gate_enabled: true, log_limit_mb: 50, never_delete_logs: false },
+        const lifetime = await readInstallationStats(directory);
+        return { action: "ready", config,
+          defaults: DEFAULT_SETTINGS,
           hasKey: keyLength > 0, keyLength, lifetime };
       }
       if (request.action === "settingsOpenLogs") {
         const parent = await fs.lstat(directory);
         if (!parent.isDirectory() || parent.isSymbolicLink()) throw new Error("Unsafe Jev data directory");
-        let target = path.join(directory, "logs");
-        try {
-          const details = await fs.lstat(target);
-          if (!details.isDirectory() || details.isSymbolicLink()) throw new Error("Unsafe Jev logs directory");
-        } catch (error) {
-          if (error.code !== "ENOENT") throw error;
-          target = directory;
-        }
-        if (!await vscode.env.openExternal(vscode.Uri.file(target))) throw new Error("Could not open Jev logs");
+        if (!await vscode.env.openExternal(vscode.Uri.file(directory))) throw new Error("Could not open Jev logs");
         return { action: "openedLogs" };
       }
       if (request.action === "settingsTest") {
@@ -311,7 +301,8 @@ function createController(dataDirectory) {
       }
       if (request.action === "settingsSetNeverDeleteLogs") {
         if (typeof request.neverDeleteLogs !== "boolean") throw new Error("Never delete logs must be a boolean");
-        const task = selectionQueue.then(() => writeNeverDeleteLogs(directory, request.neverDeleteLogs));
+        const task = selectionQueue.then(() => writeGlobalSettings(directory,
+          { never_delete_logs: request.neverDeleteLogs }));
         selectionQueue = task.catch(() => {});
         await task;
         return { action: "neverDeleteLogsSaved", neverDeleteLogs: request.neverDeleteLogs };
@@ -321,22 +312,21 @@ function createController(dataDirectory) {
         if (!Number.isInteger(request.logLimitMb) || request.logLimitMb < 1 || request.logLimitMb > 9999 ||
             typeof request.neverDeleteLogs !== "boolean" ||
             typeof request.choiceGateEnabled !== "boolean") throw new Error("Invalid Jev settings");
-        if (!request.key) {
-          try { await readApiKey(dataDirectory()); }
-          catch { throw new Error("Enter an API key before saving."); }
-        }
         const linePolicy = completeLinePolicy(request.linePolicy);
         const searchRelevance = completeSearchRelevance(request.searchRelevance);
         const task = selectionQueue.then(async () => {
-          await writeSettings(directory, request.mode, linePolicy, request.logLimitMb,
-            request.neverDeleteLogs, searchRelevance, request.choiceGateEnabled);
+          await writeGlobalSettings(directory, { mode: request.mode, line_policy: linePolicy,
+            search_relevance: searchRelevance, choice_gate_enabled: request.choiceGateEnabled,
+            log_limit_mb: request.logLimitMb, never_delete_logs: request.neverDeleteLogs });
           if (request.key) await writeApiKey(dataDirectory(), request.key);
-          await sync();
-          if (state.enabled && request.key) await probe();
+          if (state.sessionId) await sync();
+          if (request.key) await probe();
         });
         selectionQueue = task.catch(() => {});
         await task;
-        return { action: "saved", hasKey: true, keyLength: (await readApiKey(dataDirectory())).length };
+        let keyLength = 0;
+        try { keyLength = (await readApiKey(dataDirectory())).length; } catch { /* optional key */ }
+        return { action: "saved", hasKey: keyLength > 0, keyLength };
       }
     } catch (error) {
       return { action: "error", message: error.message || "Jev settings failed" };
@@ -422,29 +412,26 @@ function activate(context) {
     vscode.commands.executeCommand(`${VIEW_ID}.focus`)));
   context.subscriptions.push(vscode.commands.registerCommand("codexJev.bridge", async (request) => {
     const controller = controllerFor(request?.viewId);
-    if (typeof request?.sessionId === "string" && /^[A-Za-z0-9._-]{1,128}$/.test(request.sessionId)) {
-      active = controller;
-    }
+    active = controller;
     const reply = await controller.bridge(request);
     const settingsSaved = request?.action === "settingsSave" && reply.settings?.action === "saved";
     const changed = request?.action === "setSelection" || request?.action === "saveApiKey" ||
-      settingsSaved;
+      settingsSaved || request?.action === "settingsSetNeverDeleteLogs";
     if (changed) {
       await Promise.all([...controllers.values()].map(async ({ controller: other }) => {
-        if (other !== controller && other.state.sessionId &&
-            (request.action === "saveApiKey" || other.state.sessionId === controller.state.sessionId)) {
-          await other.sync();
+        if (other !== controller &&
+            (request.action === "saveApiKey" || settingsSaved ||
+             request.action === "settingsSetNeverDeleteLogs" ||
+             other.state.sessionId === controller.state.sessionId)) {
+          if (other.state.sessionId) await other.sync();
+          else if (request.action === "saveApiKey") await other.probe();
         }
       }));
     }
     return reply;
   }));
   context.subscriptions.push(vscode.commands.registerCommand("codexJev.checkConnection", async () => {
-    if (!active?.state.enabled) {
-      void vscode.window.showInformationMessage("Select a Jev integration to check the Jev connection.");
-      return;
-    }
-    await active.probe();
+    await (active || createController(dataDirectory)).probe();
   }));
   context.subscriptions.push(vscode.workspace.onDidChangeConfiguration((event) => {
     if (event.affectsConfiguration("codexJev")) {
@@ -468,7 +455,7 @@ function activate(context) {
   const healthTimer = setInterval(() => { for (const controller of live()) void controller.probe(); }, 5 * 60_000);
   const retryTimer = setInterval(() => {
     for (const controller of live()) {
-      if (controller.state.enabled && controller.state.health?.ok === false) void controller.probe();
+      if (controller.state.health?.ok === false) void controller.probe();
     }
   }, 30_000);
   context.subscriptions.push({ dispose: () => {

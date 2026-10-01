@@ -7,6 +7,7 @@ use codex_jev::{
     MAX_REQUEST_BYTES,
 };
 use regex::Regex;
+use serde::Deserialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
@@ -35,6 +36,56 @@ struct Config {
     search_relevance: SearchRelevancePolicy,
     log_limit_mb: u64,
     never_delete_logs: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SharedSettings {
+    schema_version: u64,
+    mode: String,
+    line_policy: BTreeMap<String, LinePolicy>,
+    search_relevance: SearchRelevancePolicy,
+    choice_gate_enabled: bool,
+    log_limit_mb: u64,
+    never_delete_logs: bool,
+}
+
+fn apply_shared_settings(data_dir: &Path, config: &mut Config) -> Result<(), String> {
+    let path = data_dir.join("settings.json");
+    let metadata = match fs::symlink_metadata(&path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(_) => return Err("settings stat failed".into()),
+    };
+    if !metadata.is_file() || metadata.file_type().is_symlink() || metadata.len() > 8192 {
+        return Err("unsafe shared settings".into());
+    }
+    let bytes = fs::read(&path).map_err(|_| "settings read failed")?;
+    let settings: SharedSettings =
+        serde_json::from_slice(&bytes).map_err(|_| "invalid shared settings")?;
+    if settings.schema_version != 1
+        || !matches!(settings.mode.as_str(), "replace" | "observe")
+        || !(1..=9999).contains(&settings.log_limit_mb)
+        || settings.line_policy.len() != 3
+        || ["output", "test_build", "search_listing"]
+            .iter()
+            .any(|route| {
+                !settings
+                    .line_policy
+                    .get(*route)
+                    .is_some_and(LinePolicy::valid)
+            })
+        || !settings.search_relevance.valid()
+    {
+        return Err("invalid shared settings".into());
+    }
+    config.mode = settings.mode;
+    config.policy = settings.line_policy;
+    config.search_relevance = settings.search_relevance;
+    config.choice_gate_enabled = settings.choice_gate_enabled;
+    config.log_limit_mb = settings.log_limit_mb;
+    config.never_delete_logs = settings.never_delete_logs;
+    Ok(())
 }
 
 fn config(data_dir: &Path) -> Result<Option<Config>, String> {
@@ -1699,9 +1750,10 @@ fn execute() -> Result<Value, String> {
     } else {
         config(&data_dir)?.filter(|global| global.global_scope)
     };
-    let Some(config) = selected else {
+    let Some(mut config) = selected else {
         return Ok(json!({}));
     };
+    apply_shared_settings(&data_dir, &mut config)?;
     if !(config.output || config.test_build || config.search_listing) {
         return Ok(json!({}));
     }
@@ -1941,6 +1993,40 @@ mod tests {
         }
         fs::write(directory.path().join("config.json"), baseline.to_string()).unwrap();
         assert!(config(directory.path()).unwrap().is_some());
+    }
+
+    #[test]
+    fn shared_settings_override_session_behavior_without_changing_route_selection() {
+        let directory = tempfile::tempdir().unwrap();
+        let baseline = json!({"schema_version":2,"enabled":true,"test_build_enabled":false,
+            "search_listing_enabled":true,"mode":"replace",
+            "line_policy":{"output":{},"test_build":{},"search_listing":{}}});
+        fs::write(directory.path().join("config.json"), baseline.to_string()).unwrap();
+        let mut selected = config(directory.path()).unwrap().unwrap();
+        let settings = json!({"schema_version":1,"mode":"observe","choice_gate_enabled":false,
+            "line_policy":{"output":{"omit_min":80,"exact_max":10},
+                "test_build":{"omit_min":85,"exact_max":5},
+                "search_listing":{"omit_min":90,"exact_max":4}},
+            "search_relevance":{"guard_enabled":true,"relevant_max":15},
+            "log_limit_mb":75,"never_delete_logs":true});
+        fs::write(directory.path().join("settings.json"), settings.to_string()).unwrap();
+        apply_shared_settings(directory.path(), &mut selected).unwrap();
+        assert!(selected.output);
+        assert!(!selected.test_build);
+        assert!(selected.search_listing);
+        assert_eq!(selected.mode, "observe");
+        assert_eq!(selected.policy["output"].omit_min, 80);
+        assert!(selected.search_relevance.guard_enabled);
+        assert!(!selected.choice_gate_enabled);
+        assert!(selected.never_delete_logs);
+        let mut malformed = settings.clone();
+        malformed["line_policy"]["output"]["omit_min"] = json!(101);
+        fs::write(
+            directory.path().join("settings.json"),
+            malformed.to_string(),
+        )
+        .unwrap();
+        assert!(apply_shared_settings(directory.path(), &mut selected).is_err());
     }
 
     #[test]

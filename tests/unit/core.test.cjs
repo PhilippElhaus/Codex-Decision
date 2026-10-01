@@ -7,10 +7,42 @@ const path = require("node:path");
 const test = require("node:test");
 const {
   activitySummary, checkHealth, completeLinePolicy, completeSearchRelevance, DEFAULT_SEARCH_RELEVANCE, decisionSummary, sessionDirectory, readHookHealth, estimateTokensSaved, formatDuration, outcomeLine, parseHealthOutput, readApiKey, readConfig,
-  readEventOffset, readEventsSince, readLatestEvent, readLifetimeStats, readRecentOutcomes, writeApiKey, writeEnabled, writeMode, writeSelection, writeSettings, writeNeverDeleteLogs, ensureSessionDefaults,
+  readEventOffset, readEventsSince, readLatestEvent, readLifetimeStats, readRecentOutcomes, writeApiKey, writeEnabled, writeMode, writeSelection, ensureSessionDefaults,
+  readGlobalSettings, writeGlobalSettings, readInstallationStats,
 } = require("../../vscode-control/core");
 const withV2 = (config) => ({ ...config, schema_version: 2, line_policy: completeLinePolicy(),
   search_relevance: DEFAULT_SEARCH_RELEVANCE });
+
+test("global settings stay independent of session switches and aggregate activity", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "jev-global-settings-"));
+  try {
+    const one = sessionDirectory(root, "one");
+    const two = sessionDirectory(root, "two");
+    await ensureSessionDefaults(one);
+    await ensureSessionDefaults(two);
+    await writeSelection(one, false, true, false);
+    await writeGlobalSettings(root, { mode: "observe", log_limit_mb: 72 });
+    assert.equal((await readGlobalSettings(root)).mode, "observe");
+    assert.equal((await readGlobalSettings(root)).log_limit_mb, 72);
+    assert.equal((await readConfig(one)).test_build_enabled, true);
+    assert.equal((await readConfig(two)).test_build_enabled, true);
+    assert.equal((await readConfig(one)).mode, "replace");
+    for (const [directory, calls, completed, elapsedMs] of [[one, 2, 2, 200], [two, 1, 1, 300]]) {
+      await fs.writeFile(path.join(directory, "stats.json"), JSON.stringify({
+        calls, completed, replaced: 1, savedChars: 40, timed: completed, elapsedMs,
+      }));
+    }
+    const totals = await readInstallationStats(root);
+    assert.equal(totals.calls, 3);
+    assert.equal(totals.replaced, 2);
+    assert.equal(totals.averageMs, 167);
+    await assert.rejects(writeGlobalSettings(root, { log_limit_mb: 0 }), /Invalid Jev settings/);
+    assert.equal((await readGlobalSettings(root)).log_limit_mb, 72);
+    await fs.rm(path.join(root, "settings.json"));
+    await fs.symlink(path.join(one, "config.json"), path.join(root, "settings.json"));
+    await assert.rejects(readGlobalSettings(root), /Unsafe Jev settings file/);
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
+});
 
 test("new Codex sessions enable all three filters once and preserve later choices", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "jev-default-session-"));
@@ -48,80 +80,28 @@ test("session readers reject linked directories before opening state", async () 
   } finally { await fs.rm(root, { recursive: true, force: true }); }
 });
 
-test("line policy round trips and rejects invalid percentages", async () => {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-settings-test-"));
+test("global policy validates thresholds and saves independent of sessions", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "jev-global-policy-"));
   try {
-    const next = completeLinePolicy({ output: { omit_min: 96 }, search_listing: { exact_max: 4 } });
-    await writeSettings(directory, "observe", next, 50, false);
-    assert.equal(next.output.omit_min, 96);
-    assert.equal(next.test_build.exact_max, 5);
-    assert.deepEqual((await readConfig(directory)).line_policy, next);
-    await assert.rejects(writeSettings(directory, "replace", { output: { omit_min: 101 } }, 50, false), /percentages/);
-    await assert.rejects(writeSettings(directory, "replace", { output: { typo: 80 } }, 50, false), /Invalid Jev line policy/);
-    assert.deepEqual((await readConfig(directory)).line_policy, next);
-  } finally { await fs.rm(directory, { recursive: true, force: true }); }
-});
-
-test("search relevance preview and guard settings persist without changing other routes", async () => {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-relevance-test-"));
-  try {
-    const policy = completeSearchRelevance({ guard_enabled: true, relevant_max: 7 });
-    await writeSettings(directory, "replace", {}, 50, false, policy);
-    assert.deepEqual((await readConfig(directory)).search_relevance, policy);
-    await writeSelection(directory, false, false, true);
-    assert.deepEqual((await readConfig(directory)).search_relevance, policy);
-    await assert.rejects(writeSettings(directory, "replace", {}, 50, false,
-      { guard_enabled: true, relevant_max: 101 }), /relevance policy/);
-    assert.deepEqual((await readConfig(directory)).search_relevance, policy);
-  } finally { await fs.rm(directory, { recursive: true, force: true }); }
-});
-
-test("log retention and line thresholds save atomically with strict bounds", async () => {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-retention-test-"));
-  try {
-    await writeSettings(directory, "observe", { output: { omit_min: 96 } }, 9999, true);
-    const saved = await readConfig(directory);
-    assert.equal(saved.mode, "observe");
-    assert.equal(saved.line_policy.output.omit_min, 96);
-    assert.equal(saved.log_limit_mb, 9999);
+    const session = sessionDirectory(root, "thread-one");
+    await ensureSessionDefaults(session);
+    const policy = completeLinePolicy({ output: { omit_min: 96 }, search_listing: { exact_max: 4 } });
+    const relevance = completeSearchRelevance({ guard_enabled: true, relevant_max: 7 });
+    await writeGlobalSettings(root, { mode: "observe", line_policy: policy,
+      search_relevance: relevance, log_limit_mb: 9999, never_delete_logs: true });
+    const saved = await readGlobalSettings(root);
+    assert.deepEqual(saved.line_policy, policy);
+    assert.deepEqual(saved.search_relevance, relevance);
     assert.equal(saved.never_delete_logs, true);
-    for (const invalid of [0, -1, 10000, 1.5, "50", true]) {
-      await assert.rejects(writeSettings(directory, "replace", {}, invalid, false), /Log retention/);
-    }
-    await assert.rejects(writeSettings(directory, "replace", {}, 50, "yes"), /Log retention/);
-    assert.deepEqual(await readConfig(directory), saved);
-  } finally { await fs.rm(directory, { recursive: true, force: true }); }
-});
-
-test("line policy rejects unknown names and wrong types", async () => {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-methods-test-"));
-  try {
-    const policy = completeLinePolicy({ output: { exact_max: 3 } });
-    await writeSettings(directory, "replace", policy, 50, false);
-    assert.deepEqual((await readConfig(directory)).line_policy, policy);
-    for (const invalid of [{ output: { score: true } }, { output: { omit_min: "95" } }, { search_listing: { exact_max: -1 } }]) {
-      await assert.rejects(writeSettings(directory, "replace", invalid, 50, false), /line policy|percentages/);
-    }
-    assert.deepEqual((await readConfig(directory)).line_policy, policy);
-  } finally { await fs.rm(directory, { recursive: true, force: true }); }
-});
-
-test("never delete can save alone without changing draft settings or needing a key", async () => {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-checkbox-test-"));
-  try {
-    await writeSettings(directory, "observe", { output: { omit_min: 96 } }, 75, false);
-    await writeNeverDeleteLogs(directory, true);
-    assert.deepEqual({ ...(await readConfig(directory)) }, {
-      enabled: false, test_build_enabled: false, search_listing_enabled: false,
-      mode: "observe", schema_version: 2, line_policy: completeLinePolicy({ output: { omit_min: 96 } }),
-      search_relevance: DEFAULT_SEARCH_RELEVANCE, choice_gate_enabled: true,
-      log_limit_mb: 75, never_delete_logs: true,
-    });
-    await assert.rejects(writeNeverDeleteLogs(directory, "true"), /boolean/);
-    assert.equal((await readConfig(directory)).never_delete_logs, true);
-    await writeNeverDeleteLogs(directory, false);
-    assert.equal((await readConfig(directory)).never_delete_logs, false);
-  } finally { await fs.rm(directory, { recursive: true, force: true }); }
+    assert.equal((await readConfig(session)).mode, "replace");
+    for (const changes of [
+      { line_policy: { output: { omit_min: 101 } } },
+      { line_policy: { output: { typo: 80 } } },
+      { search_relevance: { relevant_max: 101 } },
+      { log_limit_mb: 0 }, { never_delete_logs: "true" },
+    ]) await assert.rejects(writeGlobalSettings(root, changes));
+    assert.deepEqual(await readGlobalSettings(root), saved);
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
 });
 
 test("session activity index and cumulative stats use only current paths", async () => {

@@ -128,14 +128,14 @@
       const compactOption = document.getElementById("codex-jev-search-listing");
       const label = document.getElementById("codex-jev-label");
       check(root && button && option && localOption && compactOption && root.style.display === "block", "control visible");
-      check(button.style.color === "rgb(154, 154, 154)", "disabled gray");
+      check(button.style.color === "rgb(135, 205, 164)", "API connection is green");
       check([option, localOption, compactOption].map((item) => item.querySelector("strong").textContent).join("|") ===
         "Output filter|Test/build logs|Search/listing", "three concise integration labels");
       check(option.querySelector("small").textContent.includes("local tool text") &&
         localOption.querySelector("small").textContent.includes("commands and tools") &&
         compactOption.querySelector("small").textContent.includes("commands or tools") &&
-        document.getElementById("codex-jev-menu").textContent.includes("Each switch controls only its own route"),
-        "menu explains exclusive integration scopes");
+        document.getElementById("codex-jev-menu-note").textContent === "Select none to turn Jev off.",
+        "menu keeps only the off notice");
       check(!document.getElementById("codex-jev-menu").textContent.includes("PostToolUse"), "no repeated hook name");
       const buttonStyle = getComputedStyle(button);
       const modelStyle = getComputedStyle(document.querySelector(".model"));
@@ -294,35 +294,36 @@
         "selected check uses Codex blue");
       check(button.style.color === "rgb(135, 205, 164)", "connected green");
       hookHealth = null;
-      await until(() => button.style.color === "rgb(230, 188, 106)", "API alone leaves hook unverified");
+      await until(() => button.style.color === "rgb(135, 205, 164)", "API probe confirms the connection without a hook event");
       const healthRow = document.getElementById("codex-jev-health-row");
       const healthReason = document.getElementById("codex-jev-health-reason");
       const tip = document.getElementById("codex-jev-tip");
       tip.style.display = "block";
-      check(healthRow.querySelector("strong").textContent === "Error",
-        "unverified hook has a short error heading");
-      check(healthReason.parentElement === tip &&
-        healthReason.getBoundingClientRect().top >= healthRow.getBoundingClientRect().bottom,
-        "red guidance sits below the error heading");
-      check(getComputedStyle(healthReason).display === "block" &&
-        !healthReason.textContent.startsWith("·") &&
-        healthReason.textContent.includes("trust Jev in /hooks"),
-        "unverified hook shows recovery step");
+      check(healthRow.hidden && getComputedStyle(healthReason).display === "none" &&
+        !tip.textContent.includes("Run a local tool"), "no unverified hook error is shown");
       tip.style.removeProperty("display");
       hookHealth = { version: 1, hook_version: "0.8.0", last_seen_ms: Date.now(), last_skip_ms: Date.now(), last_skip: "small" };
       await until(() => button.style.color === "rgb(135, 205, 164)", "observed skip verifies hook invocation");
       hookHealth = { ...hookHealth, last_error_ms: Date.now() + 1, last_error: "invalid Jev response" };
-      await until(() => button.style.color === "rgb(233, 148, 144)", "hook error is red even with healthy API");
+      await until(() => document.getElementById("codex-jev-health-reason").textContent.includes("invalid Jev response"),
+        "hook error is reported");
+      check(button.style.color === "rgb(135, 205, 164)", "hook error does not change API color");
       check(document.getElementById("codex-jev-health-reason").textContent.includes("invalid Jev response"),
         "hook error is explained");
       hookHealth = { ...hookHealth, last_seen_ms: Date.now() + 2, last_success_ms: Date.now() + 2 };
       await until(() => button.style.color === "rgb(135, 205, 164)", "successful hook clears error state");
       hookHealth = { ...hookHealth, hook_version: "0.6.0", last_seen_ms: Date.now() + 3 };
-      await until(() => button.style.color === "rgb(233, 148, 144)", "old hook binary is reported");
+      await until(() => document.getElementById("codex-jev-health-reason").textContent.includes("Update the Jev plugin"),
+        "old hook binary is reported");
+      check(button.style.color === "rgb(135, 205, 164)", "old hook binary does not change API color");
       check(document.getElementById("codex-jev-health-reason").textContent.includes("Update the Jev plugin"),
         "version mismatch has a recovery step");
       hookHealth = { ...hookHealth, hook_version: "0.8.0", last_seen_ms: Date.now() + 4 };
       await until(() => button.style.color === "rgb(135, 205, 164)", "matching hook restores health");
+      health = { ok: false, reason: "JEV_NETWORK_ERROR" };
+      await until(() => button.style.color === "rgb(233, 148, 144)", "unreachable API is red");
+      health = { ok: true, model: "jev-1.13.0" };
+      await until(() => button.style.color === "rgb(135, 205, 164)", "reachable API returns green");
       const observeBadge = document.getElementById("codex-jev-observe");
       check(getComputedStyle(observeBadge).display === "none", "replacement mode has no observe badge");
       mode = "observe";
@@ -353,10 +354,10 @@
       const firstOutcome = tooltip.querySelector("li");
       check(firstOutcome.getBoundingClientRect().height <= parseFloat(getComputedStyle(firstOutcome).lineHeight) + 1,
         "test/build outcome fits on one line");
-      check(getComputedStyle(button).transitionDuration.includes("0.22s"), "blue pulse has eased color transition");
+      check(getComputedStyle(button).transitionDuration.includes("0.22s"), "status color has eased transition");
       busy = true;
       await pause(150);
-      check(button.style.color === "rgb(131, 188, 247)", "busy blue");
+      check(button.style.color === "rgb(135, 205, 164)", "busy activity keeps API green");
       busy = false;
       health = { ok: false, reason: "JEV_HTTP_401" };
       await pause(150);
@@ -375,7 +376,7 @@
         "new or reopened thread has no old outcomes");
       option.click();
       await pause(50);
-      check(button.style.color === "rgb(154, 154, 154)", "off returns gray");
+      check(button.style.color === "rgb(233, 148, 144)", "turning filters off keeps API failure red");
       localOption.click();
       await pause(50);
       check(localOption.getAttribute("aria-checked") === "true" && option.getAttribute("aria-checked") === "false", "local filter selected independently");
@@ -385,7 +386,7 @@
       await pause(150);
       check(button.style.color === "rgb(135, 205, 164)" &&
         document.getElementById("codex-jev-health-row").hidden, "test/build filter requires Jev health");
-      check(button.getAttribute("aria-label").includes("Jev hook active") &&
+      check(button.getAttribute("aria-label").includes("Jev API connected") &&
         tooltip.querySelector("#codex-jev-empty").textContent.includes("Short or protected") &&
         tooltip.querySelector("#codex-jev-empty").style.display !== "none",
         "verified hook with no decision explains normal skips");
@@ -406,7 +407,7 @@
       check(compactOption.getAttribute("aria-checked") === "true" && option.getAttribute("aria-checked") === "false", "search/listing remains selected alone");
       compactOption.click();
       await pause(50);
-      check(compactOption.getAttribute("aria-checked") === "false" && button.style.color === "rgb(154, 154, 154)", "search/listing can turn off independently");
+      check(compactOption.getAttribute("aria-checked") === "false" && button.style.color === "rgb(135, 205, 164)", "search/listing can turn off independently");
       document.querySelector(".prompt").click();
       check(menu.dataset.open === "false" && button.getAttribute("aria-expanded") === "false",
         "outside click closes the menu");
@@ -732,10 +733,23 @@
       document.documentElement.dataset.codexJevRouteKind = "none";
       delete document.documentElement.dataset.codexJevSessionId;
       await until(() => document.getElementById("codex-jev-option").disabled &&
-        button.style.color === "rgb(154, 154, 154)", "home view stays neutral without a thread");
-      check(document.getElementById("codex-jev-menu-note").textContent.includes("Open a Codex thread") &&
-        document.getElementById("codex-jev-session-note").textContent.includes("Open a Codex thread"),
-        "home view explains why switches are unavailable");
+        button.style.color === "rgb(135, 205, 164)", "home view keeps API health without a thread");
+      check(root.dataset.noSession === "true" &&
+        document.getElementById("codex-jev-menu-note").textContent === "Select none to turn Jev off.",
+        "home view has no thread notice");
+      const homeTip = document.getElementById("codex-jev-tip");
+      homeTip.style.display = "block";
+      check(getComputedStyle(homeTip).display === "none", "home view suppresses the hover tooltip");
+      homeTip.style.removeProperty("display");
+      settingsScreen.style.display = "block";
+      jevSettings.click();
+      await until(() => settingsScreen.querySelector("#codex-jev-settings-panel") &&
+        settingsScreen.querySelector("#codex-jev-settings-lifetime-calls").textContent === "126",
+        "global settings open from the home view");
+      check(settingsScreen.querySelector("#codex-jev-settings-panel h2").textContent === "All sessions",
+        "settings totals cover all sessions");
+      settingsScreen.querySelector('button[aria-label="General"]').click();
+      settingsScreen.style.display = "none";
       window.dispatchEvent(new MessageEvent("message", { data: {
         type: "codex-jev-reply", id: window.__jevHarnessHeldStatus.id,
         status: { enabled: true, outputEnabled: true, sessionPending: false, health: { ok: true } },
@@ -747,7 +761,7 @@
       document.documentElement.dataset.codexJevSessionId = "next-thread";
       await until(() => window.__jevHarnessLastSessionId === "next-thread" &&
         !document.getElementById("codex-jev-option").disabled &&
-        document.getElementById("codex-jev-session-note").style.display === "none",
+        root.dataset.noSession === "false",
         "internal Codex navigation activates the new thread without changing the webview URL");
       document.documentElement.dataset.codexJevRouteKind = "none";
       delete document.documentElement.dataset.codexJevSessionId;

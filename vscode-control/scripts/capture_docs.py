@@ -52,6 +52,7 @@ def main() -> None:
             if state == 'settings' and ('id="codex-jev-settings-panel"' not in result.stdout or
                                         'id="codex-jev-settings-lifetime-tokens"' not in result.stdout or
                                         '87,320' not in result.stdout or
+                                        'All sessions' not in result.stdout or
                                         'Can omit, minimum' not in result.stdout or
                                         'Exact text needed, maximum' not in result.stdout or
                                         'Task relevance, maximum for omission' not in result.stdout or

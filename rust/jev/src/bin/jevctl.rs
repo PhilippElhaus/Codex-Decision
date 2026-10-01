@@ -9,6 +9,13 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+#[path = "jevctl/patch.rs"]
+mod patch;
+#[path = "jevctl/release.rs"]
+mod release;
+#[path = "jevctl/trust.rs"]
+mod trust;
+
 fn write_private(path: &Path, data: &[u8]) -> Result<(), String> {
     if path.is_symlink() {
         return Err("linked file".into());
@@ -504,11 +511,40 @@ fn evaluate_quality(cases_path: &Path) -> Result<(), String> {
 
 fn run() -> Result<(), String> {
     let args: Vec<String> = std::env::args().collect();
-    if args.len() != 4 {
-        return Err("usage: jevctl set-key --data-dir <absolute PLUGIN_DATA> | package --root <repository> | evaluate-quality --cases <private JSON>".into());
+    if args.len() == 9
+        && args[1] == "patch-webview"
+        && args[3] == "--root"
+        && args[5] == "--extension"
+        && args[7] == "--backup"
+    {
+        return patch::run(
+            &args[2],
+            Path::new(&args[4]),
+            Path::new(&args[6]),
+            Path::new(&args[8]),
+        );
     }
-    if args[1] == "package" && args[2] == "--root" {
-        return package(&PathBuf::from(&args[3]));
+    if args.len() == 6
+        && args[1] == "check-hook-trust"
+        && args[2] == "--cwd"
+        && args[4] == "--plugin-id"
+    {
+        return trust::check_hook_trust(Path::new(&args[3]), Some(&args[5]));
+    }
+    if args.len() != 4 {
+        return Err("usage: jevctl set-key --data-dir <PLUGIN_DATA> | package|check-release-versions|cachebust --root <repository> | check-hook-trust --cwd <repository> [--plugin-id <id>] | patch-webview <apply|update|restore> --root <repository> --extension <path> --backup <path> | evaluate-quality --cases <private JSON>".into());
+    }
+    if args[2] == "--root" {
+        let root = Path::new(&args[3]);
+        return match args[1].as_str() {
+            "package" => package(root),
+            "check-release-versions" => release::check_versions(root),
+            "cachebust" => release::cachebust(root),
+            _ => Err("unknown repository command".into()),
+        };
+    }
+    if args[1] == "check-hook-trust" && args[2] == "--cwd" {
+        return trust::check_hook_trust(Path::new(&args[3]), None);
     }
     if args[1] == "evaluate-quality" && args[2] == "--cases" {
         return evaluate_quality(&PathBuf::from(&args[3]));
