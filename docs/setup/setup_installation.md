@@ -7,7 +7,7 @@ codex plugin marketplace add https://github.com/PhilippElhaus/Codex-Jev
 codex plugin add codex-jev@codex-jev
 ```
 
-To build the plugin ZIP from source instead, run `./scripts/build_submission.sh`. The archive is written under `.local/submission/`.
+To build the plugin ZIP from source instead, run `./scripts/build_submission.sh`. The archive is written under `.local/submission/`. A local marketplace uses its registered source directory: if that directory contains an extracted package, update it from the new ZIP before running `codex plugin add`, and preserve the old package for rollback. Updating another checkout does not update that source copy. `codex plugin marketplace upgrade` refreshes Git marketplaces.
 
 Open `/hooks` in the same Codex environment that runs your tools. Review and trust **Codex Jev → PostToolUse**, then start a new thread. Codex does not run a new or changed non-managed hook until it is trusted. The trust record is tied to the hook definition, so a successful API key test alone cannot verify an upgrade.
 
