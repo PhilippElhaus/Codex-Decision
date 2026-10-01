@@ -6,7 +6,7 @@ const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
 const {
-  checkHealth, completeLinePolicy, completeSearchRelevance, DEFAULT_SEARCH_RELEVANCE, decisionSummary, sessionDirectory, readHookHealth, estimateTokensSaved, formatDuration, outcomeLine, parseHealthOutput, readApiKey, readConfig,
+  checkHealth, completeLinePolicy, completeSearchRelevance, DEFAULT_SEARCH_RELEVANCE, decisionSummary, sessionDirectory, readHookHealth, estimateTokensSaved, outcomeLine, parseHealthOutput, readApiKey, readConfig,
   readEventOffset, readEventsSince, readLifetimeStats, writeApiKey, writeSelection, ensureSessionDefaults,
   readGlobalSettings, writeGlobalSettings, readInstallationStats,
 } = require("../../vscode-control/core");
@@ -281,8 +281,6 @@ test("summary keeps three signals and missing capsule sizes do not imply savings
     "replaced · test/build · 10,000 chars · -90%");
   assert.equal(outcomeLine({ filter: "test_build", status: "replace", tool: "Bash", original_chars: 6367, capsule_chars: 309, elapsed_ms: 1263 }),
     "replaced · test/build · 6,367 chars · -95%");
-  assert.equal(formatDuration(999), "999 ms");
-  assert.equal(formatDuration(1000), "1,0s");
   assert.equal(outcomeLine({ filter: "search_listing", status: "replace", tool: "Bash", original_chars: 5000, capsule_chars: 1200, elapsed_ms: 1263 }),
     "replaced · search/listing · 5,000 chars · -76%");
   assert.match(decisionSummary({ filter: "search_listing", status: "replace", tool: "Bash", original_chars: 5000, elapsed_ms: 1263 }), /replaced search\/listing Bash output/);

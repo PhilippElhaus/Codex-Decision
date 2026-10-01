@@ -440,13 +440,6 @@ function estimateTokensSaved(characters) {
   return Number.isFinite(characters) && characters > 0 ? Math.round(characters / 4) : 0;
 }
 
-function formatDuration(elapsedMs) {
-  const milliseconds = Math.max(0, Number(elapsedMs) || 0);
-  return milliseconds >= 1000
-    ? `${(Math.floor(milliseconds / 100) / 10).toFixed(1).replace(".", ",")}s`
-    : `${Math.round(milliseconds)} ms`;
-}
-
 function decisionSummary(event) {
   if (!event) return "No hook decision recorded yet";
   if (event.status === "calling") return `Checking ${event.tool || "tool"} output with Jev`;
@@ -605,7 +598,7 @@ module.exports = {
   checkHealth, sessionDirectory, validateSessionPath, validateDirectoryPath, readHookHealth,
   completeLinePolicy, DEFAULT_LINE_POLICY,
   completeSearchRelevance, DEFAULT_SEARCH_RELEVANCE,
-  decisionSummary, defaultDataDirectory, estimateTokensSaved, formatDuration,
+  decisionSummary, defaultDataDirectory, estimateTokensSaved,
   isJevOutcome, outcomeLine, parseHealthOutput, readConfig,
   readApiKey, readEventOffset, readEventsSince, readLifetimeStats,
   savedCharacters, writeApiKey, writeSelection,
