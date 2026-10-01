@@ -14,7 +14,7 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 22
-      - run: rustup update stable --profile minimal --component rustfmt --component clippy
+      - run: rustup toolchain install stable --profile minimal --component rustfmt --component clippy
       - run: cargo +stable fmt --all -- --check
       - run: cargo +stable test --locked -p codex-jev
       - run: cargo +stable clippy --locked --all-targets -- -D warnings
