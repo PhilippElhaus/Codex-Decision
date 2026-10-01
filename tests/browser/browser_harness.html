@@ -411,6 +411,37 @@
       document.querySelector(".prompt").click();
       check(menu.dataset.open === "false" && button.getAttribute("aria-expanded") === "false",
         "outside click closes the menu");
+      button.focus();
+      check(getComputedStyle(tooltip).display === "block" &&
+        tooltip.innerText.includes("Filtering is off for this session") &&
+        getComputedStyle(tooltip.querySelector("#codex-jev-session-heading")).display === "none",
+        "disabled filters show an explanation instead of an empty tooltip");
+      health = null;
+      window.dispatchEvent(new Event("focus"));
+      await until(() => button.style.color === "rgb(230, 188, 106)", "pending API check is amber");
+      check(!healthRow.hidden && tooltip.innerText.includes("Checking Jev API") &&
+        tooltip.innerText.includes("Filtering is off for this session"),
+        "pending API check keeps the disabled tooltip readable");
+      outputEnabled = true;
+      window.dispatchEvent(new Event("focus"));
+      await until(() => option.getAttribute("aria-checked") === "true", "enable filtering during API check");
+      check(tooltip.innerText.includes("Checking Jev API") && tooltip.innerText.includes("0 checked") &&
+        tooltip.innerText.includes("No hook decision in this session"),
+        "pending API check keeps enabled activity and empty-session details visible");
+      outputEnabled = false;
+      health = { ok: false, reason: "JEV_TIMEOUT" };
+      window.dispatchEvent(new Event("focus"));
+      await until(() => button.style.color === "rgb(233, 148, 144)", "failed API check with filters off is red");
+      check(tooltip.innerText.includes("Connection timed out") &&
+        tooltip.innerText.includes("Filtering is off for this session") &&
+        getComputedStyle(retry).display !== "none", "disabled filters preserve connection recovery");
+      health = { ok: true, model: "jev-1.13.0" };
+      window.dispatchEvent(new Event("focus"));
+      await until(() => button.style.color === "rgb(135, 205, 164)", "disabled filters preserve healthy API state");
+      check(healthRow.hidden && tooltip.innerText.includes("Filtering is off for this session"),
+        "healthy disabled tooltip stays readable");
+      button.blur();
+      check(getComputedStyle(tooltip).display === "none", "tooltip closes when focus leaves Jev");
       button.click();
       document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
       check(menu.dataset.open === "false", "Escape closes the menu");

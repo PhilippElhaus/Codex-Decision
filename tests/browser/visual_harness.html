@@ -48,6 +48,7 @@
   <script>
     document.documentElement.style.setProperty("--screenshot-offset", `${Math.max(0, outerHeight - innerHeight)}px`);
     const demo = new URLSearchParams(location.search).get("demo") || "tooltip";
+    const disabled = demo === "disabled" || demo === "disabled-pending";
     const history = ["judged 42 lines · omitted 29 · test/build"];
     window.acquireVsCodeApi = () => ({ postMessage(request) {
       const settings = request.action === "settingsRead" ? { action: "ready", hasKey: true, keyLength: 32,
@@ -65,16 +66,17 @@
       queueMicrotask(() => window.dispatchEvent(new MessageEvent("message", { data: {
         type: "codex-jev-reply", id: request.id,
         status: {
-          enabled: true, outputEnabled: true, testBuildEnabled: true, searchListingEnabled: true,
+          enabled: !disabled, outputEnabled: !disabled, testBuildEnabled: !disabled, searchListingEnabled: !disabled,
           needsKey: demo === "onboarding" || demo === "missing-key",
-          health: demo === "onboarding" || demo === "missing-key" ? { ok: false, reason: "JEV_KEY_MISSING" } :
+          health: demo === "disabled-pending" ? null :
+            demo === "onboarding" || demo === "missing-key" ? { ok: false, reason: "JEV_KEY_MISSING" } :
             demo === "unavailable" ? { ok: false, reason: "JEV_TIMEOUT" } : { ok: true, model: "jev-1.13.0" },
-          hookHealth: demo === "pending" ? null :
+          hookHealth: disabled || demo === "pending" ? null :
             { version: 1, hook_version: "0.8.1", last_seen_ms: Date.now(), last_success_ms: Date.now() },
           expectedHookVersion: "0.8.1",
           viewStartedAt: Date.now() - 1000,
-          busy: demo === "pulse", mode: "replace", recent: history[0], history,
-          stats: { calls: 1, candidates: 1, kept: 0, replaced: 1, checkedChars: 6367, savedChars: 6058, estimatedTokensSaved: 1515, elapsedMs: 1263, completed: 1 },
+          busy: demo === "pulse", mode: "replace", recent: history[0], history: disabled ? [] : history,
+          stats: disabled ? {} : { calls: 1, candidates: 1, kept: 0, replaced: 1, checkedChars: 6367, savedChars: 6058, estimatedTokensSaved: 1515, elapsedMs: 1263, completed: 1 },
           settings,
         },
       } })));

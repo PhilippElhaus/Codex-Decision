@@ -344,13 +344,15 @@
     root.querySelector("#codex-jev-search-listing").setAttribute("aria-checked", String(state.searchListingEnabled));
     const status = state.health?.ok === false ? "Jev API unavailable" :
       state.health?.ok === true ? "Jev API connected" : "Checking Jev API";
+    const checking = state.health?.ok !== true && state.health?.ok !== false;
     root.querySelector("#codex-jev-tip").dataset.needsKey = String(needsSetup);
     const healthRow = root.querySelector("#codex-jev-health-row");
-    healthRow.hidden = !failed && !state.configurationError && !state.panelFault &&
+    healthRow.hidden = !failed && !checking && !needsSetup && !state.configurationError && !state.panelFault &&
       !hookFailed && !versionMismatch && !choiceKeptFull;
     healthRow.querySelector("strong").textContent = healthRow.hidden ? "" :
       state.configurationError ? "Jev configuration error" : state.panelFault ? "Jev view unavailable" :
-      versionMismatch ? "Jev hook version mismatch" : hookFailed ? "Jev hook failed" : status;
+      versionMismatch ? "Jev hook version mismatch" : hookFailed ? "Jev hook failed" :
+      needsSetup ? "Jev API key required" : status;
     const unavailable = failed || Boolean(state.configurationError || state.panelFault || hookFailed || versionMismatch);
     const reason = root.querySelector("#codex-jev-health-reason");
     reason.textContent = (unavailable || choiceKeptFull) && !needsSetup ? `${state.configurationError || state.panelFault ||
@@ -373,6 +375,7 @@
     root.querySelector("#codex-jev-history-heading").style.display = state.enabled ? "block" : "none";
     const history = Array.isArray(state.history) ? state.history.slice(0, 3) : [];
     const list = root.querySelector("#codex-jev-history");
+    list.style.display = state.enabled ? "block" : "none";
     list.replaceChildren(...history.map((line) => {
       const item = document.createElement("li");
       const match = String(line).match(/^(.*) · (-\d+%)$/);
@@ -387,10 +390,15 @@
       return item;
     }));
     const empty = root.querySelector("#codex-jev-empty");
-    empty.style.display = state.enabled && !history.length ? "block" : "none";
-    empty.textContent = "No hook decision in this session. Short or protected results may be skipped.";
+    empty.style.display = !state.enabled || !history.length ? "block" : "none";
+    empty.textContent = state.enabled
+      ? "No hook decision in this session. Short or protected results may be skipped."
+      : "Filtering is off for this session. Select an integration to enable it.";
+    const activity = state.enabled
+      ? `This session: ${totals}. ${tokens}. ${history.join(". ") || state.recent}.`
+      : empty.textContent;
     button.setAttribute("aria-label", noSession ? `${status}. Select Jev integrations` :
-      `${status}${unavailable ? `: ${reason.textContent}` : ""}. This session: ${totals}. ${tokens}. ${history.join(". ") || state.recent}. Select Jev integrations`);
+      `${status}${unavailable ? `: ${reason.textContent}` : ""}. ${activity} Select Jev integrations`);
   }
 
   function visibleRect(element) {
