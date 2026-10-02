@@ -85,6 +85,7 @@ fn hook_status_records_skips_and_errors_without_tool_text() {
     let bytes = fs::read(data.join("logs/hook-health.json")).unwrap();
     let status: Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(status["last_skip"], "small");
+    assert_eq!(status["skipped"], 1);
     assert_eq!(status["last_error"], "invalid Jev response");
     assert!(!String::from_utf8_lossy(&bytes).contains("tool_response"));
     hook_health(&data, "success", "").unwrap();
@@ -366,20 +367,67 @@ fn integration_switches_select_exclusive_routes() {
 fn unsupported_or_compound_specialized_commands_do_not_use_output_fallback() {
     let config = enabled();
     for command in [
-        "rg -n token src | head",
         "rg --context=3 token src",
         "rg -C3 token src",
         "rg --replace=word token src",
         "rg --json --null token src",
         "find src -print0",
         "git ls-files -z",
-        "cargo test | tee results.log",
         "npm run test; echo done",
         "cargo test\necho done",
-        "cat output.log | head",
         "cd src && cargo test && echo done",
         "git diff",
         "git show HEAD",
+    ] {
+        assert_eq!(
+            route(
+                &json!({"tool_name":"Bash","tool_input":{"command":command}}),
+                &config
+            ),
+            None,
+            "{command}"
+        );
+    }
+}
+
+#[test]
+fn command_lists_and_line_viewers_keep_routes_and_record_formats() {
+    let config = enabled();
+    for (command, expected) in [
+        ("cargo test\n", "test_build"),
+        ("cargo test | tee results.log", "test_build"),
+        ("rg -n pattern src | head -n 40", "search_listing"),
+        ("rg -n pattern src\nrg -n other tests", "search_listing"),
+        ("cat first.log; cat second.log", "output"),
+        ("cat first.log | tail -n 20", "output"),
+        (
+            "bash -lc 'cd src && cargo test; cargo test --doc'",
+            "test_build",
+        ),
+        ("cd src\ncat first.log\ncat second.log", "output"),
+    ] {
+        let event = json!({"tool_name":"Bash","tool_input":{"command":command}});
+        assert_eq!(route(&event, &config), Some(expected), "{command}");
+        let disabled = Config {
+            output: false,
+            test_build: false,
+            search_listing: false,
+            ..config.clone()
+        };
+        assert_eq!(route(&event, &disabled), None, "{command}");
+    }
+    for command in [
+        "rg --files src\nrg -n pattern src",
+        "rg --json pattern src; rg -n pattern src",
+        "cat log | head -c 200",
+        "cargo test | sed 's/error/ok/'",
+        "rg pattern src > result",
+        "cat $(echo path)",
+        "cat log |",
+        "cat log &&",
+        "cat log & cat other",
+        "cat log || cat other",
+        "cat log\n# unknown script\necho done",
     ] {
         assert_eq!(
             route(
@@ -416,6 +464,8 @@ fn local_text_is_eligible_but_structured_and_action_results_are_not() {
         Some("src/main.rs:42:match")
     );
     for response in [
+        json!([]),
+        json!([{"type":"input_text","text":"sample"},{"type":"input_image","image_url":"sample"}]),
         json!({"content":[{"type":"image","data":"sample"}]}),
         json!({"content":[{"type":"text","text":"sample"}],"structuredContent":{"id":1}}),
         json!({"content":[{"type":"text","text":"sample"}],"isError":true}),
@@ -427,6 +477,9 @@ fn local_text_is_eligible_but_structured_and_action_results_are_not() {
     }
     for tool in [
         "apply_patch",
+        "functions.apply_patch",
+        "exec",
+        "wait",
         "update_plan",
         "mcp__files__write_file",
         "mcp__repo__deploy",
@@ -436,6 +489,13 @@ fn local_text_is_eligible_but_structured_and_action_results_are_not() {
         assert_eq!(route(&json!({"tool_name":tool}), &config), None, "{tool}");
     }
     assert!(sensitive_input(&json!({"tool_input":{"path":".env"}})));
+    assert_eq!(
+        response_text(&json!({"tool_name":"Read","tool_response":[
+            {"type":"input_text","text":"line one"}, {"type":"input_text","text":"line two"}
+        ]}))
+        .as_deref(),
+        Some("line one\nline two")
+    );
 }
 
 #[test]

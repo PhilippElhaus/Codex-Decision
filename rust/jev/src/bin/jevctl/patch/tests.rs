@@ -4,25 +4,42 @@ use super::*;
 
 #[test]
 fn pinned_patch_applies_updates_rejects_tampering_and_restores() {
+    patch_cycle(profiles::LEGACY);
+    patch_cycle(Spec::production("26.930.21537").unwrap().1);
+}
+
+fn patch_cycle(profile: profiles::Profile) {
     let bridges = fixture_bridges();
     let directory = tempfile::tempdir().unwrap();
-    let root = directory.path().join(format!("openai.chatgpt-{VERSION}"));
+    let root = directory
+        .path()
+        .join(format!("openai.chatgpt-{}", profile.version));
     let backup = directory.path().join("rollback");
     let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let source = BTreeMap::from([
         (HOST, format!("prefix {HOST_ANCHOR} suffix").into_bytes()),
-        (INDEX, format!("<html>{INDEX_ANCHOR}</html>").into_bytes()),
-        (IMAGE, format!("prefix {IMAGE_ANCHOR} suffix").into_bytes()),
-        (ROUTE, format!("prefix {ROUTE_ANCHOR} suffix").into_bytes()),
+        (
+            INDEX,
+            format!("<html>{}</html>", profile.index_anchor).into_bytes(),
+        ),
+        (
+            IMAGE,
+            format!("prefix {} suffix", profile.image_anchor).into_bytes(),
+        ),
+        (
+            ROUTE,
+            format!("prefix {} suffix", profile.route_anchor).into_bytes(),
+        ),
     ]);
     let spec = Spec(
         source
             .iter()
             .map(|(path, bytes)| (*path, hash(bytes)))
             .collect(),
+        profile,
     );
     for (path, bytes) in &source {
-        let target = root.join(path);
+        let target = root.join(spec.physical(path));
         fs::create_dir_all(target.parent().unwrap()).unwrap();
         fs::write(target, bytes).unwrap();
     }
@@ -31,7 +48,7 @@ fn pinned_patch_applies_updates_rejects_tampering_and_restores() {
     assert!(as_text(&exact(&root, HOST).unwrap())
         .unwrap()
         .contains("codexJev.bridge"));
-    assert!(as_text(&exact(&root, ROUTE).unwrap())
+    assert!(as_text(&exact(&root, spec.physical(ROUTE)).unwrap())
         .unwrap()
         .contains("codexJevSessionId"));
     assert_eq!(
@@ -50,7 +67,7 @@ fn pinned_patch_applies_updates_rejects_tampering_and_restores() {
     .unwrap();
     restore(&root, &backup, &spec).unwrap();
     for (path, bytes) in &source {
-        assert_eq!(exact(&root, path).unwrap(), *bytes);
+        assert_eq!(exact(&root, spec.physical(path)).unwrap(), *bytes);
     }
     for asset in [CONTROL, SETTINGS, ICON] {
         assert!(!root.join(asset).exists());
@@ -85,26 +102,36 @@ fn bridge_fragments_publish_routes_and_validate_settings_messages() {
     let host = as_text(&exact(&repo, "vscode-control/patch-assets/host-bridge.jsfrag").unwrap())
         .unwrap()
         .to_owned();
-    for (pathname, kind, session) in [
-        ("/local/thread-one", "local", Some("thread-one")),
-        (
-            "/hotkey-window/thread/thread-two",
-            "local",
-            Some("thread-two"),
-        ),
-        ("/remote/remote-task", "remote", None),
-        ("/settings", "none", None),
-    ] {
-        let script = format!("let window={{dispatchEvent:()=>{{}}}};let document={{documentElement:{{dataset:{{codexJevSessionId:'stale'}}}}}};let ZK={{}},TK={{useContext:()=>({{location:{{pathname:{}}}}})}},WG=()=>{{}},_K=()=>true;{route}vK();process.stdout.write(JSON.stringify(document.documentElement.dataset));", json!(pathname));
-        let output = Command::new("node").arg("-e").arg(script).output().unwrap();
-        assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        let result: Value = serde_json::from_slice(&output.stdout).unwrap();
-        assert_eq!(result["codexJevRouteKind"], kind);
-        assert_eq!(result["codexJevSessionId"].as_str(), session);
+    for version in [VERSION, "26.930.21537"] {
+        let fragment =
+            profiles::route_fragment(route.clone(), Spec::production(version).unwrap().1);
+        for (pathname, kind, session) in [
+            ("/local/thread-one", "local", Some("thread-one")),
+            (
+                "/hotkey-window/thread/thread-two",
+                "local",
+                Some("thread-two"),
+            ),
+            ("/remote/remote-task", "remote", None),
+            ("/settings", "none", None),
+        ] {
+            let bindings = if version == VERSION {
+                "let ZK={},TK={useContext:()=>({location:{pathname}})},WG=()=>{},_K=()=>true;"
+            } else {
+                "let TK={},$G={useContext:()=>({location:{pathname}})},vG=()=>{},GG=()=>true;"
+            };
+            let function = if version == VERSION { "vK" } else { "KG" };
+            let script = format!("let window={{dispatchEvent:()=>{{}}}};let document={{documentElement:{{dataset:{{codexJevSessionId:'stale'}}}}}};let pathname={};{bindings}{fragment}{function}();process.stdout.write(JSON.stringify(document.documentElement.dataset));", json!(pathname));
+            let output = Command::new("node").arg("-e").arg(script).output().unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let result: Value = serde_json::from_slice(&output.stdout).unwrap();
+            assert_eq!(result["codexJevRouteKind"], kind);
+            assert_eq!(result["codexJevSessionId"].as_str(), session);
+        }
     }
     for relevant in [7, 101] {
         let message = json!({"type":"codex-jev","action":"settingsSave","key":"",

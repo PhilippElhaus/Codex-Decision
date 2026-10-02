@@ -38,6 +38,8 @@ pub(super) fn hook_health(data_dir: &Path, outcome: &str, reason: &str) -> Resul
         "skip" => {
             health["last_skip_ms"] = json!(now);
             health["last_skip"] = json!(reason);
+            let count = health["skipped"].as_u64().unwrap_or(0).saturating_add(1);
+            health["skipped"] = json!(count);
         }
         "seen" => {}
         _ => return Err("invalid hook health outcome".into()),

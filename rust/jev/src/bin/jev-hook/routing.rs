@@ -14,9 +14,36 @@ pub(super) fn shell_tool(tool: &str) -> bool {
 }
 
 pub(super) fn bash_route(command: &str) -> Option<&'static str> {
-    let words = direct_words(command, 0)?;
+    let commands = output_commands(command, 0)?;
+    let first = words_route(commands.first()?)?;
+    for words in &commands[1..] {
+        if words_route(words)? != first
+            || first != "output" && structure_key(words) != structure_key(&commands[0])
+        {
+            return None;
+        }
+    }
+    Some(first)
+}
+
+fn structure_key(words: &[String]) -> (&str, &str, bool, bool, bool) {
+    let executable = basename(&words[0]);
+    (
+        executable,
+        subcommand(words, executable),
+        words
+            .iter()
+            .any(|word| word == "--json" || word == "-json" || word == "--message-format=json"),
+        words
+            .iter()
+            .any(|word| word == "-n" || word == "--line-number"),
+        words.iter().any(|word| word == "--files"),
+    )
+}
+
+fn words_route(words: &[String]) -> Option<&'static str> {
     let executable = basename(words.first()?);
-    let action = subcommand(&words, executable);
+    let action = subcommand(words, executable);
     let package_action = if matches!(executable, "npm" | "pnpm" | "yarn") {
         let mut index = 1;
         while index < words.len() {
@@ -114,7 +141,14 @@ pub(super) fn bash_route(command: &str) -> Option<&'static str> {
 pub(super) fn tool_route(tool: &str) -> Option<&'static str> {
     if matches!(
         tool,
-        "apply_patch" | "functions.exec" | "functions.wait" | "update_plan"
+        "apply_patch"
+            | "functions.apply_patch"
+            | "exec"
+            | "wait"
+            | "functions.exec"
+            | "functions.wait"
+            | "update_plan"
+            | "functions.update_plan"
     ) {
         return None;
     }

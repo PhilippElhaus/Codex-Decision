@@ -599,7 +599,12 @@ fn disabled_specialized_routes_make_no_request_or_activity_with_output_enabled()
     )
     .unwrap();
     let (endpoint, stop, thread) = mock_server(None);
-    for command in ["cargo test --workspace", "rg -n token src"] {
+    for command in [
+        "cargo test --workspace",
+        "rg -n token src",
+        "cargo test | tee result.log",
+        "rg -n token src\nrg -n other tests",
+    ] {
         let response = (0..120)
             .map(|index| format!("src/module_{index:04}.rs:{}:routine result\n", index + 1))
             .collect::<String>();
@@ -665,13 +670,23 @@ fn plain_local_read_and_text_search_results_reach_distinct_routes() {
         })
         .collect::<String>();
     let (endpoint, stop, thread) = mock_server(None);
-    for (index, tool) in ["Read", "mcp__files__search", "exec_command", "Read"]
-        .iter()
-        .enumerate()
+    for (index, tool) in [
+        "Read",
+        "mcp__files__search",
+        "exec_command",
+        "Read",
+        "Read",
+        "Bash",
+        "Bash",
+    ]
+    .iter()
+    .enumerate()
     {
-        let result = if *tool == "exec_command" {
+        let result = if index == 4 {
+            json!([{"type":"input_text","text":source}])
+        } else if *tool == "exec_command" {
             json!({"output":source,"exit_code":0})
-        } else if *tool == "Read" {
+        } else if *tool == "Read" || *tool == "Bash" {
             json!(source)
         } else {
             json!({"content":[{"type":"text","text":source}]})
@@ -679,7 +694,9 @@ fn plain_local_read_and_text_search_results_reach_distinct_routes() {
         let event = json!({"hook_event_name":"PostToolUse","tool_name":tool,
             "session_id":"local-tool-routing","tool_use_id":format!("call-{index}"),
             "transcript_path":if index == 3 { None } else { Some(&transcript) },
-            "tool_input":if *tool == "exec_command" { json!({"cmd":"rg -n context src"}) }
+            "tool_input":if index == 5 { json!({"command":"rg -n context src | head -n 45"}) }
+                else if index == 6 { json!({"command":"rg -n context src\nrg -n other tests"}) }
+                else if *tool == "exec_command" { json!({"cmd":"rg -n context src"}) }
                 else { json!({"query":"Find useful source lines"}) },
             "tool_response":result});
         let mut child = Command::new(env!("CARGO_BIN_EXE_jev-hook"))
@@ -702,7 +719,11 @@ fn plain_local_read_and_text_search_results_reach_distinct_routes() {
         let reply: Value = serde_json::from_slice(&output.stdout).unwrap();
         assert_eq!(
             reply.get("continue").and_then(Value::as_bool),
-            if index == 0 { Some(false) } else { None }
+            if matches!(index, 0 | 5 | 6) {
+                Some(false)
+            } else {
+                None
+            }
         );
         let snapshot: Value = serde_json::from_slice(
             &fs::read(scoped(&data, "local-tool-routing").join("logs/latest-decision.json"))
@@ -720,7 +741,7 @@ fn plain_local_read_and_text_search_results_reach_distinct_routes() {
         assert!(snapshot["totals"]["judged"].as_u64().unwrap() > 0);
     }
     stop.store(true, Ordering::Relaxed);
-    assert!(thread.join().unwrap() >= 4);
+    assert!(thread.join().unwrap() >= 7);
 }
 
 #[test]

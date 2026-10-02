@@ -6,15 +6,13 @@ Codex Jev cuts repetitive lines from local tool output before Codex reads them. 
 
 **What you gain:** less log noise in the conversation, a way to inspect what was kept, and clear status when the filter has not run or has failed. Savings depend on the output, the configured cutoffs, and Jev's judgments.
 
-## Version 0.8.2
+## Version 0.8.3
 
-[Build the Linux x86_64 plugin and VS Code control 0.7.7](docs/setup/setup_installation.md), or download the [previous packaged release 0.8.1](https://github.com/PhilippElhaus/Codex-Jev/releases/tag/v0.8.1).
+[Build the Linux x86_64 plugin and VS Code control 0.7.8](docs/setup/setup_installation.md), or download the [previous packaged release 0.8.1](https://github.com/PhilippElhaus/Codex-Jev/releases/tag/v0.8.1).
 
-- **Working Windows/WSL sessions:** the control applies private Linux permissions through UNC paths and repairs older session folders. Long turns retain the user task needed for filtering. Missing hook activity and configuration errors are visible.
-- **Recoverable settings:** missing host replies release the settings controls after ten seconds and show how to retry.
-- **Accurate activity:** log compaction preserves this view's counters and consumes new events once; fallback latency weights every API request.
-- **Focused hook modules:** routing, API requests, storage, telemetry, snapshots, and the filtering pipeline have separate source files.
-- **Checked packages:** release builds verify binary versions, Linux x86_64 targets, exact archive contents, and source bytes. CI also runs the real webviews in Chromium.
+- **More supported output:** simple batches with compatible routes and whole-line log viewers reach Jev. Local tool text arrays can receive preview judgments.
+- **Visible skips:** the activity tooltip explains why the latest result was skipped, even when no decision exists.
+- **Current Codex support:** the composer patch supports builds `26.928.31416` and `26.930.21537`. Each build uses checked source hashes and its own rollback directory.
 
 The default line cutoffs remain 95% minimum confidence to omit and 5% maximum need for exact text. Existing secret checks and log retention settings remain unchanged.
 

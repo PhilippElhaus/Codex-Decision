@@ -436,7 +436,9 @@
     const empty = root.querySelector("#codex-jev-empty");
     empty.style.display = !state.enabled || !history.length ? "block" : "none";
     empty.textContent = state.enabled
-      ? "No hook decision in this session. Short or protected results may be skipped."
+      ? seen && hook?.last_skip
+        ? `Hook ran; latest output skipped: ${hook.last_skip.replaceAll("_", " ")}.`
+        : "No hook decision in this session. Short or protected results may be skipped."
       : "Filtering is off for this session. Select an integration to enable it.";
     const activity = state.enabled
       ? `This session: ${totals}. ${tokens}. ${history.join(". ") || state.recent}.`

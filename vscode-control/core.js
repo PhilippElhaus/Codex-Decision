@@ -132,6 +132,7 @@ async function readHookHealth(directory) {
         !/^\d+\.\d+\.\d+$/.test(health.hook_version) ||
         !Number.isSafeInteger(health.last_seen_ms) || health.last_seen_ms <= 0 ||
         health.last_seen_ms > Date.now() + 300_000 ||
+        (health.skipped !== undefined && (!Number.isSafeInteger(health.skipped) || health.skipped < 0)) ||
         ["last_success_ms", "last_error_ms", "last_skip_ms"].some((key) =>
           health[key] !== undefined && (!Number.isSafeInteger(health[key]) || health[key] < 0 ||
             health[key] > health.last_seen_ms)) ||

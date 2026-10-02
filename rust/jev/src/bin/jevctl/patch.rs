@@ -39,16 +39,21 @@ const ORIGINAL: [(&str, &str); 4] = [
 ];
 
 #[derive(Clone)]
-struct Spec(BTreeMap<&'static str, String>);
+struct Spec(BTreeMap<&'static str, String>, profiles::Profile);
+
+#[path = "patch/profiles.rs"]
+mod profiles;
 
 impl Spec {
-    fn production() -> Self {
-        Self(
-            ORIGINAL
-                .into_iter()
-                .map(|(path, hash)| (path, hash.to_owned()))
-                .collect(),
-        )
+    fn production(version: &str) -> Result<Self, String> {
+        profiles::spec(version)
+    }
+    fn physical(&self, path: &'static str) -> &'static str {
+        match path {
+            IMAGE => self.1.image,
+            ROUTE => self.1.route,
+            _ => path,
+        }
     }
     fn hash(&self, path: &'static str) -> &str {
         &self.0[path]

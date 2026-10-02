@@ -69,6 +69,20 @@ pub(super) fn response_text(event: &Value) -> Option<String> {
     if let Some(text) = body.as_str() {
         return Some(text.to_owned());
     }
+    // Local function tools serialize their model-facing content items as an
+    // array. These are distinct from MCP's text blocks and metadata objects.
+    if let Some(items) = body.as_array() {
+        if items.is_empty() {
+            return None;
+        }
+        return items
+            .iter()
+            .map(|item| {
+                (item.get("type")?.as_str()? == "input_text").then(|| item.get("text")?.as_str())?
+            })
+            .collect::<Option<Vec<_>>>()
+            .map(|parts| parts.join("\n"));
+    }
     if body.get("isError").and_then(Value::as_bool) == Some(true)
         || body.get("structuredContent").is_some()
     {

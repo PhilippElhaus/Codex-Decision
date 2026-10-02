@@ -406,9 +406,13 @@
       check(button.style.color === "rgb(135, 205, 164)" &&
         document.getElementById("codex-jev-health-row").hidden, "test/build filter requires Jev health");
       check(button.getAttribute("aria-label").includes("Jev API connected") &&
-        tooltip.querySelector("#codex-jev-empty").textContent.includes("Short or protected") &&
+        tooltip.querySelector("#codex-jev-empty").textContent.includes("latest output skipped: small") &&
         tooltip.querySelector("#codex-jev-empty").style.display !== "none",
         "verified hook with no decision explains normal skips");
+      hookHealth = { version: 1, hook_version: "0.8.1", last_seen_ms: Date.now(),
+        last_skip_ms: Date.now(), last_skip: "unsupported_route", skipped: 4 };
+      await until(() => tooltip.querySelector("#codex-jev-empty").textContent.includes("Hook ran; latest output skipped: unsupported route"),
+        "actual skip reason distinguishes hook dispatch from missing decisions");
       option.click();
       await pause(50);
       check(localOption.getAttribute("aria-checked") === "true" && option.getAttribute("aria-checked") === "true", "both filters selected");
@@ -469,7 +473,7 @@
       window.dispatchEvent(new Event("focus"));
       await until(() => option.getAttribute("aria-checked") === "true", "enable filtering during API check");
       check(tooltip.innerText.includes("Checking Jev API") && tooltip.innerText.includes("0 checked") &&
-        tooltip.innerText.includes("No hook decision in this session"),
+        tooltip.innerText.includes("Hook ran; latest output skipped: unsupported route"),
         "pending API check keeps enabled activity and empty-session details visible");
       outputEnabled = false;
       health = { ok: false, reason: "JEV_TIMEOUT" };

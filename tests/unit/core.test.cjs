@@ -200,9 +200,11 @@ test("hook health is private, bounded, and rejects corrupt or linked data", asyn
     const logs = path.join(directory, "logs");
     await fs.mkdir(logs);
     const file = path.join(logs, "hook-health.json");
-    const valid = { version: 1, hook_version: "0.8.0", last_seen_ms: Date.now(), last_skip: "small" };
+    const valid = { version: 1, hook_version: "0.8.0", last_seen_ms: Date.now(), last_skip: "small", skipped: 3 };
     await fs.writeFile(file, JSON.stringify(valid));
     assert.deepEqual(await readHookHealth(directory), valid);
+    await fs.writeFile(file, JSON.stringify({ ...valid, skipped: -1 }));
+    await assert.rejects(readHookHealth(directory), /Invalid Jev hook health/);
     await fs.writeFile(file, JSON.stringify({ ...valid, last_error_ms: -1 }));
     await assert.rejects(readHookHealth(directory), /Invalid Jev hook health/);
     await fs.writeFile(file, JSON.stringify({ ...valid, last_seen_ms: Date.now() + 600_000 }));

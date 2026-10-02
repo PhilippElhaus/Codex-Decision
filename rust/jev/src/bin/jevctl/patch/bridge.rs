@@ -138,30 +138,36 @@ pub(super) fn changed(
         "if(s.markMessageReceived()",
         &format!("{}if(s.markMessageReceived()", bridges.marketplace),
     )?;
-    let route_fragment = as_text(&exact(
-        repo,
-        "vscode-control/patch-assets/route-bridge.jsfrag",
-    )?)?
-    .to_owned();
+    let route_fragment = profiles::route_fragment(
+        as_text(&exact(
+            repo,
+            "vscode-control/patch-assets/route-bridge.jsfrag",
+        )?)?
+        .to_owned(),
+        spec.1,
+    );
     let mut result = BTreeMap::new();
     result.insert(
         HOST,
         replace_once(host, HOST_ANCHOR, &fragment)?.into_bytes(),
     );
-    result.insert(INDEX, replace_once(index, INDEX_ANCHOR,
-        &format!("<script src=\"./assets/jev-control.js\"></script>\n<script src=\"./assets/jev-settings.js\"></script>\n{INDEX_ANCHOR}"))?.into_bytes());
+    result.insert(INDEX, replace_once(index, spec.1.index_anchor,
+        &format!("<script src=\"./assets/jev-control.js\"></script>\n<script src=\"./assets/jev-settings.js\"></script>\n{}", spec.1.index_anchor))?.into_bytes());
     result.insert(
-        IMAGE,
+        spec.physical(IMAGE),
         replace_once(
             image,
-            IMAGE_ANCHOR,
-            &IMAGE_ANCHOR.replacen("try{", &format!("{}try{{", bridges.image), 1),
+            spec.1.image_anchor,
+            &spec
+                .1
+                .image_anchor
+                .replacen("try{", &format!("{}try{{", bridges.image), 1),
         )?
         .into_bytes(),
     );
     result.insert(
-        ROUTE,
-        replace_once(route, ROUTE_ANCHOR, &route_fragment)?.into_bytes(),
+        spec.physical(ROUTE),
+        replace_once(route, spec.1.route_anchor, &route_fragment)?.into_bytes(),
     );
     result.insert(
         CONTROL,

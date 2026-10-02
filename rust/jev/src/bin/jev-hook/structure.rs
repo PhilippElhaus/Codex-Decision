@@ -8,7 +8,7 @@ pub(super) fn apply_route_structure(
     lines: &mut [SourceLine],
 ) -> bool {
     let words = if shell_tool(tool) {
-        direct_words(command, 0)
+        output_commands(command, 0).and_then(|commands| commands.into_iter().next())
     } else {
         None
     };

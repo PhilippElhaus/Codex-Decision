@@ -8,15 +8,15 @@ From this directory in WSL:
 
 ```bash
 ../scripts/build_control.sh
-code --install-extension "$(wslpath -w ../.local/submission/codex-jev-control-0.7.7.vsix)" --force
+code --install-extension "$(wslpath -w ../.local/submission/codex-jev-control-0.7.8.vsix)" --force
 ```
 
-The composer and Codex settings page require the separate local patch for Codex VS Code extension `26.928.31416`. It checks exact host hashes and keeps rollback files outside this repository:
+The composer and Codex settings page require the separate local patch for Codex VS Code extensions `26.928.31416` and `26.930.21537`. It checks exact host hashes and keeps rollback files outside this repository:
 
 ```bash
 ../hooks/bin/linux-x86_64/jevctl patch-webview update --root .. \
-  --extension '/mnt/c/Users/<user>/.vscode/extensions/openai.chatgpt-26.928.31416-win32-x64' \
-  --backup '/mnt/c/Users/<user>/AppData/Local/Codex/codex-jev/rollback/26.928.31416'
+  --extension '/mnt/c/Users/<user>/.vscode/extensions/openai.chatgpt-26.930.21537-win32-x64' \
+  --backup '/mnt/c/Users/<user>/AppData/Local/Codex/codex-jev/rollback/26.930.21537'
 ```
 
 Use `apply` for the first installation, `update` after a control upgrade, or `restore` to remove the patch. Reload VS Code after installing both pieces. Start a new Codex thread after a plugin hook upgrade and review the hook in `/hooks` again if its definition changed.
@@ -42,3 +42,5 @@ python3 scripts/browser_smoke.py
 ```
 
 The browser harnesses use the real composer, settings, and panel code with synthetic, key-free data. The Codex patch must be revalidated against each new Codex extension build.
+
+The tooltip shows the latest skip reason when no decision exists. A skipped result confirms hook activity; it does not confirm an API request. After a Codex extension update, apply the patch to the new extension directory. Each supported build has its own checked hashes and rollback directory.
