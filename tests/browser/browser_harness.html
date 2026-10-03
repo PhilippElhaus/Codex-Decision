@@ -21,7 +21,7 @@
     @media (max-width: 500px) { .settings-nav { width: 96px; padding: 12px 6px; } .settings-content { left: 96px; padding: 16px; } }
   </style>
   <script>
-    let outputEnabled = false, needsKey = false, health = { ok: true, model: "jev-1.13.0" }, busy = false, mode = "replace";
+    let outputEnabled = false, needsKey = false, health = { ok: true, model: "jev-1.13.0" }, classificationPulse = 0, mode = "replace";
     const viewStartedAt = Date.now() - 1000;
     let hookHealth = { version: 1, hook_version: "0.8.1", last_seen_ms: Date.now(), last_success_ms: Date.now() };
     const stats = { calls: 7, candidates: 4, kept: 2, replaced: 1, checkedChars: 90640, savedChars: 6058, estimatedTokensSaved: 1515, elapsedMs: 8120, completed: 7 };
@@ -97,7 +97,7 @@
             request.action === "settingsOpenLogs" ? { action: "openedLogs" } : undefined;
       queueMicrotask(() => window.dispatchEvent(new MessageEvent("message", { data: {
         type: "codex-jev-reply", id: request.id,
-        status: { enabled: !waitingForThread && outputEnabled, sessionPending: waitingForThread, configurationError: waitingForThread && request.expectsLocalSession ? "Codex session could not be identified" : null, needsKey, keyTest, keySaved, externalOpen: request.action === "openTypeSafe" ? window.__jevHarnessExternalOpen : undefined, settings, health, hookHealth, expectedHookVersion: "0.8.1", viewStartedAt, busy, mode, recent: freshView ? "No decision recorded yet" : history[0],
+        status: { enabled: !waitingForThread && outputEnabled, sessionPending: waitingForThread, configurationError: waitingForThread && request.expectsLocalSession ? "Codex session could not be identified" : null, needsKey, keyTest, keySaved, externalOpen: request.action === "openTypeSafe" ? window.__jevHarnessExternalOpen : undefined, settings, health, hookHealth, expectedHookVersion: "0.8.1", viewStartedAt, classificationPulse, mode, recent: freshView ? "No decision recorded yet" : history[0],
           history: freshView ? [] : history,
           stats: freshView ? { calls: 0, candidates: 0, kept: 0, replaced: 0, checkedChars: 0, elapsedMs: 0, completed: 0 } : stats },
       } })));
@@ -348,10 +348,33 @@
       check(firstOutcome.getBoundingClientRect().height <= parseFloat(getComputedStyle(firstOutcome).lineHeight) + 1,
         "test/build outcome fits on one line");
       check(getComputedStyle(button).transitionDuration.includes("0.22s"), "status color has eased transition");
-      busy = true;
+      classificationPulse += 1;
+      window.dispatchEvent(new Event("focus"));
+      await until(() => root.dataset.classifying === "true", "classification flashes blue");
+      check(button.style.color === "rgb(105, 174, 240)", "classification uses blue");
+      const dot = document.getElementById("codex-jev-dot");
+      // Edge's virtual clock does not advance CSS transitions. Inspect the
+      // target glow separately from the eased color transition checked above.
+      dot.style.transition = "none";
+      check(getComputedStyle(dot).boxShadow.includes("105, 174, 240"), "classification lights up the dot");
+      dot.style.transition = "";
+      window.dispatchEvent(new Event("focus"));
+      await pause(650);
+      check(root.dataset.classifying === "false" && button.style.color === "rgb(135, 205, 164)",
+        "pulse expires despite repeated status replies");
       await pause(1100);
-      check(button.style.color === "rgb(135, 205, 164)", "busy activity keeps API green");
-      busy = false;
+      check(root.dataset.classifying === "false", "relevance results do not pulse again");
+      outputEnabled = false;
+      window.dispatchEvent(new Event("focus"));
+      await until(() => button.getAttribute("aria-checked") === "false", "disabled during activity test");
+      classificationPulse += 1;
+      window.dispatchEvent(new Event("focus"));
+      await pause(80);
+      check(root.dataset.classifying === "false", "disabled control does not flash");
+      outputEnabled = true;
+      window.dispatchEvent(new Event("focus"));
+      await until(() => button.getAttribute("aria-checked") === "true", "activity test restores enabled state");
+      check(root.dataset.classifying === "false", "enabling does not replay activity");
       health = { ok: false, reason: "JEV_HTTP_401" };
       await pause(1100);
       check(button.style.color === "rgb(233, 148, 144)", "failure red");

@@ -5,7 +5,7 @@ description: Help configure and verify Codex Jev's local tool-output filters whe
 
 # Codex Jev output
 
-Codex Jev runs as a local Rust `PostToolUse` hook with one enabled flag for all supported tool output. This skill helps with setup and evidence review; invoking the skill does not activate filtering. The optional VS Code control enables Jev for a new local thread and preserves later on/off changes. Click **jev** to toggle; there is no integration popup. A standalone hook starts disabled until configured. The hook needs a user-provided TypeSafe AI API key and Codex trust for the current hook definition. On a surface without local hook execution, explain that limitation before recommending a setting.
+Codex Jev runs as a local Rust `PostToolUse` hook with one enabled flag for all supported tool output. This skill helps with setup and evidence review; invoking the skill does not activate filtering. The optional VS Code control enables Jev for a new local thread and preserves later on/off changes. Click **jev** to toggle; there is no integration popup. A brief blue glow indicates output classification. Only subsequent line-relevance judgments appear in the Jev panel; they do not flash the composer. The panel header shows only the kept/judged count. A standalone hook starts disabled until configured. The hook needs a user-provided TypeSafe AI API key and Codex trust for the current hook definition. On a surface without local hook execution, explain that limitation before recommending a setting.
 
 ## Set up or diagnose
 

@@ -322,7 +322,7 @@ function parseLogLine(line) {
       capsule_chars: typeof row.capsule_chars === "number" && Number.isFinite(row.capsule_chars)
         ? row.capsule_chars : null,
       elapsed_ms: Number(row.elapsed_ms) || 0,
-      requests: Number.isSafeInteger(row.requests) && row.requests >= 0 && row.requests <= 13
+      requests: Number.isSafeInteger(row.requests) && row.requests >= 0 && row.requests <= 10_001
         ? row.requests : 0,
       lines_judged: Number.isSafeInteger(row.lines_judged) && row.lines_judged >= 0 ? row.lines_judged : null,
       lines_relevance_judged: Number.isSafeInteger(row.lines_relevance_judged) && row.lines_relevance_judged >= 0

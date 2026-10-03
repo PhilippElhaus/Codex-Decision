@@ -93,8 +93,16 @@ test("composer bridge toggles Jev and reports view-scoped activity without a sta
     assert.equal(JSON.stringify(firstTest).includes("example-test-key"), false);
     assert.equal((await bridge({ action: "status", viewId: "view-one" })).health?.reason, "JEV_KEY_MISSING");
     assert.equal((await core.readConfig(scoped)).enabled, true);
+    assert.equal(firstSelection.classificationPulse, 0, "key probes do not signal classification");
 
     await fs.mkdir(path.join(scoped, "logs"), { recursive: true });
+    await fs.appendFile(path.join(scoped, "logs", "events.jsonl"), JSON.stringify({
+      status: "classifying", reason: "classification_start", requests: 0,
+    }) + "\n");
+    const started = await bridge({ action: "status" });
+    assert.equal(started.classificationPulse, 1);
+    assert.equal(started.stats.calls, 0, "start signals do not double count requests");
+    assert.deepEqual(started.history, [], "classification has no line decision");
     await fs.appendFile(path.join(scoped, "logs", "events.jsonl"), JSON.stringify({
       status: "calling", reason: "jev_request", tool: "Bash",
     }) + "\n" + JSON.stringify({
@@ -107,14 +115,20 @@ test("composer bridge toggles Jev and reports view-scoped activity without a sta
     assert.equal(first.stats.completed, 1);
     assert.equal(first.stats.savedChars, 10608);
     assert.equal(first.stats.estimatedTokensSaved, 2652);
+    assert.equal(first.classificationPulse, 1, "relevance completion does not pulse");
     await fs.appendFile(path.join(scoped, "logs", "events.jsonl"), JSON.stringify({
+      status: "classifying", reason: "classification_start", requests: 0,
+    }) + "\n" + JSON.stringify({
       status: "skip", reason: "choice_kept_full_output", tool: "Read", requests: 1,
       original_chars: 16000, capsule_chars: 16000, elapsed_ms: 80,
     }) + "\n");
     await until(async () => (await bridge({ action: "status", viewId: "view-one" })).stats.calls === 2);
     const gateSkip = await bridge({ action: "status", viewId: "view-one" });
     assert.equal(gateSkip.stats.completed, 1);
-    assert.match(gateSkip.recent, /choice_kept_full_output/);
+    assert.equal(gateSkip.recent, first.recent, "classification preserves the latest line decision");
+    assert.equal(gateSkip.classificationPulse, 2);
+    assert.equal((await bridge({ action: "status" })).classificationPulse, 2,
+      "repeated polls do not retrigger classification");
     const beforeFailureProbe = probes;
     await fs.appendFile(path.join(scoped, "logs", "events.jsonl"), JSON.stringify({
       status: "keep", reason: "evaluator_unavailable", tool: "Bash",
@@ -136,6 +150,7 @@ test("composer bridge toggles Jev and reports view-scoped activity without a sta
     assert.equal(newView.stats.completed, 0);
     assert.equal(newView.stats.estimatedTokensSaved, 0);
     assert.deepEqual(newView.history, []);
+    assert.equal(newView.classificationPulse, 0, "old start signals do not replay in a new view");
     assert.equal(panel.dataDirectory(), scoped);
     for (let index = 0; index < 8; index += 1) {
       const [homeStatus, threadStatus] = await Promise.all([

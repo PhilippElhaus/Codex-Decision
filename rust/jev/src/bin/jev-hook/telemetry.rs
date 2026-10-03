@@ -56,6 +56,31 @@ pub(super) fn skip(data_dir: &Path, reason: &str) -> Result<Value, String> {
     Ok(json!({}))
 }
 
+// Only the classification stage signals composer activity. Relevance batches
+// publish line decisions separately and must not retrigger the blue pulse.
+pub(super) fn classification_start(data_dir: &Path) -> Result<(), String> {
+    let logs = data_dir.join("logs");
+    ensure_dir(&logs)?;
+    let _lock = lock_logs(&logs)?;
+    let mut options = OpenOptions::new();
+    options.append(true).create(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600).custom_flags(libc::O_NOFOLLOW);
+    }
+    let mut file = options
+        .open(logs.join("events.jsonl"))
+        .map_err(|_| "event log")?;
+    writeln!(
+        file,
+        "{}",
+        json!({"version":3,"at":Utc::now().to_rfc3339(),
+            "status":"classifying","reason":"classification_start","requests":0})
+    )
+    .map_err(|_| "event log write".into())
+}
+
 pub(super) fn load_stats(path: &Path) -> Result<Value, String> {
     let metadata = match fs::symlink_metadata(path) {
         Ok(metadata) => metadata,

@@ -259,6 +259,14 @@ fn mock_server_choice(
     fail_on: Option<usize>,
     choice: &'static str,
 ) -> (String, Arc<AtomicBool>, std::thread::JoinHandle<usize>) {
+    mock_server_observed(fail_on, choice, None)
+}
+
+fn mock_server_observed(
+    fail_on: Option<usize>,
+    choice: &'static str,
+    session: Option<PathBuf>,
+) -> (String, Arc<AtomicBool>, std::thread::JoinHandle<usize>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     listener.set_nonblocking(true).unwrap();
     let endpoint = format!("http://{}/v1/systemone", listener.local_addr().unwrap());
@@ -305,6 +313,27 @@ fn mock_server_choice(
                 .unwrap()
                 + 4..];
             let request: Value = serde_json::from_slice(body).unwrap();
+            if let Some(session) = &session {
+                let events = fs::read_to_string(session.join("logs/events.jsonl")).unwrap();
+                let starts: Vec<Value> = events
+                    .lines()
+                    .map(|line| serde_json::from_str(line).unwrap())
+                    .filter(|event: &Value| event["status"] == "classifying")
+                    .collect();
+                assert_eq!(
+                    starts.len(),
+                    1,
+                    "only classification emits an activity signal"
+                );
+                assert_eq!(starts[0]["requests"], 0);
+                assert!(starts[0].get("tool_response").is_none());
+                if count == 0 {
+                    assert!(
+                        !session.join("logs/latest-decision.json").exists(),
+                        "classification never publishes a line decision"
+                    );
+                }
+            }
             codex_jev::semantic::validate_request_budget(&request).unwrap();
             assert_eq!(request["model"], "jev-latest");
             let answers = if fail_on == Some(count + 1) {
@@ -401,7 +430,11 @@ fn run_sized(
     let event = json!({"hook_event_name":"PostToolUse","tool_name":"Bash",
         "session_id":"fixture-session","tool_use_id":"fixture-call","transcript_path":transcript,
         "tool_input":{"command":if search {"rg -n symbol src"} else {"echo build"}},"tool_response":original});
-    let (endpoint, stop, thread) = mock_server_choice(fail_on, choice.unwrap_or("line_filter"));
+    let (endpoint, stop, thread) = mock_server_observed(
+        fail_on,
+        choice.unwrap_or("line_filter"),
+        Some(scoped(&data_dir, "fixture-session")),
+    );
     let mut child = Command::new(env!("CARGO_BIN_EXE_jev-hook"))
         .env("PLUGIN_DATA", &data_dir)
         .env("CODEX_JEV_TEST_ENDPOINT", endpoint)

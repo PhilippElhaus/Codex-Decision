@@ -1,6 +1,6 @@
 {
   "name": "codex-jev",
-  "version": "0.10.1+codex.20261003090207",
+  "version": "0.10.2+codex.20261003100133",
   "description": "One Jev switch for line-by-line filtering of supported local tool output.",
   "author": {
     "name": "Philipp Elhaus",

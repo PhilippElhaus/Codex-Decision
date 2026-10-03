@@ -3,16 +3,10 @@
 body { margin: 0; padding: 12px 18px 20px; color: var(--vscode-foreground); background: var(--vscode-panel-background, var(--vscode-editor-background)); font-family: var(--vscode-font-family); }
 #app { max-width: 1180px; margin: 0 auto; }
 #app:has(.batch-layout) { max-width: none; }
-.card-kicker { font-family: var(--vscode-editor-font-family, monospace); letter-spacing: .11em; font-size: 10px; }
 .batch-layout { min-width: 0; --batch-keep: #d6a547; --batch-cut: #69aef0; }
 body:is(.vscode-light, .light) .batch-layout { --batch-keep: #895900; --batch-cut: #1c67aa; }
-.batch-header { position: sticky; top: -12px; z-index: 2; min-height: 70px; padding: 8px 0 9px; background: var(--vscode-panel-background, var(--vscode-editor-background)); border-bottom: 1px solid var(--vscode-panel-border, #5556); }
-.batch-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.batch-header { position: sticky; top: -12px; z-index: 2; display: flex; justify-content: flex-end; padding: 8px 0 9px; background: var(--vscode-panel-background, var(--vscode-editor-background)); border-bottom: 1px solid var(--vscode-panel-border, #5556); }
 .batch-title { color: var(--batch-keep); font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.batch-summary { margin-top: 4px; color: var(--vscode-descriptionForeground); font-size: 11px; }
-.batch-legend { display: flex; justify-content: space-between; margin-top: 5px; font: 10px var(--vscode-editor-font-family, monospace); }
-.batch-legend-cut { color: var(--batch-cut); }
-.batch-legend-keep { color: var(--batch-keep); }
 .batch-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 0 14px; min-width: 0; }
 .batch-row { display: grid; grid-template-columns: 3.5ch minmax(0, 1fr) 7em; grid-template-rows: 18px 16px; align-items: center; gap: 2px 7px; min-width: 0; height: 46px; padding: 3px 3px 5px; border-bottom: 1px solid var(--vscode-panel-border, #5553); font: 11px var(--vscode-editor-font-family, monospace); }
 .batch-row:hover { background: var(--vscode-list-hoverBackground, transparent); }

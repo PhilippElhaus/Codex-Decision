@@ -6,9 +6,9 @@ Codex Jev cuts repetitive lines from local tool output before Codex reads them. 
 
 **What you gain:** less log noise in the conversation, a way to inspect what was kept, and clear status when the filter has not run or has failed. Savings depend on the output, the configured cutoffs, and Jev's judgments.
 
-## Version 0.10.1
+## Version 0.10.2
 
-[Download release 0.10.1 with VS Code control 0.9.2](https://github.com/PhilippElhaus/Codex-Jev/releases/tag/v0.10.1), or [build both packages](docs/setup/setup_installation.md).
+[Download release 0.10.2 with VS Code control 0.9.3](https://github.com/PhilippElhaus/Codex-Jev/releases/tag/v0.10.2), or [build both packages](docs/setup/setup_installation.md).
 
 - **One switch:** click **jev** to turn filtering on or off for the current thread. The integration popup is removed.
 - **One policy:** supported tool output uses the same relevance cutoff. Settings no longer contain separate filter categories or a search-only relevance guard.
@@ -49,7 +49,13 @@ Open **Codex settings → Jev** at any time to choose **Monitor** (show decision
 
 ### 4. Inspect a result
 
-The **Jev** panel shows task relevance for each judged line in the latest decision from this session. Blue lines were cut; gold lines were kept. This synthetic example keeps 3 of 50 lines. A shortened result also gives Codex the path to its complete original.
+The composer’s Jev icon briefly glows blue when output classification starts. Relevance batches and connection checks do not trigger the glow.
+
+![Jev classification activity](docs/images/jev-classification.png)
+
+See the [classification activity verification](docs/development/classification_activity_verification.md).
+
+The **Jev** panel shows task relevance for each judged line in the latest decision from this session. Its header contains only the kept/judged count. Classification does not appear here. Blue lines were cut; gold lines were kept. This synthetic example keeps 3 of 50 lines. A shortened result also gives Codex the path to its complete original.
 
 <img src="docs/images/jev-panel.png" width="1000" alt="Jev panel showing 3 kept lines and 47 omitted lines from a synthetic 50-line result">
 

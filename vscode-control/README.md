@@ -8,7 +8,7 @@ From this directory in WSL:
 
 ```bash
 ../scripts/build_control.sh
-code --install-extension "$(wslpath -w ../.local/submission/codex-jev-control-0.9.2.vsix)" --force
+code --install-extension "$(wslpath -w ../.local/submission/codex-jev-control-0.9.3.vsix)" --force
 ```
 
 The composer and Codex settings page require the separate local patch for Codex VS Code extensions `26.928.31416`, `26.930.21537`, and `26.930.31730`. It checks exact host hashes and keeps rollback files outside this repository:
@@ -33,7 +33,7 @@ When enabled, the indicator is green after a small successful Jev API request, r
 
 Open **Codex settings → Jev** from any screen to choose Monitor or Filter, adjust the shared relevance cutoff, test or replace the key, and open the plugin data directory. These settings apply to every session. Monitor records decisions but leaves full output visible. Filter can shorten only eligible text after the local evidence checks pass; every shortened result links to its exact original.
 
-The **Jev** panel sits beside Output and Terminal. Reopen it through **View → Open View… → Jev: Latest decision**. It shows the judged lines from the latest API-bounded relevance batch in the active session, with the batch number and total batch count. Blue rows were cut and gold rows were kept. Current rows show the actual Jev task-relevance probability. Historical rows use a visual retention index; hover for their recorded probabilities. The panel snapshot contains bounded excerpts, not the full output.
+The **Jev** panel sits beside Output and Terminal. Reopen it through **View → Open View… → Jev: Latest decision**. It shows the judged lines from the latest API-bounded relevance batch in the active session. The header shows only the kept/judged count; classification calls do not appear. Blue rows were cut and gold rows were kept. Current rows show the actual Jev task-relevance probability. Historical rows use a visual retention index; hover for their recorded probabilities. The panel snapshot contains bounded excerpts, not the full output.
 
 ## Verify
 
@@ -46,3 +46,5 @@ python3 scripts/browser_smoke.py
 The browser harnesses use the real composer, settings, and panel code with synthetic, key-free data. The Codex patch must be revalidated against each new Codex extension build.
 
 The tooltip shows the latest skip reason when no decision exists. A skipped result confirms hook activity; it does not confirm an API request. After a Codex extension update, apply the patch to the new extension directory. Each supported build has its own checked hashes and rollback directory.
+
+The composer briefly glows blue on a classification-start event. Relevance calls, batch completions, and API connection checks do not flash. Each start is consumed once per view, so repeated status replies cannot restart the pulse.

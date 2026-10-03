@@ -21,22 +21,12 @@
     return parent;
   }
 
-  function formatElapsed(value) {
-    if (!Number.isSafeInteger(value) || value < 0 || value > 3_600_000) return "—";
-    return value < 1000 ? `${value}ms` : `${(value / 1000).toFixed(2)}s`;
-  }
-
   function showEmpty() {
     currentDecision = "";
     currentId = null;
     cancelAnimationFrame(animation);
     app.replaceChildren(append(element("section", "empty"),
       element("span", "empty-label", "Jev")));
-  }
-
-  function batchTotals(decision) {
-    const totals = decision.totals;
-    return `${totals.omitted} cut · ${decision.rows.length} in batch ${decision.batch.number}/${decision.batch.count} · ${totals.protected} protected · ${formatElapsed(decision.batch_elapsed_ms)}`;
   }
 
   function batchTitle(decision) {
@@ -50,8 +40,6 @@
     if (serialized === currentDecision) return;
     if (decision.id === currentId) {
       currentDecision = serialized;
-      const summary = app.querySelector(".batch-summary");
-      if (summary) summary.textContent = batchTotals(decision);
       const title = app.querySelector(".batch-title");
       if (title) title.textContent = batchTitle(decision);
       return;
@@ -59,17 +47,9 @@
     currentDecision = serialized;
     currentId = decision.id;
     cancelAnimationFrame(animation);
-    const route = "Tool output";
     const layout = element("div", "batch-layout");
     const header = element("header", "batch-header");
-    append(header,
-      append(element("div", "batch-heading"),
-        element("span", "card-kicker", `${route.toUpperCase()} · ${decision.version === 4 ? "TASK RELEVANCE" : "RETENTION INDEX"}`),
-        element("strong", "batch-title", batchTitle(decision))),
-      element("div", "batch-summary", batchTotals(decision)),
-      append(element("div", "batch-legend"),
-        element("span", "batch-legend-cut", "0 · cut"),
-        element("span", "batch-legend-keep", "1 · keep")));
+    append(header, element("strong", "batch-title", batchTitle(decision)));
     const list = element("div", "batch-list");
     const fills = [];
     const values = [];

@@ -411,3 +411,23 @@ test("health check reads the private .env and keeps the key out of status", asyn
     await fs.rm(directory, { recursive: true, force: true });
   }
 });
+
+
+test("classification activity is free of line outcomes and preserves large batch call totals", async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-stage-events-"));
+  try {
+    await fs.mkdir(path.join(directory, "logs"));
+    await fs.writeFile(path.join(directory, "logs/events.jsonl"), [
+      { status: "classifying", reason: "classification_start", requests: 0 },
+      { status: "replace", reason: "jev_replace", requests: 85, original_chars: 50000, capsule_chars: 1000 },
+    ].map(event => JSON.stringify(event)).join("\n") + "\n");
+    const batch = await readEventsSince(directory, 0);
+    assert.equal(batch.events[0].status, "classifying");
+    assert.equal(batch.events[1].requests, 85);
+    const totals = await readLifetimeStats(directory);
+    assert.equal(totals.calls, 85);
+    assert.equal(totals.completed, 1);
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});

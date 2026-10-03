@@ -135,6 +135,8 @@ pub(super) fn process_event(
         &lines,
         &config.model,
     );
+    validate_request_budget(&request)?;
+    classification_start(scoped)?;
     let before = Instant::now();
     let response = evaluate(
         &agent,

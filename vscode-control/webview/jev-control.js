@@ -8,7 +8,10 @@
     return api;
   };
 
-  let state = { enabled: false, needsKey: false, health: null, hookHealth: null, panelFault: null, configurationError: null, sessionPending: true, busy: false, mode: "replace", recent: "No decision recorded yet", history: [], stats: {} };
+  let state = { enabled: false, needsKey: false, health: null, hookHealth: null, panelFault: null, configurationError: null, sessionPending: true, classificationPulse: 0, mode: "replace", recent: "No decision recorded yet", history: [], stats: {} };
+  let pulseSeen = 0;
+  let pulseUntil = 0;
+  let pulseTimer;
   let root;
   let setup;
   let setupDismissed = false;
@@ -28,7 +31,7 @@
   let bridgeWaitingSince = Date.now();
   const requestTimeoutMs = 10000;
   const sentViews = new Map();
-  const colors = { healthy: "#87cda4", failed: "#e99490", pending: "#e6bc6a" };
+  const colors = { healthy: "#87cda4", failed: "#e99490", pending: "#e6bc6a", classifying: "#69aef0" };
 
   function sessionId() {
     const route = document.documentElement.dataset;
@@ -66,8 +69,11 @@
       bridgeFault = null;
       bridgeWaitingSince = Date.now();
       setupDismissed = false;
+      pulseSeen = 0;
+      pulseUntil = 0;
+      clearTimeout(pulseTimer);
       state = { ...state, enabled: false, needsKey: false, health: null, hookHealth: null,
-        sessionPending: !sessionId(), configurationError: null, busy: false,
+        sessionPending: !sessionId(), configurationError: null, classificationPulse: 0,
         recent: "No decision recorded yet", history: [], stats: {} };
       render();
     }
@@ -182,6 +188,7 @@
       #codex-jev-button:disabled { cursor: default; }
       #codex-jev-button:hover { background: #303030; }
       #codex-jev-button:focus-visible { outline: 2px solid #83bcf7; outline-offset: 2px; }
+      #codex-jev[data-classifying="true"] #codex-jev-dot { box-shadow: 0 0 0 3px #69aef044, 0 0 9px #69aef0aa; }
       #codex-jev-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 15%, transparent); transition: box-shadow 220ms ease-in-out; }
       #codex-jev-tip { position: absolute; bottom: calc(100% + 9px); right: 0; box-shadow: 0 12px 30px #0009; }
       #codex-jev-tip { display: none; width: min(420px, calc(100vw - 24px)); padding: 11px 13px; border: 1px solid #454545; border-radius: 11px; background: #292929; color: #dedede; pointer-events: auto; font-size: 12px; line-height: 1.45; white-space: normal; }
@@ -328,7 +335,10 @@
       Date.now() - Number(state.viewStartedAt || Date.now()) >= 60_000;
     const failed = Boolean(bridgeFault) || state.health?.ok === false;
     const visual = failed ? "failed" : state.health?.ok === true ? "healthy" : "pending";
-    button.style.color = state.enabled || bridgeFault ? colors[visual] : "#9a9a9a";
+    const classifying = Boolean(state.enabled && !noSession && !bridgeFault && Date.now() < pulseUntil);
+    root.dataset.classifying = String(classifying);
+    button.style.color = classifying ? colors.classifying :
+      state.enabled || bridgeFault ? colors[visual] : "#9a9a9a";
     const observe = String(state.enabled && state.mode === "observe");
     if (root.dataset.observe !== observe) {
       root.dataset.observe = observe;
@@ -623,6 +633,16 @@
         bridgeFault = event.data.status.health?.reason === "BRIDGE_UNAVAILABLE"
           ? "Jev controls are unavailable. Reload VS Code and retry." : null;
         state = event.data.status;
+        const pulse = state.classificationPulse;
+        if (Number.isSafeInteger(pulse) && pulse >= 0 && pulse !== pulseSeen) {
+          if (pulse > pulseSeen && state.enabled && !state.sessionPending) {
+            pulseUntil = Date.now() + 500;
+            clearTimeout(pulseTimer);
+            pulseTimer = setTimeout(() => { pulseUntil = 0; render(); }, 500);
+          }
+          pulseSeen = pulse;
+        }
+        if (!state.enabled || state.sessionPending) pulseUntil = 0;
         render();
       }
     });

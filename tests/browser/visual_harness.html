@@ -70,7 +70,7 @@
             { version: 1, hook_version: "0.8.1", last_seen_ms: Date.now(), last_success_ms: Date.now() },
           expectedHookVersion: "0.8.1",
           viewStartedAt: Date.now() - 1000,
-          busy: demo === "pulse", mode: "replace", recent: history[0], history: disabled ? [] : history,
+          classificationPulse: demo === "classification" ? 1 : 0, mode: "replace", recent: history[0], history: disabled ? [] : history,
           stats: disabled ? {} : { calls: 1, candidates: 1, kept: 0, replaced: 1, checkedChars: 6367, savedChars: 6058, estimatedTokensSaved: 1515, elapsedMs: 1263, completed: 1 },
           settings,
         },
@@ -123,10 +123,10 @@
     document.body.dataset.demo = demo;
     setTimeout(() => {
       document.documentElement.style.setProperty("--screenshot-offset", `${Math.max(0, outerHeight - innerHeight)}px`);
-      if (demo !== "composer") document.querySelector(".prompt").textContent = "";
+      if (!["composer", "classification"].includes(demo)) document.querySelector(".prompt").textContent = "";
       if (demo === "onboarding") document.getElementById("codex-jev-connect-icon").src = "../../vscode-control/icon.png";
       if (demo === "missing-key") document.getElementById("codex-jev-skip-key").click();
-      if (demo !== "composer" && demo !== "onboarding" && demo !== "settings") document.getElementById("codex-jev-tip").style.display = "block";
+      if (!["composer", "classification"].includes(demo) && demo !== "onboarding" && demo !== "settings") document.getElementById("codex-jev-tip").style.display = "block";
       if (demo === "settings") {
         document.documentElement.dataset.codexJevRouteKind = "none";
         delete document.documentElement.dataset.codexJevSessionId;

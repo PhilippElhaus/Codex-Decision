@@ -30,6 +30,18 @@ def chromium_smoke() -> None:
                     raise AssertionError({'viewport': width, **outcome})
                 reports.append({'viewport': width, 'motion': motion, **outcome})
                 page.close()
+            for width in (360, 1200):
+                for sample in ('fifty', 'legacy'):
+                    page = browser.new_page(viewport={'width': width, 'height': 600})
+                    page.goto((ROOT.parent / 'tests/browser/jev_panel_harness.html').as_uri() + '?' + sample)
+                    page.wait_for_function('document.title === "JEV_LINE_PANEL_READY"')
+                    report = json.loads(page.locator('body').get_attribute('data-report'))
+                    for field in ('newBatchShown', 'minimalHeader', 'sameDecisionDidNotRestart',
+                                  'positionsStable', 'parallelGrowth', 'fadeAfterGrowth', 'noNestedScroll'):
+                        assert report[field], {'viewport': width, 'sample': sample, **report}
+                    assert not report['horizontalOverflow'], report
+                    reports.append({'panel': sample, 'viewport': width, **report})
+                    page.close()
             page = browser.new_page()
             page.goto((ROOT.parent / 'tests/browser/jev_panel_empty_harness.html').as_uri())
             page.wait_for_function('document.body.textContent.includes("JEV_EMPTY_READY")')
@@ -67,6 +79,26 @@ def main() -> None:
             if not outcome.get('ok'):
                 raise AssertionError({'viewport': width, **outcome})
             reports.append({'viewport': width, 'motion': motion, **outcome})
+        panel_target = windows_path(ROOT.parent / 'tests/browser/jev_panel_harness.html').replace('\\', '/')
+        panel_address = 'file:///' + quote(panel_target, safe='/:')
+        for width in (360, 1200):
+            for sample in ('fifty', 'legacy'):
+                result = subprocess.run([
+                    str(edge), '--headless', '--disable-gpu', '--no-first-run',
+                    '--no-default-browser-check', '--disable-extensions',
+                    '--virtual-time-budget=2600', f'--window-size={width},600',
+                    f'--user-data-dir={windows_path(profile / f"panel-{sample}-{width}")}',
+                    '--dump-dom', panel_address + '?' + sample,
+                ], capture_output=True, text=True, timeout=30, check=False)
+                match = re.search(r'data-report="([^"]+)"', result.stdout)
+                if result.returncode != 0 or not match:
+                    raise RuntimeError(f'Panel harness failed: {sample} {width}px')
+                report = json.loads(match.group(1).replace('&quot;', '"'))
+                for field in ('newBatchShown', 'minimalHeader', 'sameDecisionDidNotRestart',
+                              'positionsStable', 'parallelGrowth', 'fadeAfterGrowth', 'noNestedScroll'):
+                    assert report[field], {'viewport': width, 'sample': sample, **report}
+                assert not report['horizontalOverflow'], report
+                reports.append({'panel': sample, 'viewport': width, **report})
         empty = windows_path(ROOT.parent / 'tests/browser/jev_panel_empty_harness.html').replace('\\', '/')
         empty_address = 'file:///' + quote(empty, safe='/:')
         result = subprocess.run([

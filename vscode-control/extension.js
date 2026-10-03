@@ -20,7 +20,7 @@ function emptyStats() {
 }
 
 function createController(dataDirectory) {
-  const state = { enabled: false, needsKey: false, mode: "replace", health: null, hookHealth: null, panelFault: null, configurationError: null, sessionPending: true, viewStartedAt: Date.now(), recent: null, history: [], stats: emptyStats(), busyUntil: 0, eventSize: -1, eventCursor: null, checking: false, polling: null, callingSeen: false, viewId: null, sessionId: null, generation: 0, eventDirectory: null };
+  const state = { enabled: false, needsKey: false, mode: "replace", health: null, hookHealth: null, panelFault: null, configurationError: null, sessionPending: true, viewStartedAt: Date.now(), recent: null, history: [], stats: emptyStats(), classificationPulse: 0, eventSize: -1, eventCursor: null, checking: false, polling: null, viewId: null, sessionId: null, generation: 0, eventDirectory: null };
   let selectionQueue = Promise.resolve();
   let viewBaseline = Promise.resolve();
   let entering = Promise.resolve();
@@ -36,7 +36,7 @@ function createController(dataDirectory) {
     expectedHookVersion: EXPECTED_HOOK_VERSION,
     configurationError: state.configurationError,
     viewStartedAt: state.viewStartedAt,
-    busy: state.enabled && Date.now() < state.busyUntil,
+    classificationPulse: state.classificationPulse,
     mode: state.mode,
     recent: decisionSummary(state.recent),
     history: state.history.map(outcomeLine),
@@ -47,8 +47,7 @@ function createController(dataDirectory) {
     state.stats = emptyStats();
     state.history = [];
     state.recent = null;
-    state.callingSeen = false;
-    state.busyUntil = 0;
+    state.classificationPulse = 0;
     state.panelFault = null;
   }
 
@@ -111,11 +110,6 @@ function createController(dataDirectory) {
     return entering;
   }
 
-  function pulse() {
-    if (!state.enabled) return;
-    state.busyUntil = Date.now() + 500;
-  }
-
   async function sync() {
     if (!state.sessionId) return;
     let generation = state.generation;
@@ -163,7 +157,6 @@ function createController(dataDirectory) {
     if (probePromise) return probePromise;
     const generation = state.generation;
     state.checking = true;
-    pulse();
     probePromise = (async () => {
       try {
         const result = await checkHealth(dataDirectory());
@@ -207,14 +200,12 @@ function createController(dataDirectory) {
         state.eventSize = batch.offset;
         state.eventCursor = batch.cursor;
         for (const event of batch.events) {
-          if (event.status === "calling") {
+          if (event.status === "classifying") {
+            if (state.enabled) state.classificationPulse += 1;
+          } else if (event.status === "calling") {
             state.stats.calls += 1;
-            state.recent = event;
-            state.callingSeen = true;
-            pulse();
           } else if (isJevOutcome(event)) {
             state.stats.calls += event.requests;
-            if (!state.callingSeen) pulse();
             state.stats.completed += 1;
             state.stats.checkedChars += event.original_chars;
             state.stats.savedChars += savedCharacters(event);
@@ -225,11 +216,8 @@ function createController(dataDirectory) {
             state.history.unshift(event);
             state.history.length = Math.min(state.history.length, 3);
             state.recent = event;
-            state.callingSeen = false;
           } else if (event.status === "skip" && event.reason === "choice_kept_full_output") {
             state.stats.calls += event.requests;
-            state.recent = event;
-            pulse();
           }
           if (!state.needsKey && (event.reason === "no_evaluator" ||
               event.reason === "evaluator_unavailable")) {
@@ -357,6 +345,7 @@ function createController(dataDirectory) {
       if (!state.sessionId) return snapshot();
       return saveSelection(() => ({ enabled: request.enabled }));
     }
+    await pollEvent();
     return snapshot();
   }
   return { state, bridge, pollEvent, sync, probe, activeDirectory };

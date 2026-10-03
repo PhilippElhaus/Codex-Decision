@@ -26,18 +26,23 @@ def chromium_capture() -> None:
         try:
             for state, name, width, height in (
                 ('composer', 'jev-toggle.png', 620, 240),
+                ('classification', 'jev-classification.png', 620, 240),
                 ('onboarding', 'jev-connect.png', 950, 610),
                 ('settings', 'jev-settings.png', 1040, 1080),
             ):
                 page = browser.new_page(viewport={'width': width, 'height': height}, device_scale_factor=2)
                 page.goto((ROOT.parent / 'tests/browser/visual_harness.html').as_uri() + '?demo=' + state)
                 page.wait_for_function('document.title === "JEV_VISUAL_READY"')
-                if state == 'composer':
+                if state in ('composer', 'classification'):
                     assert page.locator('#codex-jev-menu').count() == 0
                     assert page.locator('#codex-jev-button').get_attribute('role') == 'switch'
                     assert page.locator('#codex-jev-button').get_attribute('aria-checked') == 'true'
                     layout = json.loads(page.locator('body').get_attribute('data-layout'))
                     assert abs(layout['buttonTop'] - layout['anchorTop'] - layout['screenshotOffset']) <= 10
+                    if state == 'classification':
+                        page.evaluate('window.dispatchEvent(new Event("focus"))')
+                        page.wait_for_function('document.getElementById("codex-jev").dataset.classifying === "true"')
+                        assert page.locator('#codex-jev-button').evaluate('node => node.style.color') == 'rgb(105, 174, 240)'
                 elif state == 'onboarding':
                     assert page.locator('#codex-jev-connect').is_visible()
                     assert page.locator('#codex-jev-key').input_value() == ''
@@ -58,13 +63,14 @@ def chromium_capture() -> None:
                     settings.crop(box).save(IMAGES / name, optimize=True)
             (IMAGES / 'jev-settings.png').unlink()
             for state, name, height, count, expected in (
-                ('fifty', 'jev-panel.png', 900, 50, ('47 cut', '3 / 50 kept')),
+                ('fifty', 'jev-panel.png', 900, 50, ('3 / 50 kept',)),
                 ('reviewed', 'jev-demo-tests.png', 520, 20,
-                 ('119 cut', '5 / 124 kept', '4 protected', 'batch 3/3', 'actual: 6000')),
+                 ('5 / 124 kept', 'actual: 6000')),
             ):
                 page = browser.new_page(viewport={'width': 1200, 'height': height})
                 page.goto((ROOT.parent / 'tests/browser/jev_panel_harness.html').as_uri() + f'?{state}&capture')
                 page.wait_for_function('document.body.textContent.includes("JEV_LINE_PANEL_READY")')
+                assert page.locator('.card-kicker,.batch-summary,.batch-legend').count() == 0
                 assert page.locator('.batch-row').count() == count
                 assert all(text in page.locator('body').inner_text() for text in expected)
                 page.screenshot(path=str(IMAGES / name))
@@ -88,6 +94,7 @@ def main() -> None:
         address = 'file:///' + quote(target, safe='/:')
         captures = [
             ('composer', 'jev-toggle.png', 620, 240),
+                ('classification', 'jev-classification.png', 620, 240),
             ('onboarding', 'jev-connect.png', 950, 610),
             ('settings', 'jev-settings.png', 1040, 1080),
         ]
@@ -97,7 +104,7 @@ def main() -> None:
                 str(edge), '--headless', '--disable-gpu', '--no-first-run',
                 '--no-default-browser-check', '--disable-extensions',
                 '--hide-scrollbars', '--force-device-scale-factor=2',
-                '--virtual-time-budget=950', f'--window-size={width},{height}',
+                f'--virtual-time-budget={400 if state == "classification" else 950}', f'--window-size={width},{height}',
                 f'--user-data-dir={windows_path(profile / state)}',
                 '--dump-dom', f'--screenshot={windows_path(output)}', address + '?demo=' + state,
             ], capture_output=True, text=True, timeout=30, check=False)
@@ -110,6 +117,8 @@ def main() -> None:
             layout = json.loads(unescape(found.group(1)))
             if state not in ('onboarding', 'settings') and abs((layout['buttonTop'] - layout['anchorTop']) - layout['screenshotOffset']) > 10:
                 raise RuntimeError(f'{name} is vertically misaligned: {layout}')
+            if state == 'classification' and 'data-classifying="true"' not in result.stdout:
+                raise RuntimeError('Classification did not light up the composer')
             if state == 'onboarding' and 'id="codex-jev-connect"' not in result.stdout:
                 raise RuntimeError('Connect Jev overlay was not rendered')
             if state == 'settings' and ('id="codex-jev-settings-panel"' not in result.stdout or
@@ -131,9 +140,9 @@ def main() -> None:
             print(f'{name}: {box}')
         panel_address = 'file:///' + quote(windows_path(ROOT.parent / 'tests/browser/jev_panel_harness.html').replace('\\', '/'), safe='/:')
         for state, name, height, row_count, expected in (
-            ('fifty', 'jev-panel.png', 900, 50, ('47 cut', '3 / 50 kept')),
+            ('fifty', 'jev-panel.png', 900, 50, ('3 / 50 kept',)),
             ('reviewed', 'jev-demo-tests.png', 520, 20,
-             ('119 cut', '5 / 124 kept', '4 protected', 'batch 3/3', 'actual: 6000')),
+             ('5 / 124 kept', 'actual: 6000')),
         ):
             panel = IMAGES / name
             result = subprocess.run([
