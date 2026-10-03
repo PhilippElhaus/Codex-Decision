@@ -9,7 +9,7 @@ const {
   checkHealth, decisionSummary, defaultDataDirectory, estimateTokensSaved,
   isJevOutcome, outcomeLine, readConfig, readEventCursor, readEventsSince, savedCharacters,
   readApiKey, writeApiKey, writeSelection,
-  completeLinePolicy, completeSearchRelevance,
+  completeRelevancePolicy,
   sessionDirectory, readHookHealth, ensureSessionDefaults,
   DEFAULT_SETTINGS, readGlobalSettings, writeGlobalSettings, readInstallationStats,
 } = require("./core");
@@ -20,7 +20,7 @@ function emptyStats() {
 }
 
 function createController(dataDirectory) {
-  const state = { enabled: false, outputEnabled: false, testBuildEnabled: false, searchListingEnabled: false, needsKey: false, mode: "replace", health: null, hookHealth: null, panelFault: null, configurationError: null, sessionPending: true, viewStartedAt: Date.now(), recent: null, history: [], stats: emptyStats(), busyUntil: 0, eventSize: -1, eventCursor: null, checking: false, polling: null, callingSeen: false, viewId: null, sessionId: null, generation: 0, eventDirectory: null };
+  const state = { enabled: false, needsKey: false, mode: "replace", health: null, hookHealth: null, panelFault: null, configurationError: null, sessionPending: true, viewStartedAt: Date.now(), recent: null, history: [], stats: emptyStats(), busyUntil: 0, eventSize: -1, eventCursor: null, checking: false, polling: null, callingSeen: false, viewId: null, sessionId: null, generation: 0, eventDirectory: null };
   let selectionQueue = Promise.resolve();
   let viewBaseline = Promise.resolve();
   let entering = Promise.resolve();
@@ -28,9 +28,6 @@ function createController(dataDirectory) {
   const activeDirectory = () => sessionDirectory(dataDirectory(), state.sessionId);
   const snapshot = () => ({
     enabled: state.enabled,
-    outputEnabled: state.outputEnabled,
-    testBuildEnabled: state.testBuildEnabled,
-    searchListingEnabled: state.searchListingEnabled,
     needsKey: state.needsKey,
     health: state.health,
     hookHealth: state.hookHealth,
@@ -82,9 +79,6 @@ function createController(dataDirectory) {
       state.viewId = viewId;
       state.sessionId = null;
       state.enabled = false;
-      state.outputEnabled = false;
-      state.testBuildEnabled = false;
-      state.searchListingEnabled = false;
       if (changed) state.health = null;
       if (changed) state.needsKey = false;
       state.hookHealth = null;
@@ -141,15 +135,12 @@ function createController(dataDirectory) {
         ensureSessionDefaults(directory), readGlobalSettings(dataDirectory()),
       ]);
       if (generation !== state.generation) return;
-      const selected = config.enabled || config.test_build_enabled || config.search_listing_enabled;
+      const selected = config.enabled;
       let needsKey = false;
       try { await readApiKey(dataDirectory()); }
       catch { needsKey = true; }
       if (generation !== state.generation) return;
       state.configurationError = null;
-      state.outputEnabled = config.enabled;
-      state.testBuildEnabled = config.test_build_enabled;
-      state.searchListingEnabled = config.search_listing_enabled;
       state.enabled = selected;
       state.mode = settings.mode;
       const wasMissingKey = state.needsKey;
@@ -161,9 +152,6 @@ function createController(dataDirectory) {
     } catch (error) {
       if (generation !== state.generation) return;
       state.enabled = false;
-      state.outputEnabled = false;
-      state.testBuildEnabled = false;
-      state.searchListingEnabled = false;
       state.needsKey = false;
       state.health = { ok: false, reason: "JEV_CONFIG_ERROR" };
       state.configurationError = /session ID/.test(error.message) ? "Codex session could not be identified" :
@@ -270,7 +258,7 @@ function createController(dataDirectory) {
       await pollEvent();
       const current = await readConfig(directory);
       const next = change(current);
-      await writeSelection(directory, next.enabled, next.test_build_enabled, next.search_listing_enabled);
+      await writeSelection(directory, next.enabled);
       if (state.sessionId === sessionId) await sync();
       return snapshot();
     });
@@ -311,13 +299,10 @@ function createController(dataDirectory) {
       if (request.action === "settingsSave") {
         if (!["observe", "replace"].includes(request.mode)) throw new Error("Invalid mode");
         if (!Number.isInteger(request.logLimitMb) || request.logLimitMb < 1 || request.logLimitMb > 9999 ||
-            typeof request.neverDeleteLogs !== "boolean" ||
-            typeof request.choiceGateEnabled !== "boolean") throw new Error("Invalid Jev settings");
-        const linePolicy = completeLinePolicy(request.linePolicy);
-        const searchRelevance = completeSearchRelevance(request.searchRelevance);
+            typeof request.neverDeleteLogs !== "boolean") throw new Error("Invalid Jev settings");
+        const relevancePolicy = completeRelevancePolicy(request.relevancePolicy);
         const task = selectionQueue.then(async () => {
-          await writeGlobalSettings(directory, { mode: request.mode, line_policy: linePolicy,
-            search_relevance: searchRelevance, choice_gate_enabled: request.choiceGateEnabled,
+          await writeGlobalSettings(directory, { mode: request.mode, relevance_policy: relevancePolicy,
             log_limit_mb: request.logLimitMb, never_delete_logs: request.neverDeleteLogs });
           if (request.key) await writeApiKey(dataDirectory(), request.key);
           if (state.sessionId) await sync();
@@ -370,11 +355,7 @@ function createController(dataDirectory) {
     }
     if (request?.action === "setSelection" && typeof request.enabled === "boolean") {
       if (!state.sessionId) return snapshot();
-      return saveSelection((current) => ({
-        enabled: request.feature === "output" ? request.enabled : current.enabled,
-        test_build_enabled: request.feature === "test_build" ? request.enabled : current.test_build_enabled,
-        search_listing_enabled: request.feature === "search_listing" ? request.enabled : current.search_listing_enabled,
-      }));
+      return saveSelection(() => ({ enabled: request.enabled }));
     }
     return snapshot();
   }

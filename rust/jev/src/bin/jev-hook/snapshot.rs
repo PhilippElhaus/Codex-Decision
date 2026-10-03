@@ -56,11 +56,11 @@ pub(super) fn line_snapshot(
             line.eligible && line.protected_reason.is_none() && decision.batch_id.is_none()
         })
         .count();
-    json!({"version":3,"id":snapshot_id,"receipt_id":receipt_id,"at":Utc::now().to_rfc3339(),
+    json!({"version":4,"id":snapshot_id,"receipt_id":receipt_id,"at":Utc::now().to_rfc3339(),
         "filter":route,"status":status,"batch":{"number":batch_number,"count":batch_count,
             "target_count":batch.target_numbers.len()},"rows":rows,
         "totals":{"seen":seen,"judged":judged,"kept":seen-omitted,"omitted":omitted,
-            "protected":protected,"unjudged":unjudged,"requests":batch_number},
+            "protected":protected,"unjudged":unjudged,"requests":batch_number + 1},
         "batch_elapsed_ms":batch.elapsed_ms})
 }
 

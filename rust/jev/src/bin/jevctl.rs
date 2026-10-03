@@ -209,8 +209,8 @@ fn read_json(path: &Path, max_bytes: u64) -> Result<Value, String> {
 }
 
 fn evaluate_case(receipt: &Value, required: &[usize]) -> Result<Value, String> {
-    if receipt.get("version").and_then(Value::as_u64) != Some(2) {
-        return Err("expected a version 2 receipt".into());
+    if !matches!(receipt.get("version").and_then(Value::as_u64), Some(2 | 3)) {
+        return Err("expected a version 2 or 3 receipt".into());
     }
     let manifest = receipt.get("manifest").ok_or("receipt manifest missing")?;
     let seen = manifest
@@ -273,6 +273,9 @@ fn replay_gate(
     exact_max: u8,
     guard_enabled: bool,
 ) -> Result<Option<Value>, String> {
+    if receipt["version"] == 3 {
+        return Ok(None);
+    }
     let Some(source) = receipt.get("initial_output").and_then(Value::as_str) else {
         return Ok(None);
     };
@@ -330,6 +333,44 @@ fn replay_gate(
     Ok(Some(
         json!({"omitted":omitted.len(),"false_omissions":required.iter()
         .filter(|number| omitted.contains(number)).count(),"required":required.len()}),
+    ))
+}
+
+fn replay_relevance(
+    receipt: &Value,
+    required: &[usize],
+    cutoff: u8,
+) -> Result<Option<Value>, String> {
+    if receipt["version"] != 3 {
+        return Ok(None);
+    }
+    let source = receipt["initial_output"].as_str().ok_or("missing source")?;
+    let recorded = receipt["decisions"].as_array().ok_or("missing decisions")?;
+    let mut lines = source_lines(source);
+    if lines.len() != recorded.len() {
+        return Err("incomplete decisions".into());
+    }
+    let mut probabilities = BTreeMap::new();
+    for (line, row) in lines.iter_mut().zip(recorded) {
+        line.protected_reason = row["protected_reason"]
+            .as_str()
+            .filter(|reason| !matches!(*reason, "representative" | "last_line"))
+            .map(str::to_owned);
+        if let Some(p) = row["p_task_relevant"].as_f64() {
+            if !p.is_finite() || !(0.0..=1.0).contains(&p) {
+                return Err("invalid relevance probability".into());
+            }
+            probabilities.insert(line.number, p);
+        }
+    }
+    let decisions = codex_jev::semantic::apply_relevance(&lines, &probabilities, cutoff);
+    let omitted: HashSet<_> = decisions
+        .iter()
+        .filter(|row| row.action == Action::Omit)
+        .map(|row| row.number)
+        .collect();
+    Ok(Some(
+        json!({"omitted":omitted.len(),"false_omissions":required.iter().filter(|n|omitted.contains(n)).count(),"required":required.len()}),
     ))
 }
 
@@ -392,6 +433,11 @@ fn evaluate_quality(cases_path: &Path) -> Result<(), String> {
                 trials.insert(name.into(), trial);
             }
         }
+        for cutoff in [1, 2, 5, 10, 20] {
+            if let Some(trial) = replay_relevance(&receipt, &required, cutoff)? {
+                trials.insert(format!("relevance_{cutoff}"), trial);
+            }
+        }
         outcome["gate_trials"] = Value::Object(trials);
         if let Some(solved) = row.get("task_solved").and_then(Value::as_bool) {
             outcome["task_solved"] = json!(solved);
@@ -407,7 +453,7 @@ fn evaluate_quality(cases_path: &Path) -> Result<(), String> {
             .pointer("/manifest/requests")
             .and_then(Value::as_u64)
             .unwrap_or(0);
-        if id.len() == 32 && id.bytes().all(|byte| byte.is_ascii_hexdigit()) && requests <= 13 {
+        if id.len() == 32 && id.bytes().all(|byte| byte.is_ascii_hexdigit()) && requests <= 10_001 {
             let mut input_tokens = 0u64;
             let mut output_tokens = 0u64;
             let mut measured = 0u64;
@@ -503,6 +549,11 @@ fn evaluate_quality(cases_path: &Path) -> Result<(), String> {
                 "strict_98_2",
                 "strict_99_1",
                 "relevance_guard_95_5",
+                "relevance_1",
+                "relevance_2",
+                "relevance_5",
+                "relevance_10",
+                "relevance_20",
             ] {
                 let rows: Vec<&Value> = selected
                     .iter()
@@ -621,6 +672,31 @@ mod tests {
         assert_eq!(result["false_omissions"], json!([2]));
         assert_eq!(result["saved_chars"], 55);
         assert!(evaluate_case(&receipt, &[4]).is_err());
+    }
+
+    #[test]
+    fn current_receipts_replay_relevance_with_local_protection_and_representatives() {
+        let receipt = json!({"version":3,"initial_output":"routine\nroutine\nunique port 8443\nlast\n",
+            "manifest":{"lines_seen":4,"status":"replace","original_chars":40,"visible_chars":30},
+            "decisions":[
+                {"number":1,"action":"keep","protected_reason":null,"p_task_relevant":0.01},
+                {"number":2,"action":"omit","protected_reason":null,"p_task_relevant":0.01},
+                {"number":3,"action":"keep_unjudged","protected_reason":"diagnostic_or_completion","p_task_relevant":0.01},
+                {"number":4,"action":"keep","protected_reason":null,"p_task_relevant":0.01}]});
+        assert_eq!(
+            evaluate_case(&receipt, &[1, 3, 4]).unwrap()["false_omissions"],
+            json!([])
+        );
+        assert!(replay_gate(&receipt, &[1, 3, 4], 95, 5, false)
+            .unwrap()
+            .is_none());
+        for cutoff in [1, 2, 5, 10, 20] {
+            let trial = replay_relevance(&receipt, &[1, 3, 4], cutoff)
+                .unwrap()
+                .unwrap();
+            assert_eq!(trial["false_omissions"], 0);
+            assert_eq!(trial["omitted"], 1);
+        }
     }
 
     #[test]

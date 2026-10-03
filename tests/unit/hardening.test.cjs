@@ -31,9 +31,11 @@ test("simultaneous settings updates preserve both changes, including separate pr
 test("config selections serialize against independent setting changes", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "jev-config-writes-"));
   try {
-    await Promise.all(Array.from({ length: 12 }, (_, i) => core.writeSelection(root, i % 2 === 0, true, false)));
+    await Promise.all(Array.from({ length: 12 }, (_, i) => core.writeSelection(root, i % 2 === 0)));
     const saved = await core.readConfig(root);
-    assert.equal(saved.test_build_enabled, true); assert.equal(saved.search_listing_enabled, false);
+    assert.equal(typeof saved.enabled, "boolean");
+    assert.equal(saved.schema_version, 4);
+    assert.equal("test_build_enabled" in saved, false);
     assert.equal((await fs.readdir(root)).some(name => name.endsWith(".tmp") || name.endsWith(".lock")), false);
   } finally { await fs.rm(root, { recursive: true, force: true }); }
 });

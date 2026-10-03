@@ -54,7 +54,7 @@ pub(super) fn execute() -> Result<Value, String> {
     let Some(config) = selected else {
         return Ok(json!({}));
     };
-    if !(config.output || config.test_build || config.search_listing) {
+    if !config.enabled {
         return Ok(json!({}));
     }
     ensure_dir(&data_dir.join("sessions"))?;
@@ -112,52 +112,101 @@ pub(super) fn process_event(
     }
     remaining()?;
     let mut lines = source_lines(&source);
-    if lines.is_empty()
-        || !apply_route_structure(
-            route,
-            event["tool_name"].as_str().unwrap_or(""),
-            command(event),
-            &mut lines,
-        )
-    {
+    if lines.is_empty() {
         return skip(scoped, "structured_or_empty");
     }
     protect_neighbors(&mut lines);
-    let batches = pack_batches(
-        route,
-        &task,
-        &command(event).chars().take(400).collect::<String>(),
-        &lines,
-        &config.model,
-    );
-    if batches.is_empty() {
+    if !lines
+        .iter()
+        .any(|line| line.eligible && line.protected_reason.is_none())
+    {
         return skip(scoped, "no_eligible_lines");
     }
     let api_key = key(data_dir)?;
     let agent = ureq::AgentBuilder::new().build();
-    let mut gate_record = None;
-    if config.choice_gate_enabled && route == "output" && batches.len() >= 2 {
-        let request = choice_request(&task, command(event), &lines, &config.model);
-        let before = Instant::now();
-        let response = evaluate(
-            &agent,
-            &request,
-            &api_key,
-            config.timeout.min(remaining()?.as_secs_f64()),
+    let request = classification_request(
+        &task,
+        event["tool_name"].as_str().unwrap_or(""),
+        command(event),
+        &event["tool_response"]["exit_code"]
+            .as_i64()
+            .map(Value::from)
+            .unwrap_or(Value::Null),
+        &lines,
+        &config.model,
+    );
+    let before = Instant::now();
+    let response = evaluate(
+        &agent,
+        &request,
+        &api_key,
+        config.timeout.min(remaining()?.as_secs_f64()),
+    )?;
+    let elapsed_ms = before.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
+    let (kind, excerptable) = classification(&response)?;
+    let gate_record = BatchRecord {
+        id: 0,
+        target_numbers: vec![],
+        request,
+        response,
+        elapsed_ms,
+    };
+    if !excerptable {
+        record_gate_skip(
+            scoped,
+            event,
+            source.chars().count(),
+            &gate_record,
+            &kind,
+            "choice_kept_full_output",
         )?;
-        let elapsed_ms = before.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
-        if !choice_allows_line_filter(&response)? {
-            record_gate_skip(scoped, event, source.chars().count(), elapsed_ms)?;
-            return skip(scoped, "choice_kept_full_output");
-        }
-        gate_record = Some(BatchRecord {
-            id: 0,
-            target_numbers: vec![],
-            request,
-            response,
-            elapsed_ms,
-        });
+        return skip(scoped, "choice_kept_full_output");
     }
+    if !apply_route_structure(
+        output_format(event).unwrap_or("output"),
+        event["tool_name"].as_str().unwrap_or(""),
+        command(event),
+        &mut lines,
+    ) {
+        record_gate_skip(
+            scoped,
+            event,
+            source.chars().count(),
+            &gate_record,
+            &kind,
+            "structure_guard",
+        )?;
+        return skip(scoped, "structure_guard");
+    }
+    protect_neighbors(&mut lines);
+    if !lines
+        .iter()
+        .any(|line| line.eligible && line.protected_reason.is_none())
+    {
+        record_gate_skip(
+            scoped,
+            event,
+            source.chars().count(),
+            &gate_record,
+            &kind,
+            "no_eligible_lines",
+        )?;
+        return skip(scoped, "no_eligible_lines");
+    }
+    let batches = match relevance_requests(&task, command(event), &kind, &lines, &config.model) {
+        Ok(batches) => batches,
+        Err(_) => {
+            record_gate_skip(
+                scoped,
+                event,
+                source.chars().count(),
+                &gate_record,
+                &kind,
+                "relevance_budget",
+            )?;
+            return skip(scoped, "relevance_budget");
+        }
+    };
     let receipt_id = Uuid::new_v4().simple().to_string();
     let mut progress = ProgressSnapshot::new(scoped, receipt_id.clone())?;
     let mut probabilities = BTreeMap::new();
@@ -172,38 +221,23 @@ pub(super) fn process_event(
             &api_key,
             config.timeout.min(remaining()?.as_secs_f64()),
         )?;
-        let parsed = parse_probabilities(&batch, &response)?;
-        for (number, (omit, exact, relevant)) in parsed {
-            probabilities.insert(number, (omit, exact, relevant, batch.id));
+        for (number, p) in relevance_answers(&batch, &response)? {
+            if probabilities.insert(number, (p, batch.id)).is_some() {
+                return Err("duplicate relevance target".into());
+            }
         }
-        records.push(BatchRecord {
+        let decisions = apply_relevance_batches(&lines, &probabilities, config.policy.relevant_max);
+        let record = BatchRecord {
             id: batch.id,
             target_numbers: batch.target_numbers,
             request: batch.request,
             response,
             elapsed_ms: before.elapsed().as_millis().min(u128::from(u64::MAX)) as u64,
-        });
-        let partial = apply_probabilities(
-            &lines,
-            &probabilities,
-            &config.policy[route],
-            &config.search_relevance,
-        );
-        progress.publish(
-            route,
-            &lines,
-            &partial,
-            records.last().unwrap(),
-            records.len(),
-            batch_count,
-        )?;
+        };
+        progress.publish(route, &lines, &decisions, &record, record.id, batch_count)?;
+        records.push(record);
     }
-    let decisions = apply_probabilities(
-        &lines,
-        &probabilities,
-        &config.policy[route],
-        &config.search_relevance,
-    );
+    let decisions = apply_relevance_batches(&lines, &probabilities, config.policy.relevant_max);
     let omitted = decisions
         .iter()
         .filter(|row| row.action == Action::Omit)
@@ -252,7 +286,7 @@ pub(super) fn process_event(
         &lines,
         &decisions,
         &records,
-        gate_record.as_ref(),
+        Some(&gate_record),
         config,
         &receipt_id,
         &progress.last_snapshot_id,

@@ -6,7 +6,7 @@ fn old_or_unknown_config_never_looks_disabled() {
     for value in [
         json!({"enabled":true}),
         json!({"schema_version":1,"enabled":true}),
-        json!({"schema_version":3,"enabled":true}),
+        json!({"schema_version":5,"enabled":true}),
     ] {
         fs::write(directory.path().join("config.json"), value.to_string()).unwrap();
         assert!(config(directory.path())
@@ -57,13 +57,9 @@ fn shared_settings_override_session_behavior_without_changing_route_selection() 
         "log_limit_mb":75,"never_delete_logs":true});
     fs::write(directory.path().join("settings.json"), settings.to_string()).unwrap();
     apply_shared_settings(directory.path(), &mut selected).unwrap();
-    assert!(selected.output);
-    assert!(!selected.test_build);
-    assert!(selected.search_listing);
+    assert!(selected.enabled);
     assert_eq!(selected.mode, "observe");
-    assert_eq!(selected.policy["output"].omit_min, 80);
-    assert!(selected.search_relevance.guard_enabled);
-    assert!(!selected.choice_gate_enabled);
+    assert_eq!(selected.policy.relevant_max, 4);
     assert!(selected.never_delete_logs);
     let mut malformed = settings.clone();
     malformed["line_policy"]["output"]["omit_min"] = json!(101);
@@ -97,41 +93,16 @@ fn hook_status_records_skips_and_errors_without_tool_text() {
 fn enabled() -> Config {
     Config {
         global_scope: false,
-        output: true,
-        test_build: true,
-        search_listing: true,
-        choice_gate_enabled: true,
+        enabled: true,
         mode: "observe".into(),
         min_chars: 1024,
         max_chars: 2_000_000,
         model: "jev-latest".into(),
         timeout: 3.0,
         allow_mcp_replacement: false,
-        policy: BTreeMap::new(),
-        search_relevance: SearchRelevancePolicy::default(),
+        policy: RelevancePolicy::default(),
         log_limit_mb: 50,
         never_delete_logs: false,
-    }
-}
-
-#[test]
-fn choice_gate_rejects_inconsistent_answers_and_keeps_uncertainty() {
-    let answer = |choice: &str, confidence: f64, filter: f64, full: f64, uncertain: f64| {
-        json!({"answers":{"line_filter_fit":{"type":"choice","choice":choice,
-            "confidence":confidence,"probabilities":{"line_filter":filter,
-                "keep_full":full,"uncertain":uncertain}}}})
-    };
-    assert!(choice_allows_line_filter(&answer("line_filter", 0.96, 0.98, 0.01, 0.01)).unwrap());
-    assert!(!choice_allows_line_filter(&answer("keep_full", 0.96, 0.01, 0.98, 0.01)).unwrap());
-    assert!(!choice_allows_line_filter(&answer("uncertain", 0.01, 0.33, 0.33, 0.34)).unwrap());
-    assert!(!choice_allows_line_filter(&answer("line_filter", 0.60, 0.80, 0.10, 0.10)).unwrap());
-    for bad in [
-        answer("line_filter", 0.96, 0.49, 0.50, 0.01),
-        answer("line_filter", 0.96, 0.98, 0.98, 0.01),
-        answer("other", 0.96, 0.98, 0.01, 0.01),
-        json!({"answers":{"line_filter_fit":{"type":"choice","choice":"line_filter"}}}),
-    ] {
-        assert!(choice_allows_line_filter(&bad).is_err());
     }
 }
 
@@ -146,13 +117,14 @@ fn failed_record_never_publishes_a_replace_event_or_receipt() {
         let event = json!({"session_id":"transaction","tool_name":"Bash","tool_input":{"command":"echo progress"}});
         let source = "routine progress\nsummary\n";
         let lines = source_lines(source);
-        let batch = pack_batches(
-            "output",
+        let batch = relevance_requests(
             "Check progress",
             "echo progress",
+            "repetitive_log",
             &lines,
             "jev-latest",
         )
+        .unwrap()
         .remove(0);
         let probabilities = lines
             .iter()
@@ -173,7 +145,7 @@ fn failed_record_never_publishes_a_replace_event_or_receipt() {
         }];
         let mut config = enabled();
         config.mode = "replace".into();
-        config.policy.insert("output".into(), LinePolicy::default());
+        config.policy = RelevancePolicy::default();
         if failure == "stats" {
             fs::write(data.join("stats.json"), "{\"calls\":\"invalid\"}").unwrap();
         }
@@ -279,7 +251,7 @@ fn direct_test_and_search_commands_route_to_line_adapters() {
                 &json!({"tool_name":"Bash","tool_input":{"command":command}}),
                 &config
             ),
-            Some("test_build"),
+            Some("output"),
             "{command}"
         );
     }
@@ -303,63 +275,46 @@ fn direct_test_and_search_commands_route_to_line_adapters() {
                 &json!({"tool_name":"Bash","tool_input":{"command":command}}),
                 &config
             ),
-            Some("search_listing"),
+            Some("output"),
             "{command}"
         );
     }
 }
 
 #[test]
-fn integration_switches_select_exclusive_routes() {
-    let cases = [
-        ("cargo test --workspace", "test_build"),
-        ("rg -n token src", "search_listing"),
-        ("git ls-files", "search_listing"),
-        ("cat output.log", "output"),
-    ];
-    for output in [false, true] {
-        for test_build in [false, true] {
-            for search_listing in [false, true] {
-                let config = Config {
-                    output,
-                    test_build,
-                    search_listing,
-                    ..enabled()
-                };
-                for (command, expected_route) in cases {
-                    let selected = match expected_route {
-                        "output" => output,
-                        "test_build" => test_build,
-                        _ => search_listing,
-                    };
-                    assert_eq!(
-                        route(
-                            &json!({"tool_name":"Bash","tool_input":{"command":command}}),
-                            &config
-                        ),
-                        selected.then_some(expected_route),
-                        "{command} with output={output}, test_build={test_build}, search_listing={search_listing}"
-                    );
-                }
-                assert_eq!(
-                    route(&json!({"tool_name":"mcp__demo__logs"}), &config),
-                    output.then_some("output")
-                );
-                assert_eq!(
-                    route(&json!({"tool_name":"mcp__files__search"}), &config),
-                    search_listing.then_some("search_listing")
-                );
-                assert_eq!(
-                    route(&json!({"tool_name":"Grep"}), &config),
-                    search_listing.then_some("search_listing")
-                );
-                assert_eq!(
-                    route(&json!({"tool_name":"Read"}), &config),
-                    output.then_some("output")
-                );
-                assert_eq!(route(&json!({"tool_name":"apply_patch"}), &config), None);
-            }
+fn one_switch_controls_every_supported_output() {
+    for enabled in [false, true] {
+        let config = Config {
+            enabled,
+            ..self::enabled()
+        };
+        for command in [
+            "cargo test --workspace",
+            "rg -n token src",
+            "git ls-files",
+            "cat output.log",
+        ] {
+            assert_eq!(
+                route(
+                    &json!({"tool_name":"Bash","tool_input":{"command":command}}),
+                    &config
+                ),
+                enabled.then_some("output")
+            );
         }
+        for tool in [
+            "mcp__demo__logs",
+            "mcp__files__search",
+            "Grep",
+            "Read",
+            "mcp__test__build",
+        ] {
+            assert_eq!(
+                route(&json!({"tool_name":tool}), &config),
+                enabled.then_some("output")
+            );
+        }
+        assert_eq!(route(&json!({"tool_name":"apply_patch"}), &config), None);
     }
 }
 
@@ -407,11 +362,10 @@ fn command_lists_and_line_viewers_keep_routes_and_record_formats() {
         ("cd src\ncat first.log\ncat second.log", "output"),
     ] {
         let event = json!({"tool_name":"Bash","tool_input":{"command":command}});
-        assert_eq!(route(&event, &config), Some(expected), "{command}");
+        assert_eq!(output_format(&event), Some(expected), "{command}");
+        assert_eq!(route(&event, &config), Some("output"), "{command}");
         let disabled = Config {
-            output: false,
-            test_build: false,
-            search_listing: false,
+            enabled: false,
             ..config.clone()
         };
         assert_eq!(route(&event, &disabled), None, "{command}");
@@ -451,14 +405,14 @@ fn local_text_is_eligible_but_structured_and_action_results_are_not() {
     );
     let shell = json!({"tool_name":"exec_command","tool_input":{"cmd":"rg -n token src"},
         "tool_response":{"output":"src/a.rs:12:token\n","exit_code":0}});
-    assert_eq!(route(&shell, &config), Some("search_listing"));
+    assert_eq!(route(&shell, &config), Some("output"));
     assert_eq!(
         response_text(&shell).as_deref(),
         Some("src/a.rs:12:token\n")
     );
     let search = json!({"tool_name":"mcp__files__search","tool_response":{
         "content":[{"type":"text","text":"src/main.rs:42:match"}]}});
-    assert_eq!(route(&search, &config), Some("search_listing"));
+    assert_eq!(route(&search, &config), Some("output"));
     assert_eq!(
         response_text(&search).as_deref(),
         Some("src/main.rs:42:match")
@@ -573,12 +527,7 @@ fn completed_batch_is_visible_and_failed_result_restores_empty_panel() {
         fs::set_permissions(&data, fs::Permissions::from_mode(0o700)).unwrap();
     }
     let lines = source_lines("Compiling module\nDone\n");
-    let judged = apply_probabilities(
-        &lines,
-        &BTreeMap::from([(1, (0.98, 0.02, None, 1))]),
-        &LinePolicy::default(),
-        &SearchRelevancePolicy::default(),
-    );
+    let judged = apply_relevance(&lines, &BTreeMap::from([(1, 0.02)]), 5);
     let path = data.join("logs/latest-decision.json");
     let batch = BatchRecord {
         id: 1,
@@ -593,7 +542,7 @@ fn completed_batch_is_visible_and_failed_result_restores_empty_panel() {
             .publish("output", &lines, &judged, &batch, 1, 1)
             .unwrap();
         let snapshot: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-        assert_eq!(snapshot["version"], 3);
+        assert_eq!(snapshot["version"], 4);
         assert_eq!(snapshot["status"], "processing");
         assert_eq!(snapshot["totals"]["judged"], 1);
         assert_eq!(snapshot["rows"][0]["line"], 1);

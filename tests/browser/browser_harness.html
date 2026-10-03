@@ -21,7 +21,7 @@
     @media (max-width: 500px) { .settings-nav { width: 96px; padding: 12px 6px; } .settings-content { left: 96px; padding: 16px; } }
   </style>
   <script>
-    let outputEnabled = false, testBuildEnabled = false, searchListingEnabled = false, needsKey = false, health = { ok: true, model: "jev-1.13.0" }, busy = false, mode = "replace";
+    let outputEnabled = false, needsKey = false, health = { ok: true, model: "jev-1.13.0" }, busy = false, mode = "replace";
     const viewStartedAt = Date.now() - 1000;
     let hookHealth = { version: 1, hook_version: "0.8.1", last_seen_ms: Date.now(), last_success_ms: Date.now() };
     const stats = { calls: 7, candidates: 4, kept: 2, replaced: 1, checkedChars: 90640, savedChars: 6058, estimatedTokensSaved: 1515, elapsedMs: 8120, completed: 7 };
@@ -44,8 +44,7 @@
     window.__jevHarnessNeverDelete = false;
     window.__jevHarnessFailNeverDelete = false;
     window.__jevHarnessKeyLength = 32;
-    window.__jevHarnessLinePolicy = { output: { omit_min: 90, exact_max: 20 },
-      test_build: { omit_min: 85, exact_max: 25 }, search_listing: { omit_min: 92, exact_max: 5 } };
+    window.__jevHarnessRelevancePolicy = { relevant_max: 10 };
     window.__jevHarnessExternalOpen = true;
     window.acquireVsCodeApi = () => ({ postMessage(request) {
       calls += 1;
@@ -63,15 +62,13 @@
       }
       if (request.action === "settingsSave") {
         window.__jevHarnessNeverDelete = request.neverDeleteLogs;
-        window.__jevHarnessLinePolicy = request.linePolicy;
+        window.__jevHarnessRelevancePolicy = request.relevancePolicy;
         if (request.key) window.__jevHarnessKeyLength = request.key.length;
       }
       if (activeViewId && activeViewId !== request.viewId) freshView = true;
       activeViewId = request.viewId;
       if (request.action === "setSelection") {
-        if (request.feature === "test_build") testBuildEnabled = request.enabled;
-        else if (request.feature === "search_listing") searchListingEnabled = request.enabled;
-        else outputEnabled = request.enabled;
+        outputEnabled = request.enabled;
       }
       if (request.action === "retryConnection") health = { ok: true, model: "jev-1.13.0" };
       const keyTest = request.action === "testApiKey" ?
@@ -88,11 +85,10 @@
       if (keySaved) { needsKey = false; health = { ok: true, model: "jev-1.13.0" }; }
       const settings = request.action === "settingsRead" ? { action: "ready", hasKey: true, keyLength: window.__jevHarnessKeyLength,
         lifetime: { calls: 126, completed: 124, replaced: 41, linesJudged: 87320, linesOmitted: 915, averageMs: 487 },
-        defaults: { mode: "replace", log_limit_mb: 50, never_delete_logs: false, choice_gate_enabled: true,
-          line_policy: { output: { omit_min: 95, exact_max: 5 },
-            test_build: { omit_min: 95, exact_max: 5 }, search_listing: { omit_min: 95, exact_max: 5 } } },
-        config: { mode: "replace", log_limit_mb: 75, never_delete_logs: window.__jevHarnessNeverDelete, choice_gate_enabled: true,
-          line_policy: window.__jevHarnessLinePolicy } } :
+        defaults: { mode: "replace", log_limit_mb: 50, never_delete_logs: false,
+          relevance_policy: { relevant_max: 5 } },
+        config: { mode: "replace", log_limit_mb: 75, never_delete_logs: window.__jevHarnessNeverDelete,
+          relevance_policy: window.__jevHarnessRelevancePolicy } } :
         request.action === "settingsSave" ? { action: "saved", hasKey: true, keyLength: window.__jevHarnessKeyLength } :
           request.action === "settingsSetNeverDeleteLogs" ? (window.__jevHarnessFailNeverDelete ?
             { action: "error", message: "Could not save log retention" } :
@@ -101,7 +97,7 @@
             request.action === "settingsOpenLogs" ? { action: "openedLogs" } : undefined;
       queueMicrotask(() => window.dispatchEvent(new MessageEvent("message", { data: {
         type: "codex-jev-reply", id: request.id,
-        status: { enabled: !waitingForThread && (outputEnabled || testBuildEnabled || searchListingEnabled), outputEnabled: !waitingForThread && outputEnabled, testBuildEnabled: !waitingForThread && testBuildEnabled, searchListingEnabled: !waitingForThread && searchListingEnabled, sessionPending: waitingForThread, configurationError: waitingForThread && request.expectsLocalSession ? "Codex session could not be identified" : null, needsKey, keyTest, keySaved, externalOpen: request.action === "openTypeSafe" ? window.__jevHarnessExternalOpen : undefined, settings, health, hookHealth, expectedHookVersion: "0.8.1", viewStartedAt, busy, mode, recent: freshView ? "No decision recorded yet" : history[0],
+        status: { enabled: !waitingForThread && outputEnabled, sessionPending: waitingForThread, configurationError: waitingForThread && request.expectsLocalSession ? "Codex session could not be identified" : null, needsKey, keyTest, keySaved, externalOpen: request.action === "openTypeSafe" ? window.__jevHarnessExternalOpen : undefined, settings, health, hookHealth, expectedHookVersion: "0.8.1", viewStartedAt, busy, mode, recent: freshView ? "No decision recorded yet" : history[0],
           history: freshView ? [] : history,
           stats: freshView ? { calls: 0, candidates: 0, kept: 0, replaced: 0, checkedChars: 0, elapsedMs: 0, completed: 0 } : stats },
       } })));
@@ -135,20 +131,11 @@
       const composer = document.querySelector(".composer");
       const root = document.getElementById("codex-jev");
       const button = document.getElementById("codex-jev-button");
-      const option = document.getElementById("codex-jev-option");
-      const localOption = document.getElementById("codex-jev-test-build");
-      const compactOption = document.getElementById("codex-jev-search-listing");
+      const option = button;
       const label = document.getElementById("codex-jev-label");
-      check(root && button && option && localOption && compactOption && root.style.display === "block", "control visible");
-      check(button.style.color === "rgb(135, 205, 164)", "API connection is green");
-      check([option, localOption, compactOption].map((item) => item.querySelector("strong").textContent).join("|") ===
-        "Output filter|Test/build logs|Search/listing", "three concise integration labels");
-      check(option.querySelector("small").textContent.includes("local tool text") &&
-        localOption.querySelector("small").textContent.includes("commands and tools") &&
-        compactOption.querySelector("small").textContent.includes("commands or tools") &&
-        document.getElementById("codex-jev-menu-note").textContent === "Select none to turn Jev off.",
-        "menu keeps only the off notice");
-      check(!document.getElementById("codex-jev-menu").textContent.includes("PostToolUse"), "no repeated hook name");
+      check(root && button && root.style.display === "block", "control visible");
+      check(button.style.color === "rgb(154, 154, 154)" && button.getAttribute("aria-checked") === "false", "Jev off is gray");
+      check(button.getAttribute("role") === "switch" && !document.getElementById("codex-jev-menu"), "one switch and no popup");
       const buttonStyle = getComputedStyle(button);
       const modelStyle = getComputedStyle(document.querySelector(".model"));
       check(buttonStyle.borderTopWidth === "0px" && buttonStyle.borderRadius === modelStyle.borderRadius &&
@@ -220,9 +207,10 @@
       check(rect().left > anchor().right + 3 && docked() >= 7 && docked() <= 10,
         "compact dot docks beside the model control");
       button.click();
-      const compactMenu = document.getElementById("codex-jev-menu").getBoundingClientRect();
-      check(compactMenu.left >= 11 && compactMenu.right <= innerWidth - 11, "compact menu stays in viewport");
+      await pause(50);
+      check(button.getAttribute("aria-checked") === "true", "compact switch enables Jev");
       button.click();
+      await pause(50);
       document.documentElement.style.width = `${paneWidth - 110}px`;
       composer.style.width = `${wideWidth - (gap - fullWidth + 4) - 30}px`;
       modelControl.innerHTML = '<svg width="22" height="22" aria-hidden="true"><circle cx="11" cy="11" r="9" fill="currentColor"/></svg>';
@@ -262,8 +250,10 @@
       composer.style.width = "300px";
       await until(() => root.style.display === "block" && rect().width > 0, "icon-only controls keep Jev visible");
       button.click();
-      check(document.getElementById("codex-jev-menu").dataset.open === "true", "icon-only Jev button opens selection");
+      await pause(50);
+      check(button.getAttribute("aria-checked") === "true", "icon-only Jev button enables filtering");
       button.click();
+      await pause(50);
       accessControl.removeAttribute("aria-label");
       await until(() => root.style.display === "block", "shield icon fallback keeps Jev visible");
       modelControl.removeAttribute("role");
@@ -289,25 +279,9 @@
       modelControl.textContent = fixtureModelLabel;
       await until(() => root.dataset.compact === "false", "wider pane restores full Jev label");
       button.click();
-      check(button.getAttribute("aria-expanded") === "true", "menu opens");
-      const menu = document.getElementById("codex-jev-menu");
-      check(menu.getAttribute("aria-label") === "Jev integrations", "integration menu label");
-      check(getComputedStyle(menu).backgroundColor === "rgb(33, 33, 33)" &&
-        getComputedStyle(menu).paddingLeft === "6px", "Codex-sized menu surface and gutter");
-      document.documentElement.style.setProperty("--vscode-menu-background", "#252525");
-      check(getComputedStyle(menu).backgroundColor === "rgb(37, 37, 37)", "menu follows VS Code theme");
-      document.documentElement.style.removeProperty("--vscode-menu-background");
-      check(getComputedStyle(button).borderTopWidth === "0px" &&
-        getComputedStyle(button).borderTopStyle === "none" &&
-        getComputedStyle(button).backgroundColor === "rgba(0, 0, 0, 0)",
-        "expanded Jev button stays transparent away from hover");
-      option.click();
       await pause(50);
-      check(option.getAttribute("aria-checked") === "true", "hook selected");
-      check(menu.dataset.open === "true" && button.getAttribute("aria-expanded") === "true",
-        "menu stays open after selecting a checkbox");
-      check(getComputedStyle(option.querySelector(".codex-jev-check")).backgroundColor === "rgb(58, 131, 247)",
-        "selected check uses Codex blue");
+      await until(() => button.getAttribute("aria-checked") === "true" && !button.disabled, "click enables Jev directly");
+      check(!document.getElementById("codex-jev-menu") && !button.hasAttribute("aria-expanded"), "toggle does not open a popup");
       check(button.style.color === "rgb(135, 205, 164)", "connected green");
       hookHealth = null;
       await until(() => button.style.color === "rgb(135, 205, 164)", "API probe confirms the connection without a hook event");
@@ -393,18 +367,16 @@
       location.hash = "#reopened-thread";
       await until(() => freshView && tooltip.textContent.includes("0 checked") && tooltip.querySelectorAll("li").length === 0,
         "new or reopened thread has no old outcomes");
-      option.click();
+      button.click();
       await pause(50);
-      check(button.style.color === "rgb(233, 148, 144)", "turning filters off keeps API failure red");
-      localOption.click();
       await pause(50);
-      check(localOption.getAttribute("aria-checked") === "true" && option.getAttribute("aria-checked") === "false", "local filter selected independently");
-      check(menu.dataset.open === "true", "menu stays open for a second selection");
-      check(button.style.color === "rgb(233, 148, 144)", "test/build filter reflects failed Jev health");
+      check(button.getAttribute("aria-checked") === "false" && button.style.color === "rgb(154, 154, 154)", "one click disables Jev");
+      button.click();
+      await pause(50);
+      await pause(50);
+      check(button.getAttribute("aria-checked") === "true" && button.style.color === "rgb(233, 148, 144)", "enabled switch reports failed API health");
       health = { ok: true, model: "jev-1.13.0" };
-      await pause(1100);
-      check(button.style.color === "rgb(135, 205, 164)" &&
-        document.getElementById("codex-jev-health-row").hidden, "test/build filter requires Jev health");
+      await until(() => button.style.color === "rgb(135, 205, 164)" && document.getElementById("codex-jev-health-row").hidden, "enabled switch reports healthy API");
       check(button.getAttribute("aria-label").includes("Jev API connected") &&
         tooltip.querySelector("#codex-jev-empty").textContent.includes("latest output skipped: small") &&
         tooltip.querySelector("#codex-jev-empty").style.display !== "none",
@@ -413,36 +385,18 @@
         last_skip_ms: Date.now(), last_skip: "unsupported_route", skipped: 4 };
       await until(() => tooltip.querySelector("#codex-jev-empty").textContent.includes("Hook ran; latest output skipped: unsupported route"),
         "actual skip reason distinguishes hook dispatch from missing decisions");
-      option.click();
+      button.click();
       await pause(50);
-      check(localOption.getAttribute("aria-checked") === "true" && option.getAttribute("aria-checked") === "true", "both filters selected");
-      localOption.click();
-      await pause(50);
-      check(localOption.getAttribute("aria-checked") === "false" && option.getAttribute("aria-checked") === "true", "local filter deselected independently");
-      compactOption.click();
-      await pause(50);
-      check(compactOption.getAttribute("aria-checked") === "true" && option.getAttribute("aria-checked") === "true", "search/listing selected independently");
-      check(menu.dataset.open === "true", "menu stays open for a third selection");
-      check(!tooltip.textContent.includes("search/listing") && !tooltip.querySelector("#codex-jev-mode"),
-        "integration selection stays in the menu");
-      option.click();
-      await pause(50);
-      check(compactOption.getAttribute("aria-checked") === "true" && option.getAttribute("aria-checked") === "false", "search/listing remains selected alone");
-      compactOption.click();
-      await pause(50);
-      check(compactOption.getAttribute("aria-checked") === "false" && button.style.color === "rgb(135, 205, 164)", "search/listing can turn off independently");
-      document.querySelector(".prompt").click();
-      check(menu.dataset.open === "false" && button.getAttribute("aria-expanded") === "false",
-        "outside click closes the menu");
+      await until(() => button.getAttribute("aria-checked") === "false", "all output turns off together");
       button.focus();
       check(getComputedStyle(tooltip).display === "block" &&
-        tooltip.innerText.includes("Filtering is off for this session") &&
+        tooltip.innerText.includes("Jev is off for this session") &&
         getComputedStyle(tooltip.querySelector("#codex-jev-session-heading")).display === "none",
         "disabled filters show an explanation instead of an empty tooltip");
       window.__jevHarnessDropReplies = true;
       option.click();
       check(option.disabled && option.getAttribute("aria-busy") === "true" &&
-        document.getElementById("codex-jev-menu-note").textContent === "Saving selection…",
+        button.title === "Saving…",
         "selection waits for acknowledgement instead of accepting duplicate clicks");
       const actualNow = Date.now;
       Date.now = () => actualNow() + 11000;
@@ -450,12 +404,12 @@
         "missing host reply times out visibly");
       Date.now = actualNow;
       check(button.style.color === "rgb(233, 148, 144)" && !option.disabled &&
-        document.getElementById("codex-jev-menu-note").textContent.includes("Reload VS Code") &&
+        tooltip.textContent.includes("Reload VS Code") &&
         getComputedStyle(retry).display !== "none",
         "bridge timeout explains recovery and releases pending selection");
       window.__jevHarnessDropReplies = false;
       retry.click();
-      await until(() => button.style.color === "rgb(135, 205, 164)" && retry.style.display === "none",
+      await until(() => button.style.color === "rgb(154, 154, 154)" && retry.style.display === "none",
         "bridge reconnect restores controls");
       option.click();
       await until(() => option.getAttribute("aria-checked") === "true" && !option.disabled,
@@ -465,9 +419,9 @@
         "selection can be disabled after reconnect");
       health = null;
       window.dispatchEvent(new Event("focus"));
-      await until(() => button.style.color === "rgb(230, 188, 106)", "pending API check is amber");
+      await until(() => button.style.color === "rgb(154, 154, 154)" && tooltip.innerText.includes("Checking Jev API"), "off switch retains pending API status in tooltip");
       check(!healthRow.hidden && tooltip.innerText.includes("Checking Jev API") &&
-        tooltip.innerText.includes("Filtering is off for this session"),
+        tooltip.innerText.includes("Jev is off for this session"),
         "pending API check keeps the disabled tooltip readable");
       outputEnabled = true;
       window.dispatchEvent(new Event("focus"));
@@ -478,14 +432,14 @@
       outputEnabled = false;
       health = { ok: false, reason: "JEV_TIMEOUT" };
       window.dispatchEvent(new Event("focus"));
-      await until(() => button.style.color === "rgb(233, 148, 144)", "failed API check with filters off is red");
+      await until(() => button.style.color === "rgb(154, 154, 154)" && tooltip.innerText.includes("Connection timed out"), "off switch retains failed API status in tooltip");
       check(tooltip.innerText.includes("Connection timed out") &&
-        tooltip.innerText.includes("Filtering is off for this session") &&
+        tooltip.innerText.includes("Jev is off for this session") &&
         getComputedStyle(retry).display !== "none", "disabled filters preserve connection recovery");
       health = { ok: true, model: "jev-1.13.0" };
       window.dispatchEvent(new Event("focus"));
-      await until(() => button.style.color === "rgb(135, 205, 164)", "disabled filters preserve healthy API state");
-      check(healthRow.hidden && tooltip.innerText.includes("Filtering is off for this session"),
+      await until(() => button.style.color === "rgb(154, 154, 154)" && healthRow.hidden, "off switch stays gray with a healthy API");
+      check(healthRow.hidden && tooltip.innerText.includes("Jev is off for this session"),
         "healthy disabled tooltip stays readable");
       const previousHook = hookHealth;
       const previousNow = Date.now;
@@ -503,9 +457,7 @@
       await until(() => healthRow.hidden, "a hook receipt clears the missing activity message");
       button.blur();
       check(getComputedStyle(tooltip).display === "none", "tooltip closes when focus leaves Jev");
-      button.click();
-      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-      check(menu.dataset.open === "false", "Escape closes the menu");
+      check(!document.getElementById("codex-jev-menu"), "no selection popup remains");
       const codexMenu = document.createElement("div");
       codexMenu.innerHTML = '<button role="menuitem"><span>Codex settings</span></button>';
       document.body.append(codexMenu);
@@ -541,48 +493,17 @@
       await until(() => window.__jevHarnessLastAction === "settingsOpenLogs", "Open logs routes through host bridge");
       await until(() => !openLogs.disabled, "Open logs request completes");
       await until(() => settingsScreen.querySelector("main").style.display === "none", "Voice content hidden on Jev page");
-      check(settingsScreen.querySelector("#codex-jev-settings-output-omit_min").value === "90%", "line threshold loaded with percent sign");
-      check(settingsScreen.querySelector("#codex-jev-settings-output-exact_max").value === "20%" &&
-        settingsScreen.querySelector("#codex-jev-settings-test_build-exact_max").value === "25%",
-        "line safety thresholds loaded for both output filters");
-      const routineNumber = settingsScreen.querySelector("#codex-jev-settings-output-omit_min");
-      const routineSlider = settingsScreen.querySelector("#codex-jev-settings-output-omit_min-slider");
-      check(!settingsScreen.querySelector('label[for="codex-jev-settings-output-omit_min"]').textContent.includes("(%)") &&
+      check(settingsScreen.querySelector("#codex-jev-settings-output-relevant_max").value === "10%", "line threshold loaded with percent sign");
+      const routineNumber = settingsScreen.querySelector("#codex-jev-settings-output-relevant_max");
+      const routineSlider = settingsScreen.querySelector("#codex-jev-settings-output-relevant_max-slider");
+      check(!settingsScreen.querySelector('label[for="codex-jev-settings-output-relevant_max"]').textContent.includes("(%)") &&
         getComputedStyle(routineSlider).backgroundImage.includes("linear-gradient"),
         "percent sign moves into the field and slider track is painted");
       const descriptions = [...settingsScreen.querySelectorAll("#codex-jev-settings-thresholds .section-description")];
-      check(descriptions.length === 3 && descriptions.every((item) => item.textContent.length > 20 &&
-        getComputedStyle(item).fontSize === "11px") &&
-        descriptions[0].textContent.includes("own switches") &&
-        descriptions[1].textContent.includes("Diagnostics") &&
-        descriptions[2].textContent.includes("task-relevance"), "settings explain exclusive route policies");
-      check(!settingsScreen.querySelector(".method-controls") &&
-        !settingsScreen.querySelector("#codex-jev-settings-output-routine_min"),
-        "coarse decision methods and cutoffs are absent");
-      const relevanceGuard = settingsScreen.querySelector("#codex-jev-settings-relevance-guard");
-      const relevanceLabel = relevanceGuard.closest("label");
-      const relevanceHelp = relevanceLabel.nextElementSibling;
-      const relevanceText = document.createRange();
-      relevanceText.selectNodeContents(relevanceLabel.lastChild);
-      const relevanceLayout = () => ({
-        labelTop: relevanceLabel.getBoundingClientRect().top,
-        labelHeight: relevanceLabel.getBoundingClientRect().height,
-        checkboxTop: relevanceGuard.getBoundingClientRect().top,
-        checkboxHeight: relevanceGuard.getBoundingClientRect().height,
-        containerHeight: relevanceLabel.parentElement.getBoundingClientRect().height,
-        textTop: relevanceText.getBoundingClientRect().top,
-        textHeight: relevanceText.getBoundingClientRect().height,
-        helpTop: relevanceHelp.getBoundingClientRect().top,
-      });
-      const relevanceBefore = relevanceLayout();
-      relevanceGuard.click();
-      const relevanceAfter = relevanceLayout();
-      check(Object.keys(relevanceBefore).every((key) => Math.abs(relevanceBefore[key] - relevanceAfter[key]) < 0.5),
-        `relevance checkbox keeps its text line fixed: ${JSON.stringify({ relevanceBefore, relevanceAfter })}`);
-      relevanceGuard.click();
-      const relevanceReset = relevanceLayout();
-      check(Object.keys(relevanceBefore).every((key) => Math.abs(relevanceBefore[key] - relevanceReset[key]) < 0.5),
-        "relevance checkbox keeps its line fixed when cleared");
+      check(descriptions.length === 1 && descriptions[0].textContent.includes("classifies an excerpt"), "settings explain one shared policy");
+      check(!settingsScreen.querySelector("#codex-jev-settings-relevance-guard") &&
+        !settingsScreen.querySelector("#codex-jev-settings-test_build-exact_max") &&
+        !settingsScreen.querySelector("#codex-jev-settings-search_listing-exact_max"), "category controls are absent");
       routineSlider.value = "82";
       routineSlider.dispatchEvent(new Event("input", { bubbles: true }));
       check(routineNumber.value === "82%" && routineSlider.style.getPropertyValue("--fill") === "82%",
@@ -672,9 +593,7 @@
       reset.click();
       check(settingsScreen.querySelector("#codex-jev-settings-mode").value === "replace" &&
         logLimit.value === "50" && !neverDelete.checked &&
-        settingsScreen.querySelector("#codex-jev-settings-output-exact_max").value === "5%" &&
-        settingsScreen.querySelector("#codex-jev-settings-test_build-omit_min").value === "95%" &&
-        routineNumber.value === "95%" && routineSlider.value === "95" && keyField.value === "unsaved-key" &&
+        routineNumber.value === "5%" && routineSlider.value === "5" && keyField.value === "unsaved-key" &&
         settingsScreen.querySelector("#codex-jev-settings-message").textContent.includes("Save settings to apply") &&
         window.__jevHarnessLastSettingsSave === null,
         "reset stages default mode and line policy without changing the key or saving");
@@ -696,11 +615,9 @@
       check(keyField.placeholder.length === 11 && /^•+$/.test(keyField.placeholder),
         "saved key mask updates when a new key is stored");
       check(window.__jevHarnessLastSettingsSave.mode === "replace" &&
-        window.__jevHarnessLastSettingsSave.linePolicy.output.exact_max === 5 &&
-        window.__jevHarnessLastSettingsSave.linePolicy.output.omit_min === 95 &&
+        window.__jevHarnessLastSettingsSave.relevancePolicy.relevant_max === 5 &&
         window.__jevHarnessLastSettingsSave.logLimitMb === 50 &&
-        window.__jevHarnessLastSettingsSave.neverDeleteLogs === false &&
-        window.__jevHarnessLastSettingsSave.linePolicy.test_build.omit_min === 95,
+        window.__jevHarnessLastSettingsSave.neverDeleteLogs === false,
         "save submits the reset line policy");
       const settingsTest = settingsScreen.querySelector("#codex-jev-settings-test");
       const settingsMessage = settingsScreen.querySelector("#codex-jev-settings-message");
@@ -746,7 +663,7 @@
         "reopened settings loads saved retention");
       check(settingsScreen.querySelector("#codex-jev-settings-never-delete").checked &&
         settingsScreen.querySelector("#codex-jev-settings-key").placeholder.length === 11 &&
-        settingsScreen.querySelector("#codex-jev-settings-output-omit_min").value === "95%",
+        settingsScreen.querySelector("#codex-jev-settings-output-relevant_max").value === "5%",
         "checkbox, line policy, and key mask persist after reopening settings");
       settingsScreen.querySelector('button[aria-label="General"]').click();
       settingsScreen.style.display = "none";
@@ -760,7 +677,7 @@
       check(bounds.left === 0 && bounds.top === 0 && bounds.width === innerWidth &&
         bounds.height === innerHeight && setup.parentElement === document.body,
         "setup covers the Codex webview");
-      check(setup.textContent.includes("Enter a typesafe.ai API key to use the selected integrations.") &&
+      check(setup.textContent.includes("Enter a typesafe.ai API key to use Jev.") &&
         !setup.textContent.includes("Test it here before saving") &&
         !setup.textContent.includes("plugin data directory"), "concise onboarding copy");
       check(getComputedStyle(setup).backgroundColor === "rgb(17, 17, 17)", "opaque setup backdrop hides Codex content");
@@ -813,11 +730,8 @@
       missingTip.querySelector("#codex-jev-retry").click();
       check(setup.style.display === "flex", "tooltip Connect reopens setup");
       skipButton.click();
-      button.click();
-      const reopen = document.getElementById("codex-jev-open-connect");
-      check(reopen.style.display !== "none", "skipped setup remains reachable from Jev menu");
-      reopen.click();
-      check(setup.style.display === "flex", "Jev menu reopens setup");
+      missingTip.querySelector("#codex-jev-retry").click();
+      check(setup.style.display === "flex", "Connect remains reachable after skipping setup");
       const key = setup.querySelector("#codex-jev-key");
       const result = setup.querySelector("#codex-jev-key-status");
       key.value = "invalid-example-key";
@@ -844,7 +758,7 @@
       await pause(1100);
       Date.now = actualNow;
       check(button.style.color === "rgb(135, 205, 164)" &&
-        !document.getElementById("codex-jev-menu-note").textContent.includes("did not respond"),
+        !document.getElementById("codex-jev-health-reason").textContent.includes("did not respond"),
         "an obsolete status timeout cannot replace a newer healthy reply");
       await pause(300);
       window.dispatchEvent(new MessageEvent("message", { data: {
@@ -860,10 +774,10 @@
         "hold a reply from the previous thread");
       document.documentElement.dataset.codexJevRouteKind = "none";
       delete document.documentElement.dataset.codexJevSessionId;
-      await until(() => document.getElementById("codex-jev-option").disabled &&
-        button.style.color === "rgb(135, 205, 164)", "home view keeps API health without a thread");
+      await until(() => document.getElementById("codex-jev-button").disabled &&
+        button.style.color === "rgb(154, 154, 154)", "home view keeps the toggle gray without a thread");
       check(root.dataset.noSession === "true" &&
-        document.getElementById("codex-jev-menu-note").textContent === "Open a local Codex thread to select integrations.",
+        button.title === "Open a local Codex thread to turn Jev on or off.",
         "home view explains why session switches are unavailable");
       const homeTip = document.getElementById("codex-jev-tip");
       homeTip.style.display = "block";
@@ -880,20 +794,20 @@
       settingsScreen.style.display = "none";
       window.dispatchEvent(new MessageEvent("message", { data: {
         type: "codex-jev-reply", id: window.__jevHarnessHeldStatus.id,
-        status: { enabled: true, outputEnabled: true, sessionPending: false, health: { ok: true } },
+        status: { enabled: true, sessionPending: false, health: { ok: true } },
       } }));
       await pause(30);
-      check(document.getElementById("codex-jev-option").disabled,
+      check(document.getElementById("codex-jev-button").disabled,
         "late reply from an old thread cannot reactivate the home view");
       document.documentElement.dataset.codexJevRouteKind = "local";
       document.documentElement.dataset.codexJevSessionId = "next-thread";
       await until(() => window.__jevHarnessLastSessionId === "next-thread" &&
-        !document.getElementById("codex-jev-option").disabled &&
+        !document.getElementById("codex-jev-button").disabled &&
         root.dataset.noSession === "false",
         "internal Codex navigation activates the new thread without changing the webview URL");
       document.documentElement.dataset.codexJevRouteKind = "none";
       delete document.documentElement.dataset.codexJevSessionId;
-      await until(() => document.getElementById("codex-jev-option").disabled,
+      await until(() => document.getElementById("codex-jev-button").disabled,
         "leaving the internal thread route clears the session");
       check(calls >= 5, "host bridge used");
       document.getElementById("results").textContent = JSON.stringify({ ok: true, calls });

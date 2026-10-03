@@ -1,10 +1,12 @@
 # Reviewed Jev demo
 
+This is historical evidence for the retired omission/exact-text questions. Use the [current two-stage evaluation](two_stage_evaluation.md) for version 0.10.0.
+
 On 2026-10-01, Jev 1.13.0 evaluated eight [synthetic fixtures](../../tests/fixtures/quality-cases.json). Four calibration cases cover build progress, heartbeats, stale search results, and a log containing an instruction to ignore the task. The latter requires the build ID and completion line; the injected instruction is removable data. Four holdout cases require failure details, every configuration constant, every matching timeout, and every latency measurement.
 
-The reviewed 70% omission / 25% exact-text trial retained all 224 required lines, including all 214 required holdout lines. It shortened five results and kept three results complete. Every saved original matched the source byte for byte. These labels measure evidence retention; they do not establish downstream task success or a general error rate. The conservative 95/5 defaults remain unchanged, and their replay omitted no lines in this corpus.
+The reviewed 70% omission / 25% exact-text trial retained all 224 required lines, including all 214 required holdout lines. It shortened five results and kept three results complete. Every saved original matched the source byte for byte. These labels measure evidence retention; they do not establish downstream task success or a general error rate. The historical 95/5 replay omitted no lines in this corpus.
 
-The README panel image replays the final failing-test batch with the recorded actions and probabilities in the real webview. Its [key-free fixture](../../tests/fixtures/reviewed-test-failure-panel.js) contains only synthetic line excerpts and panel data. Run `python3 vscode-control/scripts/capture_docs.py` to regenerate the screenshots, including settings at the default 95/5 cutoffs.
+The historical demo panel image replays the final failing-test batch with the recorded actions and probabilities in the real webview. Its [key-free fixture](../../tests/fixtures/reviewed-test-failure-panel.js) contains only synthetic line excerpts and panel data. Run `python3 vscode-control/scripts/capture_docs.py` to regenerate the screenshots, including current settings at the 5% relevance cutoff.
 
 | Case | Lines omitted / seen | Visible bytes saved | Outcome |
 | --- | ---: | ---: | --- |

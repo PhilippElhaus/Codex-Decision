@@ -40,7 +40,7 @@ async function hostBridge(executeCommand) {
   };
 }
 
-test("patched host carries each integration selection through the extension to session storage", async () => {
+test("patched host carries the Jev toggle through the extension to session storage", async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-host-test-"));
   const commands = new Map();
   const context = { subscriptions: [], extensionUri: {} };
@@ -85,18 +85,15 @@ test("patched host carries each integration selection through the extension to s
       return reply.status;
     };
     const initial = await request("status");
-    assert.equal(initial.outputEnabled, true);
-    assert.equal(initial.testBuildEnabled, true);
-    assert.equal(initial.searchListingEnabled, true);
-    const fields = { output: "enabled", test_build: "test_build_enabled", search_listing: "search_listing_enabled" };
-    const replyFields = { output: "outputEnabled", test_build: "testBuildEnabled", search_listing: "searchListingEnabled" };
-    for (const [feature, field] of Object.entries(fields)) {
-      for (const enabled of [false, true, false]) {
-        const reply = await request("setSelection", { feature, enabled });
-        assert.equal(reply[replyFields[feature]], enabled);
-        const stored = await core.readConfig(core.sessionDirectory(directory, "host-session"));
-        assert.equal(stored[field], enabled, `${feature} selection must reach the hook's config`);
-      }
+    assert.equal(initial.enabled, true);
+    for (const enabled of [false, true, false]) {
+      const reply = await request("setSelection", { enabled });
+      assert.equal(reply.enabled, enabled);
+      const stored = await core.readConfig(core.sessionDirectory(directory, "host-session"));
+      assert.equal(stored.enabled, enabled, "the toggle must reach the hook config");
+      assert.equal(stored.schema_version, 4);
+      assert.equal("test_build_enabled" in stored, false);
+      assert.equal("search_listing_enabled" in stored, false);
     }
     assert.equal((await request("status")).enabled, false);
     const background = await request("status", { viewId: "home-view", sessionId: null,
@@ -125,8 +122,7 @@ test("patched host replies when command lookup throws or execution rejects", asy
 test("patched host rejects malformed selections and leaves ordinary messages with Codex", async () => {
   let calls = 0;
   const bridge = await hostBridge(() => { calls += 1; return {}; });
-  for (const extra of [{ feature: "unknown", enabled: true },
-    { feature: "output", enabled: "true" }, { feature: "output", enabled: true, sessionId: "../other" }]) {
+  for (const extra of [{ enabled: null }, { enabled: "true" }, { enabled: true, sessionId: "../other" }]) {
     await bridge.send({ type: "codex-jev", action: "setSelection", ...extra });
   }
   assert.equal(calls, 0);

@@ -16,7 +16,7 @@ async function until(predicate, timeoutMs = 2000) {
   }
 }
 
-test("composer bridge selects integrations and reports view-scoped activity without a status item", async () => {
+test("composer bridge toggles Jev and reports view-scoped activity without a status item", async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-control-test-"));
   const commands = new Map();
   let mode = "replace";
@@ -75,19 +75,16 @@ test("composer bridge selects integrations and reports view-scoped activity with
     const initialReplies = await Promise.all(Array.from({ length: 12 },
       () => bridge({ action: "status", viewId: "view-one" })));
     const defaultView = initialReplies[0];
-    assert.ok(initialReplies.every((reply) => reply.enabled && reply.outputEnabled),
+    assert.ok(initialReplies.every((reply) => reply.enabled),
       "concurrent startup replies must not briefly report Jev off");
     assert.equal(defaultView.enabled, true);
-    assert.equal(defaultView.outputEnabled, true);
-    assert.equal(defaultView.testBuildEnabled, true);
-    assert.equal(defaultView.searchListingEnabled, true);
     assert.equal(defaultView.needsKey, true);
     assert.equal((await bridge({ action: "openTypeSafe", viewId: "view-one" })).externalOpen, true);
     assert.equal(openedExternal, "https://typesafe.ai/");
     browserAvailable = false;
     assert.equal((await bridge({ action: "openTypeSafe", viewId: "view-one" })).externalOpen, false);
     browserAvailable = true;
-    const firstSelection = await bridge({ action: "setSelection", feature: "output", enabled: true, viewId: "view-one" });
+    const firstSelection = await bridge({ action: "setSelection", enabled: true, viewId: "view-one" });
     assert.equal(firstSelection.needsKey, true);
     assert.equal(firstSelection.expectedHookVersion, require("../../vscode-control/package.json").codexJevHookVersion);
     const firstTest = await bridge({ action: "testApiKey", key: "example-test-key", viewId: "view-one" });
@@ -130,13 +127,10 @@ test("composer bridge selects integrations and reports view-scoped activity with
     assert.equal((await bridge({ action: "status", viewId: "view-one" })).stats.estimatedTokensSaved, 2652);
 
     await Promise.all([
-      bridge({ action: "setSelection", feature: "output", enabled: false, viewId: "view-one" }),
-      bridge({ action: "setSelection", feature: "test_build", enabled: true, viewId: "view-one" }),
-      bridge({ action: "setSelection", feature: "search_listing", enabled: false, viewId: "view-one" }),
+      bridge({ action: "setSelection", enabled: false, viewId: "view-one" }),
+      bridge({ action: "setSelection", enabled: true, viewId: "view-one" }),
     ]);
     const selected = await bridge({ action: "status", viewId: "view-one" });
-    assert.equal(selected.outputEnabled, false);
-    assert.equal(selected.testBuildEnabled, true);
     assert.equal(selected.stats.replaced, 1);
     const newView = await bridge({ action: "status", viewId: "view-two" });
     assert.equal(newView.stats.completed, 0);
@@ -154,11 +148,11 @@ test("composer bridge selects integrations and reports view-scoped activity with
       assert.equal(threadStatus.enabled, true, "background view cannot turn off the thread");
       assert.equal(threadStatus.stats.replaced, 1, "background view cannot erase thread activity");
     }
-    await bridge({ action: "setSelection", feature: "search_listing", enabled: true,
+    await bridge({ action: "setSelection", enabled: true,
       viewId: "view-one" });
-    assert.equal((await bridge({ action: "status", viewId: "view-two" })).searchListingEnabled, true,
+    assert.equal((await bridge({ action: "status", viewId: "view-two" })).enabled, true,
       "views of the same thread share a saved selection");
-    await bridge({ action: "setSelection", feature: "search_listing", enabled: false,
+    await bridge({ action: "setSelection", enabled: false,
       viewId: "view-one" });
 
     await commands.get("codexJev.checkConnection")();
@@ -169,11 +163,9 @@ test("composer bridge selects integrations and reports view-scoped activity with
     assert.equal(ready.action, "ready");
     assert.equal(ready.hasKey, false);
     assert.equal(ready.keyLength, 0);
-    assert.equal(ready.config.line_policy.output.omit_min, 95);
-    assert.deepEqual(ready.defaults, { mode: "replace", line_policy: core.DEFAULT_LINE_POLICY,
-      search_relevance: core.DEFAULT_SEARCH_RELEVANCE,
-      choice_gate_enabled: true, log_limit_mb: 50, never_delete_logs: false });
-    assert.equal(ready.config.choice_gate_enabled, true);
+    assert.equal(ready.config.relevance_policy.relevant_max, 5);
+    assert.deepEqual(ready.defaults, { mode: "replace", relevance_policy: core.DEFAULT_RELEVANCE_POLICY,
+      log_limit_mb: 50, never_delete_logs: false });
     assert.equal(ready.config.log_limit_mb, 50);
     assert.equal(ready.lifetime.calls, 2);
     assert.equal(ready.lifetime.replaced, 1);
@@ -190,14 +182,13 @@ test("composer bridge selects integrations and reports view-scoped activity with
       "neverDeleteLogsSaved");
     assert.equal((await bridge({ action: "settingsOpenLogs" })).settings.action, "openedLogs");
     assert.equal(openedExternal, directory);
-    const withoutKey = (await bridge({ action: "settingsSave", mode: "replace", key: "", logLimitMb: 50, neverDeleteLogs: false, choiceGateEnabled: true,
-      linePolicy: { output: { omit_min: 95 } } })).settings;
+    const withoutKey = (await bridge({ action: "settingsSave", mode: "replace", key: "", logLimitMb: 50, neverDeleteLogs: false,
+      relevancePolicy: { relevant_max: 5 } })).settings;
     assert.equal(withoutKey.action, "saved", "global settings do not require a key or thread");
     assert.equal(withoutKey.hasKey, false);
-    const linePolicy = { output: { omit_min: 97, exact_max: 3 },
-      test_build: { omit_min: 95, exact_max: 5 }, search_listing: { omit_min: 95, exact_max: 5 } };
-    const savedSettings = (await bridge({ action: "settingsSave", mode: "observe", key: "new-test-key-123", logLimitMb: 9999, neverDeleteLogs: true, choiceGateEnabled: false,
-      linePolicy })).settings;
+    const relevancePolicy = { relevant_max: 3 };
+    const savedSettings = (await bridge({ action: "settingsSave", mode: "observe", key: "new-test-key-123", logLimitMb: 9999, neverDeleteLogs: true,
+      relevancePolicy })).settings;
     assert.equal(savedSettings.action, "saved");
     assert.equal(savedSettings.keyLength, "new-test-key-123".length);
     assert.equal(await core.readApiKey(directory), "new-test-key-123");
@@ -205,14 +196,13 @@ test("composer bridge selects integrations and reports view-scoped activity with
     assert.equal((await core.readGlobalSettings(directory)).mode, "observe");
     assert.equal((await core.readGlobalSettings(directory)).log_limit_mb, 9999);
     assert.equal((await core.readGlobalSettings(directory)).never_delete_logs, true);
-    assert.equal((await core.readGlobalSettings(directory)).choice_gate_enabled, false);
-    assert.deepEqual((await core.readGlobalSettings(directory)).line_policy, linePolicy);
+    assert.deepEqual((await core.readGlobalSettings(directory)).relevance_policy, relevancePolicy);
     assert.equal(JSON.stringify(savedSettings).includes("new-test-key-123"), false);
     const readyAfterSave = (await bridge({ action: "settingsRead" })).settings;
     assert.equal(readyAfterSave.hasKey, true);
     assert.equal(readyAfterSave.keyLength, "new-test-key-123".length);
-    assert.deepEqual(readyAfterSave.config.line_policy, linePolicy);
-    assert.equal(readyAfterSave.defaults.line_policy.output.omit_min, 95);
+    assert.deepEqual(readyAfterSave.config.relevance_policy, relevancePolicy);
+    assert.equal(readyAfterSave.defaults.relevance_policy.relevant_max, 5);
     assert.equal(JSON.stringify(readyAfterSave).includes("new-test-key-123"), false);
     const tested = (await bridge({ action: "settingsTest", key: "" })).settings;
     assert.equal(suppliedKey, null);
@@ -234,24 +224,22 @@ test("composer bridge selects integrations and reports view-scoped activity with
     assert.deepEqual(other.history, []);
     assert.equal((await core.readConfig(core.sessionDirectory(directory, "other-window"))).enabled, true);
     await bridge({ action: "setSelection", sessionId: "other-window", viewId: "view-three",
-      feature: "search_listing", enabled: true });
-    assert.equal((await core.readConfig(core.sessionDirectory(directory, "other-window"))).search_listing_enabled, true);
-    assert.equal((await core.readConfig(scoped)).search_listing_enabled, false);
+      enabled: true });
+    assert.equal((await core.readConfig(core.sessionDirectory(directory, "other-window"))).enabled, true);
+    assert.equal((await core.readConfig(scoped)).enabled, false);
     assert.equal((await bridge({ action: "status", viewId: "view-one" })).stats.replaced, 1,
       "another thread view cannot erase the first view's decisions");
-    assert.equal((await bridge({ action: "status", viewId: "view-one" })).searchListingEnabled, false,
+    assert.equal((await bridge({ action: "status", viewId: "view-one" })).enabled, false,
       "another thread view cannot change the first view's filters");
     const returned = await bridge({ action: "status", viewId: "view-four" });
-    assert.equal(returned.outputEnabled, false);
-    assert.equal(returned.testBuildEnabled, true);
-    assert.equal(returned.searchListingEnabled, false);
+    assert.equal(returned.enabled, false);
     assert.equal(returned.stats.completed, 0, "old activity stays outside the new view");
 
     await fs.writeFile(path.join(scoped, "config.json"), '{"schema_version":1,"enabled":true}');
     const broken = await bridge({ action: "status", viewId: "view-five" });
     assert.equal(broken.configurationError, "Jev configuration could not be read");
     assert.equal(broken.health.reason, "JEV_CONFIG_ERROR");
-    const missingView = await bridge({ action: "setSelection", viewId: "", feature: "output", enabled: true });
+    const missingView = await bridge({ action: "setSelection", viewId: "", enabled: true });
     assert.equal(missingView.configurationError, "Codex session could not be identified");
     assert.equal(missingView.enabled, false);
     assert.equal((await core.readConfig(core.sessionDirectory(directory, "other-window"))).enabled, true);
@@ -273,16 +261,16 @@ test("composer bridge selects integrations and reports view-scoped activity with
       sessionId: null, expectsLocalSession: false })).settings;
     assert.equal(homeSettings.action, "ready");
     assert.equal(homeSettings.config.mode, "observe");
-    assert.deepEqual(homeSettings.config.line_policy, linePolicy);
+    assert.deepEqual(homeSettings.config.relevance_policy, relevancePolicy);
     const homeSaved = (await rawBridge({ action: "settingsSave", viewId: "home-view", sessionId: null,
       expectsLocalSession: false, mode: "replace", key: "", logLimitMb: 80,
-      neverDeleteLogs: false, choiceGateEnabled: true, linePolicy })).settings;
+      neverDeleteLogs: false,  relevancePolicy })).settings;
     assert.equal(homeSaved.action, "saved");
     assert.equal((await core.readGlobalSettings(directory)).log_limit_mb, 80);
     const homeSelection = await rawBridge({ action: "setSelection", viewId: "home-view", sessionId: null,
-      expectsLocalSession: false, feature: "output", enabled: true });
+      expectsLocalSession: false, enabled: true });
     assert.equal(homeSelection.enabled, false);
-    assert.equal((await core.readConfig(core.sessionDirectory(directory, "other-window"))).search_listing_enabled, true);
+    assert.equal((await core.readConfig(core.sessionDirectory(directory, "other-window"))).enabled, true);
     const unknownLocal = await rawBridge({ action: "status", viewId: "local-view", sessionId: null,
       expectsLocalSession: true });
     assert.equal(unknownLocal.configurationError, "Codex session could not be identified");

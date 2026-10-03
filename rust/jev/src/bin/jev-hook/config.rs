@@ -4,20 +4,28 @@ use super::*;
 #[derive(Clone)]
 pub(super) struct Config {
     pub(super) global_scope: bool,
-    pub(super) output: bool,
-    pub(super) test_build: bool,
-    pub(super) search_listing: bool,
-    pub(super) choice_gate_enabled: bool,
+    pub(super) enabled: bool,
     pub(super) mode: String,
     pub(super) min_chars: usize,
     pub(super) max_chars: usize,
     pub(super) model: String,
     pub(super) timeout: f64,
     pub(super) allow_mcp_replacement: bool,
-    pub(super) policy: BTreeMap<String, LinePolicy>,
-    pub(super) search_relevance: SearchRelevancePolicy,
+    pub(super) policy: RelevancePolicy,
     pub(super) log_limit_mb: u64,
     pub(super) never_delete_logs: bool,
+}
+
+#[derive(Clone, Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct RelevancePolicy {
+    pub(super) relevant_max: u8,
+}
+
+impl Default for RelevancePolicy {
+    fn default() -> Self {
+        Self { relevant_max: 5 }
+    }
 }
 
 #[derive(Deserialize)]
@@ -26,9 +34,7 @@ struct SharedSettings {
     #[serde(rename = "schema_version")]
     _schema_version: u64,
     mode: String,
-    line_policy: BTreeMap<String, LinePolicy>,
-    search_relevance: SearchRelevancePolicy,
-    choice_gate_enabled: bool,
+    relevance_policy: RelevancePolicy,
     log_limit_mb: u64,
     never_delete_logs: bool,
 }
@@ -49,9 +55,7 @@ pub(super) fn apply_shared_settings(data_dir: &Path, config: &mut Config) -> Res
         serde_json::from_value(codex_jev::contract::validate("settings", &raw)?)
             .map_err(|_| "invalid shared settings")?;
     config.mode = settings.mode;
-    config.policy = settings.line_policy;
-    config.search_relevance = settings.search_relevance;
-    config.choice_gate_enabled = settings.choice_gate_enabled;
+    config.policy = settings.relevance_policy;
     config.log_limit_mb = settings.log_limit_mb;
     config.never_delete_logs = settings.never_delete_logs;
     Ok(())
@@ -79,26 +83,24 @@ pub(super) fn config(data_dir: &Path) -> Result<Option<Config>, String> {
         return Err("config too large".into());
     }
     let raw: Value = serde_json::from_slice(&bytes).map_err(|_| "invalid config")?;
-    if raw.get("schema_version").and_then(Value::as_f64) != Some(2.0) {
+    if !matches!(
+        raw.get("schema_version").and_then(Value::as_u64),
+        Some(2..=4)
+    ) {
         return Err("unsupported config version".into());
     }
     let raw = codex_jev::contract::validate("config", &raw)?;
     Ok(Some(Config {
         global_scope: raw["scope"] == "global",
-        output: raw["enabled"].as_bool().unwrap(),
-        test_build: raw["test_build_enabled"].as_bool().unwrap(),
-        search_listing: raw["search_listing_enabled"].as_bool().unwrap(),
-        choice_gate_enabled: raw["choice_gate_enabled"].as_bool().unwrap(),
+        enabled: raw["enabled"].as_bool().unwrap(),
         mode: raw["mode"].as_str().unwrap().into(),
         min_chars: raw["min_chars"].as_u64().unwrap() as usize,
         max_chars: raw["max_chars"].as_u64().unwrap() as usize,
         model: raw["model"].as_str().unwrap().into(),
         timeout: raw["timeout_seconds"].as_f64().unwrap(),
         allow_mcp_replacement: raw["allow_mcp_replacement"].as_bool().unwrap(),
-        policy: serde_json::from_value(raw["line_policy"].clone())
+        policy: serde_json::from_value(raw["relevance_policy"].clone())
             .map_err(|_| "invalid line policy")?,
-        search_relevance: serde_json::from_value(raw["search_relevance"].clone())
-            .map_err(|_| "invalid search relevance")?,
         log_limit_mb: raw["log_limit_mb"].as_u64().unwrap(),
         never_delete_logs: raw["never_delete_logs"].as_bool().unwrap(),
     }))

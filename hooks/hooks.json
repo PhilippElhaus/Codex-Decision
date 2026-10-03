@@ -1,5 +1,5 @@
 {
-  "description": "Three selectable line-level Codex Jev PostToolUse filters. Disabled until selected.",
+  "description": "One line-level Codex Jev PostToolUse filter. Controlled by the session enabled flag.",
   "hooks": {
     "PostToolUse": [
       {

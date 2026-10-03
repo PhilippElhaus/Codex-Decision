@@ -1,7 +1,7 @@
 {
   "name": "codex-jev",
-  "version": "0.8.3+codex.20261002064000",
-  "description": "Per-line Jev filtering across local text, test/build, and search/listing tool results.",
+  "version": "0.10.1+codex.20261003090207",
+  "description": "One Jev switch for line-by-line filtering of supported local tool output.",
   "author": {
     "name": "Philipp Elhaus",
     "url": "https://github.com/PhilippElhaus"
@@ -19,7 +19,7 @@
   "interface": {
     "displayName": "Codex Jev",
     "shortDescription": "Trim repetitive tool output",
-    "longDescription": "Codex Jev adds three optional local PostToolUse filters for eligible plain-text tool results. A Rust hook classifies local command and tool output into general, test/build, or search/listing routes, then asks TypeSafe AI's Jev for independent per-line probabilities in bounded batches. Code protects diagnostics and exact evidence, and uncertain or unsupported results remain intact. Every shortened result points to a private, exact original. Filters start disabled and require a TypeSafe API key. The optional VS Code control and version-pinned composer patch are installed separately. This package contains a Linux x86_64 hook binary; other execution environments need their own native binary.",
+    "longDescription": "Codex Jev adds one local PostToolUse filter for supported plain-text tool results. One session switch controls all output. A Rust hook asks TypeSafe AI’s Jev to classify a sampled excerpt, then packs API-bounded requests for independent line relevance judgments when the output can be shortened. Code protects diagnostics and exact evidence. Failed or unsupported results remain intact. Every shortened result points to a private, exact original. The standalone hook requires explicit enablement and a TypeSafe API key. The optional VS Code control enables Jev for new local threads and provides one on/off button. The control and version-pinned composer patch are installed separately. This package contains a Linux x86_64 hook binary; other execution environments need their own native binary.",
     "developerName": "Philipp Elhaus",
     "category": "Developer Tools",
     "capabilities": [

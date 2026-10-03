@@ -1,10 +1,11 @@
 //! Fail-open Codex PostToolUse adapter for per-line Jev judgments.
 
 use chrono::Utc;
+use codex_jev::semantic::*;
+#[cfg(test)]
+use codex_jev::{apply_probabilities, LinePolicy, SearchRelevancePolicy};
 use codex_jev::{
-    apply_probabilities, check_ancestors, pack_batches, parse_probabilities, protect_neighbors,
-    render, source_lines, Action, BatchRecord, LinePolicy, SearchRelevancePolicy, SourceLine,
-    MAX_REQUEST_BYTES,
+    check_ancestors, protect_neighbors, render, source_lines, Action, BatchRecord, SourceLine,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};

@@ -12,12 +12,13 @@ const { restrictWslPath, wslLocation } = require("./private-paths");
 const securedWslPaths = new Map();
 const JEV_ENDPOINT = "https://api.typesafe.ai/v1/systemone";
 const { defaults, validate } = require("./schema");
-const DEFAULT_LINE_POLICY = Object.freeze(defaults("config").line_policy);
-const DEFAULT_SEARCH_RELEVANCE = Object.freeze(defaults("config").search_relevance);
+const DEFAULT_RELEVANCE_POLICY = Object.freeze(defaults("config").relevance_policy);
 const { schema_version: _schemaVersion, ...settingsDefaults } = defaults("settings");
 const DEFAULT_SETTINGS = Object.freeze(settingsDefaults);
-function completeSearchRelevance(value = {}) { return validate("search_relevance", value); }
-function completeLinePolicy(value = {}) { return validate("line_policy", { ...DEFAULT_LINE_POLICY, ...value }); }
+function completeRelevancePolicy(value = {}) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new TypeError("Invalid relevance policy");
+  return validate("relevance_threshold", { ...DEFAULT_RELEVANCE_POLICY, ...value });
+}
 
 function defaultDataDirectory() {
   return process.env.CODEX_JEV_DATA_DIRECTORY || "";
@@ -156,10 +157,9 @@ async function readConfig(directory) {
       throw new Error("Unsafe Jev config");
     }
     const raw = JSON.parse(await fs.readFile(filename, "utf8"));
-    validate("config", raw);
-    return { enabled: false, test_build_enabled: false, search_listing_enabled: false, mode: "replace", ...raw };
+    return validate("config", raw);
   } catch (error) {
-    if (error.code === "ENOENT") return { enabled: false, test_build_enabled: false, search_listing_enabled: false, mode: "replace" };
+    if (error.code === "ENOENT") return { enabled: false, mode: "replace" };
     throw error;
   }
 }
@@ -170,9 +170,9 @@ async function writeConfig(directory, updates, createOnly = false) {
 
 async function updateConfig(directory, updates, createOnly) {
   const old = await readConfig(directory);
-  const config = { ...old, ...updates, schema_version: 2,
-    line_policy: completeLinePolicy(updates.line_policy ?? old.line_policy),
-    search_relevance: completeSearchRelevance(updates.search_relevance ?? old.search_relevance) };
+  const config = { ...old, ...updates, schema_version: 4,
+    relevance_policy: completeRelevancePolicy(updates.relevance_policy ?? old.relevance_policy) };
+  validate("config", config);
   const parent = path.dirname(directory);
   if (path.basename(parent) === "sessions") {
     const root = await fs.lstat(path.dirname(parent));
@@ -222,24 +222,17 @@ async function ensureSessionDefaults(directory) {
   } catch (error) {
     if (error.code !== "ENOENT") throw error;
   }
-  return writeConfig(directory, { enabled: true, test_build_enabled: true,
-    search_listing_enabled: true }, true);
+  return writeConfig(directory, { enabled: true }, true);
 }
 
-async function writeSelection(directory, outputEnabled, testBuildEnabled, searchListingEnabled) {
-  if (typeof outputEnabled !== "boolean" || typeof testBuildEnabled !== "boolean" ||
-      (searchListingEnabled !== undefined && typeof searchListingEnabled !== "boolean")) {
-    throw new TypeError("selection must contain booleans");
-  }
-  return writeConfig(directory, {
-    enabled: outputEnabled, test_build_enabled: testBuildEnabled,
-    ...(searchListingEnabled === undefined ? {} : { search_listing_enabled: searchListingEnabled }),
-  });
+async function writeSelection(directory, enabled) {
+  if (typeof enabled !== "boolean") throw new TypeError("selection must be a boolean");
+  return writeConfig(directory, { enabled });
 }
 
 function completeSettings(value) {
   const { schema_version: _version, ...settings } = validate("settings", {
-    schema_version: 1, ...DEFAULT_SETTINGS, ...value,
+    schema_version: 3, ...DEFAULT_SETTINGS, ...value,
   });
   return settings;
 }
@@ -253,7 +246,7 @@ async function readGlobalSettings(directory) {
       throw new Error("Unsafe Jev settings file");
     }
     const raw = JSON.parse(await fs.readFile(filename, "utf8"));
-    if (raw?.schema_version !== 1) throw new Error("Invalid Jev settings version");
+    if (![1, 2, 3].includes(raw?.schema_version)) throw new Error("Invalid Jev settings version");
     const { schema_version: _version, ...settings } = validate("settings", raw);
     return settings;
   } catch (error) {
@@ -266,7 +259,7 @@ async function writeGlobalSettings(directory, changes) {
   return withWriteLock(directory, async () => {
     const settings = completeSettings({ ...await readGlobalSettings(directory), ...changes });
     await atomicWrite(path.join(directory, "settings.json"),
-      JSON.stringify({ schema_version: 1, ...settings }, null, 2) + "\n");
+      JSON.stringify({ schema_version: 3, ...settings }, null, 2) + "\n");
     return settings;
   });
 }
@@ -511,11 +504,8 @@ function outcomeLine(event) {
   const saved = savedChars > 0
     ? ` · -${Math.round(100 * savedChars / event.original_chars)}%`
     : "";
-  const source = event.filter === "test_build" ? "test/build" :
-    event.filter === "search_listing" ? "search/listing" : (event.tool || "tool");
-  const rated = event.filter === "search_listing" && event.lines_relevance_judged !== null &&
-    event.lines_relevance_judged !== undefined ? ` · ${event.lines_relevance_judged} search lines rated` : "";
-  return `${action}${mode} · ${source} · ${event.original_chars.toLocaleString()} chars${rated}${saved}`;
+  const source = event.tool || "tool";
+  return `${action}${mode} · ${source} · ${event.original_chars.toLocaleString()} chars${saved}`;
 }
 
 function savedCharacters(event) {
@@ -536,9 +526,7 @@ function decisionSummary(event) {
   const action = event.status === "replace" ? "replaced" :
     event.status === "candidate" ? "candidate" :
     event.status === "keep" ? "kept" : "skipped";
-  const source = event.filter === "test_build" ? "test/build " :
-    event.filter === "search_listing" ? "search/listing " : "";
-  return `Last decision: ${action} ${source}${event.tool || "tool"} output (${event.reason}); ${event.original_chars.toLocaleString()} chars`;
+  return `Last decision: ${action} ${event.tool || "tool"} output (${event.reason}); ${event.original_chars.toLocaleString()} chars`;
 }
 
 function parseHealthOutput(stdout) {
@@ -686,8 +674,8 @@ async function updateApiKey(directory, key) {
 
 module.exports = {
   checkHealth, sessionDirectory, validateSessionPath, validateDirectoryPath, readHookHealth,
-  completeLinePolicy, DEFAULT_LINE_POLICY,
-  completeSearchRelevance, DEFAULT_SEARCH_RELEVANCE,
+  completeRelevancePolicy, DEFAULT_RELEVANCE_POLICY,
+
   decisionSummary, defaultDataDirectory, estimateTokensSaved,
   isJevOutcome, outcomeLine, parseHealthOutput, readConfig,
   readApiKey, readEventOffset, readEventCursor, readEventsSince, readLifetimeStats,

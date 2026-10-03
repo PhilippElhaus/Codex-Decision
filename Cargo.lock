@@ -75,7 +75,7 @@ dependencies = [
 
 [[package]]
 name = "codex-jev"
-version = "0.8.3"
+version = "0.10.1"
 dependencies = [
  "chrono",
  "libc",

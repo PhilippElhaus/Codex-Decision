@@ -17,6 +17,9 @@ jobs:
       - run: rustup toolchain install stable --profile minimal --component rustfmt --component clippy
       - run: cargo +stable fmt --all -- --check
       - run: cargo +stable test --locked -p codex-jev
+      - run: node scripts/two_stage_quality.cjs --hook target/debug/jev-hook --out .local/two-stage/offline
+      - run: node scripts/two_stage_quality.cjs --holdout --hook target/debug/jev-hook --out .local/two-stage/offline-holdout
+      - run: node scripts/two_stage_quality.cjs --batching --hook target/debug/jev-hook --out .local/two-stage/offline-batching
       - run: cargo +stable clippy --locked --all-targets -- -D warnings
       - run: npm test --prefix vscode-control
       - run: python3 -m unittest discover -s tests -p 'test_*.py'

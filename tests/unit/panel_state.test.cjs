@@ -9,6 +9,33 @@ const { parsePanelDecision, readLatestPanelDecision } = require("../../vscode-co
 
 const snapshot = { id: "a".repeat(32), at: "2026-09-28T12:34:56.123456+00:00" };
 
+test("current relevance snapshots use real Nouls and count both serial requests", () => {
+  const current = { version: 4, ...snapshot, receipt_id: "b".repeat(32), filter: "output", status: "replace",
+    batch: {number:1,count:1,target_count:2},batch_elapsed_ms:30,
+    rows:[{line:1,excerpt:"routine",action:"omit",reason:"irrelevant",task_relevant:.03},
+      {line:2,excerpt:"needed",action:"keep",reason:"task_relevant",task_relevant:.95}],
+    totals:{seen:3,judged:2,kept:2,omitted:1,protected:1,unjudged:0,requests:2}};
+  const parsed=parsePanelDecision(current);
+  assert.equal(parsed.rows[0].retention_index,.03);
+  assert.equal(parsed.rows[1].retention_index,.95);
+  assert.equal(parsed.rows[0].can_omit,null);
+  assert.throws(()=>parsePanelDecision({...current,totals:{...current.totals,requests:1}}));
+  assert.throws(()=>parsePanelDecision({...current,rows:current.rows.map(row=>({...row,can_omit:.99}))}));
+  assert.throws(()=>parsePanelDecision({...current,rows:[{...current.rows[0],task_relevant:1.1},current.rows[1]]}));
+});
+
+test("current panels accept multiple relevance batches and more than 250 targets", () => {
+  const rows = Array.from({length:400},(_,index)=>({line:index+1,excerpt:"routine",
+    action:"omit",reason:"irrelevant",task_relevant:.03}));
+  const current = {version:4,...snapshot,receipt_id:"b".repeat(32),filter:"output",status:"processing",
+    batch:{number:2,count:5,target_count:400},batch_elapsed_ms:30,rows,
+    totals:{seen:1600,judged:800,kept:800,omitted:800,protected:0,unjudged:800,requests:3}};
+  assert.equal(parsePanelDecision(current).rows.length,400);
+  assert.equal(parsePanelDecision(current).batch.count,5);
+  assert.throws(()=>parsePanelDecision({...current,totals:{...current.totals,requests:2}}));
+  assert.throws(()=>parsePanelDecision({...current,batch:{...current.batch,number:6}}));
+});
+
 test("panel reads the current snapshot and rejects linked files", async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-panel-test-"));
   try {

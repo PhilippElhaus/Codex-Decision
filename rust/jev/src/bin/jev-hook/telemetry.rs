@@ -78,8 +78,11 @@ pub(super) fn record_gate_skip(
     data_dir: &Path,
     event: &Value,
     source_chars: usize,
-    elapsed_ms: u64,
+    gate: &BatchRecord,
+    kind: &str,
+    reason: &str,
 ) -> Result<(), String> {
+    let elapsed_ms = gate.elapsed_ms;
     ensure_dir(data_dir)?;
     let logs = data_dir.join("logs");
     ensure_dir(&logs)?;
@@ -101,8 +104,9 @@ pub(super) fn record_gate_skip(
     writeln!(
         file,
         "{}",
-        json!({"version":2,"at":Utc::now().to_rfc3339(),
-        "status":"skip","reason":"choice_kept_full_output","filter":"output",
+        json!({"version":3,"at":Utc::now().to_rfc3339(),
+        "status":"skip","reason":reason,"output_kind":kind,
+        "classification":gate.response["answers"]["output_kind"],"api_usage":gate.response.get("usage"),"filter":"output",
         "tool":event.get("tool_name"),"original_chars":source_chars,"capsule_chars":source_chars,
         "elapsed_ms":elapsed_ms,"requests":1})
     )

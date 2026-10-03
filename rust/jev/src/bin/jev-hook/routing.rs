@@ -1,4 +1,4 @@
-//! Exclusive tool and command route selection.
+//! Supported output formats and the single Jev enable switch.
 use super::*;
 
 pub(super) fn command(event: &Value) -> &str {
@@ -208,17 +208,16 @@ pub(super) fn tool_route(tool: &str) -> Option<&'static str> {
     Some("output")
 }
 
-pub(super) fn route(event: &Value, config: &Config) -> Option<&'static str> {
+// Format recognition only preserves structured evidence. It does not select a filter.
+pub(super) fn output_format(event: &Value) -> Option<&'static str> {
     let tool = event.get("tool_name")?.as_str()?;
-    let selected = if shell_tool(tool) {
-        bash_route(command(event))?
+    if shell_tool(tool) {
+        bash_route(command(event))
     } else {
-        tool_route(tool)?
-    };
-    match selected {
-        "output" => config.output.then_some(selected),
-        "test_build" => config.test_build.then_some(selected),
-        "search_listing" => config.search_listing.then_some(selected),
-        _ => None,
+        tool_route(tool)
     }
+}
+
+pub(super) fn route(event: &Value, config: &Config) -> Option<&'static str> {
+    (config.enabled && output_format(event).is_some()).then_some("output")
 }

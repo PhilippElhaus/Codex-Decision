@@ -16,6 +16,7 @@ function probability(value) {
 // A visual retention index, not a Jev probability. The action separates kept
 // and omitted lines; the original Noul values determine position within each band.
 function retentionIndex(row) {
+  if (row.can_omit == null) return row.task_relevant;
   const omissionResistance = 1 - row.can_omit;
   if (row.action === "omit") return 0.35 * omissionResistance;
   const keepEvidence = Math.max(omissionResistance, row.exact_needed,
@@ -24,7 +25,7 @@ function retentionIndex(row) {
 }
 
 function parsePanelDecision(value) {
-  if (!value || value.version !== 3) throw new Error("Unsupported Jev panel decision");
+  if (!value || ![3, 4].includes(value.version)) throw new Error("Unsupported Jev panel decision");
   return parseBatchDecision(value);
 }
 
@@ -32,21 +33,21 @@ function parseBatchDecision(value) {
   const identifier = /^[a-f0-9]{32}$/;
   const integer = (number, limit = 2_000_000) => Number.isSafeInteger(number) && number >= 0 && number <= limit;
   const reasons = new Set(["protected", "budget_unjudged", "below_omit_cutoff", "exact_text",
-    "task_relevant", "confident_omission", "representative", "last_line"]);
+    "task_relevant", "irrelevant", "confident_omission", "representative", "last_line"]);
   const totals = value.totals;
   const batch = value.batch;
   if (!identifier.test(value.id) || !identifier.test(value.receipt_id) ||
       typeof value.at !== "string" || !Number.isFinite(Date.parse(value.at)) ||
       !FILTERS.has(value.filter) || !new Set(["processing", "keep", "candidate", "replace"]).has(value.status) ||
-      !batch || !integer(batch.number) || batch.number < 1 ||
+      !batch || (value.version === 4 && value.filter !== "output") || !integer(batch.number) || batch.number < 1 ||
       !integer(batch.count) || batch.count < batch.number ||
-      !integer(batch.target_count, 250) || batch.target_count < 1 ||
+      !integer(batch.target_count, value.version === 4 ? 10_000 : 250) || batch.target_count < 1 ||
       !Array.isArray(value.rows) || value.rows.length !== batch.target_count ||
       !totals || ["seen", "judged", "kept", "omitted", "protected", "unjudged", "requests"]
         .some((name) => !integer(totals[name])) ||
       totals.judged < value.rows.length || totals.judged > totals.seen ||
       totals.omitted > totals.judged || totals.kept + totals.omitted !== totals.seen ||
-      totals.requests !== batch.number || !integer(value.batch_elapsed_ms, 3_600_000)) {
+      totals.requests !== batch.number + (value.version === 4 ? 1 : 0) || !integer(value.batch_elapsed_ms, 3_600_000)) {
     throw new Error("Invalid Jev batch decision");
   }
   let previousLine = 0;
@@ -54,19 +55,19 @@ function parseBatchDecision(value) {
     if (!row || !integer(row.line) || row.line <= previousLine ||
         typeof row.excerpt !== "string" || row.excerpt.length > 120 ||
         !["keep", "omit"].includes(row.action) || !reasons.has(row.reason) ||
-        typeof row.can_omit !== "number" || typeof row.exact_needed !== "number" ||
+        (value.version === 3 && (typeof row.can_omit !== "number" || typeof row.exact_needed !== "number")) ||
+        (value.version === 4 && (row.can_omit != null || row.exact_needed != null || typeof row.task_relevant !== "number")) ||
         (row.task_relevant != null && typeof row.task_relevant !== "number")) {
       throw new Error("Invalid Jev batch row");
     }
     previousLine = row.line;
-    probability(row.can_omit);
-    probability(row.exact_needed);
+    if (value.version === 3) { probability(row.can_omit); probability(row.exact_needed); }
     if (row.task_relevant != null) probability(row.task_relevant);
     return { line: row.line, excerpt: row.excerpt, action: row.action, reason: row.reason,
-      can_omit: row.can_omit, exact_needed: row.exact_needed,
+      can_omit: row.can_omit ?? null, exact_needed: row.exact_needed ?? null,
       task_relevant: row.task_relevant ?? null, retention_index: retentionIndex(row) };
   });
-  return { version: 3, id: value.id, receipt_id: value.receipt_id, at: value.at,
+  return { version: value.version, id: value.id, receipt_id: value.receipt_id, at: value.at,
     filter: value.filter, status: value.status, batch: { number: batch.number, count: batch.count,
       target_count: batch.target_count }, rows, totals, batch_elapsed_ms: value.batch_elapsed_ms };
 }

@@ -59,12 +59,12 @@
     currentDecision = serialized;
     currentId = decision.id;
     cancelAnimationFrame(animation);
-    const route = { output: "Output", test_build: "Test/build", search_listing: "Search/listing" }[decision.filter];
+    const route = "Tool output";
     const layout = element("div", "batch-layout");
     const header = element("header", "batch-header");
     append(header,
       append(element("div", "batch-heading"),
-        element("span", "card-kicker", `${route.toUpperCase()} · RETENTION INDEX`),
+        element("span", "card-kicker", `${route.toUpperCase()} · ${decision.version === 4 ? "TASK RELEVANCE" : "RETENTION INDEX"}`),
         element("strong", "batch-title", batchTitle(decision))),
       element("div", "batch-summary", batchTotals(decision)),
       append(element("div", "batch-legend"),
@@ -80,8 +80,8 @@
       const score = row.retention_index;
       const item = element("div", `batch-row ${row.action}`);
       item.setAttribute("role", "listitem");
-      item.setAttribute("aria-label", `Line ${row.line}: ${row.action}. Retention index ${score.toFixed(2)}.`);
-      item.title = `${row.excerpt}\nLine ${row.line} · ${row.reason.replaceAll("_", " ")} · retention index ${score.toFixed(2)} (display only) · Jev can omit ${row.can_omit.toFixed(2)} · exact text ${row.exact_needed.toFixed(2)}${row.task_relevant === null ? "" : ` · task relevance ${row.task_relevant.toFixed(2)}`}`;
+      item.setAttribute("aria-label", `Line ${row.line}: ${row.action}. ${decision.version === 4 ? "Task relevance" : "Retention index"} ${score.toFixed(2)}.`);
+      item.title = row.can_omit === null ? `${row.excerpt}\nLine ${row.line} · ${row.reason.replaceAll("_", " ")} · task relevance ${row.task_relevant.toFixed(2)}` : `${row.excerpt}\nLine ${row.line} · ${row.reason.replaceAll("_", " ")} · retention index ${score.toFixed(2)} (display only) · Jev can omit ${row.can_omit?.toFixed(2) ?? "—"} · exact text ${row.exact_needed?.toFixed(2) ?? "—"}${row.task_relevant === null ? "" : ` · task relevance ${row.task_relevant.toFixed(2)}`}`;
       const track = element("div", "batch-bar-track");
       track.setAttribute("aria-hidden", "true");
       const fill = element("span", "batch-bar-fill", "█".repeat(80));

@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 820" role="img" aria-labelledby="title desc">
   <title id="title">Codex Jev architecture</title>
-  <desc id="desc">A local Codex result passes through a Rust hook, a Choice gate for large general output, line checks, and local keep rules. Unsafe or uncertain output stays whole. A VS Code control writes private per-session settings and records. TypeSafe API requests use a shared local key.</desc>
+  <desc id="desc">A local Codex result passes through a Rust hook, one sampled Choice classification, line checks, and local keep rules. Unsafe or uncertain output stays whole. A VS Code control writes private per-session settings and records. TypeSafe API requests use a shared local key.</desc>
   <defs>
     <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M1 1l8 4-8 4" fill="none" stroke="#4c6e89" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></marker>
     <style>
@@ -10,7 +10,7 @@
   </defs>
   <rect class="bg" width="1440" height="820"/>
   <text x="48" y="57" class="title">Codex Jev · local output flow</text>
-  <text x="48" y="84" class="detail">One Codex thread, one set of filters and records</text>
+  <text x="48" y="84" class="detail">One Codex thread, one enabled flag and shared policy</text>
 
   <rect class="flow" x="48" y="115" width="1344" height="438" rx="20"/>
   <text x="76" y="149" class="group">TOOL RESULT PATH</text>
@@ -21,17 +21,17 @@
 
   <rect class="box" x="342" y="194" width="220" height="116" rx="15"/>
   <g class="icon"><path d="M364 219h24v24h-24zM370 226h12m-12 6h12m-12 6h8"/></g>
-  <text x="400" y="236" class="name">Rust hook</text><text x="363" y="272" class="detail">Safety + route checks</text>
+  <text x="400" y="236" class="name">Rust hook</text><text x="363" y="272" class="detail">Safety + format checks</text>
   <path class="line" d="M297 252h43"/>
 
   <rect class="box purple" x="608" y="194" width="220" height="116" rx="15"/>
   <g class="icon icon-purple"><path d="M630 217v24m0-24h21m-21 12h21m0-12-5-5m5 5-5 5m5 7-5-5m5 5-5 5"/></g>
-  <text x="665" y="236" class="name">Choice gate</text><text x="629" y="272" class="detail">Large general output</text>
+  <text x="665" y="236" class="name">Choice gate</text><text x="629" y="272" class="detail">Sample each eligible result</text>
   <path class="line" d="M563 252h43"/>
 
   <rect class="box" x="874" y="194" width="220" height="116" rx="15"/>
   <g class="icon"><path d="M896 221h8m-8 8h8m-8 8h8m8-16h17m-17 8h17m-17 8h17"/></g>
-  <text x="934" y="236" class="name">Line checks</text><text x="895" y="272" class="detail">Independent Jev scores</text>
+  <text x="934" y="236" class="name">Line checks</text><text x="895" y="272" class="detail">API-bounded batches</text>
   <path class="line" d="M829 252h43"/>
 
   <rect class="box green" x="1140" y="194" width="224" height="116" rx="15"/>
@@ -45,13 +45,13 @@
   <path class="soft dash" d="M452 311v182h799V312"/>
   <text x="532" y="518" class="note">Unsupported, failed or uncertain checks keep the full result</text>
   <text x="834" y="183" class="note">if useful</text>
-  <text x="609" y="449" class="note">Test/build and search skip Choice</text>
+  <text x="609" y="449" class="note">One shared policy for all output</text>
 
   <rect class="local" x="48" y="590" width="782" height="188" rx="20"/>
   <text x="76" y="624" class="group">LOCAL CODEX SESSION</text>
   <rect class="box green" x="76" y="648" width="224" height="100" rx="14"/>
   <g class="icon icon-green"><rect x="97" y="671" width="25" height="21" rx="4"/><path d="M102 697h15"/></g>
-  <text x="136" y="689" class="name">VS Code control</text><text x="97" y="722" class="detail">Switches + health</text>
+  <text x="136" y="689" class="name">VS Code control</text><text x="97" y="722" class="detail">On/off + health</text>
   <rect class="box green" x="327" y="648" width="224" height="100" rx="14"/>
   <g class="icon icon-green"><path d="M349 672h22v21h-22zM354 678h12m-12 5h8"/></g>
   <text x="385" y="689" class="name">Session data</text><text x="348" y="722" class="detail">Config, logs, originals</text>
@@ -64,9 +64,9 @@
   <text x="884" y="624" class="group">TYPESAFE API · HTTPS</text>
   <rect class="box purple" x="884" y="648" width="226" height="100" rx="14"/>
   <g class="icon icon-purple"><path d="M907 671v23m0-23h18m-18 11h18"/></g>
-  <text x="944" y="689" class="name">Jev Choice</text><text x="905" y="722" class="detail">Process or keep full</text>
+  <text x="944" y="689" class="name">Jev Choice</text><text x="905" y="722" class="detail">Classify output kind</text>
   <rect class="box purple" x="1138" y="648" width="226" height="100" rx="14"/>
   <g class="icon icon-purple"><path d="M1160 673h22m-22 8h22m-22 8h22"/></g>
-  <text x="1198" y="689" class="name">Jev Nouls</text><text x="1159" y="722" class="detail">Score each line</text>
+  <text x="1198" y="689" class="name">Jev Nouls</text><text x="1159" y="722" class="detail">Judge each candidate line</text>
   <path class="soft" d="M803 699h51"/>
 </svg>

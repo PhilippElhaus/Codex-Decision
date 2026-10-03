@@ -53,16 +53,27 @@
     if (query.has("reviewed")) Object.assign(decision, window.JEV_REVIEWED_TEST_FAILURE);
     if (query.has("fifty") || query.has("dense")) {
       const count = query.has("dense") ? 250 : 50;
-      const kept = new Set(count === 250 ? [21, 74, 126, 181, 230] : [8, 25, 42]);
+      const kept = new Set(count === 250 ? [21, 74, 126, 181, 250] : [8, 25, 50]);
       decision.rows = Array.from({ length: count }, (_, index) => row(index + 1,
         `src/synthetic/module_${String(index + 1).padStart(3, "0")}.rs:42:example match in a bounded Jev batch`,
         kept.has(index + 1) ? "keep" : "omit", .98,
         kept.has(index + 1) ? .92 : .02, kept.has(index + 1) ? .94 : .03,
         kept.has(index + 1) ? "task_relevant" : "confident_omission"));
+      decision.version = 4;
+      decision.filter = "output";
+      decision.rows = decision.rows.map(row => ({...row, can_omit:null, exact_needed:null,
+        reason:row.action === "omit" ? "irrelevant" : "task_relevant",retention_index:row.task_relevant}));
       decision.batch.target_count = count;
       decision.batch.count = 1;
       decision.totals = { seen: count, judged: count, kept: kept.size,
-        omitted: count - kept.size, protected: 0, unjudged: 0, requests: 1 };
+        omitted: count - kept.size, protected: 0, unjudged: 0, requests: 2 };
+      if (!query.has("capture")) {
+        decision.status = "processing";
+        decision.batch.count = 2;
+        decision.totals.seen = count * 2;
+        decision.totals.kept += count;
+        decision.totals.unjudged = count;
+      }
     }
     const send = (value) => window.dispatchEvent(new MessageEvent("message", {
       data: { type: "decision", decision: value },
@@ -90,7 +101,11 @@
       nextDecision = { ...decision, id: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         batch: { number: 2, count: 2, target_count: decision.rows.length },
         rows: decision.rows.map((item) => ({ ...item, line: item.line + decision.rows.length })),
-        totals: { ...decision.totals, judged: decision.totals.seen, unjudged: 0, requests: 2 } };
+        totals: { ...decision.totals, judged: decision.totals.seen, unjudged: 0, requests: decision.version === 4 ? 3 : 2 } };
+      if (decision.version === 4) {
+        nextDecision.totals.omitted = decision.totals.omitted * 2;
+        nextDecision.totals.kept = nextDecision.totals.seen - nextDecision.totals.omitted;
+      }
       send(nextDecision); }, 1250);
     setTimeout(() => {
       const excerpt = document.querySelector(".batch-excerpt");

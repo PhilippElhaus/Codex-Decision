@@ -49,24 +49,19 @@
     document.documentElement.style.setProperty("--screenshot-offset", `${Math.max(0, outerHeight - innerHeight)}px`);
     const demo = new URLSearchParams(location.search).get("demo") || "tooltip";
     const disabled = demo === "disabled" || demo === "disabled-pending";
-    const history = ["judged 42 lines · omitted 29 · test/build"];
+    const history = ["judged 42 lines · omitted 29 · Bash"];
     window.acquireVsCodeApi = () => ({ postMessage(request) {
       const settings = request.action === "settingsRead" ? { action: "ready", hasKey: true, keyLength: 32,
         lifetime: { calls: 126, completed: 124, replaced: 41, linesJudged: 87320, linesOmitted: 915,
           linesProtected: 1420, linesRelevanceJudged: 6200, averageMs: 487 },
-        defaults: { mode: "replace", line_policy: {
-          output: { omit_min: 95, exact_max: 5 }, test_build: { omit_min: 95, exact_max: 5 },
-          search_listing: { omit_min: 95, exact_max: 5 } },
-          search_relevance: { guard_enabled: false, relevant_max: 5 }, choice_gate_enabled: true },
-        config: { mode: "replace", log_limit_mb: 50, never_delete_logs: true, choice_gate_enabled: true,
-          search_relevance: { guard_enabled: false, relevant_max: 5 },
-          line_policy: { output: { omit_min: 95, exact_max: 5 },
-            test_build: { omit_min: 95, exact_max: 5 }, search_listing: { omit_min: 95, exact_max: 5 } } } } :
+        defaults: { mode: "replace", relevance_policy: { relevant_max: 5 } },
+        config: { mode: "replace", log_limit_mb: 50, never_delete_logs: true,
+          relevance_policy: { relevant_max: 5 } } } :
         request.action === "settingsTest" ? { action: "tested", result: { ok: true, model: "jev-1.13.0" } } : undefined;
       queueMicrotask(() => window.dispatchEvent(new MessageEvent("message", { data: {
         type: "codex-jev-reply", id: request.id,
         status: {
-          enabled: !disabled, outputEnabled: !disabled, testBuildEnabled: !disabled, searchListingEnabled: !disabled,
+          enabled: !disabled,
           needsKey: demo === "onboarding" || demo === "missing-key",
           health: demo === "disabled-pending" ? null :
             demo === "onboarding" || demo === "missing-key" ? { ok: false, reason: "JEV_KEY_MISSING" } :
@@ -131,8 +126,7 @@
       if (demo !== "composer") document.querySelector(".prompt").textContent = "";
       if (demo === "onboarding") document.getElementById("codex-jev-connect-icon").src = "../../vscode-control/icon.png";
       if (demo === "missing-key") document.getElementById("codex-jev-skip-key").click();
-      if (demo === "menu") document.getElementById("codex-jev-button").click();
-      else if (demo !== "composer" && demo !== "onboarding" && demo !== "settings") document.getElementById("codex-jev-tip").style.display = "block";
+      if (demo !== "composer" && demo !== "onboarding" && demo !== "settings") document.getElementById("codex-jev-tip").style.display = "block";
       if (demo === "settings") {
         document.documentElement.dataset.codexJevRouteKind = "none";
         delete document.documentElement.dataset.codexJevSessionId;

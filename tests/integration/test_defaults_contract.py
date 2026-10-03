@@ -1,4 +1,4 @@
-"""Keep the version 2 example and VS Code bridge on one line policy."""
+"""Keep the version 3 example and VS Code bridge on one line policy."""
 
 import json
 from pathlib import Path
@@ -15,13 +15,13 @@ class DefaultsContractTests(unittest.TestCase):
             self.skipTest("Node is unavailable")
         extension = ROOT / "vscode-control/core.js"
         result = subprocess.run(
-            ["node", "-e", "process.stdout.write(JSON.stringify(require(process.argv[1]).DEFAULT_LINE_POLICY))",
+            ["node", "-e", "process.stdout.write(JSON.stringify(require(process.argv[1]).DEFAULT_RELEVANCE_POLICY))",
              str(extension)], capture_output=True, text=True, check=True,
         )
         node_defaults = json.loads(result.stdout)
         example = json.loads((ROOT / "config.example.json").read_text(encoding="utf-8"))
-        self.assertEqual(example["schema_version"], 2)
-        self.assertEqual(example["line_policy"], node_defaults)
+        self.assertEqual(example["schema_version"], 4)
+        self.assertEqual(example["relevance_policy"], node_defaults)
         self.assertNotIn("thresholds", example)
         self.assertNotIn("decision_methods", example)
         self.assertEqual(example["mode"], "replace")

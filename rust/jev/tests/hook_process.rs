@@ -305,38 +305,35 @@ fn mock_server_choice(
                 .unwrap()
                 + 4..];
             let request: Value = serde_json::from_slice(body).unwrap();
-            assert!(body.len() <= 28_000);
+            codex_jev::semantic::validate_request_budget(&request).unwrap();
             assert_eq!(request["model"], "jev-latest");
             let answers = if fail_on == Some(count + 1) {
                 json!({})
-            } else if request["questions"].get("line_filter_fit").is_some() {
-                let (line_filter, keep_full, uncertain) = match choice {
-                    "keep_full" => (0.01, 0.98, 0.01),
-                    "uncertain" => (0.33, 0.33, 0.34),
-                    _ => (0.98, 0.01, 0.01),
+            } else if request["questions"].get("output_kind").is_some() {
+                let selected = match choice {
+                    "keep_full" => "exact_content",
+                    "uncertain" => "mixed_or_unknown",
+                    "malformed" => "malformed",
+                    _ => "repetitive_log",
                 };
-                let selected = if choice == "uncertain" {
-                    "uncertain"
-                } else {
-                    choice
-                };
-                json!({"line_filter_fit":{"type":"choice","choice":selected,
-                    "confidence":if choice == "uncertain" {0.01} else {0.96},
-                    "probabilities":{"line_filter":line_filter,"keep_full":keep_full,
-                        "uncertain":uncertain}}})
+                let probabilities: serde_json::Map<String, Value> = codex_jev::semantic::KINDS
+                    .iter()
+                    .map(|kind| {
+                        (
+                            (*kind).into(),
+                            json!(if *kind == selected { 0.98 } else { 0.02 / 7.0 }),
+                        )
+                    })
+                    .collect();
+                json!({"output_kind":{"type":"choice","choice":selected,
+                    "confidence":if choice == "uncertain" {0.01} else {0.96},"probabilities":probabilities}})
             } else {
                 Value::Object(
                     request["questions"]
                         .as_object()
                         .unwrap()
                         .iter()
-                        .map(|(name, _)| {
-                            (
-                                name.clone(),
-                                json!({"type":"noul","noul":if name.starts_with("omit_") {0.99}
-                        else if name == "relevant_2" {0.91} else {0.01}}),
-                            )
-                        })
+                        .map(|(name, _)| (name.clone(), json!({"type":"noul","noul":0.01})))
                         .collect(),
                 )
             };
@@ -354,18 +351,30 @@ fn run(
     search: bool,
     choice: Option<&'static str>,
 ) -> (Value, tempfile::TempDir, usize) {
+    run_sized(fail_on, search, choice, 120)
+}
+
+fn run_sized(
+    fail_on: Option<usize>,
+    search: bool,
+    choice: Option<&'static str>,
+    size: usize,
+) -> (Value, tempfile::TempDir, usize) {
     let temporary = tempfile::tempdir().unwrap();
     let root = temporary.path();
     let data_dir = root.join("data");
     fs::create_dir(&data_dir).unwrap();
     fs::set_permissions(&data_dir, fs::Permissions::from_mode(0o700)).unwrap();
-    fs::write(data_dir.join("config.json"), json!({"schema_version":2,"scope":"global","enabled":true,
-        "test_build_enabled":false,"search_listing_enabled":search,"mode":"replace","min_chars":1024,
+    fs::write(
+        data_dir.join("config.json"),
+        json!({"schema_version":3,"scope":"global","enabled":true,
+        "mode":"replace","min_chars":1024,
         "max_chars":2000000,"model":"jev-latest","timeout_seconds":3.0,
         "choice_gate_enabled":choice.is_some(),
-        "search_relevance":{"guard_enabled":search,"relevant_max":5},
-        "line_policy":{"output":{"omit_min":95,"exact_max":5},
-          "test_build":{"omit_min":95,"exact_max":5},"search_listing":{"omit_min":95,"exact_max":5}}}).to_string()).unwrap();
+        "line_policy":{"omit_min":95,"exact_max":5}})
+        .to_string(),
+    )
+    .unwrap();
     fs::write(data_dir.join(".env"), "JEV_API_KEY=synthetic-test-key\n").unwrap();
     fs::set_permissions(data_dir.join(".env"), fs::Permissions::from_mode(0o600)).unwrap();
     let transcript = root.join("transcript.jsonl");
@@ -377,7 +386,7 @@ fn run(
             + "\n",
     )
     .unwrap();
-    let original = (0..120)
+    let original = (0..size)
         .map(|index| {
             if search {
                 format!(
@@ -429,8 +438,7 @@ fn writes_one_original_and_line_receipt_for_valid_batches() {
     let logs = scoped(&data_dir, "fixture-session").join("logs");
     let snapshot: Value =
         serde_json::from_slice(&fs::read(logs.join("latest-decision.json")).unwrap()).unwrap();
-    assert_eq!(snapshot["version"], 3);
-    assert!(snapshot["rows"].as_array().unwrap().len() <= 250);
+    assert_eq!(snapshot["version"], 4);
     assert_eq!(
         snapshot["rows"].as_array().unwrap().len(),
         snapshot["batch"]["target_count"].as_u64().unwrap() as usize
@@ -446,6 +454,36 @@ fn writes_one_original_and_line_receipt_for_valid_batches() {
     let saved = fs::read_to_string(originals[0].as_ref().unwrap().path()).unwrap();
     assert!(saved.starts_with("Compiling module 0000"));
     assert!(reply["reason"].as_str().unwrap().contains("full original:"));
+}
+
+#[test]
+fn all_four_hundred_lines_are_judged_across_bounded_requests() {
+    let (reply, root, calls) = run_sized(None, false, None, 400);
+    assert_eq!(reply["continue"], false);
+    assert!(calls > 2);
+    let logs = scoped(&root.path().join("data"), "fixture-session").join("logs");
+    let snapshot: Value =
+        serde_json::from_slice(&fs::read(logs.join("latest-decision.json")).unwrap()).unwrap();
+    assert_eq!(snapshot["totals"]["seen"], 400);
+    assert_eq!(snapshot["totals"]["judged"], 400);
+    assert_eq!(snapshot["totals"]["unjudged"], 0);
+    assert_eq!(snapshot["batch"]["count"], calls - 1);
+    assert_eq!(snapshot["totals"]["requests"], calls);
+}
+
+#[test]
+fn later_batch_failure_rolls_back_progress_and_keeps_the_entire_original() {
+    let (reply, root, calls) = run_sized(Some(3), false, None, 400);
+    assert_eq!(reply, json!({}));
+    assert_eq!(calls, 3);
+    let data = root.path().join("data");
+    let session = scoped(&data, "fixture-session");
+    assert!(!session.join("logs/latest-decision.json").exists());
+    assert!(!session.join("stats.json").exists());
+    assert!(!data.join("outputs").exists());
+    let health: Value =
+        serde_json::from_slice(&fs::read(session.join("logs/hook-health.json")).unwrap()).unwrap();
+    assert!(health["last_error_ms"].is_number());
 }
 
 #[test]
@@ -466,7 +504,7 @@ fn missing_batch_answers_keep_the_full_result() {
 }
 
 #[test]
-fn failure_after_a_completed_batch_removes_partial_panel_state() {
+fn failed_second_call_publishes_no_partial_panel_state() {
     let (reply, root, calls) = run(Some(2), false, None);
     assert_eq!(reply, json!({}));
     assert!(calls >= 2);
@@ -477,7 +515,7 @@ fn failure_after_a_completed_batch_removes_partial_panel_state() {
 }
 
 #[test]
-fn search_relevance_reaches_receipt_panel_and_cumulative_stats() {
+fn search_output_uses_the_shared_policy_without_specialized_relevance() {
     let (reply, root, _) = run(None, true, None);
     assert_eq!(reply["continue"], false);
     let data = root.path().join("data");
@@ -485,7 +523,7 @@ fn search_relevance_reaches_receipt_panel_and_cumulative_stats() {
         &fs::read(scoped(&data, "fixture-session").join("logs/latest-decision.json")).unwrap(),
     )
     .unwrap();
-    assert_eq!(snapshot["filter"], "search_listing");
+    assert_eq!(snapshot["filter"], "output");
     assert!(snapshot["rows"]
         .as_array()
         .unwrap()
@@ -496,7 +534,7 @@ fn search_relevance_reaches_receipt_panel_and_cumulative_stats() {
     )
     .unwrap();
     assert_eq!(stats["linesRelevanceJudged"], 120);
-    assert_eq!(stats["linesRelevanceKept"], 1);
+    assert_eq!(stats["linesRelevanceKept"], 0);
     let session = fs::read_dir(scoped(&data, "fixture-session").join("logs"))
         .unwrap()
         .filter_map(Result::ok)
@@ -510,8 +548,8 @@ fn search_relevance_reaches_receipt_panel_and_cumulative_stats() {
         .unwrap()
         .path();
     let record: Value = serde_json::from_slice(&fs::read(receipt).unwrap()).unwrap();
-    assert_eq!(record["decisions"][1]["reason"], "task_relevant");
-    assert_eq!(record["decisions"][1]["p_task_relevant"], 0.91);
+    assert_eq!(record["decisions"][1]["reason"], "irrelevant");
+    assert_eq!(record["decisions"][1]["p_task_relevant"], 0.01);
 }
 
 #[test]
@@ -537,7 +575,7 @@ fn choice_gate_keeps_full_output_with_one_request_when_filtering_is_unhelpful() 
 fn choice_gate_runs_line_checks_only_after_a_confident_filter_decision() {
     let (reply, root, calls) = run(None, false, Some("line_filter"));
     assert_eq!(reply["continue"], false);
-    assert!(calls >= 3);
+    assert!(calls >= 2);
     assert!(scoped(&root.path().join("data"), "fixture-session")
         .join("logs/latest-decision.json")
         .exists());
@@ -571,19 +609,16 @@ fn malformed_choice_reports_hook_error_and_preserves_full_output() {
 }
 
 #[test]
-fn disabled_specialized_routes_make_no_request_or_activity_with_output_enabled() {
+fn disabled_single_switch_makes_no_request_or_activity_for_any_output() {
     let temporary = tempfile::tempdir().unwrap();
     let data = temporary.path().join("data");
     fs::create_dir(&data).unwrap();
     fs::set_permissions(&data, fs::Permissions::from_mode(0o700)).unwrap();
     fs::write(
         data.join("config.json"),
-        json!({"schema_version":2,"scope":"global","enabled":true,"test_build_enabled":false,
-            "search_listing_enabled":false,"mode":"observe","min_chars":1024,
+        json!({"schema_version":3,"scope":"global","enabled":false,"mode":"observe","min_chars":1024,
             "max_chars":2000000,"model":"jev-latest","timeout_seconds":3.0,
-            "line_policy":{"output":{"omit_min":95,"exact_max":5},
-                "test_build":{"omit_min":95,"exact_max":5},
-                "search_listing":{"omit_min":95,"exact_max":5}}})
+            "line_policy":{"omit_min":95,"exact_max":5}})
         .to_string(),
     )
     .unwrap();
@@ -600,6 +635,7 @@ fn disabled_specialized_routes_make_no_request_or_activity_with_output_enabled()
     .unwrap();
     let (endpoint, stop, thread) = mock_server(None);
     for command in [
+        "cat output.log",
         "cargo test --workspace",
         "rg -n token src",
         "cargo test | tee result.log",
@@ -640,7 +676,7 @@ fn disabled_specialized_routes_make_no_request_or_activity_with_output_enabled()
 }
 
 #[test]
-fn plain_local_read_and_text_search_results_reach_distinct_routes() {
+fn plain_local_read_and_text_search_results_share_one_policy() {
     let temporary = tempfile::tempdir().unwrap();
     let data = temporary.path().join("data");
     fs::create_dir(&data).unwrap();
@@ -730,191 +766,11 @@ fn plain_local_read_and_text_search_results_reach_distinct_routes() {
                 .unwrap(),
         )
         .unwrap();
-        assert_eq!(
-            snapshot["filter"],
-            if *tool == "Read" {
-                "output"
-            } else {
-                "search_listing"
-            }
-        );
+        assert_eq!(snapshot["filter"], "output");
         assert!(snapshot["totals"]["judged"].as_u64().unwrap() > 0);
     }
     stop.store(true, Ordering::Relaxed);
     assert!(thread.join().unwrap() >= 7);
-}
-
-#[test]
-#[ignore = "uses a configured TypeSafe API key and makes a real Jev request"]
-fn live_line_request_records_valid_independent_answers() {
-    let key_file = std::env::var("CODEX_JEV_LIVE_KEY_FILE").expect("set CODEX_JEV_LIVE_KEY_FILE");
-    let temporary = tempfile::tempdir().unwrap();
-    let root = temporary.path();
-    let data = root.join("data");
-    fs::create_dir(&data).unwrap();
-    fs::set_permissions(&data, fs::Permissions::from_mode(0o700)).unwrap();
-    fs::copy(key_file, data.join(".env")).unwrap();
-    fs::set_permissions(data.join(".env"), fs::Permissions::from_mode(0o600)).unwrap();
-    fs::write(data.join("config.json"), json!({"schema_version":2,"scope":"global","enabled":true,
-        "test_build_enabled":false,"search_listing_enabled":false,"mode":"observe",
-        "min_chars":1024,"max_chars":2000000,"model":"jev-1.13.0","timeout_seconds":4.0,
-        "line_policy":{"output":{"omit_min":95,"exact_max":5},
-          "test_build":{"omit_min":95,"exact_max":5},"search_listing":{"omit_min":95,"exact_max":5}}}).to_string()).unwrap();
-    let transcript = root.join("transcript.jsonl");
-    fs::write(&transcript, json!({"type":"response_item","payload":{"role":"user",
-        "content":[{"type":"input_text","text":"Review whether this build completed and preserve its unique version"}]}}).to_string()+"\n").unwrap();
-    let mut source = (0..40)
-        .map(|index| format!("Compiling module {index:02} ... done\n"))
-        .collect::<String>();
-    source.push_str("Version: 7.42.19\nBUILD SUCCESSFUL\n");
-    let event = json!({"hook_event_name":"PostToolUse","tool_name":"Bash",
-        "session_id":"live-fixture-session","tool_use_id":"live-fixture-call","transcript_path":transcript,
-        "tool_input":{"command":"echo build"},"tool_response":source});
-    let binary = std::env::var("CODEX_JEV_HOOK_BIN")
-        .unwrap_or_else(|_| env!("CARGO_BIN_EXE_jev-hook").into());
-    let mut child = Command::new(&binary)
-        .env("PLUGIN_DATA", &data)
-        .env_remove("CODEX_JEV_TEST_ENDPOINT")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-    child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(event.to_string().as_bytes())
-        .unwrap();
-    let output = child.wait_with_output().unwrap();
-    assert!(output.status.success());
-    assert!(output.stderr.is_empty());
-    assert_eq!(
-        serde_json::from_slice::<Value>(&output.stdout).unwrap(),
-        json!({})
-    );
-    let snapshot: Value = serde_json::from_slice(
-        &fs::read(scoped(&data, "live-fixture-session").join("logs/latest-decision.json")).unwrap(),
-    )
-    .unwrap();
-    assert_eq!(snapshot["version"], 3);
-    assert_eq!(snapshot["totals"]["seen"], 42);
-    assert_eq!(snapshot["totals"]["judged"], 40);
-    assert_eq!(snapshot["totals"]["protected"], 2);
-    assert!(snapshot["totals"]["requests"].as_u64().unwrap() >= 1);
-
-    fs::write(data.join("config.json"), json!({"schema_version":2,"scope":"global","enabled":false,
-        "test_build_enabled":false,"search_listing_enabled":true,"mode":"observe",
-        "min_chars":1024,"max_chars":2000000,"model":"jev-1.13.0","timeout_seconds":4.0,
-        "search_relevance":{"guard_enabled":false,"relevant_max":5},
-        "line_policy":{"output":{"omit_min":95,"exact_max":5},
-          "test_build":{"omit_min":95,"exact_max":5},"search_listing":{"omit_min":95,"exact_max":5}}}).to_string()).unwrap();
-    fs::write(&transcript, json!({"type":"response_item","payload":{"role":"user",
-        "content":[{"type":"input_text","text":"Find the timeout setting relevant to client retries."}]}}).to_string()+"\n").unwrap();
-    let search_source = (0..25).map(|index| format!(
-        "src/settings_{index:02}.rs:{}:setting timeout_{index:02} controls client retries and routing behavior\n", index + 1
-    )).collect::<String>();
-    let search_event = json!({"hook_event_name":"PostToolUse","tool_name":"Bash",
-        "session_id":"live-fixture-session","tool_use_id":"live-search-call","transcript_path":transcript,
-        "tool_input":{"command":"rg -n 'setting' src"},"tool_response":search_source});
-    let mut search_child = Command::new(&binary)
-        .env("PLUGIN_DATA", &data)
-        .env_remove("CODEX_JEV_TEST_ENDPOINT")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-    search_child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(search_event.to_string().as_bytes())
-        .unwrap();
-    let search_output = search_child.wait_with_output().unwrap();
-    assert!(search_output.status.success());
-    assert!(search_output.stderr.is_empty());
-    let search_snapshot: Value = serde_json::from_slice(
-        &fs::read(scoped(&data, "live-fixture-session").join("logs/latest-decision.json")).unwrap(),
-    )
-    .unwrap();
-    assert_eq!(search_snapshot["filter"], "search_listing");
-    assert_eq!(search_snapshot["totals"]["judged"], 25);
-    assert!(search_snapshot["rows"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .all(|row| row["task_relevant"].is_number()));
-    let stats: Value = serde_json::from_slice(
-        &fs::read(scoped(&data, "live-fixture-session").join("stats.json")).unwrap(),
-    )
-    .unwrap();
-    assert_eq!(stats["linesRelevanceJudged"], 25);
-    assert_eq!(stats["savedChars"], 0);
-}
-
-#[test]
-#[ignore = "uses a configured TypeSafe API key and makes real Jev requests"]
-fn live_choice_gate_accepts_typesafe_choice_response() {
-    let key_file = std::env::var("CODEX_JEV_LIVE_KEY_FILE").expect("set CODEX_JEV_LIVE_KEY_FILE");
-    let temporary = tempfile::tempdir().unwrap();
-    let data = temporary.path().join("data");
-    fs::create_dir(&data).unwrap();
-    fs::set_permissions(&data, fs::Permissions::from_mode(0o700)).unwrap();
-    fs::copy(key_file, data.join(".env")).unwrap();
-    fs::set_permissions(data.join(".env"), fs::Permissions::from_mode(0o600)).unwrap();
-    fs::write(
-        data.join("config.json"),
-        json!({"schema_version":2,"scope":"global","enabled":true,
-        "test_build_enabled":false,"search_listing_enabled":false,"choice_gate_enabled":true,
-        "mode":"observe","min_chars":1024,"max_chars":2000000,"model":"jev-1.13.0",
-        "timeout_seconds":4.0,"line_policy":{"output":{},"test_build":{},"search_listing":{}}})
-        .to_string(),
-    )
-    .unwrap();
-    let transcript = temporary.path().join("transcript.jsonl");
-    fs::write(
-        &transcript,
-        json!({"type":"response_item","payload":{"role":"user",
-        "content":[{"type":"input_text","text":"Review this synthetic progress log"}]}})
-        .to_string()
-            + "\n",
-    )
-    .unwrap();
-    let source = (0..120)
-        .map(|index| format!("Progress item {index:03} completed successfully\n"))
-        .collect::<String>();
-    let event = json!({"hook_event_name":"PostToolUse","tool_name":"Bash",
-        "session_id":"live-choice-session","tool_use_id":"live-choice-call","transcript_path":transcript,
-        "tool_input":{"command":"echo progress"},"tool_response":source});
-    let mut child = Command::new(env!("CARGO_BIN_EXE_jev-hook"))
-        .env("PLUGIN_DATA", &data)
-        .env_remove("CODEX_JEV_TEST_ENDPOINT")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-    child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(event.to_string().as_bytes())
-        .unwrap();
-    let output = child.wait_with_output().unwrap();
-    assert!(output.status.success());
-    assert!(
-        output.stderr.is_empty(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let health: Value = serde_json::from_slice(
-        &fs::read(scoped(&data, "live-choice-session").join("logs/hook-health.json")).unwrap(),
-    )
-    .unwrap();
-    assert!(
-        health["last_success_ms"].is_number() || health["last_skip"] == "choice_kept_full_output"
-    );
 }
 
 #[test]

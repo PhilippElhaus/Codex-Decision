@@ -1,21 +1,15 @@
 {
-  "schema_version": 2,
+  "schema_version": 4,
   "enabled": false,
-  "test_build_enabled": false,
-  "search_listing_enabled": false,
   "mode": "replace",
   "min_chars": 256,
   "max_chars": 2000000,
   "timeout_seconds": 3.0,
   "model": "jev-latest",
   "allow_mcp_replacement": false,
-  "choice_gate_enabled": true,
   "log_limit_mb": 50,
   "never_delete_logs": false,
-  "search_relevance": {"guard_enabled": false, "relevant_max": 5},
-  "line_policy": {
-    "output": {"omit_min": 95, "exact_max": 5},
-    "test_build": {"omit_min": 95, "exact_max": 5},
-    "search_listing": {"omit_min": 95, "exact_max": 5}
+  "relevance_policy": {
+    "relevant_max": 5
   }
 }

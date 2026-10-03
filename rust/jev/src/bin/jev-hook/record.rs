@@ -68,19 +68,22 @@ pub(super) fn record(
         .iter()
         .filter(|row| row.reason == "task_relevant")
         .count();
-    let summary = json!({"version":2,"id":id,"at":now.to_rfc3339(),"filter":route,"status":status,
-        "reason":if config.mode == "observe" { "observe" } else { "line_policy" },
+    let summary = json!({"version":3,"id":id,"at":now.to_rfc3339(),"filter":route,"status":status,
+        "reason":if config.mode == "observe" { "observe" } else { "relevance_policy" },
         "tool":event.get("tool_name"),"capsule_chars":visible.chars().count(),
         "elapsed_ms":batches.iter().map(|batch| batch.elapsed_ms).sum::<u64>() + gate_elapsed_ms.unwrap_or(0),
         "source_sha256":original_hash,"lines_seen":seen,"lines_judged":judged,"lines_kept":seen-omitted,
         "lines_omitted":omitted,"lines_protected":protected,"lines_unjudged":unjudged,
         "lines_relevance_judged":relevance_judged,"lines_below_omit_cutoff":below_omit_cutoff,
-        "lines_relevance_kept":relevance_kept,"search_relevance_guard":config.search_relevance.guard_enabled,
-        "line_policy":config.policy[route],"search_relevance_policy":config.search_relevance,
+        "lines_relevance_kept":relevance_kept,"search_relevance_guard":false,
+        "relevance_policy":config.policy,
+        "output_kind":gate_record.and_then(|record| record.response.pointer("/answers/output_kind/choice")),
+        "api_usage":{"input_tokens":gate_record.into_iter().chain(batches.iter()).filter_map(|record|record.response.pointer("/usage/input_tokens").and_then(Value::as_u64)).sum::<u64>(),
+            "output_tokens":gate_record.into_iter().chain(batches.iter()).filter_map(|record|record.response.pointer("/usage/output_tokens").and_then(Value::as_u64)).sum::<u64>()},
         "requests":batches.len()+usize::from(gate_elapsed_ms.is_some()),
         "choice_gate_ran":gate_elapsed_ms.is_some(),
         "original_chars":source.chars().count(),"visible_chars":visible.chars().count()});
-    let receipt = json!({"version":2,"manifest":summary,"tool":event.get("tool_name"),
+    let receipt = json!({"version":3,"manifest":summary,"tool":event.get("tool_name"),
         "tool_input":event.get("tool_input"),"initial_output":source,
         "visible_output":if status == "replace" { Some(visible) } else { None },
         "decisions":decisions});

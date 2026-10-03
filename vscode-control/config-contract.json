@@ -2,6 +2,143 @@
   "config": {
     "schema_version": {
       "type": "integer",
+      "default": 4,
+      "required": true,
+      "values": [
+        4
+      ]
+    },
+    "scope": {
+      "type": "string",
+      "values": [
+        "global"
+      ]
+    },
+    "enabled": {
+      "type": "boolean",
+      "default": false,
+      "required": true
+    },
+    "mode": {
+      "type": "string",
+      "default": "replace",
+      "required": true,
+      "values": [
+        "observe",
+        "replace"
+      ]
+    },
+    "log_limit_mb": {
+      "type": "integer",
+      "default": 50,
+      "min": 1,
+      "max": 9999
+    },
+    "never_delete_logs": {
+      "type": "boolean",
+      "default": false
+    },
+    "min_chars": {
+      "type": "integer",
+      "default": 256,
+      "min": 256,
+      "max": 2000000
+    },
+    "max_chars": {
+      "type": "integer",
+      "default": 2000000,
+      "min": 256,
+      "max": 2000000
+    },
+    "model": {
+      "type": "model",
+      "default": "jev-latest"
+    },
+    "timeout_seconds": {
+      "type": "number",
+      "default": 3,
+      "min": 0.1,
+      "max": 4
+    },
+    "allow_mcp_replacement": {
+      "type": "boolean",
+      "default": false
+    },
+    "relevance_policy": {
+      "type": "relevance_threshold",
+      "default": {
+        "relevant_max": 5
+      },
+      "required": true
+    }
+  },
+  "settings": {
+    "schema_version": {
+      "type": "integer",
+      "default": 3,
+      "required": true,
+      "values": [
+        3
+      ]
+    },
+    "mode": {
+      "type": "string",
+      "default": "replace",
+      "required": true,
+      "values": [
+        "observe",
+        "replace"
+      ]
+    },
+    "log_limit_mb": {
+      "type": "integer",
+      "default": 50,
+      "min": 1,
+      "max": 9999,
+      "required": true
+    },
+    "never_delete_logs": {
+      "type": "boolean",
+      "default": false,
+      "required": true
+    },
+    "relevance_policy": {
+      "type": "relevance_threshold",
+      "default": {
+        "relevant_max": 5
+      },
+      "required": true
+    }
+  },
+  "thresholds": {
+    "omit_min": {
+      "type": "integer",
+      "default": 95,
+      "min": 0,
+      "max": 100
+    },
+    "exact_max": {
+      "type": "integer",
+      "default": 5,
+      "min": 0,
+      "max": 100
+    }
+  },
+  "search_relevance": {
+    "guard_enabled": {
+      "type": "boolean",
+      "default": false
+    },
+    "relevant_max": {
+      "type": "integer",
+      "default": 5,
+      "min": 0,
+      "max": 100
+    }
+  },
+  "config_v2": {
+    "schema_version": {
+      "type": "integer",
       "default": 2,
       "required": true,
       "values": [
@@ -39,7 +176,7 @@
       ]
     },
     "line_policy": {
-      "type": "line_policy",
+      "type": "line_policy_legacy",
       "default": {
         "output": {
           "omit_min": 95,
@@ -104,7 +241,7 @@
       "default": false
     }
   },
-  "settings": {
+  "settings_v1": {
     "schema_version": {
       "type": "integer",
       "default": 1,
@@ -123,7 +260,7 @@
       ]
     },
     "line_policy": {
-      "type": "line_policy",
+      "type": "line_policy_legacy",
       "default": {
         "output": {
           "omit_min": 95,
@@ -166,7 +303,7 @@
       "required": true
     }
   },
-  "line_policy": {
+  "line_policy_legacy": {
     "output": {
       "type": "thresholds",
       "default": {
@@ -192,25 +329,129 @@
       "required": true
     }
   },
-  "thresholds": {
-    "omit_min": {
+  "config_v3": {
+    "schema_version": {
       "type": "integer",
-      "default": 95,
-      "min": 0,
-      "max": 100
+      "default": 3,
+      "required": true,
+      "values": [
+        3
+      ]
     },
-    "exact_max": {
+    "scope": {
+      "type": "string",
+      "values": [
+        "global"
+      ]
+    },
+    "enabled": {
+      "type": "boolean",
+      "default": false,
+      "required": true
+    },
+    "mode": {
+      "type": "string",
+      "default": "replace",
+      "required": true,
+      "values": [
+        "observe",
+        "replace"
+      ]
+    },
+    "line_policy": {
+      "type": "thresholds",
+      "default": {
+        "omit_min": 95,
+        "exact_max": 5
+      },
+      "required": true
+    },
+    "choice_gate_enabled": {
+      "type": "boolean",
+      "default": true
+    },
+    "log_limit_mb": {
       "type": "integer",
-      "default": 5,
-      "min": 0,
-      "max": 100
-    }
-  },
-  "search_relevance": {
-    "guard_enabled": {
+      "default": 50,
+      "min": 1,
+      "max": 9999
+    },
+    "never_delete_logs": {
       "type": "boolean",
       "default": false
     },
+    "min_chars": {
+      "type": "integer",
+      "default": 256,
+      "min": 256,
+      "max": 2000000
+    },
+    "max_chars": {
+      "type": "integer",
+      "default": 2000000,
+      "min": 256,
+      "max": 2000000
+    },
+    "model": {
+      "type": "model",
+      "default": "jev-latest"
+    },
+    "timeout_seconds": {
+      "type": "number",
+      "default": 3,
+      "min": 0.1,
+      "max": 4
+    },
+    "allow_mcp_replacement": {
+      "type": "boolean",
+      "default": false
+    }
+  },
+  "settings_v2": {
+    "schema_version": {
+      "type": "integer",
+      "default": 2,
+      "required": true,
+      "values": [
+        2
+      ]
+    },
+    "mode": {
+      "type": "string",
+      "default": "replace",
+      "required": true,
+      "values": [
+        "observe",
+        "replace"
+      ]
+    },
+    "line_policy": {
+      "type": "thresholds",
+      "default": {
+        "omit_min": 95,
+        "exact_max": 5
+      },
+      "required": true
+    },
+    "choice_gate_enabled": {
+      "type": "boolean",
+      "default": true,
+      "required": true
+    },
+    "log_limit_mb": {
+      "type": "integer",
+      "default": 50,
+      "min": 1,
+      "max": 9999,
+      "required": true
+    },
+    "never_delete_logs": {
+      "type": "boolean",
+      "default": false,
+      "required": true
+    }
+  },
+  "relevance_threshold": {
     "relevant_max": {
       "type": "integer",
       "default": 5,

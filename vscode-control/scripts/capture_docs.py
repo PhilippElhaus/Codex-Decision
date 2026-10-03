@@ -2,6 +2,7 @@
 
 from pathlib import Path
 from html import unescape
+import argparse
 import json
 import re
 import subprocess
@@ -16,7 +17,69 @@ ROOT = Path(__file__).resolve().parents[1]
 IMAGES = ROOT.parent / 'docs' / 'images'
 
 
+def chromium_capture() -> None:
+    from playwright.sync_api import sync_playwright
+
+    IMAGES.mkdir(parents=True, exist_ok=True)
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        try:
+            for state, name, width, height in (
+                ('composer', 'jev-toggle.png', 620, 240),
+                ('onboarding', 'jev-connect.png', 950, 610),
+                ('settings', 'jev-settings.png', 1040, 1080),
+            ):
+                page = browser.new_page(viewport={'width': width, 'height': height}, device_scale_factor=2)
+                page.goto((ROOT.parent / 'tests/browser/visual_harness.html').as_uri() + '?demo=' + state)
+                page.wait_for_function('document.title === "JEV_VISUAL_READY"')
+                if state == 'composer':
+                    assert page.locator('#codex-jev-menu').count() == 0
+                    assert page.locator('#codex-jev-button').get_attribute('role') == 'switch'
+                    assert page.locator('#codex-jev-button').get_attribute('aria-checked') == 'true'
+                    layout = json.loads(page.locator('body').get_attribute('data-layout'))
+                    assert abs(layout['buttonTop'] - layout['anchorTop'] - layout['screenshotOffset']) <= 10
+                elif state == 'onboarding':
+                    assert page.locator('#codex-jev-connect').is_visible()
+                    assert page.locator('#codex-jev-key').input_value() == ''
+                else:
+                    assert page.locator('#codex-jev-settings-panel').is_visible()
+                    assert page.locator('#codex-jev-settings-lifetime-tokens').inner_text() == '87,320'
+                    assert page.locator('#codex-jev-settings-thresholds h2').count() == 1
+                    assert page.locator('#codex-jev-settings-output-relevant_max').input_value() == '5%'
+                    assert page.locator('#codex-jev-settings-relevance-guard').count() == 0
+                page.screenshot(path=str(IMAGES / name))
+                print(name)
+                page.close()
+            with Image.open(IMAGES / 'jev-settings.png') as settings:
+                for name, box in (
+                    ('jev-settings-overview.png', (0, 0, 2080, 1250)),
+                    ('jev-settings-filters.png', (0, 1240, 2080, 2110)),
+                ):
+                    settings.crop(box).save(IMAGES / name, optimize=True)
+            (IMAGES / 'jev-settings.png').unlink()
+            for state, name, height, count, expected in (
+                ('fifty', 'jev-panel.png', 900, 50, ('47 cut', '3 / 50 kept')),
+                ('reviewed', 'jev-demo-tests.png', 520, 20,
+                 ('119 cut', '5 / 124 kept', '4 protected', 'batch 3/3', 'actual: 6000')),
+            ):
+                page = browser.new_page(viewport={'width': 1200, 'height': height})
+                page.goto((ROOT.parent / 'tests/browser/jev_panel_harness.html').as_uri() + f'?{state}&capture')
+                page.wait_for_function('document.body.textContent.includes("JEV_LINE_PANEL_READY")')
+                assert page.locator('.batch-row').count() == count
+                assert all(text in page.locator('body').inner_text() for text in expected)
+                page.screenshot(path=str(IMAGES / name))
+                print(name)
+                page.close()
+        finally:
+            browser.close()
+
+
 def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--browser', choices=['edge', 'chromium'], default='edge')
+    if parser.parse_args().browser == 'chromium':
+        chromium_capture()
+        return
     edge, temporary = browser_environment()
     IMAGES.mkdir(parents=True, exist_ok=True)
     profile = Path(tempfile.mkdtemp(prefix='jev-docs-', dir=temporary))
@@ -24,9 +87,9 @@ def main() -> None:
         target = windows_path(ROOT.parent / 'tests/browser/visual_harness.html').replace('\\', '/')
         address = 'file:///' + quote(target, safe='/:')
         captures = [
-            ('menu', 'jev-menu.png', 620, 340),
+            ('composer', 'jev-toggle.png', 620, 240),
             ('onboarding', 'jev-connect.png', 950, 610),
-            ('settings', 'jev-settings.png', 1040, 1650),
+            ('settings', 'jev-settings.png', 1040, 1080),
         ]
         for state, name, width, height in captures:
             output = profile / name if state == 'settings' else IMAGES / name
@@ -53,19 +116,16 @@ def main() -> None:
                                         'id="codex-jev-settings-lifetime-tokens"' not in result.stdout or
                                         '87,320' not in result.stdout or
                                         'All sessions' not in result.stdout or
-                                        'Can omit, minimum' not in result.stdout or
-                                        'Exact text needed, maximum' not in result.stdout or
-                                        'Task relevance, maximum for omission' not in result.stdout or
-                                        'Use task relevance to guard search lines' not in result.stdout or
+                                        'Relevance, maximum for omission' not in result.stdout or
                                         '>Filter</option>' not in result.stdout):
                 raise RuntimeError('Jev settings were not rendered in Codex settings')
             print(f'{name}: {output.stat().st_size} bytes; layout={layout}')
         settings = Image.open(profile / 'jev-settings.png')
-        if settings.size != (2080, 3300):
+        if settings.size != (2080, 2160):
             raise RuntimeError(f'Unexpected settings capture size: {settings.size}')
         for name, box in (
             ('jev-settings-overview.png', (0, 0, 2080, 1250)),
-            ('jev-settings-filters.png', (0, 1240, 2080, 2850)),
+            ('jev-settings-filters.png', (0, 1240, 2080, 2110)),
         ):
             settings.crop(box).save(IMAGES / name, optimize=True)
             print(f'{name}: {box}')

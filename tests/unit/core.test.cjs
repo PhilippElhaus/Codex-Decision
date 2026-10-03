@@ -6,12 +6,13 @@ const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
 const {
-  checkHealth, completeLinePolicy, completeSearchRelevance, DEFAULT_SEARCH_RELEVANCE, decisionSummary, sessionDirectory, readHookHealth, estimateTokensSaved, outcomeLine, parseHealthOutput, readApiKey, readConfig,
+  checkHealth, completeRelevancePolicy, decisionSummary, sessionDirectory, readHookHealth, estimateTokensSaved, outcomeLine, parseHealthOutput, readApiKey, readConfig,
   readEventOffset, readEventsSince, readLifetimeStats, writeApiKey, writeSelection, ensureSessionDefaults,
   readGlobalSettings, writeGlobalSettings, readInstallationStats,
 } = require("../../vscode-control/core");
-const withV2 = (config) => ({ ...config, schema_version: 2, line_policy: completeLinePolicy(),
-  search_relevance: DEFAULT_SEARCH_RELEVANCE });
+const withV3 = (config) => require("../../vscode-control/schema").validate("config", {
+  ...config, schema_version: 4, relevance_policy: completeRelevancePolicy(),
+});
 
 test("global settings stay independent of session switches and aggregate activity", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "jev-global-settings-"));
@@ -20,12 +21,12 @@ test("global settings stay independent of session switches and aggregate activit
     const two = sessionDirectory(root, "two");
     await ensureSessionDefaults(one);
     await ensureSessionDefaults(two);
-    await writeSelection(one, false, true, false);
+    await writeSelection(one, false);
     await writeGlobalSettings(root, { mode: "observe", log_limit_mb: 72 });
     assert.equal((await readGlobalSettings(root)).mode, "observe");
     assert.equal((await readGlobalSettings(root)).log_limit_mb, 72);
-    assert.equal((await readConfig(one)).test_build_enabled, true);
-    assert.equal((await readConfig(two)).test_build_enabled, true);
+    assert.equal((await readConfig(one)).enabled, false);
+    assert.equal((await readConfig(two)).enabled, true);
     assert.equal((await readConfig(one)).mode, "replace");
     for (const [directory, calls, completed, elapsedMs] of [[one, 2, 2, 200], [two, 1, 1, 300]]) {
       await fs.writeFile(path.join(directory, "stats.json"), JSON.stringify({
@@ -44,18 +45,15 @@ test("global settings stay independent of session switches and aggregate activit
   } finally { await fs.rm(root, { recursive: true, force: true }); }
 });
 
-test("new Codex sessions enable all three filters once and preserve later choices", async () => {
+test("new Codex sessions enable Jev once and preserve later choices", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "jev-default-session-"));
   const first = sessionDirectory(root, "thread-one");
   const second = sessionDirectory(root, "thread-two");
   try {
     const created = await ensureSessionDefaults(first);
     assert.equal(created.enabled, true);
-    assert.equal(created.test_build_enabled, true);
-    assert.equal(created.search_listing_enabled, true);
-    await writeSelection(first, false, false, false);
+    await writeSelection(first, false);
     assert.equal((await ensureSessionDefaults(first)).enabled, false);
-    assert.equal((await ensureSessionDefaults(first)).search_listing_enabled, false);
     assert.equal((await ensureSessionDefaults(second)).enabled, true);
     assert.equal((await readConfig(first)).enabled, false);
     await assert.rejects(ensureSessionDefaults(root), /session directory/);
@@ -68,8 +66,8 @@ test("session readers reject linked directories before opening state", async () 
     await fs.mkdir(path.join(root, "sessions"), { mode: 0o700 });
     const outside = path.join(root, "outside");
     await fs.mkdir(outside, { mode: 0o700 });
-    await fs.writeFile(path.join(outside, "config.json"), JSON.stringify(withV2({
-      enabled: true, test_build_enabled: false, search_listing_enabled: false, mode: "replace",
+    await fs.writeFile(path.join(outside, "config.json"), JSON.stringify(withV3({
+      enabled: true, mode: "replace",
     })));
     const linked = sessionDirectory(root, "linked-window");
     await fs.symlink(outside, linked);
@@ -85,19 +83,17 @@ test("global policy validates thresholds and saves independent of sessions", asy
   try {
     const session = sessionDirectory(root, "thread-one");
     await ensureSessionDefaults(session);
-    const policy = completeLinePolicy({ output: { omit_min: 96 }, search_listing: { exact_max: 4 } });
-    const relevance = completeSearchRelevance({ guard_enabled: true, relevant_max: 7 });
-    await writeGlobalSettings(root, { mode: "observe", line_policy: policy,
-      search_relevance: relevance, log_limit_mb: 9999, never_delete_logs: true });
+    const policy = completeRelevancePolicy({ relevant_max: 4 });
+    await writeGlobalSettings(root, { mode: "observe", relevance_policy: policy,
+      log_limit_mb: 9999, never_delete_logs: true });
     const saved = await readGlobalSettings(root);
-    assert.deepEqual(saved.line_policy, policy);
-    assert.deepEqual(saved.search_relevance, relevance);
+    assert.deepEqual(saved.relevance_policy, policy);
     assert.equal(saved.never_delete_logs, true);
     assert.equal((await readConfig(session)).mode, "replace");
     for (const changes of [
-      { line_policy: { output: { omit_min: 101 } } },
-      { line_policy: { output: { typo: 80 } } },
-      { search_relevance: { relevant_max: 101 } },
+      { relevance_policy: { relevant_max: 101 } },
+      { relevance_policy: { typo: 80 } },
+      { relevance_policy: { exact_max: 101 } },
       { log_limit_mb: 0 }, { never_delete_logs: "true" },
     ]) await assert.rejects(writeGlobalSettings(root, changes));
     assert.deepEqual(await readGlobalSettings(root), saved);
@@ -148,15 +144,13 @@ test("settings save private key and test an unsaved key without exposing it", as
 test("hook selection writes the config atomically and preserves the Jev mode", async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-control-test-"));
   try {
-    assert.deepEqual(await readConfig(directory), { enabled: false, test_build_enabled: false, search_listing_enabled: false, mode: "replace" });
-    await fs.writeFile(path.join(directory, "config.json"), JSON.stringify(withV2({ enabled: false, test_build_enabled: false, search_listing_enabled: false, mode: "replace", min_chars: 10000 })));
-    assert.deepEqual(await writeSelection(directory, true, false, false), withV2({ enabled: true, test_build_enabled: false, search_listing_enabled: false, mode: "replace", min_chars: 10000 }));
-    assert.deepEqual(await readConfig(directory), withV2({ enabled: true, test_build_enabled: false, search_listing_enabled: false, mode: "replace", min_chars: 10000 }));
-    assert.deepEqual(await writeSelection(directory, false, true), withV2({ enabled: false, test_build_enabled: true, search_listing_enabled: false, mode: "replace", min_chars: 10000 }));
-    assert.deepEqual(await writeSelection(directory, true, true, true), withV2({ enabled: true, test_build_enabled: true, search_listing_enabled: true, mode: "replace", min_chars: 10000 }));
-    assert.equal((await writeSelection(directory, false, false)).search_listing_enabled, true);
-    await assert.rejects(writeSelection(directory, true, "yes"), /booleans/);
-    await writeSelection(directory, false, false, false);
+    assert.deepEqual(await readConfig(directory), { enabled: false, mode: "replace" });
+    await fs.writeFile(path.join(directory, "config.json"), JSON.stringify(withV3({ enabled: false, mode: "replace", min_chars: 10000 })));
+    assert.deepEqual(await writeSelection(directory, true), withV3({ enabled: true, mode: "replace", min_chars: 10000 }));
+    assert.deepEqual(await readConfig(directory), withV3({ enabled: true, mode: "replace", min_chars: 10000 }));
+    assert.equal((await writeSelection(directory, false)).enabled, false);
+    await assert.rejects(writeSelection(directory, "yes"), /boolean/);
+    await writeSelection(directory, false);
     assert.equal((await readConfig(directory)).enabled, false);
     assert.deepEqual((await fs.readdir(directory)).sort(), ["config.json"]);
   } finally {
@@ -175,7 +169,7 @@ test("outdated configuration is rejected without changing it", async () => {
       const bytes = JSON.stringify(outdated);
       await fs.writeFile(path.join(directory, "config.json"), bytes);
       await assert.rejects(readConfig(directory), /Invalid Jev config/);
-      await assert.rejects(writeSelection(directory, true, false, false), /Invalid Jev config/);
+      await assert.rejects(writeSelection(directory, true), /Invalid Jev config/);
       assert.equal(await fs.readFile(path.join(directory, "config.json"), "utf8"), bytes);
     }
   } finally { await fs.rm(directory, { recursive: true, force: true }); }
@@ -218,17 +212,17 @@ test("invalid config and linked target fail without changing a hook selection", 
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-control-test-"));
   try {
     await fs.writeFile(path.join(directory, "config.json"), JSON.stringify({ enabled: "yes" }));
-    await assert.rejects(writeSelection(directory, true, false, false), /Invalid Jev config/);
+    await assert.rejects(writeSelection(directory, true), /Invalid Jev config/);
     await fs.writeFile(path.join(directory, "config.json"), JSON.stringify({ test_build_enabled: "yes" }));
-    await assert.rejects(writeSelection(directory, false, true), /Invalid Jev config/);
+    await assert.rejects(writeSelection(directory, false), /Invalid Jev config/);
     await fs.writeFile(path.join(directory, "config.json"), JSON.stringify({ search_listing_enabled: "yes" }));
-    await assert.rejects(writeSelection(directory, false, false, true), /Invalid Jev config/);
+    await assert.rejects(writeSelection(directory, false), /Invalid Jev config/);
     await fs.writeFile(path.join(directory, "config.json"), JSON.stringify({ min_chars: 1 }));
-    await assert.rejects(writeSelection(directory, true, false, false), /Invalid Jev config/);
+    await assert.rejects(writeSelection(directory, true), /Invalid Jev config/);
     await fs.rm(path.join(directory, "config.json"));
     try {
       await fs.symlink(path.join(directory, "missing.json"), path.join(directory, "config.json"));
-      await assert.rejects(writeSelection(directory, true, false, false));
+      await assert.rejects(writeSelection(directory, true));
     } catch (error) {
       if (error.code !== "EPERM") throw error; // Windows developer mode may forbid test symlinks.
     }
@@ -280,12 +274,12 @@ test("summary keeps three signals and missing capsule sizes do not imply savings
   assert.equal(outcomeLine({ status: "replace", tool: "Bash", original_chars: 10000, capsule_chars: null, elapsed_ms: 100 }),
     "replaced · Bash · 10,000 chars");
   assert.equal(outcomeLine({ filter: "test_build", status: "replace", tool: "Bash", original_chars: 10000, capsule_chars: 1000, elapsed_ms: 4 }),
-    "replaced · test/build · 10,000 chars · -90%");
+    "replaced · Bash · 10,000 chars · -90%");
   assert.equal(outcomeLine({ filter: "test_build", status: "replace", tool: "Bash", original_chars: 6367, capsule_chars: 309, elapsed_ms: 1263 }),
-    "replaced · test/build · 6,367 chars · -95%");
+    "replaced · Bash · 6,367 chars · -95%");
   assert.equal(outcomeLine({ filter: "search_listing", status: "replace", tool: "Bash", original_chars: 5000, capsule_chars: 1200, elapsed_ms: 1263 }),
-    "replaced · search/listing · 5,000 chars · -76%");
-  assert.match(decisionSummary({ filter: "search_listing", status: "replace", tool: "Bash", original_chars: 5000, elapsed_ms: 1263 }), /replaced search\/listing Bash output/);
+    "replaced · Bash · 5,000 chars · -76%");
+  assert.match(decisionSummary({ filter: "search_listing", status: "replace", tool: "Bash", original_chars: 5000, elapsed_ms: 1263 }), /replaced Bash output/);
   assert.equal(estimateTokensSaved(6058), 1515);
   assert.equal(estimateTokensSaved(0), 0);
   assert.equal(estimateTokensSaved(NaN), 0);

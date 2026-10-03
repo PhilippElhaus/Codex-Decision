@@ -5,6 +5,27 @@ function defaults(kind) {
     .map(([key, spec]) => [key, structuredClone(spec.default)]));
 }
 function validate(kind, value) {
+  if ((kind === "config" && value?.schema_version === 2) ||
+      (kind === "settings" && value?.schema_version === 1)) {
+    const old = validate(kind === "config" ? "config_v2" : "settings_v1", value);
+    const policies = Object.values(old.line_policy);
+    const { test_build_enabled, search_listing_enabled, search_relevance, ...current } = old;
+    current.schema_version = kind === "config" ? 3 : 2;
+    if (kind === "config") current.enabled = old.enabled || test_build_enabled || search_listing_enabled;
+    current.line_policy = {
+      omit_min: Math.max(...policies.map((policy) => policy.omit_min)),
+      exact_max: Math.min(...policies.map((policy) => policy.exact_max)),
+    };
+    return validate(kind, current);
+  }
+  if ((kind === "config" && value?.schema_version === 3) ||
+      (kind === "settings" && value?.schema_version === 2)) {
+    const old = validate(kind === "config" ? "config_v3" : "settings_v2", value);
+    const { line_policy, choice_gate_enabled, ...current } = old;
+    current.schema_version = kind === "config" ? 4 : 3;
+    current.relevance_policy = { relevant_max: Math.min(5, 100 - line_policy.omit_min, line_policy.exact_max) };
+    return validate(kind, current);
+  }
   const fields = contract[kind];
   if (!value || typeof value !== "object" || Array.isArray(value) ||
       Object.keys(value).some((key) => !Object.hasOwn(fields, key))) throw new Error("Invalid Jev " + kind);
