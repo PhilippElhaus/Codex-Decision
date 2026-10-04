@@ -94,7 +94,12 @@
       report.midKeepWidth = document.querySelector(".batch-row.keep .batch-bar-fill").getBoundingClientRect().width;
       report.midPercentOpacity = getComputedStyle(document.querySelector(".batch-value")).opacity; }, 350);
     if (query.has("capture")) {
-      setTimeout(() => { document.title = "JEV_LINE_PANEL_READY"; }, 1300);
+      setTimeout(() => {
+        document.body.dataset.captureHeight = String(Math.ceil(
+          document.querySelector(".batch-layout").getBoundingClientRect().bottom +
+          parseFloat(getComputedStyle(document.body).paddingBottom)));
+        document.title = "JEV_LINE_PANEL_READY";
+      }, 1300);
     } else {
     setTimeout(() => { report.finalWidth = document.querySelector(".batch-bar-fill").getBoundingClientRect().width;
       report.finalKeepWidth = document.querySelector(".batch-row.keep .batch-bar-fill").getBoundingClientRect().width;

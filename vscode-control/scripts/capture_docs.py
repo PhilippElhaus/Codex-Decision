@@ -69,11 +69,15 @@ def chromium_capture() -> None:
             ):
                 page = browser.new_page(viewport={'width': 1200, 'height': height})
                 page.goto((ROOT.parent / 'tests/browser/jev_panel_harness.html').as_uri() + f'?{state}&capture')
-                page.wait_for_function('document.body.textContent.includes("JEV_LINE_PANEL_READY")')
+                page.wait_for_function('document.title === "JEV_LINE_PANEL_READY"')
                 assert page.locator('.card-kicker,.batch-summary,.batch-legend').count() == 0
                 assert page.locator('.batch-row').count() == count
                 assert all(text in page.locator('body').inner_text() for text in expected)
-                page.screenshot(path=str(IMAGES / name))
+                capture_height = int(page.locator('body').get_attribute('data-capture-height'))
+                assert 0 < capture_height <= height
+                page.screenshot(path=str(IMAGES / name), clip={
+                    'x': 0, 'y': 0, 'width': 1200, 'height': capture_height,
+                })
                 print(name)
                 page.close()
         finally:
@@ -156,8 +160,14 @@ def main() -> None:
                     result.stdout.count('class="batch-row ') != row_count or
                     any(text not in result.stdout for text in expected)):
                 raise RuntimeError(f'Could not capture the current Jev panel: {name}')
+            bounds = re.search(r'data-capture-height="(\d+)"', result.stdout)
+            if not bounds:
+                raise RuntimeError(f'Could not inspect {name} content height')
+            capture_height = int(bounds.group(1))
             with Image.open(panel) as captured:
-                captured.crop((0, 0, captured.width, min(captured.height, height))).save(panel, optimize=True)
+                if not 0 < capture_height <= captured.height:
+                    raise RuntimeError(f'{name} content exceeds the capture height')
+                captured.crop((0, 0, captured.width, capture_height)).save(panel, optimize=True)
             panel.chmod(0o644)
             print(f'{panel.name}: {panel.stat().st_size} bytes')
     finally:

@@ -2,91 +2,47 @@
 
 <img src="assets/logo.png" width="56" alt="Codex Jev logo">
 
-Codex Jev cuts repetitive lines from local tool output before Codex reads them. It keeps errors and useful details, and every shortened result points to a private copy of the complete original.
+Codex Jev removes repetitive lines from local tool output before Codex reads them. Errors and useful evidence stay visible. Every shortened result links to the complete original.
 
-**What you gain:** less log noise in the conversation, a way to inspect what was kept, and clear status when the filter has not run or has failed. Savings depend on the output, the configured cutoffs, and Jev's judgments.
-
-## Latest release: 0.10.7 with control 0.9.10
-
-[Download Jev 0.10.7 and VS Code control 0.9.10](https://github.com/PhilippElhaus/Codex-Jev/releases/tag/v0.10.7), or [build both packages](docs/setup/setup_installation.md). The release includes SHA-256 checksums for both packages.
-
-- **Composer alignment:** the compact indicator stays on the toolbar row as the pane narrows.
-- **Panel recovery:** the selected thread's latest decision survives reloads, and the panel retries dropped messages.
-- **Codex compatibility:** the pinned bridge also supports `26.930.41038`.
-- **One switch:** click **jev** to turn filtering on or off for the current thread. The integration popup is removed.
-- **One policy:** supported tool output uses the same relevance cutoff. Settings no longer contain separate filter categories or a search-only relevance guard.
-- **Code-mode calls:** `exec` and `wait` produce relevance previews, including command logs serialized inside text result envelopes. Their original metadata and content remain unchanged.
-- **Shell scripts:** heredocs, redirection, mixed commands, and other unrecognized shell forms produce relevance previews. Their complete output stays intact.
-- **Panel activity:** before the first line decision, the panel shows API request counts, skipped outputs, and the latest skip or hook error.
-- **Compact panel:** every source line appears in order across all batches. Judged lines show a ten-character bar and a percentage; protected and pending lines show `—`. Responsive columns use the available space. Hover for the excerpt, precise probability, and reason.
-- **Large outputs:** batch packing reuses validated window sizes, large panel updates are throttled, and deadline failures still restore the previous panel and record their cause.
-- **Existing settings:** old switches migrate to on when any was on. Legacy settings migrate to a relevance cutoff no higher than 5%.
-
-See the [composer and panel validation](docs/development/composer_panel_quality_2026-10-04.md) for regression coverage, fault checks, and measured behavior.
-
-See the [orchestrated-output and compact-panel verification](docs/development/orchestrated_output_verification_2026-10-04.md) for the missing-call repair and current live checks.
-
-See the [runtime activity and protected-line verification](docs/development/runtime_activity_verification_2026-10-04.md) for the shell-script repair, complete panel rows, and current installation checks.
-
-See the [extensive verification](docs/development/extensive_verification_2026-10-04.md) for current native rendering, live hook checks, sustained browser testing, and deadline recovery.
-
-Jev first classifies a sampled excerpt. When the combined probability of an excerptable class is at least 95%, the second stage judges every candidate line for task relevance in API-bounded batches. It has no 250-line cap. The default maximum relevance for omission is 5%. Uncertain, unsupported, oversized, or failed results stay complete. See the [two-stage design](docs/architecture/design_integrations.md) and [batching verification](docs/development/batching_verification.md).
+**Jev 0.10.7 · VS Code control 0.9.10** — [Download the latest release](https://github.com/PhilippElhaus/Codex-Jev/releases/tag/v0.10.7).
 
 ## Get started
 
-On Linux x86_64, install the plugin:
+Install the plugin on Linux x86_64:
 
 ```bash
 codex plugin marketplace add https://github.com/PhilippElhaus/Codex-Jev
 codex plugin add codex-jev@codex-jev
 ```
 
-Open `/hooks` in Codex and trust the Jev hook. Do this again when an update changes the hook definition. The optional [VS Code control](vscode-control/README.md) adds the screens below; its composer control needs the documented patch for the supported Codex extension version. After installation or upgrade, run **Developer: Reload Window** in VS Code. Then start a new local Codex thread. A continuing thread can still use the previous hook version.
-
-The screenshots below render the current webview code with synthetic data and no real API key.
+Trust the Jev hook in `/hooks`. For the screens below, install the optional [VS Code control and composer patch](vscode-control/README.md#install). Run **Developer: Reload Window**, then start a new local Codex thread. See [installation and upgrades](docs/setup/setup_installation.md) for details.
 
 ### 1. Connect Jev
 
-Sign in to Codex, open a thread, then enter and test your typesafe.ai API key in **Connect Jev**. The key is shared by this local installation and stays out of chat.
+Sign in to Codex, then enter and test your typesafe.ai API key in **Connect Jev**. The key stays out of chat.
 
-<img src="docs/images/jev-connect.png" width="760" alt="Connect Jev screen beside the Codex sign-in screen, with an empty API key field">
+<img src="docs/images/jev-connect.png" width="760" alt="Connect Jev screen with an empty API key field">
 
 ### 2. Turn Jev on or off
 
-The VS Code control enables Jev for a new local thread. Click **jev** to turn it off or on. The button is gray when off; its on/off state is also available to assistive technology. Each thread keeps its own choice. Eligible text is sent to TypeSafe when Jev and the API key are active.
+Click **jev** in the composer. Each thread remembers its choice. Eligible output is sent to TypeSafe while Jev is enabled.
 
-<img src="docs/images/jev-toggle.png" width="620" alt="Jev on/off button in the Codex composer with no integration popup">
+<img src="docs/images/jev-toggle.png" width="620" alt="Jev on/off button on the Codex composer toolbar">
 
 ### 3. Adjust the details
 
-Open **Codex settings → Jev** at any time to choose **Monitor** (show decisions, keep full output) or **Filter** (shorten approved output). The mode, cutoffs, log retention, and API key apply to all sessions. The page shows installation totals. Classification always runs before eligible line filtering; it has no separate switch. Uncertain output stays complete. The shared relevance slider controls line omission.
+Open **Codex settings → Jev** to choose **Monitor** (keep full output) or **Filter** (shorten approved output). Manage the relevance cutoff, API key, and log retention here. Settings apply to all sessions.
 
-<img src="docs/images/jev-settings-overview.png" width="760" alt="Codex Jev settings showing activity, API key controls, and log options">
-
-<img src="docs/images/jev-settings-filters.png" width="760" alt="Jev settings in Filter mode with the default 5% maximum relevance for omission for all supported tool output">
+<img src="docs/images/jev-settings-overview.png" width="760" alt="Jev settings showing activity, API key controls, and log retention">
 
 ### 4. Inspect a result
 
-The composer’s Jev icon briefly glows blue when output classification starts. Relevance batches and connection checks do not trigger the glow.
+Open the **Jev** panel beside **Terminal** and **Output**. Blue rows mark proposed omissions; gold rows mark kept lines. Bars show relevance. Hover for excerpts and reasons. Before the first decision, the panel shows hook activity and skip reasons.
 
-![Jev classification activity](docs/images/jev-classification.png)
+<img src="docs/images/jev-panel.png" width="1000" alt="Jev panel showing 3 kept lines and 47 proposed omissions from a synthetic 50-line result">
 
-See the [classification activity verification](docs/development/classification_activity_verification.md).
+Screenshots use synthetic data. For a missing decision or failed connection, see [troubleshooting](docs/setup/setup_installation.md).
 
-Open the **Jev** panel beside **Terminal** and **Output**, or run **Jev: Show Latest Decision**. The panel shows every line in the latest decision from this session, including protected lines and judgments from earlier batches. Its header contains the kept/total line count. Ten-character bars show 0–100% relevance in compact rows and responsive columns. Classification-only results do not create line rows. The latest saved decision is restored after a VS Code reload. Blue rows mark lines selected for omission; gold rows mark lines selected to keep. Monitor mode shows these judgments and keeps the output unchanged. At the default cutoff, 5% can be omitted and 6% is kept; local protection rules can also keep low-scoring lines. Protected and pending lines show `—` and a keep reason instead of a probability. Hover for precise probabilities and reasons. This synthetic example keeps 3 of 50 lines. A shortened result also gives Codex the path to its complete original.
+## Documentation
 
-<img src="docs/images/jev-panel.png" width="1000" alt="Jev panel showing 3 kept lines and 47 omitted lines from a synthetic 50-line result">
-
-Before the first line decision, the panel shows API request counts, skipped outputs, and the latest skip or hook error. Short or unsupported output can leave it without line rows. If no activity appears after a local tool call, check `/hooks`, confirm that Jev is on, reload VS Code, and start a new local thread. A green indicator confirms the API check; it does not prove that Codex has dispatched the hook.
-
-The composer indicator is **green** when a small Jev API check succeeds and **red** when the key or API check fails. It stays amber while the check is pending. A hook error appears in the activity tooltip during a thread. On the home screen, the tooltip stays hidden and the indicator still shows API health.
-
-## Jev in action
-
-The [initial two-stage evaluation](docs/development/two_stage_evaluation.md) uses 35 base cases and 19 holdout cases with reviewed evidence labels. It includes logs, progress, search hits, file lists, source, diffs, structured data, exact values, injection text, Unicode, line endings, and budget limits. Offline faults test failed requests and invalid responses. That report records the single-request baseline. The [batching verification](docs/development/batching_verification.md) covers current API limits and complete multi-batch coverage. The report distinguishes model quality from application correctness and records actual usage and latency.
-
-The [historical eight-case demo](docs/development/quality_demo.md) measures the retired omission/exact-text questions. Its 70/25 and 95/5 results do not calibrate current task relevance.
-
-## More detail
-
-[Install and verify](docs/setup/setup_installation.md) · [API key](docs/setup/setup_credentials.md) · [What gets filtered](docs/architecture/design_integrations.md) · [Privacy and safeguards](docs/architecture/design_data.md) · [Tests](docs/development/development_verification.md) · [Live demo results](docs/development/quality_demo.md) · [45-second Jev explainer by Matija Sosić](https://x.com/MatijaSosic/status/2100190746389135772)
+[API key](docs/setup/setup_credentials.md) · [Filtering rules](docs/architecture/design_integrations.md) · [Privacy and safeguards](docs/architecture/design_data.md) · [Tests](tests/README.md) · [Verification report](docs/development/extensive_verification_2026-10-04.md) · [45-second Jev explainer](https://x.com/MatijaSosic/status/2100190746389135772)
