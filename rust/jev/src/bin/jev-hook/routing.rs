@@ -141,14 +141,7 @@ fn words_route(words: &[String]) -> Option<&'static str> {
 pub(super) fn tool_route(tool: &str) -> Option<&'static str> {
     if matches!(
         tool,
-        "apply_patch"
-            | "functions.apply_patch"
-            | "exec"
-            | "wait"
-            | "functions.exec"
-            | "functions.wait"
-            | "update_plan"
-            | "functions.update_plan"
+        "apply_patch" | "functions.apply_patch" | "update_plan" | "functions.update_plan"
     ) {
         return None;
     }

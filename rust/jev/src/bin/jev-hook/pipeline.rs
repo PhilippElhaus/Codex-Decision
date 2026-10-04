@@ -250,6 +250,7 @@ pub(super) fn process_event(
     let replace = candidate
         && config.mode == "replace"
         && has_user_task
+        && !orchestration_tool(event["tool_name"].as_str().unwrap_or(""))
         && (shell_tool(event["tool_name"].as_str().unwrap_or(""))
             && event["tool_response"].is_string()
             || !event["tool_name"]

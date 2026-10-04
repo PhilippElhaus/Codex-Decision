@@ -64,16 +64,14 @@
       item.title = row.can_omit === null ? `${row.excerpt}\nLine ${row.line} · ${row.reason.replaceAll("_", " ")} · task relevance ${row.task_relevant.toFixed(2)}` : `${row.excerpt}\nLine ${row.line} · ${row.reason.replaceAll("_", " ")} · retention index ${score.toFixed(2)} (display only) · Jev can omit ${row.can_omit?.toFixed(2) ?? "—"} · exact text ${row.exact_needed?.toFixed(2) ?? "—"}${row.task_relevant === null ? "" : ` · task relevance ${row.task_relevant.toFixed(2)}`}`;
       const track = element("div", "batch-bar-track");
       track.setAttribute("aria-hidden", "true");
-      const fill = element("span", "batch-bar-fill", "█".repeat(80));
-      // A single visible block marks near-zero cut scores without changing the label.
-      fills.push({ node: fill, score: row.action === "omit" ? Math.max(score, .04) : score });
-      append(track, element("span", "batch-bar-empty", ".".repeat(80)), fill);
-      const value = element("span", "batch-value", score.toFixed(2));
+      const fill = element("span", "batch-bar-fill", "█".repeat(10));
+      fills.push({ node: fill, score });
+      append(track, element("span", "batch-bar-empty", "·".repeat(10)), fill);
+      const value = element("span", "batch-value", `${Math.round(score * 100)}%`);
+      value.title = `${decision.version === 4 ? "Task relevance" : "Retention index (display only)"}: ${score.toPrecision(4)}. ${decision.version !== 4 ? row.reason.replaceAll("_", " ") : row.action === "omit" ? "At or below the omission cutoff." : row.reason === "task_relevant" ? "Above the omission cutoff." : row.reason.replaceAll("_", " ")}`;
       values.push(value);
       const action = element("span", "batch-action", row.action);
-      const explanation = { task_relevant: "task", exact_text: "exact",
-        representative: "sample", last_line: "final" }[row.reason];
-      if (row.action === "keep" && explanation) action.appendChild(element("small", "batch-reason", ` · ${explanation}`));
+      action.title = row.reason.replaceAll("_", " ");
       append(item,
         element("span", "batch-line-number", String(row.line)),
         element("span", "batch-excerpt", row.excerpt || "(empty line)"),

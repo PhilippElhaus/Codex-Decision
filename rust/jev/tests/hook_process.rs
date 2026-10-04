@@ -12,6 +12,9 @@ use std::sync::{
 };
 use std::time::Duration;
 
+#[path = "hook_process/orchestration.rs"]
+mod orchestration;
+
 fn scoped(data: &Path, session: &str) -> PathBuf {
     data.join("sessions")
         .join(format!("{:x}", Sha256::digest(session.as_bytes())))

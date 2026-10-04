@@ -432,8 +432,6 @@ fn local_text_is_eligible_but_structured_and_action_results_are_not() {
     for tool in [
         "apply_patch",
         "functions.apply_patch",
-        "exec",
-        "wait",
         "update_plan",
         "mcp__files__write_file",
         "mcp__repo__deploy",
@@ -450,6 +448,37 @@ fn local_text_is_eligible_but_structured_and_action_results_are_not() {
         .as_deref(),
         Some("line one\nline two")
     );
+}
+
+#[test]
+fn orchestration_text_previews_command_output_without_losing_unknown_payloads() {
+    let config = enabled();
+    let text = "INFO routine poll\nERROR synthetic failure\nDone\n";
+    let envelope = json!({"chunk_id":"dummy","wall_time_seconds":0.1,
+        "exit_code":1,"output":text})
+    .to_string();
+    for tool in ["exec", "wait", "functions.exec", "functions.wait"] {
+        let event = json!({"tool_name":tool,"tool_response":[
+            {"type":"input_text","text":"Script completed\nOutput:\n"},
+            {"type":"input_text","text":envelope}]});
+        assert_eq!(route(&event, &config), Some("output"));
+        let preview = response_text(&event).unwrap();
+        assert!(preview.contains(text));
+        assert!(preview.contains("\"exit_code\":1"));
+        assert!(!preview.contains("\\nERROR"));
+    }
+    let unknown = json!({"chunk_id":"dummy","wall_time_seconds":0.1,
+        "output":text,"custom_metadata":{"required":true}})
+    .to_string();
+    assert_eq!(
+        response_text(&json!({"tool_name":"exec","tool_response":[
+        {"type":"input_text","text":unknown}]}))
+        .unwrap(),
+        unknown
+    );
+    assert!(response_text(&json!({"tool_name":"exec","tool_response":[
+        {"type":"input_text","text":envelope},{"type":"input_image"}]}))
+    .is_none());
 }
 
 #[test]

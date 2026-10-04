@@ -75,13 +75,21 @@ pub(super) fn response_text(event: &Value) -> Option<String> {
         if items.is_empty() {
             return None;
         }
-        return items
+        let parts = items
             .iter()
             .map(|item| {
                 (item.get("type")?.as_str()? == "input_text").then(|| item.get("text")?.as_str())?
             })
-            .collect::<Option<Vec<_>>>()
-            .map(|parts| parts.join("\n"));
+            .collect::<Option<Vec<_>>>()?;
+        return Some(if orchestration_tool(event["tool_name"].as_str()?) {
+            parts
+                .into_iter()
+                .map(command_preview)
+                .collect::<Vec<_>>()
+                .join("\n")
+        } else {
+            parts.join("\n")
+        });
     }
     if body.get("isError").and_then(Value::as_bool) == Some(true)
         || body.get("structuredContent").is_some()
@@ -103,4 +111,41 @@ pub(super) fn response_text(event: &Value) -> Option<String> {
         result.push(item.get("text")?.as_str()?);
     }
     Some(result.join("\n"))
+}
+
+pub(super) fn orchestration_tool(tool: &str) -> bool {
+    matches!(tool, "exec" | "wait" | "functions.exec" | "functions.wait")
+}
+
+// Code-mode text(result) serializes command output with escaped newlines.
+// Decode only the known command envelope for a readable preview. The original
+// text-item array still cannot be replaced, so all metadata remains intact.
+fn command_preview(text: &str) -> String {
+    let Ok(Value::Object(mut object)) = serde_json::from_str::<Value>(text) else {
+        return text.into();
+    };
+    if object.keys().any(|key| {
+        ![
+            "chunk_id",
+            "wall_time_seconds",
+            "exit_code",
+            "original_token_count",
+            "output",
+            "session_id",
+        ]
+        .contains(&key.as_str())
+    }) || !object.get("chunk_id").is_some_and(Value::is_string)
+        || !object
+            .get("wall_time_seconds")
+            .is_some_and(Value::is_number)
+        || !object.get("output").is_some_and(Value::is_string)
+    {
+        return text.into();
+    }
+    let output = object.remove("output").unwrap();
+    format!(
+        "Command result metadata: {}\n{}",
+        Value::Object(object),
+        output.as_str().unwrap()
+    )
 }

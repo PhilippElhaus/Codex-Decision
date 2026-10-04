@@ -325,3 +325,14 @@ fn relevance_keeps_uncertainty_protection_unique_bytes_and_representatives() {
     let unknown = apply_relevance(&lines, &BTreeMap::new(), 5);
     assert!(unknown.iter().all(|row| row.action != Action::Omit));
 }
+
+#[test]
+fn five_percent_cutoff_is_inclusive_and_does_not_round_scores() {
+    let lines = source_lines("first routine\nsecond routine\nthird routine\nfinal\n");
+    let scores = BTreeMap::from([(1, 0.05), (2, 0.05001), (3, 0.06)]);
+    let decisions = apply_relevance(&lines, &scores, 5);
+    assert_eq!(decisions[0].action, Action::Omit);
+    assert_eq!(decisions[1].action, Action::Keep);
+    assert_eq!(decisions[2].action, Action::Keep);
+    assert_eq!(decisions[1].p_task_relevant, Some(0.05001));
+}

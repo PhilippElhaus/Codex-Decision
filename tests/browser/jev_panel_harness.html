@@ -123,15 +123,29 @@
       report.minimalHeader = document.querySelector(".batch-header").children.length === 1 &&
         document.querySelectorAll(".card-kicker,.batch-summary,.batch-legend").length === 0 &&
         document.querySelector(".batch-title").textContent.includes("kept");
-      report.keepReasonVisible = [...document.querySelectorAll(".batch-action")].some((node) => node.textContent.includes("task"));
+      report.keepReasonAvailable = [...document.querySelectorAll(".batch-action")].some((node) => node.title.includes("task"));
       report.positionsStable = report.positions === positions();
       report.fullBlockBars = [...document.querySelectorAll(".batch-bar-fill")].every((node) => node.textContent.includes("█"));
       report.parallelGrowth = report.initialWidth === 0 && report.midWidth > 0 && report.midWidth < report.finalWidth &&
         report.midKeepWidth > 0 && report.midKeepWidth < report.finalKeepWidth;
       report.fadeAfterGrowth = Number(report.midPercentOpacity) === 0 && Number(report.finalPercentOpacity) > .95;
       report.columns = getComputedStyle(document.querySelector(".batch-list")).gridTemplateColumns.split(" ").length;
-      report.keepRightCutLeft = Math.min(...[...document.querySelectorAll(".batch-row.keep .batch-value")].map((node) => Number(node.textContent))) >
-        Math.max(...[...document.querySelectorAll(".batch-row.omit .batch-value")].map((node) => Number(node.textContent)));
+      report.keepRightCutLeft = Math.min(...[...document.querySelectorAll(".batch-row.keep .batch-value")].map((node) => parseFloat(node.textContent))) >
+        Math.max(...[...document.querySelectorAll(".batch-row.omit .batch-value")].map((node) => parseFloat(node.textContent)));
+      report.tenCharacterBars = [...document.querySelectorAll(".batch-bar-fill,.batch-bar-empty")]
+        .every(node => [...node.textContent].length === 10);
+      report.fixedTrackWidths = new Set([...document.querySelectorAll(".batch-bar-track")]
+        .map(node => node.getBoundingClientRect().width.toFixed(2))).size === 1;
+      report.compactRows = [...document.querySelectorAll(".batch-row")]
+        .every(node => node.getBoundingClientRect().height <= 28);
+      report.singleLineRows = [...document.querySelectorAll(".batch-row")].every(row => {
+        const bounds = row.getBoundingClientRect();
+        return [...row.children].every(child => {
+          const box = child.getBoundingClientRect();
+          return box.top >= bounds.top && box.bottom <= bounds.bottom &&
+            Math.abs((box.top + box.bottom - bounds.top - bounds.bottom) / 2) <= 1;
+        });
+      });
       report.keepColor = getComputedStyle(document.querySelector(".batch-row.keep .batch-bar-fill")).color;
       report.cutColor = getComputedStyle(document.querySelector(".batch-row.omit .batch-bar-fill")).color;
       report.keptWidth = document.querySelector(".batch-row.keep .batch-bar-fill").getBoundingClientRect().width;

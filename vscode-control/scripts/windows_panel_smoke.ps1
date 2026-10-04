@@ -46,7 +46,7 @@ try {
     $source = [IO.File]::ReadAllText($rendererPath)
     $needle = 'else showEmpty();'
     if ($source.IndexOf($needle) -ne $source.LastIndexOf($needle) -or -not $source.Contains($needle)) { throw 'Renderer instrumentation anchor changed.' }
-    $ack = ' vscode.postMessage({type:"jev-test-rendered", id:event.data.decision?.id || null, rows:document.querySelectorAll(".batch-row").length, title:document.querySelector(".batch-title")?.textContent || "Jev", layout:document.querySelector(".batch-list") ? getComputedStyle(document.querySelector(".batch-list")).display : null});'
+    $ack = ' vscode.postMessage({type:"jev-test-rendered", id:event.data.decision?.id || null, rows:document.querySelectorAll(".batch-row").length, title:document.querySelector(".batch-title")?.textContent || "Jev", layout:document.querySelector(".batch-list") ? getComputedStyle(document.querySelector(".batch-list")).display : null, tenCharacterBars:[...document.querySelectorAll(".batch-bar-fill,.batch-bar-empty")].every(node => [...node.textContent].length === 10), compactRows:[...document.querySelectorAll(".batch-row")].every(node => node.getBoundingClientRect().height <= 28)});'
     [IO.File]::WriteAllText($rendererPath, $source.Replace($needle, $needle + $ack), $utf8)
     [IO.File]::WriteAllText((Join-Path $profile 'User\settings.json'), (@{
         'telemetry.telemetryLevel' = 'off'; 'update.mode' = 'none'; 'extensions.autoUpdate' = $false;
@@ -105,6 +105,8 @@ exports.run = async () => {
       assert.equal(acknowledged.rows, 2);
       assert.equal(acknowledged.title, "1 / 2 kept");
       assert.equal(acknowledged.layout, "grid", "the panel stylesheet must load under the CSP");
+      assert.equal(acknowledged.tenCharacterBars, true);
+      assert.equal(acknowledged.compactRows, true);
       result.checks.push(label);
     };
     await check(firstId, "actual renderer loads under the webview CSP and restores an old saved decision without composer focus");

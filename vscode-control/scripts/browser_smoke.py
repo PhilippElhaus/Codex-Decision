@@ -37,7 +37,8 @@ def chromium_smoke() -> None:
                     page.wait_for_function('document.title === "JEV_LINE_PANEL_READY"')
                     report = json.loads(page.locator('body').get_attribute('data-report'))
                     for field in ('newBatchShown', 'minimalHeader', 'sameDecisionDidNotRestart',
-                                  'positionsStable', 'parallelGrowth', 'fadeAfterGrowth', 'noNestedScroll'):
+                                  'positionsStable', 'parallelGrowth', 'fadeAfterGrowth', 'noNestedScroll',
+                                  'tenCharacterBars', 'fixedTrackWidths', 'compactRows', 'singleLineRows', 'keepReasonAvailable'):
                         assert report[field], {'viewport': width, 'sample': sample, **report}
                     assert not report['horizontalOverflow'], report
                     reports.append({'panel': sample, 'requested_width': width, **report})
@@ -95,7 +96,8 @@ def main() -> None:
                     raise RuntimeError(f'Panel harness failed: {sample} {width}px')
                 report = json.loads(match.group(1).replace('&quot;', '"'))
                 for field in ('newBatchShown', 'minimalHeader', 'sameDecisionDidNotRestart',
-                              'positionsStable', 'parallelGrowth', 'fadeAfterGrowth', 'noNestedScroll'):
+                              'positionsStable', 'parallelGrowth', 'fadeAfterGrowth', 'noNestedScroll',
+                              'tenCharacterBars', 'fixedTrackWidths', 'compactRows', 'singleLineRows', 'keepReasonAvailable'):
                     assert report[field], {'viewport': width, 'sample': sample, **report}
                 assert not report['horizontalOverflow'], report
                 reports.append({'panel': sample, 'requested_width': width, **report})
