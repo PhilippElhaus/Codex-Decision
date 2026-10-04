@@ -588,7 +588,9 @@ fn completed_batch_is_visible_and_failed_result_restores_empty_panel() {
 #[test]
 fn large_progress_panels_publish_first_final_and_periodic_updates() {
     let temporary = tempfile::tempdir().unwrap();
-    let mut progress = ProgressSnapshot::new(temporary.path(), "a".repeat(32)).unwrap();
+    let data = temporary.path().join("data");
+    ensure_dir(&data).unwrap();
+    let mut progress = ProgressSnapshot::new(&data, "a".repeat(32)).unwrap();
     assert!(progress.should_publish(10_000, 1, 100));
     progress.last_published = Some(Instant::now());
     assert!(!progress.should_publish(10_000, 2, 100));
@@ -610,13 +612,14 @@ fn expired_deadline_rolls_back_progress_and_records_the_error() {
     for previous in [None, Some(json!({"receipt_id":"previous", "rows":[]}))] {
         HOOK_STARTED.with(|started| started.set(None));
         let temporary = tempfile::tempdir().unwrap();
-        let data = temporary.path();
+        let data = temporary.path().join("data");
+        ensure_dir(&data).unwrap();
         let path = data.join("logs/latest-decision.json");
         ensure_dir(&data.join("logs")).unwrap();
         if let Some(value) = &previous {
             write_private(&path, &serde_json::to_vec(value).unwrap(), true).unwrap();
         }
-        let mut progress = ProgressSnapshot::new(data, "a".repeat(32)).unwrap();
+        let mut progress = ProgressSnapshot::new(&data, "a".repeat(32)).unwrap();
         let lines = source_lines("routine poll\nDone\n");
         let decisions = apply_relevance(&lines, &BTreeMap::from([(1, 0.02)]), 5);
         let batch = BatchRecord {
@@ -639,7 +642,7 @@ fn expired_deadline_rolls_back_progress_and_records_the_error() {
             ),
             None => assert!(!path.exists()),
         }
-        hook_health(data, "error", "hook deadline").unwrap();
+        hook_health(&data, "error", "hook deadline").unwrap();
         let health: Value =
             serde_json::from_slice(&fs::read(data.join("logs/hook-health.json")).unwrap()).unwrap();
         assert_eq!(health["last_error"], "hook deadline");

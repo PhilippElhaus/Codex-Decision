@@ -25,6 +25,11 @@ at most once per second. Final receipts and snapshots retain all judgments.
 Smaller outputs still publish every batch. Another regression checks the
 first, final, periodic, and small-output publication rules.
 
+CI exposed a permissions assumption in the new fixture: its temporary root
+inherits the platform umask. The fixture now creates its own private data
+child through `ensure_dir`, matching production instead of weakening the
+permission check. The Rust suite was repeated under umask `022`.
+
 The corpus report now includes bounded hook stderr when the health record has
 no error, so an expired hook is no longer reduced to an uninformative
 `hook error`.
