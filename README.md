@@ -6,7 +6,7 @@ Codex Jev cuts repetitive lines from local tool output before Codex reads them. 
 
 **What you gain:** less log noise in the conversation, a way to inspect what was kept, and clear status when the filter has not run or has failed. Savings depend on the output, the configured cutoffs, and Jev's judgments.
 
-## Current source: 0.10.3 with control 0.9.5
+## Current source: 0.10.3 with control 0.9.6
 
 [Latest published release: 0.10.2 with VS Code control 0.9.3](https://github.com/PhilippElhaus/Codex-Jev/releases/tag/v0.10.2), or [build both packages](docs/setup/setup_installation.md).
 
@@ -60,7 +60,7 @@ The composer’s Jev icon briefly glows blue when output classification starts. 
 
 See the [classification activity verification](docs/development/classification_activity_verification.md).
 
-The **Jev** panel shows task relevance for each judged line in the latest decision from this session. Its header contains only the kept/judged count. Classification does not appear here. When classification keeps full output, no line rows are produced. The latest saved decision is restored after a VS Code reload. Blue lines were cut; gold lines were kept. This synthetic example keeps 3 of 50 lines. A shortened result also gives Codex the path to its complete original.
+The **Jev** panel shows task relevance for each judged line in the latest decision from this session. Its header contains only the kept/judged count. Classification does not appear here. When classification keeps full output, no line rows are produced. The latest saved decision is restored after a VS Code reload. Blue rows mark lines selected for omission; gold rows mark lines selected to keep. Monitor mode shows these judgments and keeps the output unchanged. This synthetic example keeps 3 of 50 lines. A shortened result also gives Codex the path to its complete original.
 
 <img src="docs/images/jev-panel.png" width="1000" alt="Jev panel showing 3 kept lines and 47 omitted lines from a synthetic 50-line result">
 

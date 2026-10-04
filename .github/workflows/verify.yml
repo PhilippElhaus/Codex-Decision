@@ -33,4 +33,4 @@ jobs:
       - run: python3 -m pip install playwright==1.63.0
       - run: python3 -m playwright install --with-deps chromium
       - run: python3 vscode-control/scripts/browser_smoke.py --browser chromium
-      - run: python3 vscode-control/scripts/browser_quality.py --rounds 50 --seed 7 --out .local/quality/browser-ci
+      - run: python3 vscode-control/scripts/browser_quality.py --rounds 50 --seed 7 --fallback-every 5 --out .local/quality/browser-ci

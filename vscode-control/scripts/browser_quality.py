@@ -43,7 +43,7 @@ GEOMETRY = """() => {
 
 def composer_round(page, rng, benchmark=False):
     width = rng.choice([360, 480, 720, 1200, 1600, 2800])
-    gap = rng.choice([48, 80, 120] if benchmark else [8, 12, 14, 20, 24, 28, 30, 48, 80, 120])
+    gap = rng.choice([48, 80, 120] if benchmark else [8, 11, 12, 14, 20, 24, 28, 30, 48, 80, 120])
     page.set_viewport_size({'width': width, 'height': 600})
     page.evaluate("""({gap, height, label}) => {
       document.querySelector('.toolbar').style.gap = gap + 'px';
@@ -85,6 +85,30 @@ def panel_round(page, snapshot, round_number, width):
     return round((time.perf_counter() - before) * 1000, 3)
 
 
+def composer_fallback(page, rng):
+    page.evaluate("""() => {
+      const access = document.querySelector('.access');
+      window.__jevFallbackStyles = [...document.querySelector('.toolbar').children]
+        .map(node => [node, node.getAttribute('style')]);
+      for (const [node] of window.__jevFallbackStyles) {
+        if (!node.contains(access)) node.style.display = 'none';
+      }
+      window.dispatchEvent(new Event('resize'));
+    }""")
+    try:
+        page.wait_for_function("document.getElementById('codex-jev').style.display === 'none'")
+    finally:
+        page.evaluate("""() => {
+          for (const [node, style] of window.__jevFallbackStyles) {
+            if (style === null) node.removeAttribute('style');
+            else node.setAttribute('style', style);
+          }
+          delete window.__jevFallbackStyles;
+          window.dispatchEvent(new Event('resize'));
+        }""")
+    return composer_round(page, rng)
+
+
 def panel_settled(page, snapshot):
     page.wait_for_function("""() => [...document.querySelectorAll('.batch-value')]
       .every(value => Number(getComputedStyle(value).opacity) === 1)""")
@@ -109,12 +133,13 @@ def main():
     parser.add_argument('--benchmark-only', action='store_true', help='Use gaps supported by the baseline')
     parser.add_argument('--settle-every', type=int, default=100, help='Verify completed panel animations every N rounds')
     parser.add_argument('--reload-every', type=int, default=0, help='Reload the panel every N rounds; zero disables')
+    parser.add_argument('--fallback-every', type=int, default=0, help='Hide and restore toolbar neighbors every N rounds; zero disables')
     parser.add_argument('--device-scale', type=float, default=1, help='Device scale factor from 1 to 3')
     parser.add_argument('--reduced-motion', choices=['reduce', 'no-preference'], default='no-preference')
     parser.add_argument('--out', type=Path, required=True)
     args = parser.parse_args()
-    if args.rounds < 1 or not math.isfinite(args.minutes) or args.minutes < 0 or args.settle_every < 1 or args.reload_every < 0:
-        parser.error('rounds and settle-every must be positive; minutes and reload-every must be nonnegative')
+    if args.rounds < 1 or not math.isfinite(args.minutes) or args.minutes < 0 or args.settle_every < 1 or args.reload_every < 0 or args.fallback_every < 0:
+        parser.error('rounds and settle-every must be positive; minutes and interval options must be nonnegative')
     if not math.isfinite(args.device_scale) or not 1 <= args.device_scale <= 3:
         parser.error('device-scale must be between 1 and 3')
     args.out.mkdir(parents=True, exist_ok=True)
@@ -127,6 +152,7 @@ def main():
     page_errors = []
     settled_checks = 0
     panel_reloads = 0
+    fallback_checks = 0
     with sync_playwright() as p:
         browser = p.chromium.launch()
         try:
@@ -164,6 +190,9 @@ def main():
             while iteration < args.rounds or time.monotonic() < deadline:
                 iteration += 1
                 reports.append(composer_round(page, rng, args.benchmark_only))
+                if args.fallback_every and iteration % args.fallback_every == 0:
+                    reports[-1] = composer_fallback(page, rng)
+                    fallback_checks += 1
                 if panel:
                     snapshot = snapshots[(iteration - 1) % len(snapshots)]
                     if args.reload_every and iteration % args.reload_every == 0:
@@ -197,6 +226,7 @@ def main():
                        'panel_renders': len(panel_times), 'panel_render_p95_ms':
                            sorted(panel_times)[min(len(panel_times)-1, int(len(panel_times)*.95))] if panel_times else None,
                        'settled_checks': settled_checks, 'panel_reloads': panel_reloads,
+                       'fallback_checks': fallback_checks,
                        'page_errors': page_errors,
                        'max_checkpoint_heap_bytes': max((item['heap_bytes'] for item in checkpoints), default=0),
                        'max_panel_checkpoint_heap_bytes': max((item.get('panel_heap_bytes', 0)

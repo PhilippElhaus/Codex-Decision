@@ -42,6 +42,10 @@ The offline quality runner validates each hook-produced panel snapshot with the 
 
 The browser quality runner varies toolbar gaps, model heights, permission labels, and pane widths in a 5,000-item synthetic chat. It verifies the toolbar row, button separation, and dot size. An optional hook-produced snapshot is rendered through the real panel script at the same widths. Repeat `--panel` to rotate multiple normalized snapshots. It checks completed bar animations every 100 rounds and records separate composer and panel heap samples. Use `--reload-every 500` to test repeated panel reloads. Use `--device-scale 2 --reduced-motion reduce` for display scaling and reduced motion checks. Timing reports and screenshots contain only synthetic data.
 
+Use `--fallback-every 10` to remove and restore the toolbar neighbours every ten
+rounds. This checks that an incomplete toolbar hides the indicator and that the
+indicator returns when the controls become available.
+
 ```bash
 python3 vscode-control/scripts/browser_quality.py --rounds 50 --seed 7 \
   --out .local/quality/browser

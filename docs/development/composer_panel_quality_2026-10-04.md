@@ -2,7 +2,7 @@
 
 This change keeps the compact Jev indicator on the composer toolbar and restores
 the selected thread's latest decision after a VS Code reload. It pairs plugin
-0.10.3 with control 0.9.5 and adds the exact-hash patch profile for Codex
+0.10.3 with control 0.9.6 and adds the exact-hash patch profile for Codex
 `26.930.41038`.
 
 ## Confirmed defects and repairs
@@ -11,8 +11,13 @@ The old layout required 15 px for the compact button plus 15 px of margins.
 A 28 px toolbar gap therefore moved the indicator above the prompt. The new
 layout reduces compact padding and margins while preserving the 7 px dot.
 It stays centered on the permission control's row. Gaps below 11 px hide the
-indicator until space returns. Tests cover 8, 12, 14, 24, and 28 px gaps and
+indicator until space returns. Tests cover 8, 11, 12, 14, 24, and 28 px gaps and
 restoration of the normal button.
+
+A later fallback check removed every control to the right of the permission
+button. Control 0.9.5 then overlapped that button by 8 px. Control 0.9.6 hides
+the indicator while no right edge is available and restores it when the toolbar
+returns. The browser harness checks both states.
 
 The panel rejected decisions recorded before the provider started. A restored
 thread also needed composer focus before the provider could select its session.
@@ -60,7 +65,7 @@ without composer focus, three document reloads, hiding and reopening, and a
 session switch. The instance used synthetic WSL data, an empty extension
 directory, and a private
 temporary profile. It closed and removed both fixtures after the check.
-Four native runs passed. The helper binds each report to a unique run ID so
+Five native runs passed. The helper binds each report to a unique run ID so
 an early exit cannot reuse a previous successful report.
 
 The offline corpus passed 145 cases with 379 mock API calls. It produced 41
@@ -72,6 +77,12 @@ A separate zero-cutoff trial passed 62 cases and 104 mock calls. It kept every
 line and produced 18 completed panel decisions. This verifies that completed
 relevance judgments still appear when the configured policy makes no omissions.
 The trial changed only private fixture settings.
+
+A Monitor-mode trial produced a matching candidate receipt and 117 panel rows
+from three mock calls while preserving all output. Its browser check passed
+100 rounds, ten completed animations, and four reloads at 200% display scaling.
+This separates a completed relevance judgment that keeps output unchanged from
+a classification that produces no line judgments.
 
 A bounded live test sent the synthetic `log-failure-240` fixture to Jev. Three
 API calls produced 117 panel rows in 1,529 ms. The panel matched the receipt,
@@ -101,6 +112,20 @@ ten samples reduced median style setter calls per frame from 234 to 121.11
 suppresses many unchanged values. This measures removed JavaScript work, not a
 claimed 48% reduction in paint time.
 
+A separate 1,000-round memory probe omitted the timing array and collected
+garbage before each 100-round sample. It rotated the current, full-keep, and
+historical snapshots. Maximum retained JavaScript heap was 1,543,704 bytes for
+the 5,000-item composer and 1,396,184 bytes for the panel. Panel node counts
+stayed constant for each snapshot, and event listener counts stayed constant.
+The probe completed in 478.106 seconds with no page errors. These measurements
+cover these fixtures and this browser run.
+
+The exact 11 px boundary passed in Chromium and native Edge. A combined smoke
+and stress job exceeded its 240-second test limit while sharing the container's
+CPU. The smoke checks had completed. The remaining 100-round stress check
+passed separately in 128.203 seconds with ten completed animations and four
+reloads. No product assertion failed in that timeout.
+
 The Lab-Control container had one CPU. Other validation work ran during some
 measurements. Browser timings include instrumentation and automation overhead;
 they are observations for these fixtures rather than production latency limits.
@@ -121,12 +146,17 @@ It varies permission labels, model heights, and toolbar gaps. The second pass
 also checks completed animations, panel reloads, reduced motion, display
 scaling, and separate panel heap samples.
 
+Both 110-minute runs started with control 0.9.5. The additional missing-neighbour
+guard in 0.9.6 has native Edge and Chromium regression checks. A separate
+60-minute run tests the final source by removing and restoring neighbours every
+ten rounds and reloading the panel every 200 rounds.
+
 Native Edge passed the composer and current and historical panel checks.
 Reports record actual viewport dimensions because Edge can enforce a minimum
 headless window width. Edge's actual widths were 540, 680, 1,160, and 2,760 px.
 Chromium checked 360, 720, 1,200, and 2,800 px directly.
 
-Local deployment installed plugin 0.10.3 and control 0.9.5. The installed plugin
+Local deployment installed plugin 0.10.3 and control 0.9.6. The installed plugin
 files match the ZIP. The control files match the VSIX except for VS Code's
 added installation metadata. Both installed Codex versions, `26.930.31730` and
 `26.930.41038`, have verified patch manifests and preserved rollback files.

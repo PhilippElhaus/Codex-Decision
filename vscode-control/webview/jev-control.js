@@ -559,6 +559,7 @@
     // Once the model is known, it alone defines the right edge for Jev.
     const nextEdge = Number.isFinite(modelEdge) ? modelEdge :
       nextToolbarEdge(anchor, toolbarScope(anchor, model));
+    if (!Number.isFinite(nextEdge)) { item.style.display = "none"; return; }
     let rightEdge = Number.isFinite(nextEdge) ? nextEdge - 8 : leftEdge;
     const available = rightEdge - leftEdge;
     const button = item.querySelector("#codex-jev-button");
