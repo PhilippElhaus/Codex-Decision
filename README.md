@@ -6,7 +6,7 @@ Codex Jev cuts repetitive lines from local tool output before Codex reads them. 
 
 **What you gain:** less log noise in the conversation, a way to inspect what was kept, and clear status when the filter has not run or has failed. Savings depend on the output, the configured cutoffs, and Jev's judgments.
 
-## Current source: 0.10.6 with control 0.9.9
+## Current source: 0.10.7 with control 0.9.10
 
 [Latest published release: 0.10.2 with VS Code control 0.9.3](https://github.com/PhilippElhaus/Codex-Jev/releases/tag/v0.10.2), or [build both packages](docs/setup/setup_installation.md).
 
@@ -19,6 +19,7 @@ Codex Jev cuts repetitive lines from local tool output before Codex reads them. 
 - **Shell scripts:** heredocs, redirection, mixed commands, and other unrecognized shell forms produce relevance previews. Their complete output stays intact.
 - **Panel activity:** before the first line decision, the panel shows API request counts, skipped outputs, and the latest skip or hook error.
 - **Compact panel:** every source line appears in order across all batches. Judged lines show a ten-character bar and a percentage; protected and pending lines show `—`. Responsive columns use the available space. Hover for the excerpt, precise probability, and reason.
+- **Large outputs:** batch packing reuses validated window sizes, large panel updates are throttled, and deadline failures still restore the previous panel and record their cause.
 - **Existing settings:** old switches migrate to on when any was on. Legacy settings migrate to a relevance cutoff no higher than 5%.
 
 See the [composer and panel validation](docs/development/composer_panel_quality_2026-10-04.md) for regression coverage, fault checks, and measured behavior.
@@ -26,6 +27,8 @@ See the [composer and panel validation](docs/development/composer_panel_quality_
 See the [orchestrated-output and compact-panel verification](docs/development/orchestrated_output_verification_2026-10-04.md) for the missing-call repair and current live checks.
 
 See the [runtime activity and protected-line verification](docs/development/runtime_activity_verification_2026-10-04.md) for the shell-script repair, complete panel rows, and current installation checks.
+
+See the [extensive verification](docs/development/extensive_verification_2026-10-04.md) for current native rendering, live hook checks, sustained browser testing, and deadline recovery.
 
 Jev first classifies a sampled excerpt. When the combined probability of an excerptable class is at least 95%, the second stage judges every candidate line for task relevance in API-bounded batches. It has no 250-line cap. The default maximum relevance for omission is 5%. Uncertain, unsupported, oversized, or failed results stay complete. See the [two-stage design](docs/architecture/design_integrations.md) and [batching verification](docs/development/batching_verification.md).
 

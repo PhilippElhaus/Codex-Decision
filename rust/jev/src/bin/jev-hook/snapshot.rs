@@ -66,6 +66,7 @@ pub(super) struct ProgressSnapshot {
     previous: Option<Vec<u8>>,
     pub(super) last_snapshot_id: String,
     pub(super) active: bool,
+    pub(super) last_published: Option<Instant>,
 }
 
 impl ProgressSnapshot {
@@ -88,7 +89,23 @@ impl ProgressSnapshot {
             previous,
             last_snapshot_id: String::new(),
             active: false,
+            last_published: None,
         })
+    }
+
+    pub(super) fn should_publish(
+        &self,
+        line_count: usize,
+        batch_number: usize,
+        batch_count: usize,
+    ) -> bool {
+        // Large cumulative panels otherwise rebuild thousands of unchanged rows
+        // for each fast API batch. Always publish the first and final batches.
+        line_count < 1000
+            || batch_number == batch_count
+            || self
+                .last_published
+                .is_none_or(|last| last.elapsed() >= Duration::from_secs(1))
     }
 
     pub(super) fn publish(
@@ -120,6 +137,7 @@ impl ProgressSnapshot {
         write_private(&self.logs.join("latest-decision.json"), &bytes, true)?;
         self.last_snapshot_id = id;
         self.active = true;
+        self.last_published = Some(Instant::now());
         Ok(())
     }
 }
@@ -129,7 +147,7 @@ impl Drop for ProgressSnapshot {
         if !self.active {
             return;
         }
-        let Ok(_lock) = lock_logs(&self.logs) else {
+        let Ok(_lock) = cleanup_log_lock(&self.logs) else {
             return;
         };
         let path = self.logs.join("latest-decision.json");

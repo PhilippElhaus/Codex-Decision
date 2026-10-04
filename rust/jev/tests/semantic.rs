@@ -168,6 +168,41 @@ fn batches_cover_all_targets_exactly_once_without_a_line_cap() {
 }
 
 #[test]
+fn packing_adapts_when_successive_windows_shrink_and_grow() {
+    let source = (1..=420)
+        .map(|number| {
+            let text = if (141..=280).contains(&number) {
+                "状态 正常 🌍 ".repeat(180)
+            } else {
+                "routine poll".to_owned()
+            };
+            format!("{text} {number}\n")
+        })
+        .collect::<String>();
+    let lines = source_lines(&source);
+    let batches = relevance_requests("task", "cmd", KINDS[0], &lines, "jev-latest").unwrap();
+    let mut targets = Vec::new();
+    let mut sizes = Vec::new();
+    for batch in batches {
+        validate_request_budget(&batch.request).unwrap();
+        sizes.push(batch.target_numbers.len());
+        for number in &batch.target_numbers {
+            let row = batch.request["state"]["lines"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|row| row["line"] == *number)
+                .unwrap();
+            assert_eq!(row["text"], lines[number - 1].model_text);
+        }
+        targets.extend(batch.target_numbers);
+    }
+    assert_eq!(targets, (1..=420).collect::<Vec<_>>());
+    assert!(sizes.windows(2).any(|pair| pair[0] > pair[1]));
+    assert!(sizes.windows(2).any(|pair| pair[0] < pair[1]));
+}
+
+#[test]
 fn both_api_budgets_have_exact_boundaries_and_count_utf8_and_question_overhead() {
     let mut request = json!({"model":"jev-latest","state":"", "questions":{"q":{"type":"noul","instructions":"needed?"}}});
     let empty = request_budget(&request).unwrap();

@@ -228,7 +228,6 @@ pub(super) fn process_event(
                 return Err("duplicate relevance target".into());
             }
         }
-        let decisions = apply_relevance_batches(&lines, &probabilities, config.policy.relevant_max);
         let record = BatchRecord {
             id: batch.id,
             target_numbers: batch.target_numbers,
@@ -236,7 +235,11 @@ pub(super) fn process_event(
             response,
             elapsed_ms: before.elapsed().as_millis().min(u128::from(u64::MAX)) as u64,
         };
-        progress.publish(route, &lines, &decisions, &record, record.id, batch_count)?;
+        if progress.should_publish(lines.len(), record.id, batch_count) {
+            let decisions =
+                apply_relevance_batches(&lines, &probabilities, config.policy.relevant_max);
+            progress.publish(route, &lines, &decisions, &record, record.id, batch_count)?;
+        }
         records.push(record);
     }
     let decisions = apply_relevance_batches(&lines, &probabilities, config.policy.relevant_max);

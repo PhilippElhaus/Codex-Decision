@@ -30,7 +30,7 @@ pub fn relevance_requests(
                 / 12.min(diagnostics.len()).saturating_sub(1).max(1)],
         );
     }
-    let mut batches = Vec::new();
+    let mut batches: Vec<Batch> = Vec::new();
     let mut start = 0;
     while start < targets.len() {
         let build = |end| {
@@ -52,7 +52,34 @@ pub fn relevance_requests(
         let mut low = start + 1;
         let mut high = low;
         let mut request = first;
-        while high < targets.len() {
+        // Adjacent windows usually fit similar target counts. Reuse that count
+        // as a hint, but validate it and shrink when later lines are wider.
+        if let Some(previous) = batches.last() {
+            let end = (start + previous.target_numbers.len()).min(targets.len());
+            let candidate = build(end);
+            if validate_request_budget(&candidate).is_ok() {
+                low = end;
+                high = end;
+                request = candidate;
+            } else {
+                high = end - 1;
+            }
+        }
+        // A one-target probe avoids a fresh exponential search for equal-sized
+        // windows, while still allowing later, shorter lines to grow the batch.
+        let mut grow = low == high;
+        if grow && high < targets.len() {
+            let end = high + 1;
+            let candidate = build(end);
+            if validate_request_budget(&candidate).is_ok() {
+                low = end;
+                high = end;
+                request = candidate;
+            } else {
+                grow = false;
+            }
+        }
+        while grow && high < targets.len() {
             let end = (start + 2 * (high - start)).min(targets.len());
             let candidate = build(end);
             if validate_request_budget(&candidate).is_err() {

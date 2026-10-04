@@ -8,7 +8,7 @@ From this directory in WSL:
 
 ```bash
 ../scripts/build_control.sh
-code --install-extension "$(wslpath -w ../.local/submission/codex-jev-control-0.9.9.vsix)" --force
+code --install-extension "$(wslpath -w ../.local/submission/codex-jev-control-0.9.10.vsix)" --force
 ```
 
 The composer and Codex settings page require the separate local patch for Codex VS Code extensions `26.928.31416`, `26.930.21537`, `26.930.31730`, and `26.930.41038`. It checks exact host hashes and keeps rollback files outside this repository:
@@ -37,7 +37,7 @@ The **Jev** panel sits beside Output and Terminal. Reopen it through **View → 
 
 ## Verify
 
-Control 0.9.9 packs each judged line into a single row. A ten-character bar and a 0–100% value show its score. Columns adapt to the panel width. Hover for the full excerpt, precise probability, and reason. Code-mode `exec` and `wait` show proposed omissions while their original content and metadata stay complete.
+Control 0.9.10 packs each judged line into a single row. A ten-character bar and a 0–100% value show its score. Columns adapt to the panel width. Hover for the full excerpt, precise probability, and reason. Code-mode `exec` and `wait` show proposed omissions while their original content and metadata stay complete.
 
 ```bash
 npm test

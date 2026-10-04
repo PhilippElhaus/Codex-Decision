@@ -141,7 +141,7 @@ async function main() {
         required_lost:actualLost,proposed_required_lost:requiredLost,original_exact:originalExact,
         panel_rows:panel?.rows.length || 0,panel_matches_receipt:receipt ? panel?.receipt_id===receipt.manifest.id &&
           panel.status===receipt.manifest.status && panel.totals.requests===receipt.manifest.requests : panel===null,
-        error:stderr ? health?.last_error || "hook error" : null};
+        error:stderr ? health?.last_error || stderr.trim().slice(0,256) : null};
       const complete=receipt && receipt.decisions.filter(row=>row.batch_id!==undefined).length===judged.size && receipt.manifest.lines_unjudged===0;
       if (!report.panel_matches_receipt || (item.fault && (!report.error || receipt || originals.length || files.some(file=>path.basename(file)==="latest-decision.json"))) || protocolFailures.length || (receipt&&!complete) || actualLost.length || (reply.reason&&originalExact!==true) ||
           (!live&&item.min_batches&&(!receipt||report.relevance_batches<item.min_batches)) ||

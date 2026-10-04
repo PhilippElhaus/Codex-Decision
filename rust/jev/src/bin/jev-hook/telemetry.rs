@@ -5,7 +5,11 @@ pub(super) fn hook_health(data_dir: &Path, outcome: &str, reason: &str) -> Resul
     ensure_dir(data_dir)?;
     let logs = data_dir.join("logs");
     ensure_dir(&logs)?;
-    let _lock = lock_logs(&logs)?;
+    let _lock = if outcome == "error" {
+        cleanup_log_lock(&logs)?
+    } else {
+        lock_logs(&logs)?
+    };
     let path = logs.join("hook-health.json");
     let mut health = if path.exists() {
         let metadata = fs::symlink_metadata(&path).map_err(|_| "hook health stat")?;

@@ -80,6 +80,15 @@ pub(super) fn write_private(path: &Path, bytes: &[u8], replace: bool) -> Result<
 }
 
 pub(super) fn lock_logs(logs: &Path) -> Result<File, String> {
+    lock_logs_with_timeout(logs, remaining()?.min(Duration::from_secs(2)))
+}
+
+// Rollback and error reporting must still run after the invocation budget expires.
+pub(super) fn cleanup_log_lock(logs: &Path) -> Result<File, String> {
+    lock_logs_with_timeout(logs, Duration::from_millis(250))
+}
+
+fn lock_logs_with_timeout(logs: &Path, timeout: Duration) -> Result<File, String> {
     let path = logs.join(".lock");
     if path.is_symlink() {
         return Err("linked log lock".into());
@@ -95,7 +104,7 @@ pub(super) fn lock_logs(logs: &Path) -> Result<File, String> {
     #[cfg(unix)]
     {
         use std::os::fd::AsRawFd;
-        let deadline = Instant::now() + remaining()?.min(Duration::from_secs(2));
+        let deadline = Instant::now() + timeout;
         while unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
             let error = std::io::Error::last_os_error();
             if error.kind() != std::io::ErrorKind::WouldBlock {
