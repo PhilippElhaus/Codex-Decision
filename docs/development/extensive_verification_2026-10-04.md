@@ -78,6 +78,20 @@ their recorded SHA-256 hashes before being copied into the checkout's ignored
 release locations. The release version check ran in Lab-Control, where Cargo
 is available.
 
+After deployment, the installed 0.10.7 hook repeated the synthetic live check.
+It completed in 839 ms over two real API requests and produced all 73 rows,
+with `4 / 73 kept` and three protected rows. It preserved the complete
+code-mode response envelope and recorded no hook error. This check invoked
+the hook directly; automatic dispatch still requires a reloaded window and
+a new thread.
+
+Before publication, all documentation screenshots were regenerated in native
+Edge from the current composer, settings, and panel scripts. The screenshots
+use synthetic state and contain no real key or private chat. The capture
+checks verify toolbar alignment, settings, and complete panel row counts.
+The native Edge smoke suite passed again. Both release archives still match
+the source bytes and version manifests.
+
 ## Evidence and limits
 
 Generated logs, receipts, native reports, snapshots, screenshots, and manifest

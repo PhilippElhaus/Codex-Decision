@@ -6,9 +6,9 @@ Codex Jev cuts repetitive lines from local tool output before Codex reads them. 
 
 **What you gain:** less log noise in the conversation, a way to inspect what was kept, and clear status when the filter has not run or has failed. Savings depend on the output, the configured cutoffs, and Jev's judgments.
 
-## Current source: 0.10.7 with control 0.9.10
+## Latest release: 0.10.7 with control 0.9.10
 
-[Latest published release: 0.10.2 with VS Code control 0.9.3](https://github.com/PhilippElhaus/Codex-Jev/releases/tag/v0.10.2), or [build both packages](docs/setup/setup_installation.md).
+[Download Jev 0.10.7 and VS Code control 0.9.10](https://github.com/PhilippElhaus/Codex-Jev/releases/tag/v0.10.7), or [build both packages](docs/setup/setup_installation.md). The release includes SHA-256 checksums for both packages.
 
 - **Composer alignment:** the compact indicator stays on the toolbar row as the pane narrows.
 - **Panel recovery:** the selected thread's latest decision survives reloads, and the panel retries dropped messages.
@@ -41,7 +41,9 @@ codex plugin marketplace add https://github.com/PhilippElhaus/Codex-Jev
 codex plugin add codex-jev@codex-jev
 ```
 
-Open `/hooks` in Codex and trust the Jev hook. Do this again when an update changes the hook definition. Start a new Codex thread after installation or upgrade. The optional [VS Code control](vscode-control/README.md) adds the screens below; its composer control needs the documented patch for the supported Codex extension version.
+Open `/hooks` in Codex and trust the Jev hook. Do this again when an update changes the hook definition. The optional [VS Code control](vscode-control/README.md) adds the screens below; its composer control needs the documented patch for the supported Codex extension version. After installation or upgrade, run **Developer: Reload Window** in VS Code. Then start a new local Codex thread. A continuing thread can still use the previous hook version.
+
+The screenshots below render the current webview code with synthetic data and no real API key.
 
 ### 1. Connect Jev
 
@@ -71,9 +73,11 @@ The composer’s Jev icon briefly glows blue when output classification starts. 
 
 See the [classification activity verification](docs/development/classification_activity_verification.md).
 
-The **Jev** panel shows every line in the latest decision from this session, including protected lines and judgments from earlier batches. Its header contains the kept/total line count. Ten-character bars show 0–100% relevance in compact rows and responsive columns. Classification does not appear here. When classification keeps full output, no line rows are produced. The latest saved decision is restored after a VS Code reload. Blue rows mark lines selected for omission; gold rows mark lines selected to keep. Monitor mode shows these judgments and keeps the output unchanged. At the default cutoff, 5% can be omitted and 6% is kept; local protection rules can also keep low-scoring lines. Protected and pending lines show `—` and a keep reason instead of a probability. Hover for precise probabilities and reasons. This synthetic example keeps 3 of 50 lines. A shortened result also gives Codex the path to its complete original.
+Open the **Jev** panel beside **Terminal** and **Output**, or run **Jev: Show Latest Decision**. The panel shows every line in the latest decision from this session, including protected lines and judgments from earlier batches. Its header contains the kept/total line count. Ten-character bars show 0–100% relevance in compact rows and responsive columns. Classification-only results do not create line rows. The latest saved decision is restored after a VS Code reload. Blue rows mark lines selected for omission; gold rows mark lines selected to keep. Monitor mode shows these judgments and keeps the output unchanged. At the default cutoff, 5% can be omitted and 6% is kept; local protection rules can also keep low-scoring lines. Protected and pending lines show `—` and a keep reason instead of a probability. Hover for precise probabilities and reasons. This synthetic example keeps 3 of 50 lines. A shortened result also gives Codex the path to its complete original.
 
 <img src="docs/images/jev-panel.png" width="1000" alt="Jev panel showing 3 kept lines and 47 omitted lines from a synthetic 50-line result">
+
+Before the first line decision, the panel shows API request counts, skipped outputs, and the latest skip or hook error. Short or unsupported output can leave it without line rows. If no activity appears after a local tool call, check `/hooks`, confirm that Jev is on, reload VS Code, and start a new local thread. A green indicator confirms the API check; it does not prove that Codex has dispatched the hook.
 
 The composer indicator is **green** when a small Jev API check succeeds and **red** when the key or API check fails. It stays amber while the check is pending. A hook error appears in the activity tooltip during a thread. On the home screen, the tooltip stays hidden and the indicator still shows API health.
 
