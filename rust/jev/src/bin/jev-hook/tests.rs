@@ -319,7 +319,7 @@ fn one_switch_controls_every_supported_output() {
 }
 
 #[test]
-fn unsupported_or_compound_specialized_commands_do_not_use_output_fallback() {
+fn unsupported_or_compound_specialized_commands_only_preview_output() {
     let config = enabled();
     for command in [
         "rg --context=3 token src",
@@ -339,9 +339,12 @@ fn unsupported_or_compound_specialized_commands_do_not_use_output_fallback() {
                 &json!({"tool_name":"Bash","tool_input":{"command":command}}),
                 &config
             ),
-            None,
+            Some("output"),
             "{command}"
         );
+        let event = json!({"tool_name":"Bash","tool_input":{"command":command}});
+        assert_eq!(output_format(&event), None);
+        assert!(preview_only(&event));
     }
 }
 
@@ -388,9 +391,12 @@ fn command_lists_and_line_viewers_keep_routes_and_record_formats() {
                 &json!({"tool_name":"Bash","tool_input":{"command":command}}),
                 &config
             ),
-            None,
+            Some("output"),
             "{command}"
         );
+        let event = json!({"tool_name":"Bash","tool_input":{"command":command}});
+        assert_eq!(output_format(&event), None);
+        assert!(preview_only(&event));
     }
 }
 
@@ -571,7 +577,7 @@ fn completed_batch_is_visible_and_failed_result_restores_empty_panel() {
             .publish("output", &lines, &judged, &batch, 1, 1)
             .unwrap();
         let snapshot: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-        assert_eq!(snapshot["version"], 4);
+        assert_eq!(snapshot["version"], 5);
         assert_eq!(snapshot["status"], "processing");
         assert_eq!(snapshot["totals"]["judged"], 1);
         assert_eq!(snapshot["rows"][0]["line"], 1);
@@ -619,4 +625,40 @@ fn panel_snapshot_contains_a_full_bounded_250_line_batch() {
         .iter()
         .all(|row| row["excerpt"].as_str().unwrap().encode_utf16().count() <= 120));
     assert!(serde_json::to_vec(&snapshot).unwrap().len() <= PANEL_SNAPSHOT_MAX_BYTES);
+}
+
+#[test]
+fn cumulative_panel_covers_ten_thousand_lines_including_prior_batches() {
+    let source = (1..=10_000)
+        .map(|number| format!("Synthetic line {number:05}: {}\n", "漢".repeat(20)))
+        .collect::<String>();
+    let lines = source_lines(&source);
+    let probabilities = (1usize..=10_000)
+        .map(|number| (number, (0.03, number.div_ceil(1000))))
+        .collect::<BTreeMap<_, _>>();
+    let decisions = apply_relevance_batches(&lines, &probabilities, 5);
+    let batch = BatchRecord {
+        id: 10,
+        target_numbers: (9001..=10_000).collect(),
+        request: json!({}),
+        response: json!({}),
+        elapsed_ms: 25,
+    };
+    let snapshot = line_snapshot(
+        &"a".repeat(32),
+        &"b".repeat(32),
+        "output",
+        "candidate",
+        &lines,
+        &decisions,
+        &batch,
+        10,
+        10,
+    );
+    assert_eq!(snapshot["rows"].as_array().unwrap().len(), 10_000);
+    assert_eq!(snapshot["rows"][0]["line"], 1);
+    assert_eq!(snapshot["rows"][9999]["action"], "keep");
+    assert_eq!(snapshot["rows"][9999]["protected_reason"], "last_line");
+    let size = serde_json::to_vec(&snapshot).unwrap().len();
+    assert!(size > 256 * 1024 && size <= PANEL_SNAPSHOT_MAX_BYTES);
 }

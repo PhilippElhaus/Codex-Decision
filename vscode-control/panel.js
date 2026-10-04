@@ -1,7 +1,7 @@
 "use strict";
 
 const vscode = require("vscode");
-const { readLatestPanelDecision } = require("./panel-state");
+const { readLatestPanelDecision, readPanelActivity } = require("./panel-state");
 
 const VIEW_ID = "codexJevDecision";
 const MIN_SETTLED_MS = 1000;
@@ -109,9 +109,10 @@ class LatestDecisionProvider {
       try {
         if (directoryFault) throw new Error("Jev data directory is unavailable");
         const decision = directory ? await readLatestPanelDecision(directory, this.cache) : null;
+        const activity = directory && !decision ? await readPanelActivity(directory) : null;
         if (!current()) return;
         this.onFault(null);
-        message = { type: "decision", decision };
+        message = { type: "decision", decision, ...(activity ? { activity } : {}) };
       } catch (error) {
         if (!current()) return;
         this.onFault("Latest Jev decision could not be read");

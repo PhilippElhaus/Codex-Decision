@@ -474,10 +474,10 @@ fn writes_one_original_and_line_receipt_for_valid_batches() {
     let logs = scoped(&data_dir, "fixture-session").join("logs");
     let snapshot: Value =
         serde_json::from_slice(&fs::read(logs.join("latest-decision.json")).unwrap()).unwrap();
-    assert_eq!(snapshot["version"], 4);
+    assert_eq!(snapshot["version"], 5);
     assert_eq!(
         snapshot["rows"].as_array().unwrap().len(),
-        snapshot["batch"]["target_count"].as_u64().unwrap() as usize
+        snapshot["totals"]["seen"].as_u64().unwrap() as usize
     );
     assert_eq!(snapshot["totals"]["seen"], 120);
     assert_eq!(snapshot["totals"]["judged"], 120);

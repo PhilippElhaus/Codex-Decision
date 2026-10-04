@@ -17,8 +17,17 @@
     window.dispatchEvent(new MessageEvent("message", { data: {
       type: "decision", decision: null, error: "The latest Jev decision could not be read."
     } }));
-    document.body.dataset.result = JSON.stringify({ initial: first, afterReadFault: clean() });
-    document.title = first && clean() ? "JEV_EMPTY_READY" : "JEV_EMPTY_FAILED";
+    const afterReadFault = clean();
+    window.dispatchEvent(new MessageEvent("message", { data: {
+      type: "decision", decision: null, activity: {
+        message: "Jev classified the output and kept it complete. No line judgments were needed.",
+        calls: 11, skipped: 341
+      }
+    } }));
+    const activity = app.textContent.includes("11 API requests") && app.textContent.includes("341 skipped outputs") &&
+      app.textContent.includes("No line judgments were needed.");
+    document.body.dataset.result = JSON.stringify({ initial: first, afterReadFault, activity });
+    document.title = first && afterReadFault && activity ? "JEV_EMPTY_READY" : "JEV_EMPTY_FAILED";
   </script>
 </body>
 </html>

@@ -71,3 +71,89 @@ fn code_mode_commands_publish_real_line_decisions_and_preserve_the_envelope() {
     stop.store(true, Ordering::Relaxed);
     assert_eq!(server.join().unwrap(), 8);
 }
+
+#[test]
+fn shell_scripts_and_mixed_commands_publish_previews_without_replacement() {
+    let root = tempfile::tempdir().unwrap();
+    let data = root.path().join("data");
+    fs::create_dir(&data).unwrap();
+    fs::set_permissions(&data, fs::Permissions::from_mode(0o700)).unwrap();
+    fs::write(
+        data.join("config.json"),
+        json!({"schema_version":4,"scope":"global",
+            "enabled":true,"mode":"replace","allow_mcp_replacement":true,
+            "relevance_policy":{"relevant_max":5}})
+        .to_string(),
+    )
+    .unwrap();
+    fs::write(data.join(".env"), "JEV_API_KEY=synthetic-test-key\n").unwrap();
+    fs::set_permissions(data.join(".env"), fs::Permissions::from_mode(0o600)).unwrap();
+    let source = "INFO routine heartbeat status unchanged\n".repeat(70)
+        + "ERROR: synthetic connection failure\nDone\n";
+    let (endpoint, stop, server) = mock_server(None);
+    let mut requests = 0;
+    for (i, command) in [
+        "python3 - <<'PY'\nprint('synthetic log')\nPY",
+        "cargo test 2>&1; echo done",
+        "rg -n sample src && cat progress.log",
+        "cat progress.log | sed -n '1,90p'",
+    ]
+    .iter()
+    .enumerate()
+    {
+        let session = format!("script-preview-{i}");
+        let event = json!({"hook_event_name":"PostToolUse","tool_name":"Bash",
+            "session_id":session,"tool_use_id":"dummy-call",
+            "tool_input":{"command":command},"tool_response":source});
+        assert_eq!(send_event(&data, &endpoint, &event), json!({}));
+        let directory = scoped(&data, &session);
+        let panel: Value =
+            serde_json::from_slice(&fs::read(directory.join("logs/latest-decision.json")).unwrap())
+                .unwrap();
+        assert_eq!(panel["status"], "candidate");
+        let count = panel["totals"]["requests"].as_u64().unwrap();
+        assert!(count >= 2);
+        assert_eq!(count, panel["batch"]["count"].as_u64().unwrap() + 1);
+        requests += count;
+        assert!(panel["totals"]["omitted"].as_u64().unwrap() > 50);
+        assert_eq!(panel["version"], 5);
+        assert_eq!(panel["rows"].as_array().unwrap().len(), 72);
+        assert_eq!(panel["totals"]["kept"], 3);
+        for number in [70, 71, 72] {
+            let row = &panel["rows"][number - 1];
+            assert_eq!(row["line"], number);
+            assert_eq!(row["action"], "keep");
+            assert!(row["task_relevant"].is_null());
+            assert!(row["protected_reason"].is_string());
+        }
+        assert!(!data.join("outputs").exists());
+    }
+    // Sensitive input and structured output keep their existing safeguards.
+    for (session, command, source, reason) in [
+        (
+            "sensitive-script",
+            "cat .env > output",
+            source.as_str(),
+            "sensitive",
+        ),
+        (
+            "structured-script",
+            "python3 - <<'PY'\nprint('json')\nPY",
+            "{\n\"rows\": []\n}\n".repeat(100).as_str(),
+            "structure_guard",
+        ),
+    ] {
+        let event = json!({"hook_event_name":"PostToolUse","tool_name":"Bash",
+            "session_id":session,"tool_use_id":"dummy-call",
+            "tool_input":{"command":command},"tool_response":source});
+        assert_eq!(send_event(&data, &endpoint, &event), json!({}));
+        let directory = scoped(&data, session);
+        let health: Value =
+            serde_json::from_slice(&fs::read(directory.join("logs/hook-health.json")).unwrap())
+                .unwrap();
+        assert_eq!(health["last_skip"], reason);
+        assert!(!directory.join("logs/latest-decision.json").exists());
+    }
+    stop.store(true, Ordering::Relaxed);
+    assert_eq!(server.join().unwrap() as u64, requests + 1);
+}

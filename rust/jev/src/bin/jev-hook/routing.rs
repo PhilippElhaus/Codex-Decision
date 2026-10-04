@@ -212,5 +212,14 @@ pub(super) fn output_format(event: &Value) -> Option<&'static str> {
 }
 
 pub(super) fn route(event: &Value, config: &Config) -> Option<&'static str> {
-    (config.enabled && output_format(event).is_some()).then_some("output")
+    let tool = event.get("tool_name").and_then(Value::as_str).unwrap_or("");
+    (config.enabled && (shell_tool(tool) || output_format(event).is_some())).then_some("output")
+}
+
+// The parser establishes when command-specific evidence rules are safe. It
+// must not prevent classification of ordinary script output. Unknown shell
+// forms get line previews, while their complete tool result stays intact.
+pub(super) fn preview_only(event: &Value) -> bool {
+    let tool = event.get("tool_name").and_then(Value::as_str).unwrap_or("");
+    orchestration_tool(tool) || shell_tool(tool) && output_format(event).is_none()
 }

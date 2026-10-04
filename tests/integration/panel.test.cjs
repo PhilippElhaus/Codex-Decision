@@ -7,6 +7,31 @@ const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
 
+test("empty panel explains real API requests and skipped outputs for its selected thread", async () => {
+  const { readPanelActivity } = require("../../vscode-control/panel-state");
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-panel-activity-"));
+  try {
+    await fs.mkdir(path.join(directory, "logs"));
+    const config = { schema_version: 4, enabled: true, mode: "replace", relevance_policy: { relevant_max: 5 } };
+    await fs.writeFile(path.join(directory, "config.json"), JSON.stringify(config));
+    await fs.writeFile(path.join(directory, "stats.json"), JSON.stringify({ calls: 11, completed: 0,
+      replaced: 0, timed: 11, elapsedMs: 4000 }));
+    const seen = Date.now();
+    const health = { version: 1, hook_version: "0.10.5", last_seen_ms: seen, last_skip_ms: seen,
+      last_skip: "choice_kept_full_output", skipped: 341 };
+    await fs.writeFile(path.join(directory, "logs", "hook-health.json"), JSON.stringify(health));
+    const activity = await readPanelActivity(directory);
+    assert.equal(activity.calls, 11);
+    assert.equal(activity.skipped, 341);
+    assert.match(activity.message, /Jev classified.*No line judgments/);
+    health.last_skip = "unsupported_route";
+    await fs.writeFile(path.join(directory, "logs", "hook-health.json"), JSON.stringify(health));
+    assert.match((await readPanelActivity(directory)).message, /before calling Jev/);
+    await fs.writeFile(path.join(directory, "config.json"), JSON.stringify({ ...config, enabled: false }));
+    assert.match((await readPanelActivity(directory)).message, /off for this thread/);
+  } finally { await fs.rm(directory, { recursive: true, force: true }); }
+});
+
 test("panel manifest registers a visible view in a valid container", () => {
   const manifest = require("../../vscode-control/package.json");
   const [container] = manifest.contributes.viewsContainers.panel;

@@ -24,3 +24,5 @@ body:is(.vscode-light, .light) .batch-layout { --batch-keep: #895900; --batch-cu
 .batch-row.omit .batch-value { color: var(--batch-cut); }
 .empty { display: grid; min-height: 180px; place-content: center; text-align: center; }
 .empty-label { color: var(--vscode-descriptionForeground); font-size: 15px; font-weight: 600; }
+.empty-status { max-width: 480px; margin: 10px 0; font-size: 13px; line-height: 1.5; }
+.empty-counts { color: var(--vscode-descriptionForeground); font-size: 12px; }

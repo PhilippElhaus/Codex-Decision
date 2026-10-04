@@ -45,7 +45,17 @@ def chromium_smoke() -> None:
                     page.close()
             page = browser.new_page()
             page.goto((ROOT.parent / 'tests/browser/jev_panel_empty_harness.html').as_uri())
-            page.wait_for_function('document.body.textContent.includes("JEV_EMPTY_READY")')
+            page.wait_for_function('document.title === "JEV_EMPTY_READY"')
+            assert json.loads(page.locator('body').get_attribute('data-result'))['activity']
+            page.close()
+            for width in (360, 1200):
+                page = browser.new_page(viewport={'width': width, 'height': 600})
+                page.goto((ROOT.parent / 'tests/browser/jev_panel_protected_harness.html').as_uri())
+                page.wait_for_function('document.title === "JEV_PROTECTED_READY"')
+                report = json.loads(page.locator('body').get_attribute('data-result'))
+                assert all(report.values()), report
+                reports.append({'protected_panel': True, 'requested_width': width, **report})
+                page.close()
         finally:
             browser.close()
     print(json.dumps(reports))
@@ -109,8 +119,19 @@ def main() -> None:
             f'--user-data-dir={windows_path(profile / "empty-panel")}',
             '--dump-dom', empty_address,
         ], capture_output=True, text=True, timeout=30, check=False)
-        if result.returncode != 0 or 'JEV_EMPTY_READY' not in result.stdout:
-            raise RuntimeError('Jev empty panel showed more than its label')
+        if result.returncode != 0 or '<title>JEV_EMPTY_READY</title>' not in result.stdout:
+            raise RuntimeError('Jev empty panel activity check failed')
+        protected = windows_path(ROOT.parent / 'tests/browser/jev_panel_protected_harness.html').replace('\\', '/')
+        protected_address = 'file:///' + quote(protected, safe='/:')
+        for width in (360, 1200):
+            result = subprocess.run([
+                str(edge), '--headless', '--disable-gpu', '--no-first-run',
+                '--no-default-browser-check', '--disable-extensions', f'--window-size={width},600',
+                f'--user-data-dir={windows_path(profile / f"protected-{width}")}',
+                '--dump-dom', protected_address,
+            ], capture_output=True, text=True, timeout=30, check=False)
+            if result.returncode != 0 or '<title>JEV_PROTECTED_READY</title>' not in result.stdout:
+                raise RuntimeError(f'Jev protected panel check failed at {width}px')
         print(json.dumps(reports))
     finally:
         remove_profile(profile, 'jev-edge-test-')

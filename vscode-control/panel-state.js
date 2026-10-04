@@ -3,10 +3,10 @@
 const fs = require("node:fs/promises");
 const { constants } = require("node:fs");
 const path = require("node:path");
-const { validateSessionPath, validateDirectoryPath } = require("./core");
+const { validateSessionPath, validateDirectoryPath, readHookHealth, readConfig, readLifetimeStats } = require("./core");
 
 const FILTERS = new Set(["output", "test_build", "search_listing"]);
-const MAX_SNAPSHOT_BYTES = 256 * 1024;
+const MAX_SNAPSHOT_BYTES = 8 * 1024 * 1024;
 function probability(value) {
   if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 1) {
     throw new Error("Invalid Jev panel probability");
@@ -17,7 +17,7 @@ function probability(value) {
 // A visual retention index, not a Jev probability. The action separates kept
 // and omitted lines; the original Noul values determine position within each band.
 function retentionIndex(row) {
-  if (row.can_omit == null) return row.task_relevant;
+  if (row.can_omit == null) return row.task_relevant ?? null;
   const omissionResistance = 1 - row.can_omit;
   if (row.action === "omit") return 0.35 * omissionResistance;
   const keepEvidence = Math.max(omissionResistance, row.exact_needed,
@@ -26,7 +26,7 @@ function retentionIndex(row) {
 }
 
 function parsePanelDecision(value) {
-  if (!value || ![3, 4].includes(value.version)) throw new Error("Unsupported Jev panel decision");
+  if (!value || ![3, 4, 5].includes(value.version)) throw new Error("Unsupported Jev panel decision");
   return parseBatchDecision(value);
 }
 
@@ -37,28 +37,36 @@ function parseBatchDecision(value) {
     "task_relevant", "irrelevant", "confident_omission", "representative", "last_line"]);
   const totals = value.totals;
   const batch = value.batch;
+  const completeRows = value.version === 5;
   if (!identifier.test(value.id) || !identifier.test(value.receipt_id) ||
       typeof value.at !== "string" || !Number.isFinite(Date.parse(value.at)) ||
       !FILTERS.has(value.filter) || !new Set(["processing", "keep", "candidate", "replace"]).has(value.status) ||
-      !batch || (value.version === 4 && value.filter !== "output") || !integer(batch.number) || batch.number < 1 ||
+      !batch || (value.version >= 4 && value.filter !== "output") || !integer(batch.number) || batch.number < 1 ||
       !integer(batch.count) || batch.count < batch.number ||
-      !integer(batch.target_count, value.version === 4 ? 10_000 : 250) || batch.target_count < 1 ||
-      !Array.isArray(value.rows) || value.rows.length !== batch.target_count ||
+      !integer(batch.target_count, value.version >= 4 ? 10_000 : 250) || batch.target_count < 1 ||
+      !Array.isArray(value.rows) || (!completeRows && value.rows.length !== batch.target_count) ||
       !totals || ["seen", "judged", "kept", "omitted", "protected", "unjudged", "requests"]
         .some((name) => !integer(totals[name])) ||
-      totals.judged < value.rows.length || totals.judged > totals.seen ||
+      (completeRows ? value.rows.length !== totals.seen || !integer(totals.seen, 10_000) : totals.judged < value.rows.length) ||
+      totals.judged > totals.seen || batch.target_count > totals.judged ||
       totals.protected > totals.seen || totals.unjudged > totals.seen ||
       totals.omitted > totals.judged || totals.kept + totals.omitted !== totals.seen ||
-      totals.requests !== batch.number + (value.version === 4 ? 1 : 0) || !integer(value.batch_elapsed_ms, 3_600_000)) {
+      totals.requests !== batch.number + (value.version >= 4 ? 1 : 0) || !integer(value.batch_elapsed_ms, 3_600_000)) {
     throw new Error("Invalid Jev batch decision");
   }
   let previousLine = 0;
-  const rows = value.rows.map((row) => {
+  const rows = value.rows.map((row, index) => {
+    const unscored = completeRows && row?.task_relevant == null;
     if (!row || !integer(row.line) || row.line <= previousLine || row.line > totals.seen ||
         typeof row.excerpt !== "string" || row.excerpt.length > 120 ||
         !["keep", "omit"].includes(row.action) || !reasons.has(row.reason) ||
         (value.version === 3 && (typeof row.can_omit !== "number" || typeof row.exact_needed !== "number")) ||
-        (value.version === 4 && (row.can_omit != null || row.exact_needed != null || typeof row.task_relevant !== "number")) ||
+        (value.version >= 4 && (row.can_omit != null || row.exact_needed != null || (!unscored && typeof row.task_relevant !== "number"))) ||
+        (completeRows && row.line !== index + 1) ||
+        (unscored && (row.action !== "keep" || !["protected", "budget_unjudged"].includes(row.reason))) ||
+        (row.protected_reason != null && (typeof row.protected_reason !== "string" ||
+          !/^[a-z0-9_]{1,80}$/.test(row.protected_reason) || row.action !== "keep" ||
+          !["protected", "representative", "last_line"].includes(row.reason))) ||
         (row.task_relevant != null && typeof row.task_relevant !== "number")) {
       throw new Error("Invalid Jev batch row");
     }
@@ -67,8 +75,15 @@ function parseBatchDecision(value) {
     if (row.task_relevant != null) probability(row.task_relevant);
     return { line: row.line, excerpt: row.excerpt, action: row.action, reason: row.reason,
       can_omit: row.can_omit ?? null, exact_needed: row.exact_needed ?? null,
-      task_relevant: row.task_relevant ?? null, retention_index: retentionIndex(row) };
+      task_relevant: row.task_relevant ?? null, retention_index: retentionIndex(row),
+      protected_reason: row.protected_reason ?? null };
   });
+  if (completeRows && (rows.filter(row => row.task_relevant !== null).length !== totals.judged ||
+      rows.filter(row => row.action === "omit").length !== totals.omitted ||
+      rows.filter(row => row.protected_reason !== null).length !== totals.protected ||
+      rows.filter(row => row.reason === "budget_unjudged").length !== totals.unjudged)) {
+    throw new Error("Jev panel rows do not match totals");
+  }
   return { version: value.version, id: value.id, receipt_id: value.receipt_id, at: value.at,
     filter: value.filter, status: value.status, batch: { number: batch.number, count: batch.count,
       target_count: batch.target_count }, rows, totals, batch_elapsed_ms: value.batch_elapsed_ms };
@@ -110,4 +125,27 @@ async function readLatestPanelDecision(directory, cache = null) {
   }
 }
 
-module.exports = { parsePanelDecision, readLatestPanelDecision };
+async function readPanelActivity(directory) {
+  const [health, config, stats] = await Promise.all([
+    readHookHealth(directory), readConfig(directory), readLifetimeStats(directory),
+  ]);
+  let message;
+  if (!config.enabled) message = "Jev is off for this thread.";
+  else if (!health) message = "Waiting for tool output. If activity stays absent, check /hooks and start a new Codex thread.";
+  else if (health.last_error_ms >= Math.max(health.last_skip_ms || 0, health.last_success_ms || 0)) {
+    message = `Hook error: ${health.last_error}. Full output was kept.`;
+  } else if (health.last_skip_ms >= (health.last_success_ms || 0)) {
+    const reasons = {
+      choice_kept_full_output: "Jev classified the output and kept it complete. No line judgments were needed.",
+      unsupported_route: "The hook skipped this tool or command format before calling Jev.",
+      unsupported_result: "The hook kept this response format complete.",
+      small: "The latest output was too short to evaluate.",
+      sensitive: "The latest output was protected from sending to Jev.",
+      unsafe_task_context: "The task context was protected from sending to Jev.",
+    };
+    message = reasons[health.last_skip] || `Hook ran; latest output skipped: ${health.last_skip.replaceAll("_", " ")}.`;
+  } else message = "Waiting for the next line decision.";
+  return { message, calls: stats.calls, skipped: health?.skipped || 0 };
+}
+
+module.exports = { parsePanelDecision, readLatestPanelDecision, readPanelActivity };

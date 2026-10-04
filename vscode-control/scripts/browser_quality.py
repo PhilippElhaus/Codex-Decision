@@ -113,11 +113,15 @@ def panel_settled(page, snapshot):
     page.wait_for_function("""() => [...document.querySelectorAll('.batch-value')]
       .every(value => Number(getComputedStyle(value).opacity) === 1)""")
     report = page.evaluate("""() => [...document.querySelectorAll('.batch-row')].map(row => ({
+      text: row.querySelector('.batch-value').textContent,
       score: parseFloat(row.querySelector('.batch-value').textContent),
-      width: parseFloat(row.querySelector('.batch-bar-fill').style.width)
+      width: parseFloat(row.querySelector('.batch-bar-fill').style.width || '0')
     }))""")
     for row, actual in zip(snapshot['rows'], report):
         score = row['retention_index']
+        if score is None:
+            assert actual['text'] == '—' and actual['width'] == 0, actual
+            continue
         assert actual['score'] == int(score * 100 + .5), actual
         assert abs(actual['width'] - score * 100) <= .011, actual
 

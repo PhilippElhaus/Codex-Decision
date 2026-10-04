@@ -21,12 +21,16 @@
     return parent;
   }
 
-  function showEmpty() {
+  function showEmpty(activity) {
     currentDecision = "";
     currentId = null;
     cancelAnimationFrame(animation);
-    app.replaceChildren(append(element("section", "empty"),
-      element("span", "empty-label", "Jev")));
+    const empty = append(element("section", "empty"), element("span", "empty-label", "Jev"));
+    if (activity && typeof activity.message === "string") {
+      append(empty, element("p", "empty-status", activity.message),
+        element("span", "empty-counts", `${activity.calls} API requests · ${activity.skipped} skipped outputs`));
+    }
+    app.replaceChildren(empty);
   }
 
   function batchTitle(decision) {
@@ -54,24 +58,29 @@
     const fills = [];
     const values = [];
     list.setAttribute("role", "list");
-    list.setAttribute("aria-label", "Judged lines in the latest Jev batch");
+    list.setAttribute("aria-label", "Lines in the latest Jev result");
     list.setAttribute("aria-live", "off");
     for (const row of decision.rows) {
       const score = row.retention_index;
+      const unscored = score == null;
+      const reason = (row.protected_reason || row.reason).replaceAll("_", " ");
+      const protection = row.reason === "budget_unjudged" ? "Awaiting judgment; kept in full" : `Protected: ${reason}`;
       const item = element("div", `batch-row ${row.action}`);
+      if (unscored) item.classList.add("unscored");
       item.setAttribute("role", "listitem");
-      item.setAttribute("aria-label", `Line ${row.line}: ${row.action}. ${decision.version === 4 ? "Task relevance" : "Retention index"} ${score.toFixed(2)}.`);
-      item.title = row.can_omit === null ? `${row.excerpt}\nLine ${row.line} · ${row.reason.replaceAll("_", " ")} · task relevance ${row.task_relevant.toFixed(2)}` : `${row.excerpt}\nLine ${row.line} · ${row.reason.replaceAll("_", " ")} · retention index ${score.toFixed(2)} (display only) · Jev can omit ${row.can_omit?.toFixed(2) ?? "—"} · exact text ${row.exact_needed?.toFixed(2) ?? "—"}${row.task_relevant === null ? "" : ` · task relevance ${row.task_relevant.toFixed(2)}`}`;
+      item.setAttribute("aria-label", `Line ${row.line}: ${row.action}. ${unscored ? `${protection}. No Jev score.` : `${decision.version >= 4 ? "Task relevance" : "Retention index"} ${score.toFixed(2)}.`}`);
+      item.title = unscored ? `${row.excerpt}\nLine ${row.line} · ${protection} · no Jev relevance score` : row.can_omit === null ? `${row.excerpt}\nLine ${row.line} · ${reason} · task relevance ${row.task_relevant.toFixed(2)}` : `${row.excerpt}\nLine ${row.line} · ${reason} · retention index ${score.toFixed(2)} (display only) · Jev can omit ${row.can_omit?.toFixed(2) ?? "—"} · exact text ${row.exact_needed?.toFixed(2) ?? "—"}${row.task_relevant === null ? "" : ` · task relevance ${row.task_relevant.toFixed(2)}`}`;
       const track = element("div", "batch-bar-track");
       track.setAttribute("aria-hidden", "true");
       const fill = element("span", "batch-bar-fill", "█".repeat(10));
-      fills.push({ node: fill, score });
+      if (!unscored) fills.push({ node: fill, score });
       append(track, element("span", "batch-bar-empty", "·".repeat(10)), fill);
-      const value = element("span", "batch-value", `${Math.round(score * 100)}%`);
-      value.title = `${decision.version === 4 ? "Task relevance" : "Retention index (display only)"}: ${score.toPrecision(4)}. ${decision.version !== 4 ? row.reason.replaceAll("_", " ") : row.action === "omit" ? "At or below the omission cutoff." : row.reason === "task_relevant" ? "Above the omission cutoff." : row.reason.replaceAll("_", " ")}`;
-      values.push(value);
+      const value = element("span", "batch-value", unscored ? "—" : `${Math.round(score * 100)}%`);
+      value.title = unscored ? `${protection}. No Jev relevance score.` : `${decision.version >= 4 ? "Task relevance" : "Retention index (display only)"}: ${score.toPrecision(4)}. ${decision.version < 4 ? reason : row.action === "omit" ? "At or below the omission cutoff." : row.reason === "task_relevant" ? "Above the omission cutoff." : reason}`;
+      if (unscored) value.style.opacity = "1";
+      else values.push(value);
       const action = element("span", "batch-action", row.action);
-      action.title = row.reason.replaceAll("_", " ");
+      action.title = unscored ? protection : reason;
       append(item,
         element("span", "batch-line-number", String(row.line)),
         element("span", "batch-excerpt", row.excerpt || "(empty line)"),
@@ -107,7 +116,7 @@
   window.addEventListener("message", (event) => {
     if (event.data?.type !== "decision") return;
     if (event.data.decision) renderBatchDecision(event.data.decision);
-    else showEmpty();
+    else showEmpty(event.data.activity);
   });
   showEmpty();
   vscode.postMessage({ type: "ready" });

@@ -26,15 +26,9 @@ pub(super) fn line_snapshot(
         .iter()
         .filter(|row| row.protected_reason.is_some())
         .count();
-    let rows: Vec<Value> = batch
-        .target_numbers
+    let rows: Vec<Value> = lines
         .iter()
-        .filter_map(|number| {
-            number
-                .checked_sub(1)
-                .and_then(|index| lines.get(index).zip(decisions.get(index)))
-        })
-        .filter(|(_, decision)| decision.batch_id == Some(batch.id))
+        .zip(decisions)
         .map(|(line, decision)| {
             let excerpt: String = line
                 .model_text
@@ -44,9 +38,11 @@ pub(super) fn line_snapshot(
                     (*units <= 120).then_some(character)
                 })
                 .collect();
-            json!({"line":line.number,"excerpt":excerpt,"action":decision.action,
+            json!({"line":line.number,"excerpt":excerpt,
+                "action":if decision.action == Action::Omit { "omit" } else { "keep" },
                 "reason":decision.reason,"can_omit":decision.p_can_omit,
-                "exact_needed":decision.p_exact_needed,"task_relevant":decision.p_task_relevant})
+                "exact_needed":decision.p_exact_needed,"task_relevant":decision.p_task_relevant,
+                "protected_reason":decision.protected_reason})
         })
         .collect();
     let unjudged = lines
@@ -56,7 +52,7 @@ pub(super) fn line_snapshot(
             line.eligible && line.protected_reason.is_none() && decision.batch_id.is_none()
         })
         .count();
-    json!({"version":4,"id":snapshot_id,"receipt_id":receipt_id,"at":Utc::now().to_rfc3339(),
+    json!({"version":5,"id":snapshot_id,"receipt_id":receipt_id,"at":Utc::now().to_rfc3339(),
         "filter":route,"status":status,"batch":{"number":batch_number,"count":batch_count,
             "target_count":batch.target_numbers.len()},"rows":rows,
         "totals":{"seen":seen,"judged":judged,"kept":seen-omitted,"omitted":omitted,

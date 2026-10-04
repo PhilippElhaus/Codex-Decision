@@ -6,7 +6,7 @@ Codex Jev cuts repetitive lines from local tool output before Codex reads them. 
 
 **What you gain:** less log noise in the conversation, a way to inspect what was kept, and clear status when the filter has not run or has failed. Savings depend on the output, the configured cutoffs, and Jev's judgments.
 
-## Current source: 0.10.4 with control 0.9.7
+## Current source: 0.10.6 with control 0.9.9
 
 [Latest published release: 0.10.2 with VS Code control 0.9.3](https://github.com/PhilippElhaus/Codex-Jev/releases/tag/v0.10.2), or [build both packages](docs/setup/setup_installation.md).
 
@@ -16,12 +16,16 @@ Codex Jev cuts repetitive lines from local tool output before Codex reads them. 
 - **One switch:** click **jev** to turn filtering on or off for the current thread. The integration popup is removed.
 - **One policy:** supported tool output uses the same relevance cutoff. Settings no longer contain separate filter categories or a search-only relevance guard.
 - **Code-mode calls:** `exec` and `wait` produce relevance previews, including command logs serialized inside text result envelopes. Their original metadata and content remain unchanged.
-- **Compact panel:** each line uses one row with a ten-character bar and a percentage. Responsive columns use the available space. Hover for the excerpt, precise probability, and reason.
+- **Shell scripts:** heredocs, redirection, mixed commands, and other unrecognized shell forms produce relevance previews. Their complete output stays intact.
+- **Panel activity:** before the first line decision, the panel shows API request counts, skipped outputs, and the latest skip or hook error.
+- **Compact panel:** every source line appears in order across all batches. Judged lines show a ten-character bar and a percentage; protected and pending lines show `—`. Responsive columns use the available space. Hover for the excerpt, precise probability, and reason.
 - **Existing settings:** old switches migrate to on when any was on. Legacy settings migrate to a relevance cutoff no higher than 5%.
 
 See the [composer and panel validation](docs/development/composer_panel_quality_2026-10-04.md) for regression coverage, fault checks, and measured behavior.
 
 See the [orchestrated-output and compact-panel verification](docs/development/orchestrated_output_verification_2026-10-04.md) for the missing-call repair and current live checks.
+
+See the [runtime activity and protected-line verification](docs/development/runtime_activity_verification_2026-10-04.md) for the shell-script repair, complete panel rows, and current installation checks.
 
 Jev first classifies a sampled excerpt. When the combined probability of an excerptable class is at least 95%, the second stage judges every candidate line for task relevance in API-bounded batches. It has no 250-line cap. The default maximum relevance for omission is 5%. Uncertain, unsupported, oversized, or failed results stay complete. See the [two-stage design](docs/architecture/design_integrations.md) and [batching verification](docs/development/batching_verification.md).
 
@@ -64,7 +68,7 @@ The composer’s Jev icon briefly glows blue when output classification starts. 
 
 See the [classification activity verification](docs/development/classification_activity_verification.md).
 
-The **Jev** panel shows task relevance for each judged line in the latest decision from this session. Its header contains only the kept/judged count. Ten-character bars show 0–100% relevance in compact rows and responsive columns. Classification does not appear here. When classification keeps full output, no line rows are produced. The latest saved decision is restored after a VS Code reload. Blue rows mark lines selected for omission; gold rows mark lines selected to keep. Monitor mode shows these judgments and keeps the output unchanged. At the default cutoff, 5% can be omitted and 6% is kept; local protection rules can also keep low-scoring lines. Hover for precise probabilities and reasons. This synthetic example keeps 3 of 50 lines. A shortened result also gives Codex the path to its complete original.
+The **Jev** panel shows every line in the latest decision from this session, including protected lines and judgments from earlier batches. Its header contains the kept/total line count. Ten-character bars show 0–100% relevance in compact rows and responsive columns. Classification does not appear here. When classification keeps full output, no line rows are produced. The latest saved decision is restored after a VS Code reload. Blue rows mark lines selected for omission; gold rows mark lines selected to keep. Monitor mode shows these judgments and keeps the output unchanged. At the default cutoff, 5% can be omitted and 6% is kept; local protection rules can also keep low-scoring lines. Protected and pending lines show `—` and a keep reason instead of a probability. Hover for precise probabilities and reasons. This synthetic example keeps 3 of 50 lines. A shortened result also gives Codex the path to its complete original.
 
 <img src="docs/images/jev-panel.png" width="1000" alt="Jev panel showing 3 kept lines and 47 omitted lines from a synthetic 50-line result">
 

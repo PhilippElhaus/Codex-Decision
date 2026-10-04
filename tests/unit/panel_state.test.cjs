@@ -9,6 +9,36 @@ const { parsePanelDecision, readLatestPanelDecision } = require("../../vscode-co
 
 const snapshot = { id: "a".repeat(32), at: "2026-09-28T12:34:56.123456+00:00" };
 
+test("complete panels include all 72 lines and the three protected keeps without invented scores", () => {
+  const rows = Array.from({ length: 72 }, (_, index) => index < 69 ? {
+    line: index + 1, excerpt: "routine", action: "omit", reason: "irrelevant", task_relevant: .03,
+  } : { line: index + 1, excerpt: "protected diagnostic or completion", action: "keep",
+    reason: "protected", protected_reason: "diagnostic_context", task_relevant: null });
+  const current = { version: 5, ...snapshot, receipt_id: "b".repeat(32), filter: "output", status: "candidate",
+    batch: { number: 1, count: 1, target_count: 69 }, batch_elapsed_ms: 30, rows,
+    totals: { seen: 72, judged: 69, kept: 3, omitted: 69, protected: 3, unjudged: 0, requests: 2 } };
+  const parsed = parsePanelDecision(current);
+  assert.equal(parsed.rows.length, 72);
+  assert.equal(parsed.rows.filter(row => row.action === "keep").length, 3);
+  assert.ok(parsed.rows.slice(69).every(row => row.retention_index === null && row.task_relevant === null));
+  assert.throws(() => parsePanelDecision({ ...current, rows: rows.slice(0, 69) }));
+  assert.throws(() => parsePanelDecision({ ...current, rows: rows.map(row => row.line === 72 ? { ...row, action: "omit" } : row) }));
+  assert.throws(() => parsePanelDecision({ ...current, totals: { ...current.totals, protected: 2 } }));
+});
+
+test("complete progress panels show prior batches and pending lines in source order", () => {
+  const rows = Array.from({ length: 1600 }, (_, index) => ({ line: index + 1, excerpt: "routine",
+    action: index < 800 ? "omit" : "keep", reason: index < 800 ? "irrelevant" : "budget_unjudged",
+    task_relevant: index < 800 ? .03 : null }));
+  const current = { version: 5, ...snapshot, receipt_id: "b".repeat(32), filter: "output", status: "processing",
+    batch: { number: 2, count: 5, target_count: 400 }, batch_elapsed_ms: 30, rows,
+    totals: { seen: 1600, judged: 800, kept: 800, omitted: 800, protected: 0, unjudged: 800, requests: 3 } };
+  const parsed = parsePanelDecision(current);
+  assert.equal(parsed.rows.length, 1600);
+  assert.equal(parsed.rows[1599].retention_index, null);
+  assert.equal(parsed.rows[0].retention_index, .03);
+});
+
 test("current relevance snapshots use real Nouls and count both serial requests", () => {
   const current = { version: 4, ...snapshot, receipt_id: "b".repeat(32), filter: "output", status: "replace",
     batch: {number:1,count:1,target_count:2},batch_elapsed_ms:30,
@@ -117,7 +147,7 @@ test("panel snapshot reads remain bounded when a file grows after stat", async (
       };
     };
     await assert.rejects(readLatestPanelDecision(directory), /Unsafe Jev panel decision file/);
-    assert.equal(bytesRequested, 256 * 1024 + 1);
+    assert.equal(bytesRequested, 8 * 1024 * 1024 + 1);
     assert.equal(closed, true);
   } finally {
     fs.open = originalOpen;
