@@ -6,13 +6,18 @@ Codex Jev cuts repetitive lines from local tool output before Codex reads them. 
 
 **What you gain:** less log noise in the conversation, a way to inspect what was kept, and clear status when the filter has not run or has failed. Savings depend on the output, the configured cutoffs, and Jev's judgments.
 
-## Version 0.10.2
+## Current source: 0.10.3 with control 0.9.5
 
-[Download release 0.10.2 with VS Code control 0.9.3](https://github.com/PhilippElhaus/Codex-Jev/releases/tag/v0.10.2), or [build both packages](docs/setup/setup_installation.md).
+[Latest published release: 0.10.2 with VS Code control 0.9.3](https://github.com/PhilippElhaus/Codex-Jev/releases/tag/v0.10.2), or [build both packages](docs/setup/setup_installation.md).
 
+- **Composer alignment:** the compact indicator stays on the toolbar row as the pane narrows.
+- **Panel recovery:** the selected thread's latest decision survives reloads, and the panel retries dropped messages.
+- **Codex compatibility:** the pinned bridge also supports `26.930.41038`.
 - **One switch:** click **jev** to turn filtering on or off for the current thread. The integration popup is removed.
 - **One policy:** supported tool output uses the same relevance cutoff. Settings no longer contain separate filter categories or a search-only relevance guard.
 - **Existing settings:** old switches migrate to on when any was on. Legacy settings migrate to a relevance cutoff no higher than 5%.
+
+See the [composer and panel validation](docs/development/composer_panel_quality_2026-10-04.md) for regression coverage, fault checks, and measured behavior.
 
 Jev first classifies a sampled excerpt. When the combined probability of an excerptable class is at least 95%, the second stage judges every candidate line for task relevance in API-bounded batches. It has no 250-line cap. The default maximum relevance for omission is 5%. Uncertain, unsupported, oversized, or failed results stay complete. See the [two-stage design](docs/architecture/design_integrations.md) and [batching verification](docs/development/batching_verification.md).
 
@@ -55,7 +60,7 @@ The composer’s Jev icon briefly glows blue when output classification starts. 
 
 See the [classification activity verification](docs/development/classification_activity_verification.md).
 
-The **Jev** panel shows task relevance for each judged line in the latest decision from this session. Its header contains only the kept/judged count. Classification does not appear here. Blue lines were cut; gold lines were kept. This synthetic example keeps 3 of 50 lines. A shortened result also gives Codex the path to its complete original.
+The **Jev** panel shows task relevance for each judged line in the latest decision from this session. Its header contains only the kept/judged count. Classification does not appear here. When classification keeps full output, no line rows are produced. The latest saved decision is restored after a VS Code reload. Blue lines were cut; gold lines were kept. This synthetic example keeps 3 of 50 lines. A shortened result also gives Codex the path to its complete original.
 
 <img src="docs/images/jev-panel.png" width="1000" alt="Jev panel showing 3 kept lines and 47 omitted lines from a synthetic 50-line result">
 

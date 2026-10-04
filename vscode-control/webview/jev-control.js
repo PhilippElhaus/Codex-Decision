@@ -180,7 +180,7 @@
       #codex-jev { position: fixed; z-index: 2147483600; display: none; font-family: inherit; }
       #codex-jev * { box-sizing: border-box; }
       #codex-jev-button { display: inline-flex; align-items: center; gap: 7px; height: var(--codex-jev-button-height, 34px); min-height: 0; max-height: var(--codex-jev-button-height, 34px); padding: 0 12px; border: 0; border-radius: 999px; background: transparent; color: #9a9a9a; font-family: inherit; font-size: 14px; font-weight: 600; line-height: 18px; cursor: pointer; transition: color 220ms ease-in-out, background-color 220ms ease-in-out; }
-      #codex-jev[data-compact="true"] #codex-jev-button { gap: 0; padding: 0 4px; }
+      #codex-jev[data-compact="true"] #codex-jev-button { gap: 0; padding: 0 var(--codex-jev-compact-padding, 4px); }
       #codex-jev[data-compact="true"] #codex-jev-label { display: none; }
       #codex-jev-observe { display: none; margin-left: 2px; padding: 1px 3px; border: 1px solid #9a9a9a77; border-radius: 3px; color: #bdbdbd; font-size: 9px; font-weight: 700; line-height: 12px; letter-spacing: .04em; }
       #codex-jev[data-observe="true"] #codex-jev-observe { display: inline-block; }
@@ -189,7 +189,7 @@
       #codex-jev-button:hover { background: #303030; }
       #codex-jev-button:focus-visible { outline: 2px solid #83bcf7; outline-offset: 2px; }
       #codex-jev[data-classifying="true"] #codex-jev-dot { box-shadow: 0 0 0 3px #69aef044, 0 0 9px #69aef0aa; }
-      #codex-jev-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 15%, transparent); transition: box-shadow 220ms ease-in-out; }
+      #codex-jev-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: currentColor; box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 15%, transparent); transition: box-shadow 220ms ease-in-out; }
       #codex-jev-tip { position: absolute; bottom: calc(100% + 9px); right: 0; box-shadow: 0 12px 30px #0009; }
       #codex-jev-tip { display: none; width: min(420px, calc(100vw - 24px)); padding: 11px 13px; border: 1px solid #454545; border-radius: 11px; background: #292929; color: #dedede; pointer-events: auto; font-size: 12px; line-height: 1.45; white-space: normal; }
       #codex-jev-tip[data-needs-key="true"] { width: min(252px, calc(100vw - 24px)); padding: 9px 11px; }
@@ -468,6 +468,9 @@
     const byModelRank = (a, b) => modelRank(controlName(b.element)) - modelRank(controlName(a.element)) ||
       b.rect.left - a.rect.left;
     const namedButtons = rightButtons.filter(({ element }) => modelRank(controlName(element)) > 0);
+    const namedModel = namedButtons.sort(byModelRank)[0];
+    // The highest-ranked button already identifies the model. Avoid walking a long chat.
+    if (namedModel && modelRank(controlName(namedModel.element)) === 3) return namedModel;
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
     let node;
     const namedText = [];
@@ -556,7 +559,7 @@
     // Once the model is known, it alone defines the right edge for Jev.
     const nextEdge = Number.isFinite(modelEdge) ? modelEdge :
       nextToolbarEdge(anchor, toolbarScope(anchor, model));
-    const rightEdge = Number.isFinite(nextEdge) ? nextEdge - 8 : leftEdge;
+    let rightEdge = Number.isFinite(nextEdge) ? nextEdge - 8 : leftEdge;
     const available = rightEdge - leftEdge;
     const button = item.querySelector("#codex-jev-button");
     // The access control stays on the toolbar row even when the model is an icon.
@@ -572,14 +575,22 @@
     if (paneWidth > compactAtWidth + 16) compactAtWidth = 0;
     item.dataset.compact = String(!model || available < fullWidth ||
       (compactAtWidth > 0 && paneWidth <= compactAtWidth + 16));
+    // Tight gaps still have room for the dot when the normal margins do not fit.
+    // Keep it on the toolbar row; a completely closed gap must not put it over the prompt.
+    item.style.removeProperty("--codex-jev-compact-padding");
+    if (item.dataset.compact === "true" && available < 15 && Number.isFinite(nextEdge)) {
+      const compactWidth = Math.min(15, nextEdge - anchor.rect.right - 4);
+      if (compactWidth < 7) { item.style.display = "none"; return; }
+      item.style.setProperty("--codex-jev-compact-padding", `${(compactWidth - 7) / 2}px`);
+      rightEdge = nextEdge - 2;
+    }
     const width = button.getBoundingClientRect().width;
-    const fits = available >= width;
     const idealLeft = rightEdge - width;
     const buttonLeft = Math.max(12, Math.min(idealLeft, window.innerWidth - width - 12));
     item.style.left = "auto";
     item.style.right = `${Math.round(window.innerWidth - buttonLeft - width)}px`;
     const rowTop = anchor.rect.top + anchor.rect.height / 2 - button.getBoundingClientRect().height / 2;
-    item.style.top = `${Math.round(fits ? rowTop : Math.min(anchor.rect.top, model?.rect.top ?? anchor.rect.top) - buttonHeight - 8)}px`;
+    item.style.top = `${Math.round(rowTop)}px`;
     alignPopup(item.querySelector("#codex-jev-tip"), state.needsKey ? 252 : 420, buttonLeft, buttonLeft + width);
     item.style.visibility = "";
   }

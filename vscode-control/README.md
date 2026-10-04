@@ -8,15 +8,15 @@ From this directory in WSL:
 
 ```bash
 ../scripts/build_control.sh
-code --install-extension "$(wslpath -w ../.local/submission/codex-jev-control-0.9.3.vsix)" --force
+code --install-extension "$(wslpath -w ../.local/submission/codex-jev-control-0.9.5.vsix)" --force
 ```
 
-The composer and Codex settings page require the separate local patch for Codex VS Code extensions `26.928.31416`, `26.930.21537`, and `26.930.31730`. It checks exact host hashes and keeps rollback files outside this repository:
+The composer and Codex settings page require the separate local patch for Codex VS Code extensions `26.928.31416`, `26.930.21537`, `26.930.31730`, and `26.930.41038`. It checks exact host hashes and keeps rollback files outside this repository:
 
 ```bash
 ../hooks/bin/linux-x86_64/jevctl patch-webview update --root .. \
-  --extension '/mnt/c/Users/<user>/.vscode/extensions/openai.chatgpt-26.930.31730-win32-x64' \
-  --backup '/mnt/c/Users/<user>/AppData/Local/Codex/codex-jev/rollback/26.930.31730'
+  --extension '/mnt/c/Users/<user>/.vscode/extensions/openai.chatgpt-26.930.41038-win32-x64' \
+  --backup '/mnt/c/Users/<user>/AppData/Local/Codex/codex-jev/rollback/26.930.41038'
 ```
 
 Use `apply` for the first installation, `update` after a control upgrade, or `restore` to remove the patch. Reload VS Code after installing both pieces. Start a new Codex thread after a plugin hook upgrade and review the hook in `/hooks` again if its definition changed.
@@ -33,7 +33,7 @@ When enabled, the indicator is green after a small successful Jev API request, r
 
 Open **Codex settings → Jev** from any screen to choose Monitor or Filter, adjust the shared relevance cutoff, test or replace the key, and open the plugin data directory. These settings apply to every session. Monitor records decisions but leaves full output visible. Filter can shorten only eligible text after the local evidence checks pass; every shortened result links to its exact original.
 
-The **Jev** panel sits beside Output and Terminal. Reopen it through **View → Open View… → Jev: Latest decision**. It shows the judged lines from the latest API-bounded relevance batch in the active session. The header shows only the kept/judged count; classification calls do not appear. Blue rows were cut and gold rows were kept. Current rows show the actual Jev task-relevance probability. Historical rows use a visual retention index; hover for their recorded probabilities. The panel snapshot contains bounded excerpts, not the full output.
+The **Jev** panel sits beside Output and Terminal. Reopen it through **View → Open View… → Jev: Latest decision**. It shows the judged lines from the latest API-bounded relevance batch in the active session. The header shows only the kept/judged count; classification calls do not appear. Blue rows were cut and gold rows were kept. The selected thread's latest decision remains available after reloading VS Code. Switching threads refreshes the panel immediately. The panel remains empty until a relevance batch completes; a classification that keeps the full output produces no line rows. Check the composer tooltip for the latest skip reason and hook health. Current rows show the actual Jev task-relevance probability. Historical rows use a visual retention index; hover for their recorded probabilities. The panel snapshot contains bounded excerpts, not the full output.
 
 ## Verify
 
@@ -48,3 +48,5 @@ The browser harnesses use the real composer, settings, and panel code with synth
 The tooltip shows the latest skip reason when no decision exists. A skipped result confirms hook activity; it does not confirm an API request. After a Codex extension update, apply the patch to the new extension directory. Each supported build has its own checked hashes and rollback directory.
 
 The composer briefly glows blue on a classification-start event. Relevance calls, batch completions, and API connection checks do not flash. Each start is consumed once per view, so repeated status replies cannot restart the pulse.
+
+The composer keeps its indicator on the toolbar row. Tight gaps reduce its padding and show only the dot. If the controls leave less than 11 px, the indicator hides until space returns. It never moves over the prompt.

@@ -1,0 +1,138 @@
+# Composer and panel quality checks, 2026-10-04
+
+This change keeps the compact Jev indicator on the composer toolbar and restores
+the selected thread's latest decision after a VS Code reload. It pairs plugin
+0.10.3 with control 0.9.5 and adds the exact-hash patch profile for Codex
+`26.930.41038`.
+
+## Confirmed defects and repairs
+
+The old layout required 15 px for the compact button plus 15 px of margins.
+A 28 px toolbar gap therefore moved the indicator above the prompt. The new
+layout reduces compact padding and margins while preserving the 7 px dot.
+It stays centered on the permission control's row. Gaps below 11 px hide the
+indicator until space returns. Tests cover 8, 12, 14, 24, and 28 px gaps and
+restoration of the normal button.
+
+The panel rejected decisions recorded before the provider started. A restored
+thread also needed composer focus before the provider could select its session.
+The provider now accepts the selected session's saved decision and selects the
+first valid local session during startup. A ready handshake precedes delivery.
+Dropped and rejected messages remain eligible for retry. A generation check
+discards late reads and faults after a session or view change.
+
+Snapshot reads remain bounded to 256 KiB even if a file grows after its size
+check. Session changes reset the delivery cache and display delay. Normal status
+polls no longer duplicate the panel's own polling. Windows settings writes retry
+transient sharing errors for at most 310 ms and preserve the old file on failure.
+Activity counts use the same English number format as the composer counters.
+
+Classification calls do not produce panel rows. A classification that keeps
+full output can leave the panel empty. A completed relevance batch produces the
+rows. A successful API health check verifies API access; hook trust is checked
+separately.
+
+## Functional and fault checks
+
+The Rust suite passed all 68 tests. Formatting and Clippy passed with warnings
+treated as errors. Four Python checks passed. The current Node suite reports
+62 tests: 61 passed on Linux and the native Windows test was skipped. The native
+Windows run passed 59 tests, including the optional WSL test. Its three skips
+cover Linux inode checks and file links that require Windows Developer Mode or
+elevation. Directory junction checks ran on Windows.
+
+Node coverage for the host control files is 96.14% of lines and 88.83% of
+branches. The panel provider and snapshot reader both have 100% line coverage.
+These figures exclude webview scripts, which have browser checks. A separate
+64 MB heap run passed the current 62-test suite: 61 passed, and the optional
+native Windows test was skipped on Linux.
+
+Eight readers survived 200 atomic snapshot revisions. The native Windows WSL
+test read the real UNC path while a Linux process replaced the snapshot 100
+times. It verified independent session choices and Linux `700` directory and
+`600` settings permissions. Fixtures contained synthetic data and were removed
+after the checks.
+
+An isolated native VS Code extension host loaded a disposable control copy and
+the actual panel renderer under its CSP. Renderer acknowledgments confirmed
+the displayed row count and header after restoring an older saved decision
+without composer focus, three document reloads, hiding and reopening, and a
+session switch. The instance used synthetic WSL data, an empty extension
+directory, and a private
+temporary profile. It closed and removed both fixtures after the check.
+Four native runs passed. The helper binds each report to a unique run ID so
+an early exit cannot reuse a previous successful report.
+
+The offline corpus passed 145 cases with 379 mock API calls. It produced 41
+completed panel decisions with matching receipt IDs, statuses, and request
+counts. No required lines were lost. Fault cases preserved the full result and
+rolled back partial decisions.
+
+A separate zero-cutoff trial passed 62 cases and 104 mock calls. It kept every
+line and produced 18 completed panel decisions. This verifies that completed
+relevance judgments still appear when the configured policy makes no omissions.
+The trial changed only private fixture settings.
+
+A bounded live test sent the synthetic `log-failure-240` fixture to Jev. Three
+API calls produced 117 panel rows in 1,529 ms. The panel matched the receipt,
+the saved original matched the input exactly, and both required diagnostics
+were retained. Reported usage was 31,704 input and 4,772 output tokens. The
+installed key remained in process memory. No private conversation was sent.
+
+## Performance observations
+
+A 100-round toolbar comparison used seed 17 and 5,000 synthetic history items.
+It compared the same supported gaps against source revision `66114fd`.
+
+| Measurement | Before | After |
+| --- | ---: | ---: |
+| Layout p50 | 7.7 ms | 4.6 ms |
+| Layout p95 | 36.6 ms | 25.2 ms |
+| Visited text nodes | 1,128,223 | 0 |
+
+The named GPT button now bypasses a walk over the chat text. Fallback discovery
+still runs when that button is absent. The two runs scheduled 224 and 234 layout
+callbacks, respectively.
+
+The panel stops assigning unchanged opacity during bar growth and stops
+assigning unchanged widths after growth. Instrumented 117-row animations over
+ten samples reduced median style setter calls per frame from 234 to 121.11
+(48.25%). DOM mutation counts changed much less because Chromium already
+suppresses many unchanged values. This measures removed JavaScript work, not a
+claimed 48% reduction in paint time.
+
+The Lab-Control container had one CPU. Other validation work ran during some
+measurements. Browser timings include instrumentation and automation overhead;
+they are observations for these fixtures rather than production latency limits.
+
+## Long-running browser validation
+
+Validation started at 07:33:18 UTC. The requested four-hour window ends no
+earlier than 11:33:18 UTC. The first browser soak completed 28,615 rounds in
+6,601.792 seconds. Each round checked composer geometry and rendered a
+hook-produced panel snapshot. It completed with no failures and no text-tree
+walks. The largest sampled composer heap was 3,273,020 bytes. These unforced
+heap samples include the runner's retained timing samples; they do not prove
+that the product has no memory leak. The second 110-minute soak is running.
+
+The runner uses the real composer and panel scripts, a 5,000-item synthetic
+history, and a hook-produced snapshot. Widths range from 360 to 2,800 px.
+It varies permission labels, model heights, and toolbar gaps. The second pass
+also checks completed animations, panel reloads, reduced motion, display
+scaling, and separate panel heap samples.
+
+Native Edge passed the composer and current and historical panel checks.
+Reports record actual viewport dimensions because Edge can enforce a minimum
+headless window width. Edge's actual widths were 540, 680, 1,160, and 2,760 px.
+Chromium checked 360, 720, 1,200, and 2,800 px directly.
+
+Local deployment installed plugin 0.10.3 and control 0.9.5. The installed plugin
+files match the ZIP. The control files match the VSIX except for VS Code's
+added installation metadata. Both installed Codex versions, `26.930.31730` and
+`26.930.41038`, have verified patch manifests and preserved rollback files.
+The hook remains trusted and enabled. The running user window requires a reload
+to load the new control and webview files.
+
+Use [the test commands](../../tests/README.md#composer-and-panel-quality-checks)
+to reproduce the regression and stress checks. Reports and key-free screenshots
+are retained in ignored `.local/quality/` and `.local/two-stage/` locations.

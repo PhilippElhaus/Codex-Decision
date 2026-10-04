@@ -9,7 +9,8 @@ const { spawn, spawnSync } = require("node:child_process");
 const fixtures = require("../tests/fixtures/two-stage-cases.cjs");
 const holdout = require("../tests/fixtures/two-stage-holdout.cjs");
 const batching = require("../tests/fixtures/batching-cases.cjs");
-const { readApiKey } = require("../vscode-control/core");
+const { readApiKey, sessionDirectory } = require("../vscode-control/core");
+const { readLatestPanelDecision } = require("../vscode-control/panel-state");
 const kinds = ["repetitive_log", "progress_output", "independent_matches", "independent_records", "exact_content", "prose", "structured_payload", "mixed_or_unknown"];
 const faults = ["choice-missing", "choice-extra", "choice-sum", "choice-argmax", "choice-class", "choice-confidence", "choice-type", "choice-model", "choice-json", "choice-http401", "choice-http429", "choice-http529", "choice-timeout", "line-missing", "line-extra", "line-type", "line-range", "line-confidence", "line-json", "line-http500", "line-timeout", "line-oversized"];
 faults.push("line-late-missing", "line-late-extra", "line-late-http422", "line-late-http500", "line-late-timeout");
@@ -124,6 +125,7 @@ async function main() {
       const files=await fs.readdir(data,{recursive:true});
       const receiptPath=files.find(file=>path.basename(file).startsWith("receipt-"));
       const receipt=receiptPath ? JSON.parse(await fs.readFile(path.join(data,receiptPath),"utf8")) : null;
+      const panel=await readLatestPanelDecision(sessionDirectory(data,item.id));
       const eventPath=files.find(file=>path.basename(file)==="events.jsonl");
       const activity=eventPath ? (await fs.readFile(path.join(data,eventPath),"utf8")).trim().split("\n").map(JSON.parse).at(-1) : null;
       const healthPath=files.find(file=>path.basename(file)==="hook-health.json");
@@ -137,9 +139,11 @@ async function main() {
         calls,relevance_batches:receipt ? receipt.manifest.requests-1 : null,request_budgets:requestBudgets,protocol_failures:protocolFailures,
         elapsed_ms:Date.now()-started,saved_bytes:Buffer.byteLength(source)-Buffer.byteLength(visible),
         required_lost:actualLost,proposed_required_lost:requiredLost,original_exact:originalExact,
+        panel_rows:panel?.rows.length || 0,panel_matches_receipt:receipt ? panel?.receipt_id===receipt.manifest.id &&
+          panel.status===receipt.manifest.status && panel.totals.requests===receipt.manifest.requests : panel===null,
         error:stderr ? health?.last_error || "hook error" : null};
       const complete=receipt && receipt.decisions.filter(row=>row.batch_id!==undefined).length===judged.size && receipt.manifest.lines_unjudged===0;
-      if ((item.fault && (!report.error || receipt || originals.length || files.some(file=>path.basename(file)==="latest-decision.json"))) || protocolFailures.length || (receipt&&!complete) || actualLost.length || (reply.reason&&originalExact!==true) ||
+      if (!report.panel_matches_receipt || (item.fault && (!report.error || receipt || originals.length || files.some(file=>path.basename(file)==="latest-decision.json"))) || protocolFailures.length || (receipt&&!complete) || actualLost.length || (reply.reason&&originalExact!==true) ||
           (!live&&item.min_batches&&(!receipt||report.relevance_batches<item.min_batches)) ||
           (item.expect_full&&reply.reason) || (item.expected_calls!==undefined&&calls!==item.expected_calls)) {
         report.failed=true;
@@ -148,6 +152,7 @@ async function main() {
       for (const file of files.filter(file=>/^(receipt|batch)-/.test(path.basename(file)))) await fs.copyFile(path.join(data,file),path.join(dest,path.basename(file)));
       if (activity) await fs.writeFile(path.join(dest,"activity.json"),JSON.stringify(activity,null,2)+"\n");
       if (receipt) await fs.writeFile(path.join(dest,"reply.json"),JSON.stringify(reply)+"\n");
+      if (panel) await fs.writeFile(path.join(dest,"panel.json"),JSON.stringify(panel)+"\n");
       if (receipt) qualityCases.push({id:item.id,split:process.argv.includes("--holdout") || process.argv.includes("--batching") ? "holdout" : "train",
         receipt:`${item.id}/${path.basename(receiptPath)}`,required_lines:item.required_lines});
       reports.push(report);console.log(JSON.stringify(report));
@@ -155,6 +160,7 @@ async function main() {
     const times=reports.map(item=>item.elapsed_ms).sort((a,b)=>a-b);
     const summary={live,cases:reports.length,calls:totalCalls,input_tokens:inputTokens,output_tokens:outputTokens,
       replaced:reports.filter(item=>item.status==="replace").length,required_lines:reports.reduce((sum,item)=>sum+item.required,0),
+      panel_decisions:reports.filter(item=>item.panel_rows>0).length,
       required_lost:reports.reduce((sum,item)=>sum+item.required_lost.length,0),
       failures:reports.filter(item=>item.failed).map(item=>item.id),
       errors:reports.filter(item=>item.error).map(item=>({id:item.id,error:item.error})),

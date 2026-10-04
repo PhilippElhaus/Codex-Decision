@@ -113,7 +113,16 @@ async function atomicWrite(target, content) {
     owned = true;
     try { await file.writeFile(content); await file.sync(); } finally { await file.close(); }
     await restrictWslPath(temporary, false);
-    await fs.rename(temporary, target);
+    // Windows readers or scanners can briefly deny replacement. Keep the old
+    // file intact and retry the atomic rename for at most 310 ms.
+    for (let attempts = 0; ; attempts += 1) {
+      try { await fs.rename(temporary, target); break; }
+      catch (error) {
+        if (process.platform !== "win32" || attempts >= 5 ||
+            !["EPERM", "EACCES", "EBUSY"].includes(error.code)) throw error;
+        await new Promise((resolve) => setTimeout(resolve, 10 * 2 ** attempts));
+      }
+    }
   } finally {
     if (owned) await fs.rm(temporary, { force: true });
   }
@@ -505,7 +514,7 @@ function outcomeLine(event) {
     ? ` · -${Math.round(100 * savedChars / event.original_chars)}%`
     : "";
   const source = event.tool || "tool";
-  return `${action}${mode} · ${source} · ${event.original_chars.toLocaleString()} chars${saved}`;
+  return `${action}${mode} · ${source} · ${event.original_chars.toLocaleString("en-US")} chars${saved}`;
 }
 
 function savedCharacters(event) {
@@ -526,7 +535,7 @@ function decisionSummary(event) {
   const action = event.status === "replace" ? "replaced" :
     event.status === "candidate" ? "candidate" :
     event.status === "keep" ? "kept" : "skipped";
-  return `Last decision: ${action} ${event.tool || "tool"} output (${event.reason}); ${event.original_chars.toLocaleString()} chars`;
+  return `Last decision: ${action} ${event.tool || "tool"} output (${event.reason}); ${event.original_chars.toLocaleString("en-US")} chars`;
 }
 
 function parseHealthOutput(stdout) {

@@ -38,6 +38,15 @@ const LATEST: Profile = Profile {
     route_anchor: "function JG(){return bG(qG(),`useLocation() may be used only in the context of a <Router> component.`),tK.useContext(DK).location}",
 };
 
+const OCTOBER_4: Profile = Profile {
+    version: "26.930.41038",
+    image: "webview/assets/app-initial-5df504dce500.js",
+    route: "webview/assets/app-initial-ba53a9935f6c.js",
+    index_anchor: "<script type=\"module\" crossorigin src=\"./assets/index-64239a0fdf31.js\"></script>",
+    image_anchor: "let o=HC(e);if(o==null)return null;try{let e={path:o,hostId:t,conversationId:i,environmentId:a}",
+    route_anchor: LATEST.route_anchor,
+};
+
 pub(super) fn spec(version: &str) -> Result<Spec, String> {
     let (profile, hashes) = match version {
         VERSION => (LEGACY, ORIGINAL),
@@ -83,6 +92,27 @@ pub(super) fn spec(version: &str) -> Result<Spec, String> {
                 ),
             ],
         ),
+        "26.930.41038" => (
+            OCTOBER_4,
+            [
+                (
+                    HOST,
+                    "3c914f0363ebd7f69c4bb6b888960220d43cdd15752f56d81b6645502bf1cf95",
+                ),
+                (
+                    INDEX,
+                    "cffa5e49fa5c642c64fef93fe02493589a45751b78941a3c814c63208e99dde4",
+                ),
+                (
+                    IMAGE,
+                    "0cc4e2c158dd9ebdd16501c821e00a68af2cbacf63cd2bf420beb23650a27443",
+                ),
+                (
+                    ROUTE,
+                    "05b1b959c54b0a489830f28a8dc86e0b217c346a93170e54221b73e2c17f5198",
+                ),
+            ],
+        ),
         _ => {
             return Err("unsupported Codex extension version; revalidate the composer patch".into())
         }
@@ -101,11 +131,12 @@ pub(super) fn route_fragment(source: String, profile: Profile) -> String {
         return source;
     }
     // Rebind only the pinned fragment, never search and replace Codex source.
-    let (router, assert, in_router, react, context) = if profile.version == LATEST.version {
-        ("JG", "bG", "qG", "tK", "DK")
-    } else {
-        ("KG", "vG", "GG", "$G", "TK")
-    };
+    let (router, assert, in_router, react, context) =
+        if [LATEST.version, OCTOBER_4.version].contains(&profile.version) {
+            ("JG", "bG", "qG", "tK", "DK")
+        } else {
+            ("KG", "vG", "GG", "$G", "TK")
+        };
     source
         .replace("vK", router)
         .replace("WG", assert)

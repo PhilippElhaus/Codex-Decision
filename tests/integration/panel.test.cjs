@@ -68,8 +68,10 @@ test("panel keeps each decision visible through its animation and a one second r
     assert.match(view.webview.html, /Content-Security-Policy/);
     onReady({ type: "ready" });
     await provider.refresh();
-    assert.equal(messages.at(-1).decision, null);
-    const newAt = new Date(provider.startedAt + 1000).toISOString();
+    assert.equal(messages.at(-1).decision.id, oldId,
+      "the current session's latest decision survives a VS Code reload");
+    now += MIN_DISPLAY_MS;
+    const newAt = new Date(now).toISOString();
     await fs.writeFile(filename, JSON.stringify(make("a".repeat(32), "keep", newAt)));
     await provider.refresh();
     assert.equal(messages.at(-1).decision.status, "keep");

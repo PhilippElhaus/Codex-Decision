@@ -84,6 +84,8 @@
     }).join("|");
     send(decision);
     const report = {};
+    report.viewport = innerWidth;
+    report.height = innerHeight;
     let nextDecision;
     report.initialRows = document.querySelectorAll(".batch-row").length;
     report.actualExcerpt = document.querySelector(".batch-excerpt").textContent;

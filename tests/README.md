@@ -35,3 +35,50 @@ node scripts/two_stage_quality.cjs --live --holdout --data-dir <installed-PLUGIN
 Live runs use the installed key only in the proxy process memory. The hook uses a synthetic proxy key in an owned temporary directory. Only reviewed dummy output reaches TypeSafe. A run stops at 120 HTTP calls or 500,000 returned usage tokens by default. Use `--case <id>` for one case and `--relevance-max <0..100>` for a cutoff trial. Reports separate proposed evidence loss from actual loss and check exact saved originals. The runner also saves a CLI quality audit that replays cutoffs with the real local protection rules. Fault runs assert that invalid answers publish no receipt, partial panel, or replacement. These tests prove application behavior for the fixtures, not universal model accuracy.
 
 Batching fixtures cover 251–10,000 lines, long target text, Unicode, escaped JSON, ANSI/CRLF, and unpackable context. All emitted requests must fit both conservative API token bounds. The runner checks exactly-once coverage and complete target text. Later-batch fault cases verify rollback after an earlier valid relevance batch. The current panel accepts multi-batch version-4 snapshots without a 250-target limit.
+
+## Composer and panel quality checks
+
+The offline quality runner validates each hook-produced panel snapshot with the real VS Code parser. It checks the receipt ID, completed status, request totals, and rollback after failed batches. Each successful case exports a normalized `panel.json` beside its synthetic receipt.
+
+The browser quality runner varies toolbar gaps, model heights, permission labels, and pane widths in a 5,000-item synthetic chat. It verifies the toolbar row, button separation, and dot size. An optional hook-produced snapshot is rendered through the real panel script at the same widths. Repeat `--panel` to rotate multiple normalized snapshots. It checks completed bar animations every 100 rounds and records separate composer and panel heap samples. Use `--reload-every 500` to test repeated panel reloads. Use `--device-scale 2 --reduced-motion reduce` for display scaling and reduced motion checks. Timing reports and screenshots contain only synthetic data.
+
+```bash
+python3 vscode-control/scripts/browser_quality.py --rounds 50 --seed 7 \
+  --out .local/quality/browser
+python3 vscode-control/scripts/browser_quality.py --minutes 110 --seed 17 \
+  --reload-every 500 \
+  --panel .local/two-stage/offline/log-failure-240/panel.json \
+  --out .local/quality/browser-soak
+```
+
+In Lab-Control, use an executable fixture directory because container `/tmp` is mounted `noexec`:
+
+```bash
+mkdir -p .local/test-tmp
+TMPDIR="$PWD/.local/test-tmp" python3 -m unittest discover -s tests -p 'test_*.py'
+```
+
+Node regressions cover restored threads without composer focus, persisted decisions after reload, readiness ordering, session changes during reads, stale failures, dropped or rejected deliveries, hidden or disposed views, configuration recovery, bounded snapshot reads after file growth, concurrent atomic snapshot replacement, and bounded Windows write retries. Linux checks exercise real file links and private inode permissions. Windows checks use directory junctions; file-link subtests report a skip when Developer Mode or elevation is unavailable.
+
+The optional native Windows test uses the specified WSL distro, creates its own private `/tmp` fixture, and removes that exact fixture. It reads snapshots through WSL UNC paths while a Linux process replaces them. It also checks independent session selections and Linux file permissions. Enable it in a Windows terminal before running the Node suite:
+
+```powershell
+$env:CODEX_JEV_TEST_WSL_DISTRO = 'Ubuntu'
+npm test --prefix vscode-control
+```
+
+Run the [native VS Code panel smoke test](../vscode-control/scripts/windows_panel_smoke.ps1)
+from Windows PowerShell 7:
+
+```powershell
+pwsh -NoProfile -File .\vscode-control\scripts\windows_panel_smoke.ps1 -Distro Ubuntu
+```
+
+This check starts an isolated VS Code instance with an empty extension directory
+and synthetic WSL data. It instruments a disposable copy to acknowledge the
+actual rendered rows. It checks CSP resource loading, saved decisions without
+composer focus, three reloads, hiding and reopening, and session switching.
+It removes its private profile and WSL fixture after the instance closes.
+If the instance times out, the script reports its exact paths and preserves
+the fixture until that owned process is stopped. The existing VS Code profile
+and installed extensions are not changed.

@@ -73,12 +73,36 @@ test("composer bridge toggles Jev and reports view-scoped activity without a sta
     const scoped = core.sessionDirectory(directory, sessionId);
     const bridge = (request) => rawBridge({ sessionId, viewId: "view-one", focused: true, ...request });
     const initialReplies = await Promise.all(Array.from({ length: 12 },
-      () => bridge({ action: "status", viewId: "view-one" })));
+      () => bridge({ action: "status", viewId: "view-one", focused: false })));
     const defaultView = initialReplies[0];
     assert.ok(initialReplies.every((reply) => reply.enabled),
       "concurrent startup replies must not briefly report Jev off");
     assert.equal(defaultView.enabled, true);
     assert.equal(defaultView.needsKey, true);
+    assert.equal(panel.dataDirectory(), scoped,
+      "a restored thread is available to the panel before the composer receives focus");
+    const panelMessages = [];
+    panel.view = { visible: true, webview: { postMessage: async (message) => {
+      panelMessages.push(message); return true;
+    } } };
+    await fs.mkdir(path.join(scoped, "logs"), { recursive: true });
+    await fs.writeFile(path.join(scoped, "logs/latest-decision.json"), JSON.stringify({
+      version: 4, id: "a".repeat(32), receipt_id: "b".repeat(32),
+      at: new Date(Date.now() - 10_000).toISOString(), filter: "output", status: "keep",
+      batch: { number: 1, count: 1, target_count: 1 }, batch_elapsed_ms: 12,
+      rows: [{ line: 1, excerpt: "Synthetic build completed", action: "keep",
+        reason: "task_relevant", task_relevant: .95 }],
+      totals: { seen: 1, judged: 1, kept: 1, omitted: 0, protected: 0, unjudged: 0, requests: 2 },
+    }));
+    await bridge({ action: "status", focused: false });
+    await panel.refresh();
+    assert.equal(panelMessages.at(-1).decision.rows[0].excerpt, "Synthetic build completed");
+    const refreshPanel = panel.refresh.bind(panel);
+    let panelRefreshes = 0;
+    panel.refresh = (...args) => { panelRefreshes += 1; return refreshPanel(...args); };
+    await Promise.all(Array.from({ length: 12 }, () => bridge({ action: "status" })));
+    assert.equal(panelRefreshes, 0,
+      "unchanged composer status must not duplicate the panel's own polling");
     assert.equal((await bridge({ action: "openTypeSafe", viewId: "view-one" })).externalOpen, true);
     assert.equal(openedExternal, "https://typesafe.ai/");
     browserAvailable = false;
@@ -146,7 +170,10 @@ test("composer bridge toggles Jev and reports view-scoped activity without a sta
     ]);
     const selected = await bridge({ action: "status", viewId: "view-one" });
     assert.equal(selected.stats.replaced, 1);
+    const beforeViewSwitch = panelRefreshes;
     const newView = await bridge({ action: "status", viewId: "view-two" });
+    assert.equal(panelRefreshes, beforeViewSwitch + 1,
+      "a newly focused composer refreshes the panel immediately");
     assert.equal(newView.stats.completed, 0);
     assert.equal(newView.stats.estimatedTokensSaved, 0);
     assert.deepEqual(newView.history, []);

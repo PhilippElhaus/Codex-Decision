@@ -383,10 +383,16 @@ function activate(context) {
     vscode.commands.executeCommand(`${VIEW_ID}.focus`)));
   context.subscriptions.push(vscode.commands.registerCommand("codexJev.bridge", async (request) => {
     const controller = controllerFor(request?.viewId);
+    const previousController = active;
+    const previousSession = active?.state.sessionId;
     if (request?.focused === true || request?.action === "setSelection") {
       active = controller;
     }
     const reply = await controller.bridge(request);
+    // A restored Codex view can start while focus remains in the Jev panel.
+    if (!active && controller.state.sessionId) active = controller;
+    if (active === controller && (active !== previousController ||
+        active.state.sessionId !== previousSession)) void decisionPanel.refresh();
     const settingsSaved = request?.action === "settingsSave" && reply.settings?.action === "saved";
     const changed = request?.action === "setSelection" || request?.action === "saveApiKey" ||
       settingsSaved || request?.action === "settingsSetNeverDeleteLogs";

@@ -25,7 +25,7 @@ For the optional Windows VS Code control, build and install its VSIX from WSL:
 cd vscode-control
 mkdir -p ../.local/submission
 ../scripts/build_control.sh
-code --install-extension "$(wslpath -w ../.local/submission/codex-jev-control-0.9.3.vsix)" --force
+code --install-extension "$(wslpath -w ../.local/submission/codex-jev-control-0.9.5.vsix)" --force
 ```
 
 Set `codexJev.dataDirectory` to the installed plugin's absolute `PLUGIN_DATA` directory. Apply the [version-pinned Codex composer patch](../../vscode-control/README.md#install), then reload VS Code. The control needs the same data directory as the hook. Its pinned bridge reads the active thread from Codex's internal router, which can change while the webview URL stays fixed. The home screen has no thread yet; its indicator still checks API health and its settings page remains available. An unreadable local thread ID cannot change another session's state.

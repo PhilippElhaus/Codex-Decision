@@ -7,6 +7,7 @@ fn pinned_patch_applies_updates_rejects_tampering_and_restores() {
     patch_cycle(profiles::LEGACY);
     patch_cycle(Spec::production("26.930.21537").unwrap().1);
     patch_cycle(Spec::production("26.930.31730").unwrap().1);
+    patch_cycle(Spec::production("26.930.41038").unwrap().1);
 }
 
 fn patch_cycle(profile: profiles::Profile) {
@@ -106,7 +107,7 @@ fn bridge_fragments_publish_routes_and_validate_settings_messages() {
     let host = as_text(&exact(&repo, "vscode-control/patch-assets/host-bridge.jsfrag").unwrap())
         .unwrap()
         .to_owned();
-    for version in [VERSION, "26.930.21537", "26.930.31730"] {
+    for version in [VERSION, "26.930.21537", "26.930.31730", "26.930.41038"] {
         let fragment =
             profiles::route_fragment(route.clone(), Spec::production(version).unwrap().1);
         for (pathname, kind, session) in [

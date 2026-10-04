@@ -14,7 +14,7 @@ const withV3 = (config) => require("../../vscode-control/schema").validate("conf
   ...config, schema_version: 4, relevance_policy: completeRelevancePolicy(),
 });
 
-test("global settings stay independent of session switches and aggregate activity", async () => {
+test("global settings stay independent of session switches and aggregate activity", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "jev-global-settings-"));
   try {
     const one = sessionDirectory(root, "one");
@@ -40,8 +40,16 @@ test("global settings stay independent of session switches and aggregate activit
     await assert.rejects(writeGlobalSettings(root, { log_limit_mb: 0 }), /Invalid Jev settings/);
     assert.equal((await readGlobalSettings(root)).log_limit_mb, 72);
     await fs.rm(path.join(root, "settings.json"));
-    await fs.symlink(path.join(one, "config.json"), path.join(root, "settings.json"));
-    await assert.rejects(readGlobalSettings(root), /Unsafe Jev settings file/);
+    await t.test("linked settings files are rejected", async (t) => {
+      try {
+        await fs.symlink(path.join(one, "config.json"), path.join(root, "settings.json"));
+      } catch (error) {
+        if (process.platform !== "win32" || error.code !== "EPERM") throw error;
+        t.skip("Windows file symlinks require Developer Mode or elevation");
+        return;
+      }
+      await assert.rejects(readGlobalSettings(root), /Unsafe Jev settings file/);
+    });
   } finally { await fs.rm(root, { recursive: true, force: true }); }
 });
 
@@ -70,7 +78,7 @@ test("session readers reject linked directories before opening state", async () 
       enabled: true, mode: "replace",
     })));
     const linked = sessionDirectory(root, "linked-window");
-    await fs.symlink(outside, linked);
+    await fs.symlink(outside, linked, process.platform === "win32" ? "junction" : "dir");
     await assert.rejects(readConfig(linked), /Unsafe Jev session directory/);
     await assert.rejects(readHookHealth(linked), /Unsafe Jev session directory/);
     await assert.rejects(readLifetimeStats(linked), /Unsafe Jev session directory/);

@@ -28,7 +28,7 @@ def chromium_smoke() -> None:
                 outcome = json.loads(page.locator('#results').inner_text())
                 if not outcome.get('ok'):
                     raise AssertionError({'viewport': width, **outcome})
-                reports.append({'viewport': width, 'motion': motion, **outcome})
+                reports.append({'requested_width': width, 'motion': motion, **outcome})
                 page.close()
             for width in (360, 1200):
                 for sample in ('fifty', 'legacy'):
@@ -40,7 +40,7 @@ def chromium_smoke() -> None:
                                   'positionsStable', 'parallelGrowth', 'fadeAfterGrowth', 'noNestedScroll'):
                         assert report[field], {'viewport': width, 'sample': sample, **report}
                     assert not report['horizontalOverflow'], report
-                    reports.append({'panel': sample, 'viewport': width, **report})
+                    reports.append({'panel': sample, 'requested_width': width, **report})
                     page.close()
             page = browser.new_page()
             page.goto((ROOT.parent / 'tests/browser/jev_panel_empty_harness.html').as_uri())
@@ -78,7 +78,7 @@ def main() -> None:
             outcome = json.loads(match.group(1).replace('&quot;', '"'))
             if not outcome.get('ok'):
                 raise AssertionError({'viewport': width, **outcome})
-            reports.append({'viewport': width, 'motion': motion, **outcome})
+            reports.append({'requested_width': width, 'motion': motion, **outcome})
         panel_target = windows_path(ROOT.parent / 'tests/browser/jev_panel_harness.html').replace('\\', '/')
         panel_address = 'file:///' + quote(panel_target, safe='/:')
         for width in (360, 1200):
@@ -98,7 +98,7 @@ def main() -> None:
                               'positionsStable', 'parallelGrowth', 'fadeAfterGrowth', 'noNestedScroll'):
                     assert report[field], {'viewport': width, 'sample': sample, **report}
                 assert not report['horizontalOverflow'], report
-                reports.append({'panel': sample, 'viewport': width, **report})
+                reports.append({'panel': sample, 'requested_width': width, **report})
         empty = windows_path(ROOT.parent / 'tests/browser/jev_panel_empty_harness.html').replace('\\', '/')
         empty_address = 'file:///' + quote(empty, safe='/:')
         result = subprocess.run([

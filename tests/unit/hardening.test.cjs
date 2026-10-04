@@ -46,11 +46,12 @@ test("all state readers reject linked roots, ancestors and log directories", asy
     const data = path.join(root, "data"); await fs.mkdir(data, { mode: 0o700 });
     const session = core.sessionDirectory(data, "thread"); await core.ensureSessionDefaults(session);
     const outside = path.join(root, "outside"); await fs.mkdir(outside, { mode: 0o700 });
-    await fs.symlink(outside, path.join(session, "logs"));
+    await fs.symlink(outside, path.join(session, "logs"), process.platform === "win32" ? "junction" : "dir");
     await assert.rejects(readLatestPanelDecision(session), /Unsafe/);
     await assert.rejects(core.readEventsSince(session, 0), /Unsafe/);
     await assert.rejects(core.readHookHealth(session), /Unsafe/);
-    const linked = path.join(root, "linked"); await fs.symlink(data, linked);
+    const linked = path.join(root, "linked");
+    await fs.symlink(data, linked, process.platform === "win32" ? "junction" : "dir");
     await assert.rejects(core.readGlobalSettings(linked), /Unsafe/);
     await assert.rejects(core.writeGlobalSettings(linked, { mode: "observe" }), /Unsafe/);
     await assert.rejects(core.readConfig(core.sessionDirectory(linked, "thread")), /Unsafe/);

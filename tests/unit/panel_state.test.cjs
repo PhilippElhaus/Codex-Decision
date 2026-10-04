@@ -22,6 +22,9 @@ test("current relevance snapshots use real Nouls and count both serial requests"
   assert.throws(()=>parsePanelDecision({...current,totals:{...current.totals,requests:1}}));
   assert.throws(()=>parsePanelDecision({...current,rows:current.rows.map(row=>({...row,can_omit:.99}))}));
   assert.throws(()=>parsePanelDecision({...current,rows:[{...current.rows[0],task_relevant:1.1},current.rows[1]]}));
+  assert.throws(()=>parsePanelDecision({...current,totals:{...current.totals,protected:4}}));
+  assert.throws(()=>parsePanelDecision({...current,totals:{...current.totals,unjudged:4}}));
+  assert.throws(()=>parsePanelDecision({...current,rows:[current.rows[0],{...current.rows[1],line:4}]}));
 });
 
 test("current panels accept multiple relevance batches and more than 250 targets", () => {
@@ -36,7 +39,7 @@ test("current panels accept multiple relevance batches and more than 250 targets
   assert.throws(()=>parsePanelDecision({...current,batch:{...current.batch,number:6}}));
 });
 
-test("panel reads the current snapshot and rejects linked files", async () => {
+test("panel reads the current snapshot and rejects linked files", async (t) => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-panel-test-"));
   try {
     assert.equal(await readLatestPanelDecision(directory), null);
@@ -77,9 +80,47 @@ test("panel reads the current snapshot and rejects linked files", async () => {
     assert.throws(() => parsePanelDecision({ ...version3, rows: rows.map((row, index) =>
       index === 1 ? { ...row, line: 1 } : row) }), /batch row/);
     await fs.rename(filename, path.join(directory, "owned.json"));
-    await fs.symlink(path.join(directory, "owned.json"), filename);
-    await assert.rejects(readLatestPanelDecision(directory), /Unsafe/);
+    await t.test("linked snapshot files are rejected", async (t) => {
+      try {
+        await fs.symlink(path.join(directory, "owned.json"), filename);
+      } catch (error) {
+        if (process.platform !== "win32" || error.code !== "EPERM") throw error;
+        t.skip("Windows file symlinks require Developer Mode or elevation");
+        return;
+      }
+      await assert.rejects(readLatestPanelDecision(directory), /Unsafe/);
+    });
   } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("panel snapshot reads remain bounded when a file grows after stat", async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-panel-growth-"));
+  const filename = path.join(directory, "logs", "latest-decision.json");
+  const originalOpen = fs.open;
+  let bytesRequested = 0;
+  let closed = false;
+  try {
+    await fs.mkdir(path.dirname(filename));
+    await fs.writeFile(filename, "{}");
+    fs.open = async (...args) => {
+      const handle = await originalOpen(...args);
+      return {
+        stat: () => handle.stat(),
+        async read(buffer, offset, length) {
+          bytesRequested += length;
+          buffer.fill(32, offset, offset + length);
+          return { bytesRead: length };
+        },
+        async close() { closed = true; await handle.close(); },
+      };
+    };
+    await assert.rejects(readLatestPanelDecision(directory), /Unsafe Jev panel decision file/);
+    assert.equal(bytesRequested, 256 * 1024 + 1);
+    assert.equal(closed, true);
+  } finally {
+    fs.open = originalOpen;
     await fs.rm(directory, { recursive: true, force: true });
   }
 });

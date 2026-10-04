@@ -8,7 +8,7 @@ const path = require("node:path");
 const { execFileSync } = require("node:child_process");
 const { wslLocation, restrictWslPath } = require("../../vscode-control/private-paths");
 
-test("Windows UNC permissions are applied to Linux owned inodes without following links", async () => {
+test("Windows UNC permission commands use the selected distro and report failures", async () => {
   assert.deepEqual(wslLocation("\\\\wsl.localhost\\Ubuntu\\home\\fixture\\state"),
     { distro: "Ubuntu", filename: "/home/fixture/state" });
   assert.equal(wslLocation("D:\\workspace\\state"), null);
@@ -18,6 +18,15 @@ test("Windows UNC permissions are applied to Linux owned inodes without followin
   assert.deepEqual(invocation[1].slice(0, 6), ["-d", "Ubuntu", "-e", "python3", "-c", invocation[1][5]]);
   assert.deepEqual(invocation[1].slice(6), ["/home/fixture/state", "directory"]);
   assert.equal(invocation[2].timeout, 10_000);
+  await assert.rejects(restrictWslPath("\\\\wsl$\\Ubuntu\\home\\fixture", true,
+    async () => { throw new Error("synthetic process failure"); }, "win32"), /Could not secure Jev/);
+});
+
+test("WSL permissions restrict Linux owned inodes without following links",
+  { skip: process.platform !== "linux" }, async () => {
+  let invocation;
+  await restrictWslPath("\\\\wsl$\\Ubuntu\\home\\fixture\\state", true,
+    async (...args) => { invocation = args; }, "win32");
   const script = invocation[1][5];
   const fixture = await fs.mkdtemp(path.join(os.tmpdir(), "jev-private-"));
   try {
@@ -35,6 +44,4 @@ test("Windows UNC permissions are applied to Linux owned inodes without followin
       assert.throws(() => execFileSync("python3", ["-c", script, target, kind], { stdio: "pipe" }));
     }
   } finally { await fs.rm(fixture, { recursive: true }); }
-  await assert.rejects(restrictWslPath("\\\\wsl$\\Ubuntu\\home\\fixture", true,
-    async () => { throw new Error("synthetic process failure"); }, "win32"), /Could not secure Jev/);
 });

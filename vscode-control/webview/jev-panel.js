@@ -87,14 +87,20 @@
     // Start the clock on the first frame, after the zero-width state can paint.
     // Do not turn this explicit user-requested animation off for reduced motion.
     let started = null;
+    let filled = false;
     function frame(now) {
       if (started === null) started = now;
       const elapsed = Math.max(0, now - started);
       const linear = Math.min(1, elapsed / BAR_FILL_MS);
       const progress = 1 - (1 - linear) ** 3;
-      for (const fill of fills) fill.node.style.width = `${(fill.score * progress * 100).toFixed(2)}%`;
-      const opacity = Math.min(1, Math.max(0, (elapsed - BAR_FILL_MS) / PERCENT_FADE_MS));
-      for (const value of values) value.style.opacity = String(opacity);
+      if (!filled) {
+        for (const fill of fills) fill.node.style.width = `${(fill.score * progress * 100).toFixed(2)}%`;
+        filled = linear === 1;
+      }
+      if (elapsed >= BAR_FILL_MS) {
+        const opacity = Math.min(1, (elapsed - BAR_FILL_MS) / PERCENT_FADE_MS);
+        for (const value of values) value.style.opacity = String(opacity);
+      }
       if (elapsed < BAR_FILL_MS + PERCENT_FADE_MS) animation = requestAnimationFrame(frame);
     }
     animation = requestAnimationFrame(frame);

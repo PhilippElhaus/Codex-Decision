@@ -6,6 +6,7 @@ const path = require("node:path");
 const { validateSessionPath, validateDirectoryPath } = require("./core");
 
 const FILTERS = new Set(["output", "test_build", "search_listing"]);
+const MAX_SNAPSHOT_BYTES = 256 * 1024;
 function probability(value) {
   if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 1) {
     throw new Error("Invalid Jev panel probability");
@@ -46,13 +47,14 @@ function parseBatchDecision(value) {
       !totals || ["seen", "judged", "kept", "omitted", "protected", "unjudged", "requests"]
         .some((name) => !integer(totals[name])) ||
       totals.judged < value.rows.length || totals.judged > totals.seen ||
+      totals.protected > totals.seen || totals.unjudged > totals.seen ||
       totals.omitted > totals.judged || totals.kept + totals.omitted !== totals.seen ||
       totals.requests !== batch.number + (value.version === 4 ? 1 : 0) || !integer(value.batch_elapsed_ms, 3_600_000)) {
     throw new Error("Invalid Jev batch decision");
   }
   let previousLine = 0;
   const rows = value.rows.map((row) => {
-    if (!row || !integer(row.line) || row.line <= previousLine ||
+    if (!row || !integer(row.line) || row.line <= previousLine || row.line > totals.seen ||
         typeof row.excerpt !== "string" || row.excerpt.length > 120 ||
         !["keep", "omit"].includes(row.action) || !reasons.has(row.reason) ||
         (value.version === 3 && (typeof row.can_omit !== "number" || typeof row.exact_needed !== "number")) ||
@@ -79,15 +81,24 @@ async function readLatestPanelDecision(directory, cache = null) {
     await validateSessionPath(directory);
     await validateDirectoryPath(path.dirname(filename));
     const details = await fs.lstat(filename);
-    if (!details.isFile() || details.isSymbolicLink() || details.size > 256 * 1024) {
+    if (!details.isFile() || details.isSymbolicLink() || details.size > MAX_SNAPSHOT_BYTES) {
       throw new Error("Unsafe Jev panel decision file");
     }
     const fingerprint = `${filename}:${details.dev}:${details.ino}:${details.mtimeMs}:${details.ctimeMs}:${details.size}`;
     if (cache?.fingerprint === fingerprint) return cache.value;
     file = await fs.open(filename, constants.O_RDONLY | (constants.O_NOFOLLOW || 0));
     const opened = await file.stat();
-    if (!opened.isFile() || opened.size > 256 * 1024) throw new Error("Unsafe Jev panel decision file");
-    const value = JSON.parse(await file.readFile("utf8"));
+    if (!opened.isFile() || opened.size > MAX_SNAPSHOT_BYTES) throw new Error("Unsafe Jev panel decision file");
+    // The writer can replace or grow the file after stat. Bound the read itself.
+    const bytes = Buffer.alloc(MAX_SNAPSHOT_BYTES + 1);
+    let length = 0;
+    while (length < bytes.length) {
+      const { bytesRead } = await file.read(bytes, length, bytes.length - length, null);
+      if (!bytesRead) break;
+      length += bytesRead;
+    }
+    if (length > MAX_SNAPSHOT_BYTES) throw new Error("Unsafe Jev panel decision file");
+    const value = JSON.parse(bytes.toString("utf8", 0, length));
     const parsed = parsePanelDecision(value);
     if (cache) { cache.fingerprint = fingerprint; cache.value = parsed; }
     return parsed;

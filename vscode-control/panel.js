@@ -16,7 +16,6 @@ class LatestDecisionProvider {
     this.dataDirectory = dataDirectory;
     this.now = now;
     this.onFault = onFault;
-    this.startedAt = now();
     this.view = null;
     this.timer = null;
     this.pending = null;
@@ -24,18 +23,25 @@ class LatestDecisionProvider {
     this.lastMessage = "";
     this.lastDecisionId = null;
     this.nextDecisionAt = 0;
+    this.directory = undefined;
+    this.generation = 0;
+    this.awaitingReady = false;
   }
 
   resolveWebviewView(view) {
     this.view = view;
+    this.generation += 1;
+    this.awaitingReady = true;
     this.lastMessage = "";
     const webview = view.webview;
     webview.options = { enableScripts: true, localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, "webview")] };
     const style = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "webview", "jev-panel.css"));
     const script = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "webview", "jev-panel.js"));
-    webview.html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src ${webview.cspSource};"><link rel="stylesheet" href="${style}"></head><body><main id="app" aria-live="polite"></main><script src="${script}"></script></body></html>`;
+    const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src ${webview.cspSource};"><link rel="stylesheet" href="${style}"></head><body><main id="app" aria-live="polite"></main><script src="${script}"></script></body></html>`;
     const ready = webview.onDidReceiveMessage((message) => {
-      if (message?.type === "ready") {
+      if (this.view === view && message?.type === "ready") {
+        this.awaitingReady = false;
+        this.generation += 1;
         this.lastMessage = "";
         this.lastDecisionId = null;
         this.nextDecisionAt = 0;
@@ -43,15 +49,21 @@ class LatestDecisionProvider {
       }
     });
     const visibility = view.onDidChangeVisibility(() => {
+      if (this.view !== view) return;
       if (view.visible) this.start();
       else this.stop();
     });
     view.onDidDispose(() => {
-      this.stop();
       ready.dispose();
       visibility.dispose();
-      if (this.view === view) this.view = null;
+      if (this.view === view) {
+        this.stop();
+        this.view = null;
+        this.generation += 1;
+      }
     });
+    // Subscribe before loading the document, and wait for its message listener.
+    webview.html = html;
     if (view.visible) this.start();
   }
 
@@ -67,22 +79,50 @@ class LatestDecisionProvider {
   }
 
   async refresh() {
-    if (!this.view?.visible) return;
+    if (!this.view?.visible || this.awaitingReady) return;
+    let directory;
+    let directoryFault = false;
+    try { directory = this.dataDirectory(); }
+    catch {
+      directoryFault = true;
+      directory = null;
+    }
+    if (directory !== this.directory) {
+      this.directory = directory;
+      this.generation += 1;
+      this.cache = {};
+      this.lastMessage = "";
+      this.lastDecisionId = null;
+      this.nextDecisionAt = 0;
+    }
     if (this.now() < this.nextDecisionAt) return;
     if (this.pending) return this.pending;
+    const generation = this.generation;
+    const view = this.view;
+    const current = () => {
+      if (generation !== this.generation || view !== this.view) return false;
+      try { return directory === this.dataDirectory(); }
+      catch { return directoryFault; }
+    };
     const task = (async () => {
       let message;
       try {
-        const directory = this.dataDirectory();
+        if (directoryFault) throw new Error("Jev data directory is unavailable");
         const decision = directory ? await readLatestPanelDecision(directory, this.cache) : null;
+        if (!current()) return;
         this.onFault(null);
-        message = { type: "decision", decision: decision && Date.parse(decision.at) >= this.startedAt ? decision : null };
+        message = { type: "decision", decision };
       } catch (error) {
+        if (!current()) return;
         this.onFault("Latest Jev decision could not be read");
         message = { type: "decision", decision: null };
       }
       const serialized = JSON.stringify(message);
-      if (serialized !== this.lastMessage && this.view?.visible) {
+      if (serialized !== this.lastMessage && view.visible) {
+        let delivered;
+        try { delivered = await view.webview.postMessage(message); }
+        catch { return; }
+        if (delivered === false || !current()) return;
         this.lastMessage = serialized;
         if (message.decision?.id !== undefined && message.decision.id !== this.lastDecisionId) {
           this.lastDecisionId = message.decision.id;
@@ -91,14 +131,16 @@ class LatestDecisionProvider {
           this.lastDecisionId = null;
           this.nextDecisionAt = 0;
         }
-        await this.view.webview.postMessage(message);
       }
     })();
     this.pending = task;
-    try { return await task; } finally { this.pending = null; }
+    try { return await task; } finally {
+      this.pending = null;
+      if (generation !== this.generation && this.view?.visible) void this.refresh();
+    }
   }
 
-  dispose() { this.stop(); }
+  dispose() { this.stop(); this.generation += 1; this.view = null; }
 }
 
 module.exports = { LatestDecisionProvider, VIEW_ID, MIN_DISPLAY_MS };

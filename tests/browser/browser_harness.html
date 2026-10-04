@@ -235,9 +235,25 @@
       modelControl.textContent = fixtureModelLabel;
       composer.style.width = `${wideWidth - (gap - 12)}px`;
       await until(() => root.dataset.compact === "true" && root.style.display === "block" &&
-        rect().bottom <= Math.min(anchor().top, model().top) - 7, "compact control when toolbar gap closes");
-      check(rect().bottom <= Math.min(anchor().top, model().top) - 7,
-        "compact control moves above a closed toolbar gap without overlapping controls");
+        Math.abs(rect().top + rect().height / 2 - anchor().top - anchor().height / 2) <= 1 &&
+        rect().left >= anchor().right + 1 && rect().right <= model().left - 1,
+        "compact control stays on the toolbar when its normal margins do not fit");
+      check(rect().left >= anchor().right + 1 && rect().right <= model().left - 1,
+        "tight compact control does not overlap either Codex control");
+      for (const tightGap of [28, 24, 14, 12]) {
+        document.querySelector(".toolbar").style.gap = `${tightGap}px`;
+        modelControl.style.marginLeft = "0";
+        await until(() => root.style.display === "block" &&
+          Math.abs(rect().top + rect().height / 2 - anchor().top - anchor().height / 2) <= 1 &&
+          rect().left >= anchor().right + 1 && rect().right <= model().left - 1,
+          `Jev stays on the toolbar in a ${tightGap}px gap`);
+        check(document.getElementById("codex-jev-dot").getBoundingClientRect().width === 7,
+          "tight spacing preserves the status dot");
+      }
+      document.querySelector(".toolbar").style.gap = "8px";
+      await until(() => root.style.display === "none", "a closed toolbar gap hides Jev instead of covering the prompt");
+      document.querySelector(".toolbar").style.gap = "";
+      modelControl.style.marginLeft = "";
       document.documentElement.style.width = "";
       composer.style.width = "";
       await until(() => root.style.display === "block" && root.dataset.compact === "false", "restore full control after resize");
@@ -833,7 +849,7 @@
       await until(() => document.getElementById("codex-jev-button").disabled,
         "leaving the internal thread route clears the session");
       check(calls >= 5, "host bridge used");
-      document.getElementById("results").textContent = JSON.stringify({ ok: true, calls });
+      document.getElementById("results").textContent = JSON.stringify({ ok: true, calls, viewport: innerWidth, height: innerHeight });
       document.title = "JEV_BROWSER_PASS";
     }
     run().catch((error) => {
