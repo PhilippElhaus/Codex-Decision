@@ -28,8 +28,9 @@ discards late reads and faults after a session or view change.
 
 Snapshot reads remain bounded to 256 KiB even if a file grows after its size
 check. Session changes reset the delivery cache and display delay. Normal status
-polls no longer duplicate the panel's own polling. Windows settings writes retry
-transient sharing errors for at most 310 ms and preserve the old file on failure.
+polls no longer duplicate the panel's own polling. Windows settings writes use
+six atomic rename attempts with up to 310 ms of scheduled retry delay. They
+preserve the old file on failure.
 Activity counts use the same English number format as the composer counters.
 
 Classification calls do not produce panel rows. A classification that keeps
@@ -132,23 +133,41 @@ they are observations for these fixtures rather than production latency limits.
 
 ## Long-running browser validation
 
-Validation started at 07:33:18 UTC. The requested four-hour window ends no
-earlier than 11:33:18 UTC. The first browser soak completed 28,615 rounds in
-6,601.792 seconds. Each round checked composer geometry and rendered a
-hook-produced panel snapshot. It completed with no failures and no text-tree
-walks. The largest sampled composer heap was 3,273,020 bytes. These unforced
-heap samples include the runner's retained timing samples; they do not prove
-that the product has no memory leak. The second 110-minute soak is running.
+Validation started at 07:33:18 UTC. All three long-running browser processes
+had completed successfully by 11:40:02 UTC, exceeding four hours of work and
+validation. They checked 50,537 rounds in total. Every round checked composer
+geometry and rendered a hook-produced panel snapshot. All three processes
+exited with code 0, without assertion failures or page errors.
+
+| Run | Control | Duration, seconds | Rounds | Panel reloads | Completed animations |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Initial | 0.9.5 | 6,601.792 | 28,615 | — | — |
+| Mixed snapshots | 0.9.5 | 6,601.106 | 16,446 | 32 | 164 |
+| Final toolbar recovery | 0.9.6 | 3,602.793 | 5,476 | 27 | 54 |
+
+The initial runner did not record completed-animation or reload checks. The
+mixed run rotated current, full-keep, and historical snapshots. The final run
+removed and restored toolbar neighbours 547 times. Both later runs used 200%
+display scaling and reduced motion.
+
+The two initial runs visited no text-tree nodes. The final run visited
+5,204,024 nodes because removing the toolbar controls exercised fallback model
+discovery. The largest sampled composer heap across the runs was 3,273,020
+bytes. The mixed and final runs sampled panel heaps up to 95,497,220 and
+39,082,908 bytes, respectively. These unforced samples include transient
+allocations and, for the composer, the runner's retained timing samples.
+They do not establish retained memory or prove absence of leaks. The separate
+garbage-collected probe above measures retained heap without the timing array.
 
 The runner uses the real composer and panel scripts, a 5,000-item synthetic
 history, and a hook-produced snapshot. Widths range from 360 to 2,800 px.
-It varies permission labels, model heights, and toolbar gaps. The second pass
-also checks completed animations, panel reloads, reduced motion, display
+It varies permission labels, model heights, and toolbar gaps. Later passes
+also checked completed animations, panel reloads, reduced motion, display
 scaling, and separate panel heap samples.
 
 Both 110-minute runs started with control 0.9.5. The additional missing-neighbour
 guard in 0.9.6 has native Edge and Chromium regression checks. A separate
-60-minute run tests the final source by removing and restoring neighbours every
+60-minute run tested the final source by removing and restoring neighbours every
 ten rounds and reloading the panel every 200 rounds.
 
 Native Edge passed the composer and current and historical panel checks.
@@ -163,6 +182,15 @@ added installation metadata. Both installed Codex versions, `26.930.31730` and
 The hook remains trusted and enabled. The running user window requires a reload
 to load the new control and webview files.
 
+[CI for the final source revision](https://github.com/PhilippElhaus/Codex-Jev/actions/runs/37196247680)
+passed the Rust, Node, Python, offline corpus, package, and Chromium checks,
+including toolbar disappearance and recovery.
+
 Use [the test commands](../../tests/README.md#composer-and-panel-quality-checks)
 to reproduce the regression and stress checks. Reports and key-free screenshots
 are retained in ignored `.local/quality/` and `.local/two-stage/` locations.
+The exported Lab evidence is under
+`.local/quality/lab-evidence-2026-10-04/quality/` and
+`.local/two-stage/lab-evidence-2026-10-04/two-stage/`. The quality export includes
+all three completed soak reports, the memory probe, performance comparisons,
+and a final 28 px-gap screenshot from the real visual harness.
