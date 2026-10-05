@@ -26,7 +26,7 @@ function retentionIndex(row) {
 }
 
 function parsePanelDecision(value) {
-  if (!value || ![3, 4, 5].includes(value.version)) throw new Error("Unsupported Jev panel decision");
+  if (!value || ![3, 4, 5, 6].includes(value.version)) throw new Error("Unsupported Jev panel decision");
   return parseBatchDecision(value);
 }
 
@@ -37,7 +37,8 @@ function parseBatchDecision(value) {
     "task_relevant", "irrelevant", "confident_omission", "representative", "last_line"]);
   const totals = value.totals;
   const batch = value.batch;
-  const completeRows = value.version === 5;
+  const completeRows = value.version >= 5;
+  const classificationRequests = value.version >= 6 ? totals?.classification_requests : value.version >= 4 ? 1 : 0;
   if (!identifier.test(value.id) || !identifier.test(value.receipt_id) ||
       typeof value.at !== "string" || !Number.isFinite(Date.parse(value.at)) ||
       !FILTERS.has(value.filter) || !new Set(["processing", "keep", "candidate", "replace"]).has(value.status) ||
@@ -51,7 +52,7 @@ function parseBatchDecision(value) {
       totals.judged > totals.seen || batch.target_count > totals.judged ||
       totals.protected > totals.seen || totals.unjudged > totals.seen ||
       totals.omitted > totals.judged || totals.kept + totals.omitted !== totals.seen ||
-      totals.requests !== batch.number + (value.version >= 4 ? 1 : 0) || !integer(value.batch_elapsed_ms, 3_600_000)) {
+      !integer(classificationRequests, 1) || totals.requests !== batch.number + classificationRequests || !integer(value.batch_elapsed_ms, 3_600_000)) {
     throw new Error("Invalid Jev batch decision");
   }
   let previousLine = 0;
@@ -142,6 +143,10 @@ async function readPanelActivity(directory) {
       small: "The latest output was too short to evaluate.",
       sensitive: "The latest output was protected from sending to Jev.",
       unsafe_task_context: "The task context was protected from sending to Jev.",
+      exact_content: "The latest result requires exact source content and was kept complete.",
+      exhaustive_task: "The task requires the complete result, so it was kept without an API request.",
+      structure_guard: "The latest result has no validated independent-line format and was kept complete.",
+      insufficient_savings: "The latest result could not save enough text after preserving evidence and metadata.",
     };
     message = reasons[health.last_skip] || `Hook ran; latest output skipped: ${health.last_skip.replaceAll("_", " ")}.`;
   } else message = "Waiting for the next line decision.";

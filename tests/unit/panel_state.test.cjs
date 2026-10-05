@@ -9,6 +9,17 @@ const { parsePanelDecision, readLatestPanelDecision } = require("../../vscode-co
 
 const snapshot = { id: "a".repeat(32), at: "2026-09-28T12:34:56.123456+00:00" };
 
+test("validated formats count actual requests while older classified panels stay readable", () => {
+  const current = { version: 6, ...snapshot, receipt_id: "b".repeat(32), filter: "output", status: "replace",
+    batch: { number: 1, count: 1, target_count: 1 }, batch_elapsed_ms: 30,
+    rows: [{ line: 1, excerpt: "routine", action: "omit", reason: "irrelevant", task_relevant: .03 }],
+    totals: { seen: 1, judged: 1, kept: 0, omitted: 1, protected: 0, unjudged: 0, requests: 1, classification_requests: 0 } };
+  assert.equal(parsePanelDecision(current).totals.requests, 1);
+  assert.equal(parsePanelDecision({ ...current, totals: { ...current.totals, requests: 2, classification_requests: 1 } }).totals.requests, 2);
+  assert.throws(() => parsePanelDecision({ ...current, totals: { ...current.totals, requests: 2 } }));
+  assert.throws(() => parsePanelDecision({ ...current, totals: { ...current.totals, requests: 3, classification_requests: 2 } }));
+});
+
 test("complete panels include all 72 lines and the three protected keeps without invented scores", () => {
   const rows = Array.from({ length: 72 }, (_, index) => index < 69 ? {
     line: index + 1, excerpt: "routine", action: "omit", reason: "irrelevant", task_relevant: .03,

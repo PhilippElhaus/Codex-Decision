@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 820" role="img" aria-labelledby="title desc">
   <title id="title">Codex Jev architecture</title>
-  <desc id="desc">A local Codex result passes through a Rust hook, one sampled Choice classification, line checks, and local keep rules. Unsafe or uncertain output stays whole. A VS Code control writes private per-session settings and records. TypeSafe API requests use a shared local key.</desc>
+  <desc id="desc">A local Codex result passes through a Rust hook, local format validation, line checks, and keep rules. Known formats go directly to line checks. Unknown formats use a sampled Choice gate. Unsafe or uncertain output stays whole. The VS Code control writes private session settings and records.</desc>
   <defs>
     <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M1 1l8 4-8 4" fill="none" stroke="#4c6e89" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></marker>
     <style>
@@ -26,13 +26,15 @@
 
   <rect class="box purple" x="608" y="194" width="220" height="116" rx="15"/>
   <g class="icon icon-purple"><path d="M630 217v24m0-24h21m-21 12h21m0-12-5-5m5 5-5 5m5 7-5-5m5 5-5 5"/></g>
-  <text x="665" y="236" class="name">Choice gate</text><text x="629" y="272" class="detail">Sample each eligible result</text>
+  <text x="665" y="236" class="name">Choice gate</text><text x="629" y="272" class="detail">Unknown formats only</text>
   <path class="line" d="M563 252h43"/>
 
   <rect class="box" x="874" y="194" width="220" height="116" rx="15"/>
   <g class="icon"><path d="M896 221h8m-8 8h8m-8 8h8m8-16h17m-17 8h17m-17 8h17"/></g>
   <text x="934" y="236" class="name">Line checks</text><text x="895" y="272" class="detail">API-bounded batches</text>
   <path class="line" d="M829 252h43"/>
+  <path class="line" d="M452 194v-28h532v26"/>
+  <text x="607" y="157" class="note">Validated formats</text>
 
   <rect class="box green" x="1140" y="194" width="224" height="116" rx="15"/>
   <g class="icon icon-green"><path d="M1163 220h25v24h-25zM1168 232l5 5 10-12"/></g>

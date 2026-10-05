@@ -167,6 +167,7 @@ fn failed_record_never_publishes_a_replace_event_or_receipt() {
             &event,
             "output",
             "replace",
+            "relevance_policy",
             source,
             "summary\n",
             &lines,
@@ -414,7 +415,7 @@ fn local_text_is_eligible_but_structured_and_action_results_are_not() {
     assert_eq!(route(&shell, &config), Some("output"));
     assert_eq!(
         response_text(&shell).as_deref(),
-        Some("src/a.rs:12:token\n")
+        Some("Command result metadata: {\"exit_code\":0}\nsrc/a.rs:12:token\n")
     );
     let search = json!({"tool_name":"mcp__files__search","tool_response":{
         "content":[{"type":"text","text":"src/main.rs:42:match"}]}});
@@ -577,7 +578,7 @@ fn completed_batch_is_visible_and_failed_result_restores_empty_panel() {
             .publish("output", &lines, &judged, &batch, 1, 1)
             .unwrap();
         let snapshot: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-        assert_eq!(snapshot["version"], 5);
+        assert_eq!(snapshot["version"], 6);
         assert_eq!(snapshot["status"], "processing");
         assert_eq!(snapshot["totals"]["judged"], 1);
         assert_eq!(snapshot["rows"][0]["line"], 1);
@@ -682,6 +683,7 @@ fn panel_snapshot_contains_a_full_bounded_250_line_batch() {
         &batch,
         1,
         1,
+        1,
     );
     assert_eq!(snapshot["rows"].as_array().unwrap().len(), 250);
     assert!(snapshot["rows"]
@@ -719,6 +721,7 @@ fn cumulative_panel_covers_ten_thousand_lines_including_prior_batches() {
         &batch,
         10,
         10,
+        1,
     );
     assert_eq!(snapshot["rows"].as_array().unwrap().len(), 10_000);
     assert_eq!(snapshot["rows"][0]["line"], 1);

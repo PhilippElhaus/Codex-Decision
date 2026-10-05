@@ -44,8 +44,22 @@ pub(super) fn hook_health(data_dir: &Path, outcome: &str, reason: &str) -> Resul
             health["last_skip"] = json!(reason);
             let count = health["skipped"].as_u64().unwrap_or(0).saturating_add(1);
             health["skipped"] = json!(count);
+            if health["skip_counts"].is_null() {
+                health["skip_counts"] = json!({});
+            }
+            let counts = health["skip_counts"]
+                .as_object_mut()
+                .ok_or("invalid skip counts")?;
+            let count = counts
+                .get(reason)
+                .and_then(Value::as_u64)
+                .unwrap_or(0)
+                .saturating_add(1);
+            counts.insert(reason.into(), json!(count));
         }
-        "seen" => {}
+        "seen" => {
+            health["seen"] = json!(health["seen"].as_u64().unwrap_or(0).saturating_add(1));
+        }
         _ => return Err("invalid hook health outcome".into()),
     }
     write_private(

@@ -125,9 +125,10 @@
     }, 1800);
     setTimeout(() => {
       report.newBatchShown = document.querySelector(".batch-line-number").textContent === String(nextDecision.rows[0].line);
-      report.minimalHeader = document.querySelector(".batch-header").children.length === 1 &&
+      report.minimalHeader = document.querySelector(".batch-header").children.length === 2 &&
         document.querySelectorAll(".card-kicker,.batch-summary,.batch-legend").length === 0 &&
         document.querySelector(".batch-title").textContent.includes("kept");
+      report.outputStatusClear = document.querySelector(".batch-status").textContent === "Full output kept";
       report.keepReasonAvailable = [...document.querySelectorAll(".batch-action")].some((node) => node.title.includes("task"));
       report.positionsStable = report.positions === positions();
       report.fullBlockBars = [...document.querySelectorAll(".batch-bar-fill")].every((node) => node.textContent.includes("█"));

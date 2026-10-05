@@ -97,7 +97,11 @@ pub(super) fn response_text(event: &Value) -> Option<String> {
         return None;
     }
     if let Some(text) = body.get("output").and_then(Value::as_str) {
-        return Some(text.to_owned());
+        return Some(if known_command_result(body) {
+            command_preview(&body.to_string())
+        } else {
+            text.to_owned()
+        });
     }
     let content = body.get("content")?.as_array()?;
     if content.is_empty() {
@@ -118,28 +122,13 @@ pub(super) fn orchestration_tool(tool: &str) -> bool {
 }
 
 // Code-mode text(result) serializes command output with escaped newlines.
-// Decode only the known command envelope for a readable preview. The original
-// text-item array still cannot be replaced, so all metadata remains intact.
+// Decode only the known command envelope. Metadata remains an explicit,
+// protected source line, and replacement also saves the typed envelope.
 fn command_preview(text: &str) -> String {
     let Ok(Value::Object(mut object)) = serde_json::from_str::<Value>(text) else {
         return text.into();
     };
-    if object.keys().any(|key| {
-        ![
-            "chunk_id",
-            "wall_time_seconds",
-            "exit_code",
-            "original_token_count",
-            "output",
-            "session_id",
-        ]
-        .contains(&key.as_str())
-    }) || !object.get("chunk_id").is_some_and(Value::is_string)
-        || !object
-            .get("wall_time_seconds")
-            .is_some_and(Value::is_number)
-        || !object.get("output").is_some_and(Value::is_string)
-    {
+    if !known_command_result(&Value::Object(object.clone())) {
         return text.into();
     }
     let output = object.remove("output").unwrap();
@@ -148,4 +137,62 @@ fn command_preview(text: &str) -> String {
         Value::Object(object),
         output.as_str().unwrap()
     )
+}
+
+pub(super) fn known_command_result(body: &Value) -> bool {
+    body.as_object().is_some_and(|object| {
+        object.get("output").is_some_and(Value::is_string)
+            && object.iter().all(|(key, value)| match key.as_str() {
+                "output" | "chunk_id" => value.is_string(),
+                "wall_time_seconds" => value.as_f64().is_some_and(|n| n >= 0.0),
+                "exit_code" => value.is_null() || value.as_i64().is_some(),
+                "session_id" | "original_token_count" => value.as_u64().is_some(),
+                _ => false,
+            })
+    })
+}
+
+pub(super) fn replacement_supported(event: &Value) -> bool {
+    let body = &event["tool_response"];
+    if body.is_string() {
+        return true;
+    }
+    let tool = event["tool_name"].as_str().unwrap_or("");
+    if shell_tool(tool) {
+        return known_command_result(body);
+    }
+    if !orchestration_tool(tool) {
+        return false;
+    }
+    body.as_array().is_some_and(|items| {
+        !items.is_empty()
+            && items.iter().all(|item| {
+                let Some(object) = item.as_object() else {
+                    return false;
+                };
+                if object.len() != 2 || item["type"] != "input_text" {
+                    return false;
+                }
+                let Some(text) = item["text"].as_str() else {
+                    return false;
+                };
+                match serde_json::from_str::<Value>(text) {
+                    Ok(value) => known_command_result(&value),
+                    Err(_) => true,
+                }
+            })
+    })
+}
+
+pub(super) fn protect_response_metadata(lines: &mut [SourceLine]) {
+    for line in lines {
+        if line.model_text.starts_with("Command result metadata:")
+            || line.model_text.starts_with("Script completed")
+            || line.model_text.starts_with("Script running with cell ID ")
+            || line.model_text.starts_with("Wall time ")
+            || line.model_text.starts_with("Output:")
+        {
+            line.protected_reason = Some("tool_metadata".into());
+        }
+    }
 }

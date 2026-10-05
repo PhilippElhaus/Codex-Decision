@@ -32,7 +32,10 @@ pub(super) fn apply_route_structure(
                 || executable == "cargo" && flag("--message-format=json"));
     let looks_structured = lines
         .iter()
-        .find(|line| !line.model_text.trim().is_empty())
+        .find(|line| {
+            !line.model_text.trim().is_empty()
+                && line.protected_reason.as_deref() != Some("tool_metadata")
+        })
         .is_some_and(|line| {
             let first = line.model_text.trim();
             matches!(first, "{" | "[") || serde_json::from_str::<Value>(first).is_ok()
@@ -43,6 +46,9 @@ pub(super) fn apply_route_structure(
     if route == "test_build" {
         let mut complete = false;
         for line in lines.iter_mut() {
+            if line.protected_reason.as_deref() == Some("tool_metadata") {
+                continue;
+            }
             let text = line.model_text.trim().to_ascii_lowercase();
             let count_summary = text
                 .chars()
@@ -134,6 +140,9 @@ pub(super) fn apply_route_structure(
             || matches!(executable, "find" | "fd" | "ls");
 
         for line in lines {
+            if line.protected_reason.as_deref() == Some("tool_metadata") {
+                continue;
+            }
             if jsonl {
                 let Ok(row) = serde_json::from_str::<Value>(&line.model_text) else {
                     return false;

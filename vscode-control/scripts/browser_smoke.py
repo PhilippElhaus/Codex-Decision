@@ -36,7 +36,7 @@ def chromium_smoke() -> None:
                     page.goto((ROOT.parent / 'tests/browser/jev_panel_harness.html').as_uri() + '?' + sample)
                     page.wait_for_function('document.title === "JEV_LINE_PANEL_READY"')
                     report = json.loads(page.locator('body').get_attribute('data-report'))
-                    for field in ('newBatchShown', 'minimalHeader', 'sameDecisionDidNotRestart',
+                    for field in ('newBatchShown', 'minimalHeader', 'outputStatusClear', 'sameDecisionDidNotRestart',
                                   'positionsStable', 'parallelGrowth', 'fadeAfterGrowth', 'noNestedScroll',
                                   'tenCharacterBars', 'fixedTrackWidths', 'compactRows', 'singleLineRows', 'keepReasonAvailable'):
                         assert report[field], {'viewport': width, 'sample': sample, **report}
@@ -105,7 +105,7 @@ def main() -> None:
                 if result.returncode != 0 or not match:
                     raise RuntimeError(f'Panel harness failed: {sample} {width}px')
                 report = json.loads(match.group(1).replace('&quot;', '"'))
-                for field in ('newBatchShown', 'minimalHeader', 'sameDecisionDidNotRestart',
+                for field in ('newBatchShown', 'minimalHeader', 'outputStatusClear', 'sameDecisionDidNotRestart',
                               'positionsStable', 'parallelGrowth', 'fadeAfterGrowth', 'noNestedScroll',
                               'tenCharacterBars', 'fixedTrackWidths', 'compactRows', 'singleLineRows', 'keepReasonAvailable'):
                     assert report[field], {'viewport': width, 'sample': sample, **report}

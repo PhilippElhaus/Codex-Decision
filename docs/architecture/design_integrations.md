@@ -2,31 +2,30 @@
 
 One session `enabled` flag controls all supported local tool output. The composer button toggles that flag directly. A new local thread starts enabled in the optional VS Code control. The standalone hook requires explicit configuration. There is no integration popup or category selection.
 
-Every eligible result first receives one Choice classification over a sampled excerpt. Only an excerptable class with at least 95% combined probability across the four excerptable classes proceeds to line-relevance batches bounded by the Jev API context limits. The shared `relevance_policy.relevant_max` defaults to 5%. The old omission/exact-text questions and optional large-output gate are retired from the runtime.
+Known test/build and search formats proceed directly to Jev line judgments after local structure checks. A complete plain log or numbered search records can also establish independent lines without parsing a shell script. Unknown formats retain the sampled Choice gate. That gate still requires an excerptable class and at least 95% combined probability. One shared relevance cutoff stays at 5%.
 
-Format recognition only protects evidence. Test and build output needs completion evidence. Search output keeps structured records intact. Other supported plain text receives the same line policy. Shell parsing accepts quoting, environment assignments, directory changes, and simple shell wrappers. Compatible command lists and whole-line viewers can qualify for replacement. Heredocs, transforming pipelines, byte limits, redirections, command substitutions, and incompatible command groups use previews only. These forms can receive classification and line judgments, but their complete tool result stays intact. Structured payload checks still apply.
+Exact source/diff reads, explicit exhaustive tasks, and results that cannot save enough text stay complete without an API request. Test/build adapters require completion evidence. Numbered searches validate record boundaries. Mixed-media results, sensitive input, and unsupported structured payloads stay complete. A tool name alone does not establish a safe format for an MCP response.
 
-Mixed-media responses, mutating tool actions, sensitive-looking text, short results, and unsupported structures stay complete. Local text-item arrays and metadata-bearing command objects can be previewed. Replacement needs a plain-string local result or explicit MCP replacement permission, plus a usable transcript task. See [data handling](design_data.md) for exact limits.
+Known command envelopes and text-only code-mode results can be shortened. Their metadata stays protected. The hook saves both a complete readable view and the original typed envelope before replacement. Unknown fields, text-item annotations, and mixed media prevent this replacement. MCP replacement still requires explicit opt-in.
 
-Code-mode `exec`, `wait`, `functions.exec`, and `functions.wait` support text-only relevance previews. Known command-result envelopes emitted by `text(result)` expose their decoded output lines to Jev while retaining metadata in the preview. Unknown objects and mixed media are not decoded. Orchestration results are never replaced, including when MCP replacement is enabled; their original content and metadata stay intact.
-
-Relevance questions ask for the probability that a line supplies task evidence, independent of an omission cutoff. Routine poll counters and timestamps do not make a line relevant unless the task needs timing, order, counts, or those events. Position alone does not establish relevance. Code keeps diagnostic context, final status, and representative duplicates. The cutoff is inclusive: 0.05 can be omitted at 5%; 0.06 is kept. The panel shows percentages and makes the exact probability and decision reason available on hover.
+A shell script with a validated complete log can be shortened even when the command parser cannot interpret its heredoc or redirection. Other unparsed commands retain previews. Relevance questions ask whether a line contains a concrete finding needed for the task. Related vocabulary, routine steps, counters, timestamps, and position do not establish a finding unless the task needs those details. The cutoff remains inclusive: 0.05 can be omitted; 0.06 is kept. Local rules retain diagnostics, context, completion evidence, representative duplicates, and the final line.
 
 Session configs now use schema 4. Shared settings use schema 3. Rust and Node validate both against [one contract](../../vscode-control/config-contract.json). Legacy schema-2/3 configs and schema-1/2 settings remain readable. Any enabled old switch enables the unified integration. The migration uses the minimum of 5%, 100 minus the old omission cutoff, and the old exact-text cutoff. It never maps a relaxed legacy trial above the new 5% default. These signals are different; this migration is a conservative starting point, not a mathematical equivalence. The next save writes only current fields. Invalid and unknown fields remain errors.
 
 Historical receipts remain readable. The quality evaluator can replay their old route and relevance fields. These compatibility fields do not select filters in the current hook. See the [architecture diagram](../images/jev-architecture.svg).
 
-## Two stages with serial Jev calls
+## Format validation and bounded Jev calls
 
-Version 0.10.1 implements this flow. The single composer switch remains unchanged.
+Version 0.10.8 uses this flow:
 
-1. Apply local enablement, input, privacy, response-type, and budget checks. Keep ineligible output unchanged without an API call.
-2. Send one Choice question over a bounded excerpt of each eligible output. Include the current task, tool identity, exit status when available, line count, and numbered samples from the beginning, middle, end, and diagnostics. Code selects these samples. Jev does not generate an excerpt.
-3. Validate the response. Continue only when the selected class is excerptable and the normalized combined probability of the four excerptable classes is at least 0.95. Validate and record Choice confidence; it does not gate the branch because uncertainty between two excerptable classes does not change the action. A keep class, uncertainty, invalid response, or timeout returns the complete original. The class must describe safe excerptability for this task, not just a tool name.
-4. Pack the second stage into requests bounded by both API context limits. Give every eligible source line one independent relevance Noul. Include the selected class, task, complete target text, nearby context, and diagnostic/boundary anchors. Questions within each batch run together. Send the batches serially.
-5. Publish cumulative progress after each valid batch. Only after all batches succeed, keep protected and relevant lines, plus uncertain or unjudged lines. Remove only confidently irrelevant lines. Copy exact source spans in their original order. Add omission ranges and the saved-original path. Monitor records the same decisions and returns the original.
+1. Check enablement, privacy, task requirements, response structure, and budgets. Keep ineligible output without a request.
+2. Validate a known independent-line format locally. Otherwise, classify a bounded sample and keep the existing 95% branch gate.
+3. Pack one relevance Noul per eligible line into bounded requests. Include task, command, complete target text, nearby context, and diagnostic anchors. Send batches serially.
+4. Publish progress after valid batches. Commit a replacement only after every batch succeeds and all required artifacts are saved. Monitor records proposals and keeps the full result.
 
-This is two stages: one classification call, then one or more relevance calls. There is no candidate-line or batch-count cap. Each eligible line is assigned exactly once; a target is never truncated. The existing 10,000-physical-line input guard and 45-second hook deadline still apply. If a target with its required context cannot fit, or a later batch fails, return the full original and roll back provisional panel progress.
+Known formats need only relevance calls. Unknown formats need a classification call before relevance. There is no candidate-line or batch-count cap. Every target belongs to one batch and stays complete. Inputs remain bounded to 10,000 physical lines and a 45-second deadline. A packing, API, validation, or storage failure returns the full result and restores the previous panel.
+
+Replacement must save more than 256 bytes and more than 20% after headers and metadata. A conservative lower bound rejects impossible savings before calling Jev. Candidates that remain full record their reason: Monitor mode, missing task context, unsupported command or envelope, MCP opt-in, or insufficient savings.
 
 ### API context budgets
 

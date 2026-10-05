@@ -16,13 +16,13 @@ Rust process tests launch the real hook against a local mock API. They cover rou
 
 To exercise the installed hook, run `jevctl check-hook-trust --cwd <repository>` after installation and after every update. Then start a new Codex thread and run a local command with more than 256 characters of ordinary text while Jev is enabled. The control should be green after the API check; a completed decision appears in this session's logs. A key test checks the API only.
 
-Use the current two-stage corpus below for live checks. The runner reads the installed key only in memory and sends synthetic output. Review receipts with `jevctl evaluate-quality --cases <private JSON>` before changing cutoffs. Old ignored live Rust tests have been replaced by this runner; they assumed the retired request shape and copied a key file into a fixture.
+Use the reviewed output corpus below for live checks. The runner reads the installed key only in memory and sends synthetic output. Review receipts with `jevctl evaluate-quality --cases <private JSON>` before changing cutoffs. Old ignored live Rust tests have been replaced by this runner; they assumed the retired request shape and copied a key file into a fixture.
 
 Regenerate README screenshots with `python3 vscode-control/scripts/capture_docs.py`. The capture loads the real webviews through the visual and panel harnesses. It checks current relevance totals and the dated historical failing-test batch. The settings image shows the current 5% relevance cutoff. The fixtures contain no real keys or private conversations.
 
 Migration checks cover all eight legacy switch combinations, conservative cutoff merging, invalid legacy fields, and saving only the current schema. Browser checks assert the single accessible switch, absence of the popup, and one shared relevance cutoff.
 
-Run the two-stage dummy corpus against the debug hook:
+Run the reviewed dummy corpus against the debug hook:
 
 ```bash
 node scripts/two_stage_quality.cjs --out .local/two-stage/offline
@@ -34,7 +34,7 @@ node scripts/two_stage_quality.cjs --live --holdout --data-dir <installed-PLUGIN
 
 Live runs use the installed key only in the proxy process memory. The hook uses a synthetic proxy key in an owned temporary directory. Only reviewed dummy output reaches TypeSafe. A run stops at 120 HTTP calls or 500,000 returned usage tokens by default. Use `--case <id>` for one case and `--relevance-max <0..100>` for a cutoff trial. Reports separate proposed evidence loss from actual loss and check exact saved originals. The runner also saves a CLI quality audit that replays cutoffs with the real local protection rules. Fault runs assert that invalid answers publish no receipt, partial panel, or replacement. These tests prove application behavior for the fixtures, not universal model accuracy.
 
-Batching fixtures cover 251–10,000 lines, long target text, Unicode, escaped JSON, ANSI/CRLF, and unpackable context. All emitted requests must fit both conservative API token bounds. The runner checks exactly-once coverage and complete target text. Later-batch fault cases verify rollback after an earlier valid relevance batch. The current panel accepts complete version-5 snapshots up to 10,000 source lines and 8 MiB. It includes earlier batches and protected lines; its row counts must match all recorded totals.
+Batching fixtures cover 251–10,000 lines, long target text, Unicode, escaped JSON, ANSI/CRLF, and unpackable context. All emitted requests must fit both conservative API token bounds. The runner checks exactly-once coverage and complete target text. Later-batch fault cases verify rollback after an earlier valid relevance batch. The current panel accepts complete version-6 snapshots up to 10,000 source lines and 8 MiB. It includes earlier batches and protected lines; its row counts must match all recorded totals.
 
 ## Composer and panel quality checks
 

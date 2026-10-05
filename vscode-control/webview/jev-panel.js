@@ -39,6 +39,11 @@
       `${totals.judged} / ${totals.seen} judged` : `${totals.kept} / ${totals.seen} kept`;
   }
 
+  function batchStatus(decision) {
+    return decision.status === "candidate" ? "Preview · full output kept" :
+      decision.status === "replace" ? "Filtered" : decision.status === "processing" ? "Evaluating" : "Full output kept";
+  }
+
   function renderBatchDecision(decision) {
     const serialized = JSON.stringify(decision);
     if (serialized === currentDecision) return;
@@ -46,6 +51,8 @@
       currentDecision = serialized;
       const title = app.querySelector(".batch-title");
       if (title) title.textContent = batchTitle(decision);
+      const status = app.querySelector(".batch-status");
+      if (status) status.textContent = batchStatus(decision);
       return;
     }
     currentDecision = serialized;
@@ -54,6 +61,7 @@
     const layout = element("div", "batch-layout");
     const header = element("header", "batch-header");
     append(header, element("strong", "batch-title", batchTitle(decision)));
+    append(header, element("span", "batch-status", batchStatus(decision)));
     const list = element("div", "batch-list");
     const fills = [];
     const values = [];

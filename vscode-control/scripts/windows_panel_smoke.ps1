@@ -46,7 +46,7 @@ try {
     $source = [IO.File]::ReadAllText($rendererPath)
     $needle = 'else showEmpty(event.data.activity);'
     if ($source.IndexOf($needle) -ne $source.LastIndexOf($needle) -or -not $source.Contains($needle)) { throw 'Renderer instrumentation anchor changed.' }
-    $ack = ' vscode.postMessage({type:"jev-test-rendered", id:event.data.decision?.id || null, rows:document.querySelectorAll(".batch-row").length, kept:document.querySelectorAll(".batch-row.keep").length, unscored:[...document.querySelectorAll(".batch-row.unscored")].map(row => ({score:row.querySelector(".batch-value").textContent, title:row.title})), title:document.querySelector(".batch-title")?.textContent || "Jev", activity:document.querySelector(".empty")?.textContent || null, layout:document.querySelector(".batch-list") ? getComputedStyle(document.querySelector(".batch-list")).display : null, tenCharacterBars:[...document.querySelectorAll(".batch-bar-fill,.batch-bar-empty")].every(node => [...node.textContent].length === 10), compactRows:[...document.querySelectorAll(".batch-row")].every(node => node.getBoundingClientRect().height <= 28)});'
+    $ack = ' vscode.postMessage({type:"jev-test-rendered", id:event.data.decision?.id || null, rows:document.querySelectorAll(".batch-row").length, kept:document.querySelectorAll(".batch-row.keep").length, unscored:[...document.querySelectorAll(".batch-row.unscored")].map(row => ({score:row.querySelector(".batch-value").textContent, title:row.title})), title:document.querySelector(".batch-title")?.textContent || "Jev", status:document.querySelector(".batch-status")?.textContent || null, activity:document.querySelector(".empty")?.textContent || null, layout:document.querySelector(".batch-list") ? getComputedStyle(document.querySelector(".batch-list")).display : null, tenCharacterBars:[...document.querySelectorAll(".batch-bar-fill,.batch-bar-empty")].every(node => [...node.textContent].length === 10), compactRows:[...document.querySelectorAll(".batch-row")].every(node => node.getBoundingClientRect().height <= 28)});'
     [IO.File]::WriteAllText($rendererPath, $source.Replace($needle, $needle + $ack), $utf8)
     [IO.File]::WriteAllText((Join-Path $profile 'User\settings.json'), (@{
         'telemetry.telemetryLevel' = 'off'; 'update.mode' = 'none'; 'extensions.autoUpdate' = $false;
@@ -125,11 +125,11 @@ exports.run = async () => {
     await check(secondId, "session switch renders the new saved decision");
     const protectedId = "d".repeat(32);
     await fs.writeFile(path.join(two,"logs/latest-decision.json"), JSON.stringify({
-      ...make(protectedId), version:5, status:"candidate", batch:{number:1,count:1,target_count:69},
+      ...make(protectedId), version:6, status:"candidate", batch:{number:1,count:1,target_count:69},
       rows:Array.from({length:72}, (_,index) => ({line:index+1,excerpt:`Synthetic line ${index+1}`,
         action:index < 69 ? "omit" : "keep",reason:index < 69 ? "irrelevant" : "protected",
         task_relevant:index < 69 ? .03 : null,protected_reason:index < 69 ? null : "diagnostic_context"})),
-      totals:{seen:72,judged:69,kept:3,omitted:69,protected:3,unjudged:0,requests:2}}));
+      totals:{seen:72,judged:69,kept:3,omitted:69,protected:3,unjudged:0,requests:1,classification_requests:0}}));
     acknowledged = null;
     provider.nextDecisionAt = 0;
     await provider.refresh();
@@ -139,7 +139,8 @@ exports.run = async () => {
     assert.equal(acknowledged.title, "3 / 72 kept");
     assert.equal(acknowledged.unscored.length, 3);
     assert(acknowledged.unscored.every(row => row.score === "—" && row.title.includes("no Jev relevance score")));
-    result.checks.push("all 72 rows and three protected keeps appear without invented scores under the real webview CSP");
+    assert.equal(acknowledged.status, "Preview · full output kept");
+    result.checks.push("version-6 requests, all 72 rows, protected keeps, and preview status render under the real webview CSP");
     const empty = core.sessionDirectory(root, "native-empty");
     await core.ensureSessionDefaults(empty);
     await fs.mkdir(path.join(empty,"logs"));

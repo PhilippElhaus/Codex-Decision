@@ -12,6 +12,7 @@ pub(super) fn line_snapshot(
     batch: &BatchRecord,
     batch_number: usize,
     batch_count: usize,
+    classification_requests: usize,
 ) -> Value {
     let seen = lines.len();
     let judged = decisions
@@ -52,11 +53,12 @@ pub(super) fn line_snapshot(
             line.eligible && line.protected_reason.is_none() && decision.batch_id.is_none()
         })
         .count();
-    json!({"version":5,"id":snapshot_id,"receipt_id":receipt_id,"at":Utc::now().to_rfc3339(),
+    json!({"version":6,"id":snapshot_id,"receipt_id":receipt_id,"at":Utc::now().to_rfc3339(),
         "filter":route,"status":status,"batch":{"number":batch_number,"count":batch_count,
             "target_count":batch.target_numbers.len()},"rows":rows,
         "totals":{"seen":seen,"judged":judged,"kept":seen-omitted,"omitted":omitted,
-            "protected":protected,"unjudged":unjudged,"requests":batch_number + 1},
+            "protected":protected,"unjudged":unjudged,"requests":batch_number + classification_requests,
+            "classification_requests":classification_requests},
         "batch_elapsed_ms":batch.elapsed_ms})
 }
 
@@ -67,6 +69,7 @@ pub(super) struct ProgressSnapshot {
     pub(super) last_snapshot_id: String,
     pub(super) active: bool,
     pub(super) last_published: Option<Instant>,
+    pub(super) classification_requests: usize,
 }
 
 impl ProgressSnapshot {
@@ -90,6 +93,7 @@ impl ProgressSnapshot {
             last_snapshot_id: String::new(),
             active: false,
             last_published: None,
+            classification_requests: 1,
         })
     }
 
@@ -129,6 +133,7 @@ impl ProgressSnapshot {
             batch,
             batch_number,
             batch_count,
+            self.classification_requests,
         );
         let bytes = serde_json::to_vec(&snapshot).map_err(|_| "snapshot encoding")?;
         if bytes.len() > PANEL_SNAPSHOT_MAX_BYTES {

@@ -5,6 +5,7 @@ const path = require("node:path");
 const os = require("node:os");
 const http = require("node:http");
 const crypto = require("node:crypto");
+const { isDeepStrictEqual } = require("node:util");
 const { spawn, spawnSync } = require("node:child_process");
 const fixtures = require("../tests/fixtures/two-stage-cases.cjs");
 const holdout = require("../tests/fixtures/two-stage-holdout.cjs");
@@ -46,13 +47,13 @@ async function main() {
         Math.max(...Object.values(request.questions).map(question=>Buffer.byteLength(JSON.stringify(question))))+4096,
         whole_request_bound:bytes+4096};
       requestBudgets.push(budget);
-      if (budget.state_longest_question_bound>32000 || budget.whole_request_bound>64000 || first!==(calls===1)) {
+      if (budget.state_longest_question_bound>32000 || budget.whole_request_bound>64000 || first && calls!==1) {
         protocolFailures.push("request budget or stage order");throw new Error("invalid packing");
       }
       if (!first) for (const id of Object.keys(request.questions)) {
         const number=Number(id.slice(5));
         const row=request.state.lines.find(line=>line.line===number && line.target===true);
-        const expected=current.lines[number-1]?.replace(/[\r\n]+$/g,"").replace(/\x1b\[[0-9;]*[A-Za-z]/g,"");
+        const expected=(current.sourceLines || current.lines)[number-1]?.replace(/[\r\n]+$/g,"").replace(/\x1b\[[0-9;]*[A-Za-z]/g,"");
         if (judged.has(number) || !row || row.text!==expected) protocolFailures.push("duplicate, missing or truncated target");
         judged.add(number);
       }
@@ -68,7 +69,7 @@ async function main() {
           if (body.usage?.input_tokens>budget.whole_request_bound) protocolFailures.push("reported usage exceeds conservative request bound"); } catch {}
         res.writeHead(response.status, {"Content-Type":"application/json"});res.end(text);return;
       }
-      const relevant = new Set(current.required_lines);
+      const relevant = new Set(current.requiredLines || current.required_lines);
       let body = { model: "jev-1.13.0", usage: {input_tokens: 100, output_tokens: 30}, answers: first ? {
         output_kind: { type:"choice", choice:current.kind, confidence:0.96,
           probabilities:Object.fromEntries(kinds.map(kind => [kind, kind === current.kind ? .98 : .02 / 7])) }
@@ -100,7 +101,11 @@ async function main() {
     let selected = (process.argv.includes("--batching") ? batching : process.argv.includes("--holdout") ? holdout : fixtures).filter(item => !process.argv.includes("--case") || arg("--case").split(",").includes(item.id));
     if (!selected.length) throw new Error("No matching case");
     if (!live && !process.argv.includes("--case")) selected = [...selected,
-      ...faults.map(fault => ({...fixtures.find(item => item.id === "log-failure-240"), id:fault, fault, expect_full:true}))];
+      ...faults.map(fault => {
+        const fixture=fixtures.find(item => item.id === "log-failure-240");
+        return {...fixture, id:fault, fault, expect_full:true,
+          lines:fault.startsWith("choice-") ? fixture.lines.map(line=>line.replace(/^INFO /,"Routine ")) : fixture.lines};
+      })];
     for (const item of selected) {
       current = item;calls = 0;judged = new Set();requestBudgets=[];protocolFailures=[];
       const data = path.join(temporary,item.id);await fs.mkdir(data,{mode:0o700});
@@ -112,6 +117,10 @@ async function main() {
       await fs.writeFile(transcript,JSON.stringify({type:"response_item",payload:{role:"user",content:[{type:"input_text",text:item.task}]}})+"\n");
       const newline=item.newline || "\n";
       const source=item.lines.join(newline)+(item.terminated === false ? "" : newline);
+      const projectedSource=item.metadata ? 'Command result metadata: {"exit_code":1}\n'+source : source;
+      const requiredLines=item.required_lines.map(number=>number+Number(!!item.metadata));
+      current.sourceLines=projectedSource.split(/\r?\n/).filter((_,index,all)=>index!==all.length-1||all[index]!=="");
+      current.requiredLines=requiredLines;
       const event={hook_event_name:"PostToolUse",tool_name:item.tool || "Bash",session_id:item.id,tool_use_id:"synthetic-call",transcript_path:transcript,
         tool_input:{command:item.command},tool_response:item.metadata ? {output:source,exit_code:1} : source};
       if (item.no_transcript) delete event.transcript_path;
@@ -130,20 +139,22 @@ async function main() {
       const activity=eventPath ? (await fs.readFile(path.join(data,eventPath),"utf8")).trim().split("\n").map(JSON.parse).at(-1) : null;
       const healthPath=files.find(file=>path.basename(file)==="hook-health.json");
       const health=healthPath ? JSON.parse(await fs.readFile(path.join(data,healthPath),"utf8")) : null;
-      const requiredLost=receipt?.decisions.filter(row=>row.action==="omit"&&item.required_lines.includes(row.number)).map(row=>row.number) || [];
+      const requiredLost=receipt?.decisions.filter(row=>row.action==="omit"&&requiredLines.includes(row.number)).map(row=>row.number) || [];
       const actualLost=reply.reason ? requiredLost : [];
       const originals=files.filter(file=>file.startsWith("outputs/")&&file.endsWith(".txt"));
-      const originalExact=originals.length ? (await fs.readFile(path.join(data,originals[0]),"utf8"))===source : null;
+      const originalExact=originals.length ? (await fs.readFile(path.join(data,originals[0]),"utf8"))===projectedSource : null;
+      const originalEnvelope=item.metadata&&originals.length ? JSON.parse(await fs.readFile(path.join(data,originals[0].replace(/\.txt$/,".json")),"utf8")) : null;
+      const envelopeExact=originalEnvelope ? isDeepStrictEqual(originalEnvelope,event.tool_response) : null;
       const report={id:item.id,expected_kind:item.kind,kind:receipt?.manifest.output_kind || activity?.output_kind || null,
         status:receipt?.manifest.status || health?.last_skip || (item.enabled === false ? "disabled" : "error"),lines:item.lines.length,required:item.required_lines.length,
-        calls,relevance_batches:receipt ? receipt.manifest.requests-1 : null,request_budgets:requestBudgets,protocol_failures:protocolFailures,
+        calls,relevance_batches:receipt ? receipt.manifest.requests-Number(receipt.manifest.choice_gate_ran) : null,request_budgets:requestBudgets,protocol_failures:protocolFailures,
         elapsed_ms:Date.now()-started,saved_bytes:Buffer.byteLength(source)-Buffer.byteLength(visible),
-        required_lost:actualLost,proposed_required_lost:requiredLost,original_exact:originalExact,
+        required_lost:actualLost,proposed_required_lost:requiredLost,original_exact:originalExact,envelope_exact:envelopeExact,
         panel_rows:panel?.rows.length || 0,panel_matches_receipt:receipt ? panel?.receipt_id===receipt.manifest.id &&
           panel.status===receipt.manifest.status && panel.totals.requests===receipt.manifest.requests : panel===null,
         error:stderr ? health?.last_error || stderr.trim().slice(0,256) : null};
       const complete=receipt && receipt.decisions.filter(row=>row.batch_id!==undefined).length===judged.size && receipt.manifest.lines_unjudged===0;
-      if (!report.panel_matches_receipt || (item.fault && (!report.error || receipt || originals.length || files.some(file=>path.basename(file)==="latest-decision.json"))) || protocolFailures.length || (receipt&&!complete) || actualLost.length || (reply.reason&&originalExact!==true) ||
+      if (!report.panel_matches_receipt || (item.fault && (!report.error || receipt || originals.length || files.some(file=>path.basename(file)==="latest-decision.json"))) || protocolFailures.length || (receipt&&!complete) || actualLost.length || (reply.reason&&(originalExact!==true || item.metadata&&envelopeExact!==true)) ||
           (!live&&item.min_batches&&(!receipt||report.relevance_batches<item.min_batches)) ||
           (item.expect_full&&reply.reason) || (item.expected_calls!==undefined&&calls!==item.expected_calls)) {
         report.failed=true;
@@ -154,7 +165,7 @@ async function main() {
       if (receipt) await fs.writeFile(path.join(dest,"reply.json"),JSON.stringify(reply)+"\n");
       if (panel) await fs.writeFile(path.join(dest,"panel.json"),JSON.stringify(panel)+"\n");
       if (receipt) qualityCases.push({id:item.id,split:process.argv.includes("--holdout") || process.argv.includes("--batching") ? "holdout" : "train",
-        receipt:`${item.id}/${path.basename(receiptPath)}`,required_lines:item.required_lines});
+        receipt:`${item.id}/${path.basename(receiptPath)}`,required_lines:requiredLines});
       reports.push(report);console.log(JSON.stringify(report));
     }
     const times=reports.map(item=>item.elapsed_ms).sort((a,b)=>a-b);

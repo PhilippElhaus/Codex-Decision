@@ -8,6 +8,7 @@ fn pinned_patch_applies_updates_rejects_tampering_and_restores() {
     patch_cycle(Spec::production("26.930.21537").unwrap().1);
     patch_cycle(Spec::production("26.930.31730").unwrap().1);
     patch_cycle(Spec::production("26.930.41038").unwrap().1);
+    patch_cycle(Spec::production("26.930.51102").unwrap().1);
 }
 
 fn patch_cycle(profile: profiles::Profile) {
@@ -107,7 +108,13 @@ fn bridge_fragments_publish_routes_and_validate_settings_messages() {
     let host = as_text(&exact(&repo, "vscode-control/patch-assets/host-bridge.jsfrag").unwrap())
         .unwrap()
         .to_owned();
-    for version in [VERSION, "26.930.21537", "26.930.31730", "26.930.41038"] {
+    for version in [
+        VERSION,
+        "26.930.21537",
+        "26.930.31730",
+        "26.930.41038",
+        "26.930.51102",
+    ] {
         let fragment =
             profiles::route_fragment(route.clone(), Spec::production(version).unwrap().1);
         for (pathname, kind, session) in [
@@ -124,12 +131,15 @@ fn bridge_fragments_publish_routes_and_validate_settings_messages() {
                 "let ZK={},TK={useContext:()=>({location:{pathname}})},WG=()=>{},_K=()=>true;"
             } else if version == "26.930.21537" {
                 "let TK={},$G={useContext:()=>({location:{pathname}})},vG=()=>{},GG=()=>true;"
+            } else if version == "26.930.51102" {
+                "let Fq={},lq={useContext:()=>({location:{pathname}})},OK=()=>{},tq=()=>true;"
             } else {
                 "let DK={},tK={useContext:()=>({location:{pathname}})},bG=()=>{},qG=()=>true;"
             };
             let function = match version {
                 VERSION => "vK",
                 "26.930.21537" => "KG",
+                "26.930.51102" => "nq",
                 _ => "JG",
             };
             let script = format!("let window={{dispatchEvent:()=>{{}}}};let document={{documentElement:{{dataset:{{codexJevSessionId:'stale'}}}}}};let pathname={};{bindings}{fragment}{function}();process.stdout.write(JSON.stringify(document.documentElement.dataset));", json!(pathname));

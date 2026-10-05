@@ -38,6 +38,12 @@ use task::*;
 #[path = "jev-hook/structure.rs"]
 mod structure;
 use structure::*;
+#[path = "jev-hook/fast_path.rs"]
+mod fast_path;
+use fast_path::*;
+#[path = "jev-hook/replacement.rs"]
+mod replacement;
+use replacement::*;
 #[path = "jev-hook/api.rs"]
 mod api;
 use api::*;

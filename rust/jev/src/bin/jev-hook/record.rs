@@ -7,6 +7,7 @@ pub(super) fn record(
     event: &Value,
     route: &str,
     status: &str,
+    reason: &str,
     source: &str,
     visible: &str,
     lines: &[SourceLine],
@@ -69,7 +70,7 @@ pub(super) fn record(
         .filter(|row| row.reason == "task_relevant")
         .count();
     let summary = json!({"version":3,"id":id,"at":now.to_rfc3339(),"filter":route,"status":status,
-        "reason":if config.mode == "observe" { "observe" } else { "relevance_policy" },
+        "reason":reason,
         "tool":event.get("tool_name"),"capsule_chars":visible.chars().count(),
         "elapsed_ms":batches.iter().map(|batch| batch.elapsed_ms).sum::<u64>() + gate_elapsed_ms.unwrap_or(0),
         "source_sha256":original_hash,"lines_seen":seen,"lines_judged":judged,"lines_kept":seen-omitted,
@@ -77,7 +78,9 @@ pub(super) fn record(
         "lines_relevance_judged":relevance_judged,"lines_below_omit_cutoff":below_omit_cutoff,
         "lines_relevance_kept":relevance_kept,"search_relevance_guard":false,
         "relevance_policy":config.policy,
-        "output_kind":gate_record.and_then(|record| record.response.pointer("/answers/output_kind/choice")),
+        "output_kind":gate_record.and_then(|record| record.response.pointer("/answers/output_kind/choice"))
+            .or_else(|| batches.first().and_then(|record| record.request.pointer("/state/output_kind"))),
+        "routing":if gate_record.is_some() {"classified"} else {"validated_format"},
         "api_usage":{"input_tokens":gate_record.into_iter().chain(batches.iter()).filter_map(|record|record.response.pointer("/usage/input_tokens").and_then(Value::as_u64)).sum::<u64>(),
             "output_tokens":gate_record.into_iter().chain(batches.iter()).filter_map(|record|record.response.pointer("/usage/output_tokens").and_then(Value::as_u64)).sum::<u64>()},
         "requests":batches.len()+usize::from(gate_elapsed_ms.is_some()),
@@ -111,6 +114,7 @@ pub(super) fn record(
         last_batch,
         batches.len(),
         batches.len(),
+        usize::from(gate_record.is_some()),
     );
     let event_path = logs.join("events.jsonl");
     if event_path.is_symlink() {
@@ -134,12 +138,22 @@ pub(super) fn record(
     }
     let stats_path = data_dir.join("stats.json");
     let mut stats = load_stats(&stats_path)?;
+    if status == "candidate" {
+        let key = format!("candidate_{reason}");
+        stats[&key] = json!(stats
+            .get(&key)
+            .and_then(Value::as_u64)
+            .unwrap_or(0)
+            .saturating_add(1));
+    }
     for (key, increment) in [
         (
             "calls",
             batches.len() as u64 + u64::from(gate_elapsed_ms.is_some()),
         ),
         ("completed", 1),
+        ("candidates", u64::from(status == "candidate")),
+        ("kept", u64::from(status == "keep")),
         ("replaced", u64::from(status == "replace")),
         (
             "timed",
@@ -165,6 +179,14 @@ pub(super) fn record(
         ("linesJudged", judged as u64),
         ("linesKept", (seen - omitted) as u64),
         ("linesOmitted", omitted as u64),
+        (
+            "linesActuallyOmitted",
+            if status == "replace" {
+                omitted as u64
+            } else {
+                0
+            },
+        ),
         ("linesProtected", protected as u64),
         ("linesUnjudged", unjudged as u64),
         ("linesRelevanceJudged", relevance_judged as u64),

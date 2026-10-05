@@ -105,6 +105,9 @@ pub(super) fn process_event(
     };
     let has_user_task = user_task.is_some();
     let task = user_task.unwrap_or_else(|| fallback_task(event));
+    if has_user_task && exhaustive_task(&task) {
+        return skip(scoped, "exhaustive_task");
+    }
     let line_count =
         source.bytes().filter(|byte| *byte == b'\n').count() + usize::from(!source.ends_with('\n'));
     if line_count > MAX_SOURCE_LINES {
@@ -112,6 +115,7 @@ pub(super) fn process_event(
     }
     remaining()?;
     let mut lines = source_lines(&source);
+    protect_response_metadata(&mut lines);
     if lines.is_empty() {
         return skip(scoped, "structured_or_empty");
     }
@@ -122,95 +126,107 @@ pub(super) fn process_event(
     {
         return skip(scoped, "no_eligible_lines");
     }
-    let api_key = key(data_dir)?;
-    let agent = ureq::AgentBuilder::new().build();
-    let request = classification_request(
-        &task,
-        event["tool_name"].as_str().unwrap_or(""),
-        command(event),
-        &event["tool_response"]["exit_code"]
-            .as_i64()
-            .map(Value::from)
-            .unwrap_or(Value::Null),
-        &lines,
-        &config.model,
-    );
-    validate_request_budget(&request)?;
-    classification_start(scoped)?;
-    let before = Instant::now();
-    let response = evaluate(
-        &agent,
-        &request,
-        &api_key,
-        config.timeout.min(remaining()?.as_secs_f64()),
-    )?;
-    let elapsed_ms = before.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
-    let (kind, excerptable) = classification(&response)?;
-    let gate_record = BatchRecord {
-        id: 0,
-        target_numbers: vec![],
-        request,
-        response,
-        elapsed_ms,
-    };
-    if !excerptable {
-        record_gate_skip(
-            scoped,
-            event,
-            source.chars().count(),
-            &gate_record,
-            &kind,
-            "choice_kept_full_output",
-        )?;
-        return skip(scoped, "choice_kept_full_output");
-    }
-    if !apply_route_structure(
-        output_format(event).unwrap_or("output"),
-        event["tool_name"].as_str().unwrap_or(""),
-        command(event),
-        &mut lines,
-    ) {
-        record_gate_skip(
-            scoped,
-            event,
-            source.chars().count(),
-            &gate_record,
-            &kind,
-            "structure_guard",
-        )?;
-        return skip(scoped, "structure_guard");
+    let format = format_decision(event, &mut lines);
+    if let FormatDecision::Keep(reason) = format {
+        return skip(scoped, reason);
     }
     protect_neighbors(&mut lines);
-    if !lines
-        .iter()
-        .any(|line| line.eligible && line.protected_reason.is_none())
+    if config.mode == "replace"
+        && has_user_task
+        && replacement_supported(event)
+        && (!preview_only(event) || matches!(format, FormatDecision::Direct(_)))
+        && !savings_possible(
+            &source,
+            &lines,
+            &output_path(data_dir, event)?,
+            !event["tool_response"].is_string(),
+        )
     {
-        record_gate_skip(
-            scoped,
-            event,
-            source.chars().count(),
-            &gate_record,
-            &kind,
-            "no_eligible_lines",
-        )?;
-        return skip(scoped, "no_eligible_lines");
+        return skip(scoped, "insufficient_savings");
     }
-    let batches = match relevance_requests(&task, command(event), &kind, &lines, &config.model) {
-        Ok(batches) => batches,
-        Err(_) => {
+    let api_key = key(data_dir)?;
+    let agent = ureq::AgentBuilder::new().build();
+    classification_start(scoped)?;
+    let (kind, gate_record) = if let FormatDecision::Direct(kind) = format {
+        (kind.to_owned(), None)
+    } else {
+        let request = classification_request(
+            &task,
+            event["tool_name"].as_str().unwrap_or(""),
+            command(event),
+            &event["tool_response"]["exit_code"]
+                .as_i64()
+                .map(Value::from)
+                .unwrap_or(Value::Null),
+            &lines,
+            &config.model,
+        );
+        validate_request_budget(&request)?;
+        let before = Instant::now();
+        let response = evaluate(
+            &agent,
+            &request,
+            &api_key,
+            config.timeout.min(remaining()?.as_secs_f64()),
+        )?;
+        let elapsed_ms = before.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
+        let (kind, excerptable) = classification(&response)?;
+        let gate_record = BatchRecord {
+            id: 0,
+            target_numbers: vec![],
+            request,
+            response,
+            elapsed_ms,
+        };
+        if !excerptable {
             record_gate_skip(
                 scoped,
                 event,
                 source.chars().count(),
                 &gate_record,
                 &kind,
-                "relevance_budget",
+                "choice_kept_full_output",
             )?;
+            return skip(scoped, "choice_kept_full_output");
+        }
+        (kind, Some(gate_record))
+    };
+    protect_neighbors(&mut lines);
+    if !lines
+        .iter()
+        .any(|line| line.eligible && line.protected_reason.is_none())
+    {
+        if let Some(gate_record) = &gate_record {
+            record_gate_skip(
+                scoped,
+                event,
+                source.chars().count(),
+                gate_record,
+                &kind,
+                "no_eligible_lines",
+            )?;
+        }
+        return skip(scoped, "no_eligible_lines");
+    }
+    let batches = match relevance_requests(&task, command(event), &kind, &lines, &config.model) {
+        Ok(batches) => batches,
+        Err(_) => {
+            if let Some(gate_record) = &gate_record {
+                record_gate_skip(
+                    scoped,
+                    event,
+                    source.chars().count(),
+                    gate_record,
+                    &kind,
+                    "relevance_budget",
+                )?;
+            }
             return skip(scoped, "relevance_budget");
         }
     };
     let receipt_id = Uuid::new_v4().simple().to_string();
     let mut progress = ProgressSnapshot::new(scoped, receipt_id.clone())?;
+    progress.classification_requests = usize::from(gate_record.is_some());
     let mut probabilities = BTreeMap::new();
     let mut records = Vec::new();
     let batch_count = batches.len();
@@ -249,21 +265,25 @@ pub(super) fn process_event(
         .count();
     let candidate = omitted > 0;
     let path = output_path(data_dir, event)?;
-    let feedback = render(&source, &lines, &decisions, &path.to_string_lossy());
-    let replace = candidate
-        && config.mode == "replace"
-        && has_user_task
-        && !preview_only(event)
-        && (shell_tool(event["tool_name"].as_str().unwrap_or(""))
-            && event["tool_response"].is_string()
-            || !event["tool_name"]
-                .as_str()
-                .unwrap_or("")
-                .starts_with("mcp__")
-                && event["tool_response"].is_string()
-            || config.allow_mcp_replacement)
-        && feedback.len() + 1024 < source.len()
-        && feedback.len() * 10 < source.len() * 7;
+    let mut feedback = render(&source, &lines, &decisions, &path.to_string_lossy());
+    if !event["tool_response"].is_string() {
+        feedback.insert_str(
+            0,
+            &format!(
+                "[Original tool envelope: {}]\n",
+                path.with_extension("json").display()
+            ),
+        );
+    }
+    let blocker = replacement_blocker(
+        event,
+        config,
+        has_user_task,
+        matches!(format, FormatDecision::Direct(_)),
+        &source,
+        &feedback,
+    );
+    let replace = candidate && blocker.is_none();
     let status = if replace {
         "replace"
     } else if candidate {
@@ -276,6 +296,14 @@ pub(super) fn process_event(
         ensure_dir(&data_dir.join("outputs"))?;
         ensure_dir(path.parent().ok_or("invalid output path")?)?;
         write_private(&path, source.as_bytes(), false)?;
+        if !event["tool_response"].is_string() {
+            write_private(
+                &path.with_extension("json"),
+                &serde_json::to_vec(&event["tool_response"])
+                    .map_err(|_| "original envelope encoding")?,
+                false,
+            )?;
+        }
     }
     let visible = if replace {
         feedback.as_str()
@@ -287,12 +315,17 @@ pub(super) fn process_event(
         event,
         route,
         status,
+        if candidate {
+            blocker.unwrap_or("relevance_policy")
+        } else {
+            "no_omissions"
+        },
         &source,
         visible,
         &lines,
         &decisions,
         &records,
-        Some(&gate_record),
+        gate_record.as_ref(),
         config,
         &receipt_id,
         &progress.last_snapshot_id,

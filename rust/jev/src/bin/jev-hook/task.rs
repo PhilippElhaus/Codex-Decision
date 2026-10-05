@@ -100,6 +100,34 @@ fn user_role_fragment(bytes: &[u8]) -> bool {
     text.contains("\"role\":\"user\"") || text.contains("\"role\": \"user\"")
 }
 
+pub(super) fn exhaustive_task(task: &str) -> bool {
+    let task = task.to_ascii_lowercase();
+    [
+        "verbatim",
+        "byte for byte",
+        "byte-for-byte",
+        "do not omit",
+        "every record",
+        "every line",
+        "every matching",
+        "every file",
+        "every path",
+        "every entry",
+        "every object",
+        "every measurement",
+        "all paths",
+        "all files",
+        "all matches",
+        "all values",
+        "all measurements",
+        "all these values",
+        "complete output",
+        "complete result",
+    ]
+    .iter()
+    .any(|phrase| task.contains(phrase))
+}
+
 fn user_task(raw: &str) -> Result<Option<String>, ()> {
     if !raw.contains("response_item") || !raw.contains("user") {
         return Ok(None);
@@ -182,5 +210,23 @@ mod tests {
         let path = root.path().join("transcript.jsonl");
         fs::write(&path, user("Check the build") + &user(&"x".repeat(200_000))).unwrap();
         assert!(task_context(&json!({"transcript_path":path})).is_err());
+    }
+    #[test]
+    fn explicit_exhaustive_requests_keep_full_output_without_matching_all_warnings() {
+        for task in [
+            "Return EVERY matching line verbatim.",
+            "Print every file path.",
+            "Read the complete output.",
+            "Use all these values.",
+        ] {
+            assert!(exhaustive_task(task));
+        }
+        for task in [
+            "Find all warnings and the failed assertion.",
+            "Preserve every failure.",
+            "Use Jev appropriately for every call.",
+        ] {
+            assert!(!exhaustive_task(task));
+        }
     }
 }

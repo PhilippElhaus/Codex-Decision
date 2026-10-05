@@ -426,7 +426,11 @@ fn run_sized(
                     index + 1
                 )
             } else {
-                format!("Compiling module {index:04} ... done\n")
+                if choice.is_some() {
+                    format!("Routine stage module {index:04} ... done\n")
+                } else {
+                    format!("Compiling module {index:04} ... done\n")
+                }
             }
         })
         .collect::<String>();
@@ -469,12 +473,14 @@ fn run_sized(
 fn writes_one_original_and_line_receipt_for_valid_batches() {
     let (reply, root, calls) = run(None, false, None);
     assert_eq!(reply["continue"], false);
-    assert!(calls > 1);
+    assert!(calls >= 1);
     let data_dir = root.path().join("data");
     let logs = scoped(&data_dir, "fixture-session").join("logs");
     let snapshot: Value =
         serde_json::from_slice(&fs::read(logs.join("latest-decision.json")).unwrap()).unwrap();
-    assert_eq!(snapshot["version"], 5);
+    assert_eq!(snapshot["version"], 6);
+    assert_eq!(snapshot["totals"]["classification_requests"], 0);
+    assert_eq!(snapshot["totals"]["requests"], calls);
     assert_eq!(
         snapshot["rows"].as_array().unwrap().len(),
         snapshot["totals"]["seen"].as_u64().unwrap() as usize
@@ -496,14 +502,14 @@ fn writes_one_original_and_line_receipt_for_valid_batches() {
 fn all_four_hundred_lines_are_judged_across_bounded_requests() {
     let (reply, root, calls) = run_sized(None, false, None, 400);
     assert_eq!(reply["continue"], false);
-    assert!(calls > 2);
+    assert!(calls >= 2);
     let logs = scoped(&root.path().join("data"), "fixture-session").join("logs");
     let snapshot: Value =
         serde_json::from_slice(&fs::read(logs.join("latest-decision.json")).unwrap()).unwrap();
     assert_eq!(snapshot["totals"]["seen"], 400);
     assert_eq!(snapshot["totals"]["judged"], 400);
     assert_eq!(snapshot["totals"]["unjudged"], 0);
-    assert_eq!(snapshot["batch"]["count"], calls - 1);
+    assert_eq!(snapshot["batch"]["count"], calls);
     assert_eq!(snapshot["totals"]["requests"], calls);
 }
 
@@ -541,7 +547,7 @@ fn missing_batch_answers_keep_the_full_result() {
 
 #[test]
 fn failed_second_call_publishes_no_partial_panel_state() {
-    let (reply, root, calls) = run(Some(2), false, None);
+    let (reply, root, calls) = run_sized(Some(2), false, None, 400);
     assert_eq!(reply, json!({}));
     assert!(calls >= 2);
     assert!(!scoped(&root.path().join("data"), "fixture-session")
@@ -791,7 +797,7 @@ fn plain_local_read_and_text_search_results_share_one_policy() {
         let reply: Value = serde_json::from_slice(&output.stdout).unwrap();
         assert_eq!(
             reply.get("continue").and_then(Value::as_bool),
-            if matches!(index, 0 | 5 | 6) {
+            if matches!(index, 0 | 2 | 5 | 6) {
                 Some(false)
             } else {
                 None
@@ -804,6 +810,19 @@ fn plain_local_read_and_text_search_results_share_one_policy() {
         .unwrap();
         assert_eq!(snapshot["filter"], "output");
         assert!(snapshot["totals"]["judged"].as_u64().unwrap() > 0);
+        let events =
+            fs::read_to_string(scoped(&data, "local-tool-routing").join("logs/events.jsonl"))
+                .unwrap();
+        let last: Value = serde_json::from_str(events.lines().last().unwrap()).unwrap();
+        if let Some(reason) = match index {
+            1 => Some("mcp_replacement_disabled"),
+            3 => Some("missing_task_context"),
+            4 => Some("unsupported_envelope"),
+            _ => None,
+        } {
+            assert_eq!(last["reason"], reason);
+            assert_eq!(last["status"], "candidate");
+        }
     }
     stop.store(true, Ordering::Relaxed);
     assert!(thread.join().unwrap() >= 7);

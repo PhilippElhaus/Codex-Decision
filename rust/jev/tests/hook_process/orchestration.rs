@@ -16,6 +16,15 @@ fn code_mode_commands_publish_real_line_decisions_and_preserve_the_envelope() {
     .unwrap();
     fs::write(data.join(".env"), "JEV_API_KEY=synthetic-test-key\n").unwrap();
     fs::set_permissions(data.join(".env"), fs::Permissions::from_mode(0o600)).unwrap();
+    let transcript = root.path().join("transcript.jsonl");
+    fs::write(
+        &transcript,
+        json!({"type":"response_item","payload":{"role":"user",
+        "content":[{"type":"input_text","text":"Find the connection failure."}]}})
+        .to_string()
+            + "\n",
+    )
+    .unwrap();
     let source = (0..60)
         .map(|i| format!("INFO routine heartbeat {i:04}\n"))
         .collect::<String>()
@@ -34,18 +43,25 @@ fn code_mode_commands_publish_real_line_decisions_and_preserve_the_envelope() {
     {
         let session_id = format!("orchestration-{i}");
         let event = json!({"hook_event_name":"PostToolUse","tool_name":tool,
-            "session_id":session_id,"tool_use_id":"dummy-call",
+            "session_id":session_id,"tool_use_id":format!("dummy-call-{i}"),"transcript_path":transcript,
             "tool_input":{"input":"text(await tools.exec_command({cmd: 'dummy'}))"},
             "tool_response":response});
-        // Code mode carries metadata and several content items. Even explicit
-        // MCP replacement permission must not replace its original envelope.
-        assert_eq!(send_event(&data, &endpoint, &event), json!({}));
+        let reply = send_event(&data, &endpoint, &event);
+        assert_eq!(reply["continue"], false);
+        assert!(reply["reason"]
+            .as_str()
+            .unwrap()
+            .contains("\"exit_code\":1"));
+        assert!(reply["reason"]
+            .as_str()
+            .unwrap()
+            .contains("ERROR: synthetic connection failure"));
         let session = scoped(&data, &session_id);
         let panel: Value =
             serde_json::from_slice(&fs::read(session.join("logs/latest-decision.json")).unwrap())
                 .unwrap();
-        assert_eq!(panel["status"], "candidate");
-        assert_eq!(panel["totals"]["requests"], 2);
+        assert_eq!(panel["status"], "replace");
+        assert_eq!(panel["totals"]["requests"], 1);
         assert!(panel["totals"]["judged"].as_u64().unwrap() >= 50);
         assert!(panel["rows"]
             .as_array()
@@ -67,9 +83,23 @@ fn code_mode_commands_publish_real_line_decisions_and_preserve_the_envelope() {
     assert!(!scoped(&data, "mixed-media")
         .join("logs/latest-decision.json")
         .exists());
-    assert!(!data.join("outputs").exists());
+    let originals = fs::read_dir(data.join("outputs"))
+        .unwrap()
+        .flat_map(|entry| fs::read_dir(entry.unwrap().path()).unwrap())
+        .filter_map(|entry| {
+            let path = entry.unwrap().path();
+            (path.extension().is_some_and(|ext| ext == "json")).then_some(path)
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(originals.len(), 4);
+    for original in originals {
+        assert_eq!(
+            serde_json::from_slice::<Value>(&fs::read(original).unwrap()).unwrap(),
+            response
+        );
+    }
     stop.store(true, Ordering::Relaxed);
-    assert_eq!(server.join().unwrap(), 8);
+    assert_eq!(server.join().unwrap(), 4);
 }
 
 #[test]
@@ -112,11 +142,11 @@ fn shell_scripts_and_mixed_commands_publish_previews_without_replacement() {
                 .unwrap();
         assert_eq!(panel["status"], "candidate");
         let count = panel["totals"]["requests"].as_u64().unwrap();
-        assert!(count >= 2);
-        assert_eq!(count, panel["batch"]["count"].as_u64().unwrap() + 1);
+        assert!(count >= 1);
+        assert_eq!(count, panel["batch"]["count"].as_u64().unwrap());
         requests += count;
         assert!(panel["totals"]["omitted"].as_u64().unwrap() > 50);
-        assert_eq!(panel["version"], 5);
+        assert_eq!(panel["version"], 6);
         assert_eq!(panel["rows"].as_array().unwrap().len(), 72);
         assert_eq!(panel["totals"]["kept"], 3);
         for number in [70, 71, 72] {
@@ -155,5 +185,5 @@ fn shell_scripts_and_mixed_commands_publish_previews_without_replacement() {
         assert!(!directory.join("logs/latest-decision.json").exists());
     }
     stop.store(true, Ordering::Relaxed);
-    assert_eq!(server.join().unwrap() as u64, requests + 1);
+    assert_eq!(server.join().unwrap() as u64, requests);
 }
