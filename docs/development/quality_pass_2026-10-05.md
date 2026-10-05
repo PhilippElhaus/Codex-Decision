@@ -62,6 +62,10 @@ batching runs use `--skip-faults` because their appended fault suites were
 identical to the base run. This removes 54 duplicate cases and 74 duplicate
 mock requests without removing a scenario.
 
+CI uses Ubuntu 24.04, matching the release build platform. This prevents the
+announced October migration of `ubuntu-latest` from silently changing the
+operating system used for verification.
+
 The real 0.10.8 debug hook and the final hook were compared on the same corpus.
 All 94 case outcomes, 16,497 line decisions, saved readable output, and 235
 recorded request bodies matched. The comparison ignores timestamps, generated
