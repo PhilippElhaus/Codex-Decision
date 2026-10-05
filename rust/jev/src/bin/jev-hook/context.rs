@@ -98,7 +98,7 @@ pub(super) fn response_text(event: &Value) -> Option<String> {
     }
     if let Some(text) = body.get("output").and_then(Value::as_str) {
         return Some(if known_command_result(body) {
-            command_preview(&body.to_string())
+            command_projection(body.as_object().unwrap())
         } else {
             text.to_owned()
         });
@@ -125,31 +125,42 @@ pub(super) fn orchestration_tool(tool: &str) -> bool {
 // Decode only the known command envelope. Metadata remains an explicit,
 // protected source line, and replacement also saves the typed envelope.
 fn command_preview(text: &str) -> String {
-    let Ok(Value::Object(mut object)) = serde_json::from_str::<Value>(text) else {
+    let Ok(Value::Object(object)) = serde_json::from_str::<Value>(text) else {
         return text.into();
     };
-    if !known_command_result(&Value::Object(object.clone())) {
+    if !known_command_fields(&object) {
         return text.into();
     }
-    let output = object.remove("output").unwrap();
+    command_projection(&object)
+}
+
+fn command_projection(object: &serde_json::Map<String, Value>) -> String {
+    // Metadata is small; borrow the potentially large stdout directly.
+    let metadata = object
+        .iter()
+        .filter(|(key, _)| key.as_str() != "output")
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect();
     format!(
         "Command result metadata: {}\n{}",
-        Value::Object(object),
-        output.as_str().unwrap()
+        Value::Object(metadata),
+        object["output"].as_str().unwrap()
     )
 }
 
 pub(super) fn known_command_result(body: &Value) -> bool {
-    body.as_object().is_some_and(|object| {
-        object.get("output").is_some_and(Value::is_string)
-            && object.iter().all(|(key, value)| match key.as_str() {
-                "output" | "chunk_id" => value.is_string(),
-                "wall_time_seconds" => value.as_f64().is_some_and(|n| n >= 0.0),
-                "exit_code" => value.is_null() || value.as_i64().is_some(),
-                "session_id" | "original_token_count" => value.as_u64().is_some(),
-                _ => false,
-            })
-    })
+    body.as_object().is_some_and(known_command_fields)
+}
+
+fn known_command_fields(object: &serde_json::Map<String, Value>) -> bool {
+    object.get("output").is_some_and(Value::is_string)
+        && object.iter().all(|(key, value)| match key.as_str() {
+            "output" | "chunk_id" => value.is_string(),
+            "wall_time_seconds" => value.as_f64().is_some_and(|n| n >= 0.0),
+            "exit_code" => value.is_null() || value.as_i64().is_some(),
+            "session_id" | "original_token_count" => value.as_u64().is_some(),
+            _ => false,
+        })
 }
 
 pub(super) fn replacement_supported(event: &Value) -> bool {

@@ -191,7 +191,6 @@ pub(super) fn process_event(
         }
         (kind, Some(gate_record))
     };
-    protect_neighbors(&mut lines);
     if !lines
         .iter()
         .any(|line| line.eligible && line.protected_reason.is_none())
@@ -291,20 +290,18 @@ pub(super) fn process_event(
     } else {
         "keep"
     };
-    if replace {
+    let originals = if replace {
         ensure_dir(data_dir)?;
         ensure_dir(&data_dir.join("outputs"))?;
         ensure_dir(path.parent().ok_or("invalid output path")?)?;
-        write_private(&path, source.as_bytes(), false)?;
-        if !event["tool_response"].is_string() {
-            write_private(
-                &path.with_extension("json"),
-                &serde_json::to_vec(&event["tool_response"])
-                    .map_err(|_| "original envelope encoding")?,
-                false,
-            )?;
-        }
-    }
+        Some(SavedOriginals::save(
+            &path,
+            &source,
+            &event["tool_response"],
+        )?)
+    } else {
+        None
+    };
     let visible = if replace {
         feedback.as_str()
     } else {
@@ -330,11 +327,14 @@ pub(super) fn process_event(
         &receipt_id,
         &progress.last_snapshot_id,
     )?;
+    if let Some(originals) = originals {
+        originals.commit();
+    }
+    progress.active = false;
     // The committed output must survive a later telemetry failure.
     if let Err(error) = hook_health(scoped, "success", "") {
         eprintln!("Codex Jev status write failed: {error}");
     }
-    progress.active = false;
     if replace {
         Ok(
             json!({"continue":false,"stopReason":"Line-filtered tool output stored by Codex Jev","reason":feedback}),

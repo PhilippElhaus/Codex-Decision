@@ -49,7 +49,7 @@ pub(super) fn apply_shared_settings(data_dir: &Path, config: &mut Config) -> Res
     if !metadata.is_file() || metadata.file_type().is_symlink() || metadata.len() > 8192 {
         return Err("unsafe shared settings".into());
     }
-    let bytes = fs::read(&path).map_err(|_| "settings read failed")?;
+    let bytes = read_bounded(&path, 8192).map_err(|_| "settings read failed")?;
     let raw: Value = serde_json::from_slice(&bytes).map_err(|_| "invalid shared settings")?;
     let settings: SharedSettings =
         serde_json::from_value(codex_jev::contract::validate("settings", &raw)?)
@@ -74,7 +74,7 @@ pub(super) fn config(data_dir: &Path) -> Result<Option<Config>, String> {
     if path.is_symlink() {
         return Err("linked config".into());
     }
-    let bytes = match fs::read(path) {
+    let bytes = match read_bounded(&path, 64_000) {
         Ok(bytes) => bytes,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(_) => return Err("config read".into()),
@@ -119,7 +119,9 @@ pub(super) fn key(data_dir: &Path) -> Result<String, String> {
             return Err("unsafe credential permissions".into());
         }
     }
-    let content = fs::read_to_string(path).map_err(|_| "invalid credential encoding")?;
+    let content =
+        String::from_utf8(read_bounded(&path, 8192).map_err(|_| "invalid credential encoding")?)
+            .map_err(|_| "invalid credential encoding")?;
     let values: Vec<&str> = content
         .lines()
         .filter_map(|line| line.trim().strip_prefix("JEV_API_KEY="))

@@ -14,6 +14,8 @@ use std::time::Duration;
 
 #[path = "hook_process/orchestration.rs"]
 mod orchestration;
+#[path = "hook_process/publication.rs"]
+mod publication;
 
 fn scoped(data: &Path, session: &str) -> PathBuf {
     data.join("sessions")

@@ -231,6 +231,29 @@ fn corrupt_stats_are_reported_instead_of_reset() {
 }
 
 #[test]
+fn private_reads_enforce_the_bound_and_do_not_wait_on_special_files() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("state.json");
+    assert!(private_backup(&path, 4).unwrap().is_none());
+    fs::write(&path, b"1234").unwrap();
+    assert_eq!(read_bounded(&path, 4).unwrap(), b"1234");
+    assert!(read_bounded(&path, 3).is_err());
+    assert!(read_bounded(root.path(), 4096).is_err());
+    #[cfg(unix)]
+    {
+        let linked = root.path().join("linked.json");
+        std::os::unix::fs::symlink(&path, &linked).unwrap();
+        assert!(read_bounded(&linked, 4).is_err());
+        let pipe = root.path().join("pipe");
+        let name = std::ffi::CString::new(pipe.as_os_str().as_encoded_bytes()).unwrap();
+        assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o600) }, 0);
+        let before = Instant::now();
+        assert!(read_bounded(&pipe, 4096).is_err());
+        assert!(before.elapsed() < Duration::from_secs(1));
+    }
+}
+
+#[test]
 fn direct_test_and_search_commands_route_to_line_adapters() {
     let config = enabled();
     for command in [
@@ -584,6 +607,73 @@ fn completed_batch_is_visible_and_failed_result_restores_empty_panel() {
         assert_eq!(snapshot["rows"][0]["line"], 1);
     }
     assert!(!path.exists());
+}
+
+#[test]
+fn overlapping_progress_preserves_the_newest_completed_panel() {
+    let temporary = tempfile::tempdir().unwrap();
+    let data = temporary.path().join("data");
+    ensure_dir(&data).unwrap();
+    ensure_dir(&data.join("logs")).unwrap();
+    let path = data.join("logs/latest-decision.json");
+    let previous = json!({"receipt_id":"previous", "status":"keep", "rows":[]});
+    write_private(&path, &serde_json::to_vec(&previous).unwrap(), true).unwrap();
+    let mut first = ProgressSnapshot::new(&data, "a".repeat(32)).unwrap();
+    let mut second = ProgressSnapshot::new(&data, "b".repeat(32)).unwrap();
+    let lines = source_lines("routine poll\nDone\n");
+    let decisions = apply_relevance(&lines, &BTreeMap::from([(1, 0.02)]), 5);
+    let batch = BatchRecord {
+        id: 1,
+        target_numbers: vec![1],
+        request: json!({}),
+        response: json!({}),
+        elapsed_ms: 1,
+    };
+    first
+        .publish("output", &lines, &decisions, &batch, 1, 2)
+        .unwrap();
+    second
+        .publish("output", &lines, &decisions, &batch, 1, 2)
+        .unwrap();
+    // A concurrent completion must survive a later failed batch in either hook.
+    let completed = json!({"receipt_id":"newest", "status":"replace", "rows":[]});
+    write_private(&path, &serde_json::to_vec(&completed).unwrap(), true).unwrap();
+    first
+        .publish("output", &lines, &decisions, &batch, 2, 2)
+        .unwrap();
+    drop(second);
+    drop(first);
+    assert_eq!(
+        serde_json::from_slice::<Value>(&fs::read(&path).unwrap()).unwrap(),
+        completed
+    );
+}
+
+#[test]
+fn overlapping_failed_hooks_do_not_restore_an_abandoned_processing_panel() {
+    let temporary = tempfile::tempdir().unwrap();
+    let data = temporary.path().join("data");
+    ensure_dir(&data).unwrap();
+    let lines = source_lines("routine poll\nDone\n");
+    let decisions = apply_relevance(&lines, &BTreeMap::from([(1, 0.02)]), 5);
+    let batch = BatchRecord {
+        id: 1,
+        target_numbers: vec![1],
+        request: json!({}),
+        response: json!({}),
+        elapsed_ms: 1,
+    };
+    let mut first = ProgressSnapshot::new(&data, "a".repeat(32)).unwrap();
+    first
+        .publish("output", &lines, &decisions, &batch, 1, 2)
+        .unwrap();
+    let mut second = ProgressSnapshot::new(&data, "b".repeat(32)).unwrap();
+    second
+        .publish("output", &lines, &decisions, &batch, 1, 2)
+        .unwrap();
+    drop(first);
+    drop(second);
+    assert!(!data.join("logs/latest-decision.json").exists());
 }
 
 #[test]

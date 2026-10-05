@@ -211,13 +211,17 @@ pub(super) fn record(
     let result = (|| -> Result<(), String> {
         remaining()?;
         for (path, bytes) in artifacts {
+            remaining()?;
             write_private(&path, &bytes, false)?;
             created.push(path);
         }
+        remaining()?;
         write_private(&stats_path, &stats_bytes, true)?;
+        remaining()?;
         write_private(&snapshot_path, &snapshot_bytes, true)?;
         // Append the completion event only after every required artifact exists.
         // No fallible operation may cancel the output after this commit point.
+        remaining()?;
         writeln!(event_file, "{}", summary).map_err(|_| "event log write")?;
         event_file.sync_all().map_err(|_| "event log sync")?;
         Ok(())

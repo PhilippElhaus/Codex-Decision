@@ -100,7 +100,7 @@ async function main() {
     await new Promise(resolve => server.listen(0,"127.0.0.1",resolve));
     let selected = (process.argv.includes("--batching") ? batching : process.argv.includes("--holdout") ? holdout : fixtures).filter(item => !process.argv.includes("--case") || arg("--case").split(",").includes(item.id));
     if (!selected.length) throw new Error("No matching case");
-    if (!live && !process.argv.includes("--case")) selected = [...selected,
+    if (!live && !process.argv.includes("--case") && !process.argv.includes("--skip-faults")) selected = [...selected,
       ...faults.map(fault => {
         const fixture=fixtures.find(item => item.id === "log-failure-240");
         return {...fixture, id:fault, fault, expect_full:true,

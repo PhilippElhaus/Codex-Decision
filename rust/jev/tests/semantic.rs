@@ -247,6 +247,25 @@ fn both_api_budgets_have_exact_boundaries_and_count_utf8_and_question_overhead()
         .to_owned();
     request["questions"]["q0"]["instructions"] = json!(text + "x");
     assert!(validate_request_budget(&request).is_err());
+    // Byte counting must agree with the actual wire encoder, including escaped
+    // controls, nested values, Unicode keys, and exponential number formats.
+    request["state"] = json!({"状态": ["\"\\\n\t\u{0}🌍", null, true, 1e-20, u64::MAX]});
+    let budget = request_budget(&request).unwrap();
+    let longest = request["questions"]
+        .as_object()
+        .unwrap()
+        .values()
+        .map(|q| serde_json::to_vec(q).unwrap().len())
+        .max()
+        .unwrap();
+    assert_eq!(
+        budget.state_longest_question_bound,
+        serde_json::to_vec(&request["state"]).unwrap().len() + longest + TOKEN_HEADROOM
+    );
+    assert_eq!(
+        budget.whole_request_bound,
+        serde_json::to_vec(&request).unwrap().len() + TOKEN_HEADROOM
+    );
 }
 
 #[test]

@@ -1,6 +1,6 @@
 [package]
 name = "codex-jev"
-version = "0.10.8"
+version = "0.10.10"
 edition = "2021"
 license = "MIT"
 

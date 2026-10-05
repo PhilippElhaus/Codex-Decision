@@ -30,14 +30,26 @@ pub fn apply_relevance(
     probabilities: &BTreeMap<usize, f64>,
     cutoff: u8,
 ) -> Vec<LineDecision> {
+    decisions_with_relevance(lines, cutoff, |number| {
+        probabilities.get(&number).map(|p| (*p, 1))
+    })
+}
+
+fn decisions_with_relevance(
+    lines: &[SourceLine],
+    cutoff: u8,
+    lookup: impl Fn(usize) -> Option<(f64, usize)>,
+) -> Vec<LineDecision> {
+    let cutoff = f64::from(cutoff) / 100.0;
     let mut decisions: Vec<_> = lines
         .iter()
         .map(|line| {
-            let p = probabilities.get(&line.number).copied();
+            let judged = lookup(line.number);
+            let p = judged.map(|(p, _)| p);
             let (action, reason) = if !line.eligible || line.protected_reason.is_some() {
                 (Action::KeepUnjudged, "protected")
             } else if let Some(p) = p {
-                if p <= f64::from(cutoff) / 100.0 {
+                if p <= cutoff {
                     (Action::Omit, "irrelevant")
                 } else {
                     (Action::Keep, "task_relevant")
@@ -53,7 +65,7 @@ pub fn apply_relevance(
                 action,
                 reason: reason.into(),
                 protected_reason: line.protected_reason.clone(),
-                batch_id: p.map(|_| 1),
+                batch_id: judged.map(|(_, batch)| batch),
             }
         })
         .collect();
@@ -66,13 +78,5 @@ pub fn apply_relevance_batches(
     probabilities: &BTreeMap<usize, (f64, usize)>,
     cutoff: u8,
 ) -> Vec<LineDecision> {
-    let values = probabilities
-        .iter()
-        .map(|(number, (p, _))| (*number, *p))
-        .collect();
-    let mut decisions = apply_relevance(lines, &values, cutoff);
-    for row in &mut decisions {
-        row.batch_id = probabilities.get(&row.number).map(|(_, batch)| *batch);
-    }
-    decisions
+    decisions_with_relevance(lines, cutoff, |number| probabilities.get(&number).copied())
 }

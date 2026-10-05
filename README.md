@@ -4,7 +4,7 @@
 
 Codex Jev removes repetitive lines from local tool output before Codex reads them. Errors and useful evidence stay visible. Every shortened result links to the complete original.
 
-**Jev 0.10.8 · VS Code control 0.9.11** — [Download the latest release](https://github.com/PhilippElhaus/Codex-Jev/releases/tag/v0.10.8).
+**Jev 0.10.10 · VS Code control 0.9.13** — [Download the latest release](https://github.com/PhilippElhaus/Codex-Jev/releases/tag/v0.10.10).
 
 ## Get started
 
@@ -45,4 +45,4 @@ Screenshots use synthetic data. For a missing decision or failed connection, see
 
 ## Documentation
 
-[API key](docs/setup/setup_credentials.md) · [Filtering rules](docs/architecture/design_integrations.md) · [Privacy and safeguards](docs/architecture/design_data.md) · [Tests](tests/README.md) · [Usage verification](docs/development/usage_optimization_2026-10-05.md) · [45-second Jev explainer](https://x.com/MatijaSosic/status/2100190746389135772)
+[API key](docs/setup/setup_credentials.md) · [Filtering rules](docs/architecture/design_integrations.md) · [Privacy and safeguards](docs/architecture/design_data.md) · [Tests](tests/README.md) · [Usage verification](docs/development/usage_optimization_2026-10-05.md) · [Quality verification](docs/development/quality_pass_2026-10-05.md) · [45-second Jev explainer](https://x.com/MatijaSosic/status/2100190746389135772)

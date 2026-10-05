@@ -72,6 +72,14 @@ pub(super) struct ProgressSnapshot {
     pub(super) classification_requests: usize,
 }
 
+// Only the ownership fields are needed while the log lock is held. Skipping
+// the rows avoids allocating a second complete panel just to inspect its owner.
+#[derive(Deserialize, Default)]
+struct SnapshotOwner {
+    receipt_id: Option<String>,
+    status: Option<String>,
+}
+
 impl ProgressSnapshot {
     pub(super) fn new(data_dir: &Path, receipt_id: String) -> Result<Self, String> {
         let logs = data_dir.join("logs");
@@ -80,17 +88,24 @@ impl ProgressSnapshot {
         if path.is_symlink() {
             return Err("linked panel snapshot".into());
         }
-        let previous = match fs::read(&path) {
-            Ok(bytes) if bytes.len() <= PANEL_SNAPSHOT_MAX_BYTES => Some(bytes),
-            Ok(_) => return Err("panel snapshot too large".into()),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
-            Err(_) => return Err("panel snapshot read failed".into()),
-        };
+        match fs::symlink_metadata(&path) {
+            Ok(metadata)
+                if !metadata.is_file() || metadata.len() > PANEL_SNAPSHOT_MAX_BYTES as u64 =>
+            {
+                return Err("unsafe panel snapshot".into());
+            }
+            Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
+                return Err("panel snapshot stat".into());
+            }
+            _ => {}
+        }
         Ok(Self {
             logs,
             receipt_id,
-            previous,
-            last_snapshot_id: String::new(),
+            previous: None,
+            // A concurrent hook may own the live panel throughout this run.
+            // Its final receipt still needs a valid, independent snapshot ID.
+            last_snapshot_id: Uuid::new_v4().simple().to_string(),
             active: false,
             last_published: None,
             classification_requests: 1,
@@ -122,6 +137,23 @@ impl ProgressSnapshot {
         batch_count: usize,
     ) -> Result<(), String> {
         let _lock = lock_logs(&self.logs)?;
+        let path = self.logs.join("latest-decision.json");
+        let current = private_backup(&path, PANEL_SNAPSHOT_MAX_BYTES)?;
+        let owner = current
+            .as_deref()
+            .and_then(|bytes| serde_json::from_slice::<SnapshotOwner>(bytes).ok())
+            .unwrap_or_default();
+        if owner.receipt_id.as_deref() != Some(&self.receipt_id) {
+            // Do not replace another in-flight hook's panel or retain it as a
+            // rollback target. That hook may fail before we need to roll back.
+            if owner.status.as_deref() == Some("processing") {
+                self.last_published = Some(Instant::now());
+                return Ok(());
+            }
+            // Capture the newest completed state at publication time, under
+            // the lock, including completions that arrived between batches.
+            self.previous = current;
+        }
         let id = Uuid::new_v4().simple().to_string();
         let snapshot = line_snapshot(
             &self.receipt_id,
@@ -139,7 +171,8 @@ impl ProgressSnapshot {
         if bytes.len() > PANEL_SNAPSHOT_MAX_BYTES {
             return Err("panel snapshot too large".into());
         }
-        write_private(&self.logs.join("latest-decision.json"), &bytes, true)?;
+        remaining()?;
+        write_private(&path, &bytes, true)?;
         self.last_snapshot_id = id;
         self.active = true;
         self.last_published = Some(Instant::now());
@@ -156,13 +189,13 @@ impl Drop for ProgressSnapshot {
             return;
         };
         let path = self.logs.join("latest-decision.json");
-        let current = fs::read(&path)
+        let current = private_backup(&path, PANEL_SNAPSHOT_MAX_BYTES)
             .ok()
-            .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok());
+            .flatten()
+            .and_then(|bytes| serde_json::from_slice::<SnapshotOwner>(&bytes).ok());
         if current
             .as_ref()
-            .and_then(|value| value.get("receipt_id"))
-            .and_then(Value::as_str)
+            .and_then(|owner| owner.receipt_id.as_deref())
             != Some(self.receipt_id.as_str())
         {
             return;

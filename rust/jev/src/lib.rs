@@ -206,6 +206,7 @@ pub fn strip_ansi(text: &str) -> String {
     while index < bytes.len() {
         if bytes[index] == 0x1b && index + 1 < bytes.len() && bytes[index + 1] == b'[' {
             clean.push_str(&text[from..index]);
+            let escape_start = index;
             index += 2;
             while index < bytes.len() && (bytes[index].is_ascii_digit() || bytes[index] == b';') {
                 index += 1;
@@ -215,6 +216,9 @@ pub fn strip_ansi(text: &str) -> String {
                 from = index;
                 continue;
             }
+            // Keep an unsupported sequence verbatim without appending its
+            // already-copied prefix a second time.
+            from = escape_start;
             break;
         }
         index += 1;
@@ -316,16 +320,16 @@ fn preserve_representatives(lines: &[SourceLine], decisions: &mut [LineDecision]
     for line in lines {
         *counts.entry(line.model_text.as_str()).or_insert(0usize) += 1;
     }
-    let mut seen: HashSet<String> = lines
+    let mut seen: HashSet<&str> = lines
         .iter()
         .zip(decisions.iter())
         .filter(|(_, decision)| decision.action != Action::Omit)
-        .map(|(line, _)| line.model_text.clone())
+        .map(|(line, _)| line.model_text.as_str())
         .collect();
     for (line, decision) in lines.iter().zip(decisions.iter_mut()) {
         if decision.action == Action::Omit
             && counts[&line.model_text.as_str()] > 1
-            && seen.insert(line.model_text.clone())
+            && seen.insert(line.model_text.as_str())
         {
             decision.action = Action::Keep;
             decision.reason = "representative".into();
@@ -392,6 +396,18 @@ mod tests {
             lines.iter().map(|line| line.byte_start).collect::<Vec<_>>(),
             vec![0, 4, 7]
         );
+    }
+
+    #[test]
+    fn unsupported_ansi_sequences_do_not_duplicate_model_evidence() {
+        for suffix in ["?25l", "31;", "", "🌍"] {
+            let text = format!("INFO α prefix \x1b[{suffix}");
+            assert_eq!(strip_ansi(&text), text);
+        }
+        let text = "INFO \x1b[32mgreen\x1b[0m \x1b[?25lremaining 🌍";
+        assert_eq!(strip_ansi(text), "INFO green \x1b[?25lremaining 🌍");
+        let lines = source_lines(text);
+        assert_eq!(lines[0].source(text), text);
     }
     #[test]
     fn rejects_missing_or_invalid_answers() {

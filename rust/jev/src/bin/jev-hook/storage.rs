@@ -69,7 +69,9 @@ pub(super) fn write_private(path: &Path, bytes: &[u8], replace: bool) -> Result<
             fs::rename(&temp, path).map_err(|_| "file rename failed")?;
         } else {
             fs::hard_link(&temp, path).map_err(|_| "original already exists")?;
-            fs::remove_file(&temp).map_err(|_| "temporary file removal failed")?;
+            // The destination is committed. Scratch cleanup must not report a
+            // failed write after creating an artifact its caller cannot track.
+            let _ = fs::remove_file(&temp);
         }
         Ok(())
     })();
@@ -169,12 +171,41 @@ pub(super) fn private_backup(path: &Path, limit: usize) -> Result<Option<Vec<u8>
                 && !metadata.file_type().is_symlink()
                 && metadata.len() <= limit as u64 =>
         {
-            fs::read(path)
+            read_bounded(path, limit)
                 .map(Some)
                 .map_err(|_| "state backup read".into())
         }
         _ => Err("unsafe state backup".into()),
     }
+}
+
+pub(super) fn read_bounded(path: &Path, limit: usize) -> std::io::Result<Vec<u8>> {
+    let mut options = OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
+    }
+    let file = options.open(path)?;
+    let metadata = file.metadata()?;
+    if !metadata.is_file() || metadata.len() > limit as u64 {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "unsafe private file",
+        ));
+    }
+    // Enforce the bound on the open handle: another writer may grow or
+    // replace the file after a caller's initial stat check.
+    let mut bytes = Vec::with_capacity(metadata.len() as usize);
+    file.take(limit as u64 + 1).read_to_end(&mut bytes)?;
+    if bytes.len() > limit {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "unsafe private file",
+        ));
+    }
+    Ok(bytes)
 }
 pub(super) fn restore_private(path: &Path, previous: Option<Vec<u8>>) {
     if let Some(bytes) = previous {

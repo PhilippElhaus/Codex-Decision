@@ -16,7 +16,7 @@ pub(super) fn hook_health(data_dir: &Path, outcome: &str, reason: &str) -> Resul
         if !metadata.is_file() || metadata.file_type().is_symlink() || metadata.len() > 4096 {
             return Err("unsafe hook health".into());
         }
-        serde_json::from_slice::<Value>(&fs::read(&path).map_err(|_| "hook health read")?)
+        serde_json::from_slice::<Value>(&read_bounded(&path, 4096).map_err(|_| "hook health read")?)
             .map_err(|_| "invalid hook health")?
     } else {
         json!({})
@@ -108,8 +108,9 @@ pub(super) fn load_stats(path: &Path) -> Result<Value, String> {
     if !metadata.is_file() || metadata.file_type().is_symlink() || metadata.len() > 8192 {
         return Err("unsafe stats file".into());
     }
-    let value: Value = serde_json::from_slice(&fs::read(path).map_err(|_| "stats read failed")?)
-        .map_err(|_| "invalid stats file")?;
+    let value: Value =
+        serde_json::from_slice(&read_bounded(path, 8192).map_err(|_| "stats read failed")?)
+            .map_err(|_| "invalid stats file")?;
     let object = value.as_object().ok_or("invalid stats file")?;
     if object.values().any(|item| item.as_u64().is_none()) {
         return Err("invalid stats value".into());
