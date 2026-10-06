@@ -10,11 +10,15 @@ const { spawn, spawnSync } = require("node:child_process");
 const fixtures = require("../tests/fixtures/two-stage-cases.cjs");
 const holdout = require("../tests/fixtures/two-stage-holdout.cjs");
 const batching = require("../tests/fixtures/batching-cases.cjs");
+const precision = require("../tests/fixtures/precision-cases.cjs");
+const precisionHoldout = require("../tests/fixtures/precision-holdout.cjs");
 const { readApiKey, sessionDirectory } = require("../vscode-control/core");
 const { readLatestPanelDecision } = require("../vscode-control/panel-state");
 const kinds = ["repetitive_log", "progress_output", "independent_matches", "independent_records", "exact_content", "prose", "structured_payload", "mixed_or_unknown"];
 const faults = ["choice-missing", "choice-extra", "choice-sum", "choice-argmax", "choice-class", "choice-confidence", "choice-type", "choice-model", "choice-json", "choice-http401", "choice-http429", "choice-http529", "choice-timeout", "line-missing", "line-extra", "line-type", "line-range", "line-confidence", "line-json", "line-http500", "line-timeout", "line-oversized"];
 faults.push("line-late-missing", "line-late-extra", "line-late-http422", "line-late-http500", "line-late-timeout");
+faults.push("choice-duplicate-model", "line-duplicate-probability", "line-duplicate-id", "line-late-duplicate-id");
+faults.push("choice-trickle", "line-trickle", "line-late-trickle");
 const arg = (flag, fallback) => process.argv.includes(flag) ? process.argv[process.argv.indexOf(flag) + 1] : fallback;
 async function main() {
   const live = process.argv.includes("--live");
@@ -79,10 +83,29 @@ async function main() {
       if ((!late || calls>=3) && ((first && fault.startsWith("choice-")) || (!first && fault.startsWith("line-")))) {
         const suffix = fault.slice(fault.indexOf("-") + 1);
         if (suffix === "timeout") { setTimeout(() => res.end("{}"), 500);return; }
+        if (suffix === "trickle") {
+          const encoded=JSON.stringify(body);let offset=0;
+          res.setHeader("Content-Type","application/json");res.write(encoded.slice(0,1));offset=1;
+          const timer=setInterval(()=>{
+            if (offset>=encoded.length) {clearInterval(timer);res.end();return;}
+            res.write(encoded.slice(offset,offset+32));offset+=32;
+          },40);
+          res.on("close",()=>clearInterval(timer));return;
+        }
         if (suffix.startsWith("http")) {res.writeHead(Number(suffix.slice(4)));res.end("{}");return;}
         if (suffix === "json") {res.end("{broken");return;}
         if (suffix === "oversized") {res.end("x".repeat(1000001));return;}
         const id = Object.keys(body.answers)[0];
+        if (suffix.startsWith("duplicate-")) {
+          let encoded = JSON.stringify(body);
+          if (suffix === "duplicate-model") encoded = encoded.replace('"model":', '"model":"other-model","model":');
+          if (suffix === "duplicate-probability") encoded = encoded.replace('"noul":', '"noul":0.99,"noul":');
+          if (suffix === "duplicate-id") {
+            const original = JSON.stringify(id) + ":" + JSON.stringify(body.answers[id]);
+            encoded = encoded.replace(original, JSON.stringify(id) + ': {"type":"noul","noul":0.99},' + original);
+          }
+          res.end(encoded);return;
+        }
         if (suffix === "missing") delete body.answers[id];
         if (suffix === "extra") body.answers.unexpected = {type:"noul",noul:.01};
         if (suffix === "type") body.answers[id].type = "score";
@@ -98,7 +121,7 @@ async function main() {
   });
   try {
     await new Promise(resolve => server.listen(0,"127.0.0.1",resolve));
-    let selected = (process.argv.includes("--batching") ? batching : process.argv.includes("--holdout") ? holdout : fixtures).filter(item => !process.argv.includes("--case") || arg("--case").split(",").includes(item.id));
+    let selected = (process.argv.includes("--precision-holdout") ? precisionHoldout : process.argv.includes("--precision") ? precision : process.argv.includes("--batching") ? batching : process.argv.includes("--holdout") ? holdout : fixtures).filter(item => !process.argv.includes("--case") || arg("--case").split(",").includes(item.id));
     if (!selected.length) throw new Error("No matching case");
     if (!live && !process.argv.includes("--case") && !process.argv.includes("--skip-faults")) selected = [...selected,
       ...faults.map(fault => {
@@ -110,11 +133,13 @@ async function main() {
       current = item;calls = 0;judged = new Set();requestBudgets=[];protocolFailures=[];
       const data = path.join(temporary,item.id);await fs.mkdir(data,{mode:0o700});
       await fs.writeFile(path.join(data,".env"),"JEV_API_KEY=synthetic-proxy-key\n",{mode:0o600});
-      await fs.writeFile(path.join(data,"config.json"),JSON.stringify({schema_version:4,scope:"global",enabled:item.enabled !== false,
-        mode:item.mode || "replace",model:"jev-latest",timeout_seconds:item.fault?.endsWith("timeout") ? .15 : 4,
+      await fs.writeFile(path.join(data,"config.json"),item.config_raw || JSON.stringify({schema_version:4,scope:"global",enabled:item.enabled !== false,
+        mode:item.mode || "replace",model:"jev-latest",timeout_seconds:/timeout$|trickle$/.test(item.fault || "") ? .15 : 4,
         relevance_policy:{relevant_max:relevantMax}}),{mode:0o600});
       const transcript=path.join(data,"transcript.jsonl");
-      await fs.writeFile(transcript,JSON.stringify({type:"response_item",payload:{role:"user",content:[{type:"input_text",text:item.task}]}})+"\n");
+      const userRecord = content => JSON.stringify({type:"response_item",payload:{role:"user",content}})+"\n";
+      await fs.writeFile(transcript,(item.prior_task ? userRecord([{type:"input_text",text:item.prior_task}]) : "")+
+        userRecord(item.latest_content || [{type:"input_text",text:item.task}]));
       const newline=item.newline || "\n";
       const source=item.lines.join(newline)+(item.terminated === false ? "" : newline);
       const projectedSource=item.metadata ? 'Command result metadata: {"exit_code":1}\n'+source : source;
@@ -122,7 +147,7 @@ async function main() {
       current.sourceLines=projectedSource.split(/\r?\n/).filter((_,index,all)=>index!==all.length-1||all[index]!=="");
       current.requiredLines=requiredLines;
       const event={hook_event_name:"PostToolUse",tool_name:item.tool || "Bash",session_id:item.id,tool_use_id:"synthetic-call",transcript_path:transcript,
-        tool_input:{command:item.command},tool_response:item.metadata ? {output:source,exit_code:1} : source};
+        tool_input:item.tool_input || {command:item.command},tool_response:item.metadata ? {output:source,exit_code:1} : source};
       if (item.no_transcript) delete event.transcript_path;
       const started=Date.now();
       const child=spawn(hook,[],{env:{...process.env,PLUGIN_DATA:data,CODEX_JEV_TEST_ENDPOINT:`http://127.0.0.1:${server.address().port}/`},stdio:["pipe","pipe","pipe"]});
@@ -141,6 +166,10 @@ async function main() {
       const health=healthPath ? JSON.parse(await fs.readFile(path.join(data,healthPath),"utf8")) : null;
       const requiredLost=receipt?.decisions.filter(row=>row.action==="omit"&&requiredLines.includes(row.number)).map(row=>row.number) || [];
       const actualLost=reply.reason ? requiredLost : [];
+      const routine = new Set((item.routine_lines || []).map(number => number + Number(!!item.metadata)));
+      const labeled = receipt?.decisions.filter(row => typeof row.p_task_relevant === "number" &&
+        (routine.has(row.number) || requiredLines.includes(row.number))) || [];
+      const routineKept = labeled.filter(row => routine.has(row.number) && row.action !== "omit").length;
       const originals=files.filter(file=>file.startsWith("outputs/")&&file.endsWith(".txt"));
       const originalExact=originals.length ? (await fs.readFile(path.join(data,originals[0]),"utf8"))===projectedSource : null;
       const originalEnvelope=item.metadata&&originals.length ? JSON.parse(await fs.readFile(path.join(data,originals[0].replace(/\.txt$/,".json")),"utf8")) : null;
@@ -150,6 +179,7 @@ async function main() {
         calls,relevance_batches:receipt ? receipt.manifest.requests-Number(receipt.manifest.choice_gate_ran) : null,request_budgets:requestBudgets,protocol_failures:protocolFailures,
         elapsed_ms:Date.now()-started,saved_bytes:Buffer.byteLength(source)-Buffer.byteLength(visible),
         required_lost:actualLost,proposed_required_lost:requiredLost,original_exact:originalExact,envelope_exact:envelopeExact,
+        labeled_judgments:labeled.length,routine_kept:routineKept,
         panel_rows:panel?.rows.length || 0,panel_matches_receipt:receipt ? panel?.receipt_id===receipt.manifest.id &&
           panel.status===receipt.manifest.status && panel.totals.requests===receipt.manifest.requests : panel===null,
         error:stderr ? health?.last_error || stderr.trim().slice(0,256) : null};
@@ -164,7 +194,7 @@ async function main() {
       if (activity) await fs.writeFile(path.join(dest,"activity.json"),JSON.stringify(activity,null,2)+"\n");
       if (receipt) await fs.writeFile(path.join(dest,"reply.json"),JSON.stringify(reply)+"\n");
       if (panel) await fs.writeFile(path.join(dest,"panel.json"),JSON.stringify(panel)+"\n");
-      if (receipt) qualityCases.push({id:item.id,split:process.argv.includes("--holdout") || process.argv.includes("--batching") ? "holdout" : "train",
+      if (receipt) qualityCases.push({id:item.id,split:process.argv.includes("--holdout") || process.argv.includes("--batching") || process.argv.includes("--precision-holdout") ? "holdout" : "train",
         receipt:`${item.id}/${path.basename(receiptPath)}`,required_lines:requiredLines});
       reports.push(report);console.log(JSON.stringify(report));
     }
@@ -173,6 +203,8 @@ async function main() {
       replaced:reports.filter(item=>item.status==="replace").length,required_lines:reports.reduce((sum,item)=>sum+item.required,0),
       panel_decisions:reports.filter(item=>item.panel_rows>0).length,
       required_lost:reports.reduce((sum,item)=>sum+item.required_lost.length,0),
+      labeled_judgments:reports.reduce((sum,item)=>sum+item.labeled_judgments,0),
+      routine_kept:reports.reduce((sum,item)=>sum+item.routine_kept,0),
       failures:reports.filter(item=>item.failed).map(item=>item.id),
       errors:reports.filter(item=>item.error).map(item=>({id:item.id,error:item.error})),
       saved_bytes:reports.reduce((sum,item)=>sum+item.saved_bytes,0),p50_ms:times[Math.floor(times.length*.5)],p95_ms:times[Math.min(times.length-1,Math.floor(times.length*.95))]};

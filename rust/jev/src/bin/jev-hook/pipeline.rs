@@ -18,7 +18,7 @@ pub(super) fn execute() -> Result<Value, String> {
     if input.len() > 16_000_000 {
         return Err("hook input too large".into());
     }
-    let event: Value = serde_json::from_slice(&input).map_err(|_| "invalid hook JSON")?;
+    let event = strict_json::parse(&input).map_err(|_| "invalid hook JSON")?;
     let session = event
         .get("session_id")
         .and_then(Value::as_str)
@@ -305,7 +305,7 @@ pub(super) fn process_event(
     let visible = if replace {
         feedback.as_str()
     } else {
-        source.as_str()
+        source.as_ref()
     };
     record(
         scoped,

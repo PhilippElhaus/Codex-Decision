@@ -3,13 +3,13 @@
 body { margin: 0; padding: 8px 12px 12px; color: var(--vscode-foreground); background: var(--vscode-panel-background, var(--vscode-editor-background)); font-family: var(--vscode-font-family); }
 #app { max-width: 1180px; margin: 0 auto; }
 #app:has(.batch-layout) { max-width: none; }
-.batch-layout { min-width: 0; --batch-keep: #d6a547; --batch-cut: #69aef0; }
+.batch-layout { min-width: 0; --batch-row-height: 27px; --batch-keep: #d6a547; --batch-cut: #69aef0; }
 body:is(.vscode-light, .light) .batch-layout { --batch-keep: #895900; --batch-cut: #1c67aa; }
 .batch-header { position: sticky; top: -8px; z-index: 2; display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 4px 0 6px; background: var(--vscode-panel-background, var(--vscode-editor-background)); border-bottom: 1px solid var(--vscode-panel-border, #5556); }
 .batch-title { color: var(--batch-keep); font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .batch-status { color: var(--vscode-descriptionForeground, #888); font-size: 11px; white-space: nowrap; }
-.batch-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 290px), 1fr)); gap: 0 12px; min-width: 0; }
-.batch-row { display: grid; grid-template-columns: 5ch minmax(0, 1fr) 10ch 4ch 4ch; align-items: center; gap: 5px; min-width: 0; height: 27px; padding: 3px 2px; border-bottom: 1px solid var(--vscode-panel-border, #5553); font: 11px var(--vscode-editor-font-family, monospace); }
+.batch-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 290px), 1fr)); grid-auto-rows: var(--batch-row-height); gap: 0 12px; min-width: 0; }
+.batch-row { display: grid; grid-template-columns: 5ch minmax(0, 1fr) 10ch 4ch 4ch; align-items: center; gap: 5px; min-width: 0; height: var(--batch-row-height); padding: 3px 2px; border-bottom: 1px solid var(--vscode-panel-border, #5553); font: 11px var(--vscode-editor-font-family, monospace); }
 .batch-row:hover { background: var(--vscode-list-hoverBackground, transparent); }
 .batch-row > * { grid-row: 1; }
 .batch-line-number, .batch-value { font-variant-numeric: tabular-nums; }

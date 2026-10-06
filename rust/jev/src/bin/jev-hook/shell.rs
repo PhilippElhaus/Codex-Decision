@@ -5,7 +5,7 @@ pub(super) fn basename(word: &str) -> &str {
 }
 
 // Split only simple command lists and pipelines. Do not execute shell text.
-fn output_groups(command: &str) -> Option<Vec<Vec<&str>>> {
+pub(super) fn output_groups(command: &str) -> Option<Vec<Vec<&str>>> {
     let command = command.trim();
     let mut groups = Vec::new();
     let mut stages = Vec::new();
@@ -155,7 +155,7 @@ pub(super) fn assignment(word: &str) -> bool {
             .all(|ch| ch.is_ascii_alphanumeric() || ch == b'_')
 }
 
-fn command_words(command: &str) -> Option<Vec<String>> {
+pub(super) fn command_words(command: &str) -> Option<Vec<String>> {
     let words = shell_words::split(command).ok()?;
     let mut start = 0;
     if words.first().is_some_and(|word| basename(word) == "env") {

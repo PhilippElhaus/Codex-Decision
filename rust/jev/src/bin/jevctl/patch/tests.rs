@@ -9,6 +9,7 @@ fn pinned_patch_applies_updates_rejects_tampering_and_restores() {
     patch_cycle(Spec::production("26.930.31730").unwrap().1);
     patch_cycle(Spec::production("26.930.41038").unwrap().1);
     patch_cycle(Spec::production("26.930.51102").unwrap().1);
+    patch_cycle(Spec::production("26.930.61225").unwrap().1);
 }
 
 fn patch_cycle(profile: profiles::Profile) {
@@ -114,6 +115,7 @@ fn bridge_fragments_publish_routes_and_validate_settings_messages() {
         "26.930.31730",
         "26.930.41038",
         "26.930.51102",
+        "26.930.61225",
     ] {
         let fragment =
             profiles::route_fragment(route.clone(), Spec::production(version).unwrap().1);
@@ -131,7 +133,7 @@ fn bridge_fragments_publish_routes_and_validate_settings_messages() {
                 "let ZK={},TK={useContext:()=>({location:{pathname}})},WG=()=>{},_K=()=>true;"
             } else if version == "26.930.21537" {
                 "let TK={},$G={useContext:()=>({location:{pathname}})},vG=()=>{},GG=()=>true;"
-            } else if version == "26.930.51102" {
+            } else if ["26.930.51102", "26.930.61225"].contains(&version) {
                 "let Fq={},lq={useContext:()=>({location:{pathname}})},OK=()=>{},tq=()=>true;"
             } else {
                 "let DK={},tK={useContext:()=>({location:{pathname}})},bG=()=>{},qG=()=>true;"
@@ -139,7 +141,7 @@ fn bridge_fragments_publish_routes_and_validate_settings_messages() {
             let function = match version {
                 VERSION => "vK",
                 "26.930.21537" => "KG",
-                "26.930.51102" => "nq",
+                "26.930.51102" | "26.930.61225" => "nq",
                 _ => "JG",
             };
             let script = format!("let window={{dispatchEvent:()=>{{}}}};let document={{documentElement:{{dataset:{{codexJevSessionId:'stale'}}}}}};let pathname={};{bindings}{fragment}{function}();process.stdout.write(JSON.stringify(document.documentElement.dataset));", json!(pathname));

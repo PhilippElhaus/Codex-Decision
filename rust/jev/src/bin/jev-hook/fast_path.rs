@@ -14,6 +14,17 @@ mod tests;
 pub(super) fn format_decision(event: &Value, lines: &mut [SourceLine]) -> FormatDecision {
     let tool = event["tool_name"].as_str().unwrap_or("");
     let route = output_format(event).unwrap_or("output");
+    if exact_file_tool(event, tool) {
+        return FormatDecision::Keep("exact_content");
+    }
+    // Summary flags can coexist with patches. Their source spans remain
+    // coupled even when the command also has a listing route.
+    if lines
+        .iter()
+        .any(|line| line.model_text.starts_with("diff --git "))
+    {
+        return FormatDecision::Keep("exact_content");
+    }
     if route != "output" && shell_tool(tool) {
         if !apply_route_structure(route, tool, command(event), lines) {
             return FormatDecision::Keep("structure_guard");
@@ -117,17 +128,102 @@ pub(super) fn format_decision(event: &Value, lines: &mut [SourceLine]) -> Format
 
 fn exact_read(command: &str) -> bool {
     let Some(commands) = output_commands(command, 0) else {
-        return false;
+        // A file viewer with an unsupported shell form (for example a
+        // heredoc) cannot establish an independent-log contract.
+        if command.len() <= 4096 {
+            if let Some(groups) = output_groups(command) {
+                return groups.iter().any(|group| {
+                    group
+                        .first()
+                        .and_then(|source| command_words(source))
+                        .is_some_and(|words| exact_source_command(&words))
+                });
+            }
+        }
+        let first = command.lines().next().unwrap_or("");
+        if first.len() > 4096 {
+            return false;
+        }
+        let Some(words) = command_words(first) else {
+            return false;
+        };
+        return exact_source_command(&words);
     };
-    commands.iter().any(|words| {
-        let executable = basename(&words[0]);
-        let action = subcommand(words, executable);
-        executable == "git" && matches!(action, "diff" | "show")
-            || matches!(executable, "cat" | "sed" | "head" | "tail")
-                && words.iter().skip(1).any(|word| {
-                    !word.starts_with('-') && word.contains('.') && !word.ends_with(".log")
-                })
-    })
+    commands.iter().any(|words| exact_source_command(words))
+}
+
+fn exact_source_command(words: &[String]) -> bool {
+    let executable = basename(&words[0]);
+    let action = subcommand(words, executable);
+    executable == "git" && matches!(action, "diff" | "show")
+        || matches!(executable, "cat" | "sed" | "head" | "tail")
+            && !explicit_log_read(words, executable)
+}
+
+fn exact_file_tool(event: &Value, tool: &str) -> bool {
+    let action = tool.rsplit("__").next().unwrap_or(tool);
+    if ![
+        "read",
+        "read_file",
+        "readfile",
+        "read_text_file",
+        "readtextfile",
+    ]
+    .iter()
+    .any(|name| action.eq_ignore_ascii_case(name))
+    {
+        return false;
+    }
+    let input = &event["tool_input"];
+    let mut explicit_log = false;
+    for field in ["file_path", "path", "filePath"] {
+        if let Some(value) = input.get(field) {
+            if !value.as_str().is_some_and(|path| path.ends_with(".log")) {
+                return true;
+            }
+            explicit_log = true;
+        }
+    }
+    !explicit_log
+}
+
+fn explicit_log_read(words: &[String], executable: &str) -> bool {
+    let mut index = 1;
+    let mut script = executable != "sed";
+    let mut operands = false;
+    let mut logs = 0;
+    while let Some(word) = words.get(index) {
+        index += 1;
+        if !operands && word == "--" {
+            operands = true;
+        } else if !operands && word.starts_with('-') {
+            if matches!(executable, "head" | "tail")
+                && matches!(word.as_str(), "-n" | "--lines" | "-c" | "--bytes")
+            {
+                if words.get(index).is_none() {
+                    return false;
+                }
+                index += 1;
+            } else if executable == "sed" && matches!(word.as_str(), "-e" | "--expression") {
+                if words.get(index).is_none() {
+                    return false;
+                }
+                index += 1;
+                script = true;
+            } else if executable == "sed" && word.starts_with("--expression=") {
+                script = true;
+            } else if executable == "sed" && word != "-n" && word != "--quiet" {
+                return false;
+            }
+        } else if !script {
+            script = true;
+        } else if word.ends_with(".log") {
+            logs += 1;
+        } else {
+            return false;
+        }
+    }
+    logs > 0
 }
 
 fn final_status(text: &str) -> bool {

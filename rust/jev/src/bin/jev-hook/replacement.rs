@@ -89,7 +89,7 @@ pub(super) fn replacement_blocker(
     if tool.starts_with("mcp__") && !config.allow_mcp_replacement {
         return Some("mcp_replacement_disabled");
     }
-    if !replacement_supported(event) && !(tool.starts_with("mcp__") && config.allow_mcp_replacement)
+    if !(replacement_supported(event) || tool.starts_with("mcp__") && config.allow_mcp_replacement)
     {
         return Some("unsupported_envelope");
     }

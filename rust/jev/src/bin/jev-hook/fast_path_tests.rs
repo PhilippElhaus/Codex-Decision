@@ -67,6 +67,79 @@ fn scripts_require_a_known_log_and_exact_reads_stay_complete() {
 }
 
 #[test]
+fn extensionless_file_reads_cannot_acquire_a_log_contract() {
+    let log = "INFO required configuration row\n".repeat(30) + "Done\n";
+    for command in [
+        "cat LICENSE",
+        "cat -- README",
+        "head -n 40 Config",
+        "tail -n 40 Config",
+        "sed -n '1,40p' Config",
+        "cat progress.log Config",
+        "cat <<'EOF'\nINFO configuration row\nEOF",
+        "cat 'source|Config' | sed -n '1,40p'",
+    ] {
+        assert!(
+            matches!(decide(command, &log), FormatDecision::Keep("exact_content")),
+            "{command}"
+        );
+    }
+    for command in [
+        "cat progress.log",
+        "head -n 40 progress.log",
+        "tail --lines 40 -- progress.log",
+        "sed -n '1,40p' progress.log",
+        "sed -e '1,40p' -n -- progress.log",
+        "cat progress.log | sed -n '1,40p'",
+    ] {
+        assert!(
+            matches!(
+                decide(command, &log),
+                FormatDecision::Direct("repetitive_log")
+            ),
+            "{command}"
+        );
+    }
+}
+
+#[test]
+fn file_tools_preserve_source_and_allow_explicit_logs() {
+    let log = "INFO required configuration row\n".repeat(30) + "Done\n";
+    for (tool, field) in [("Read", "file_path"), ("mcp__files__read_file", "path")] {
+        for path in [None, Some("Config"), Some("source.rs")] {
+            let input = path.map(|path| json!({field:path})).unwrap_or(json!({}));
+            let event = json!({"tool_name":tool,"tool_input":input});
+            assert!(matches!(
+                format_decision(&event, &mut source_lines(&log)),
+                FormatDecision::Keep("exact_content")
+            ));
+        }
+        let event = json!({"tool_name":tool,"tool_input":{field:"service.log"}});
+        assert!(matches!(
+            format_decision(&event, &mut source_lines(&log)),
+            FormatDecision::Direct("repetitive_log")
+        ));
+    }
+    let event = json!({"tool_name":"Read","tool_input":{
+        "file_path":"Config","path":"service.log"}});
+    assert!(matches!(
+        format_decision(&event, &mut source_lines(&log)),
+        FormatDecision::Keep("exact_content")
+    ));
+}
+
+#[test]
+fn diff_content_overrides_summary_flags() {
+    let diff = "diff --git a/source b/source\n--- a/source\n+++ b/source\n@@ -1 +1 @@\n-INFO old value\n+INFO new value\n";
+    for command in ["git diff --stat --patch", "git show --stat -p"] {
+        assert!(
+            matches!(decide(command, diff), FormatDecision::Keep("exact_content")),
+            "{command}"
+        );
+    }
+}
+
+#[test]
 fn known_envelopes_keep_metadata_and_unknown_fields_never_gain_replacement() {
     let output = "INFO routine poll\n".repeat(50) + "ERROR: connection refused\nDone\n";
     let body = json!({"output":output,"session_id":12345,"exit_code":1,"wall_time_seconds":0.5});

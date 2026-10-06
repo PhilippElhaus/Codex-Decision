@@ -1,6 +1,48 @@
 use super::*;
 
 #[test]
+fn delimited_credential_fields_are_sensitive_before_any_request() {
+    for text in [
+        "password: synthetic-sentinel",
+        "PASSWORD   = synthetic-sentinel",
+        r#"{"password":"synthetic-sentinel"}"#,
+        r#"{"api_key" : "synthetic-sentinel"}"#,
+        r#"{"token":"synthetic-sentinel"}"#,
+        "<password>synthetic-sentinel</password>",
+        "Authorization : Basic synthetic-sentinel",
+    ] {
+        assert!(sensitive(text), "{text}");
+    }
+    for text in [
+        "INFO token_count=350",
+        "INFO password_checks=12",
+        "INFO maximum retries = 5",
+    ] {
+        assert!(!sensitive(text));
+    }
+}
+
+#[test]
+fn duplicate_settings_cannot_override_an_explicit_off_flag_or_cutoff() {
+    let root = tempfile::tempdir().unwrap();
+    fs::write(
+        root.path().join("config.json"),
+        r#"{"schema_version":4,"enabled":false,"enabled":true,"mode":"replace","relevance_policy":{"relevant_max":5}}"#,
+    )
+    .unwrap();
+    assert!(config(root.path()).is_err());
+    fs::write(
+        root.path().join("config.json"),
+        r#"{"schema_version":4,"enabled":true,"mode":"replace","relevance_policy":{"relevant_max":5}}"#,
+    )
+    .unwrap();
+    let mut selected = config(root.path()).unwrap().unwrap();
+    fs::write(root.path().join("settings.json"),
+        r#"{"schema_version":3,"mode":"replace","relevance_policy":{"relevant_max":0,"relevant_max":50},"log_limit_mb":50,"never_delete_logs":false}"#).unwrap();
+    assert!(apply_shared_settings(root.path(), &mut selected).is_err());
+}
+
+#[test]
 fn old_or_unknown_config_never_looks_disabled() {
     let directory = tempfile::tempdir().unwrap();
     for value in [
@@ -509,6 +551,20 @@ fn orchestration_text_previews_command_output_without_losing_unknown_payloads() 
     assert!(response_text(&json!({"tool_name":"exec","tool_response":[
         {"type":"input_text","text":envelope},{"type":"input_image"}]}))
     .is_none());
+}
+
+#[test]
+fn duplicate_command_fields_preserve_the_raw_envelope() {
+    for envelope in [
+        r#"{"output":"required evidence","output":"routine noise","exit_code":0}"#,
+        r#"{"output":"required evidence","exit_code":1,"exit_code":0}"#,
+        r#"{"output":"required evidence","\u006futput":"routine noise","exit_code":0}"#,
+    ] {
+        let event = json!({"tool_name":"exec","tool_response":[
+            {"type":"input_text","text":envelope}]});
+        assert_eq!(response_text(&event).as_deref(), Some(envelope));
+        assert!(!replacement_supported(&event));
+    }
 }
 
 #[test]

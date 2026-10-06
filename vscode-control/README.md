@@ -8,15 +8,15 @@ From this directory in WSL:
 
 ```bash
 ../scripts/build_control.sh
-code --install-extension "$(wslpath -w ../.local/submission/codex-jev-control-0.9.11.vsix)" --force
+code --install-extension "$(wslpath -w ../.local/submission/codex-jev-control-0.9.14.vsix)" --force
 ```
 
-The composer and Codex settings page require the separate local patch for Codex VS Code extensions `26.928.31416`, `26.930.21537`, `26.930.31730`, `26.930.41038`, and `26.930.51102`. It checks exact host hashes and keeps rollback files outside this repository:
+The composer and Codex settings page require the separate local patch for Codex VS Code extensions `26.928.31416`, `26.930.21537`, `26.930.31730`, `26.930.41038`, `26.930.51102`, and `26.930.61225`. It checks exact host hashes and keeps rollback files outside this repository:
 
 ```bash
 ../hooks/bin/linux-x86_64/jevctl patch-webview update --root .. \
-  --extension '/mnt/c/Users/<user>/.vscode/extensions/openai.chatgpt-26.930.51102-win32-x64' \
-  --backup '/mnt/c/Users/<user>/AppData/Local/Codex/codex-jev/rollback/26.930.51102'
+  --extension '/mnt/c/Users/<user>/.vscode/extensions/openai.chatgpt-26.930.61225-win32-x64' \
+  --backup '/mnt/c/Users/<user>/AppData/Local/Codex/codex-jev/rollback/26.930.61225'
 ```
 
 Use `apply` for the first installation, `update` after a control upgrade, or `restore` to remove the patch. Reload VS Code after installing both pieces. Start a new Codex thread after a plugin hook upgrade and review the hook in `/hooks` again if its definition changed.
@@ -37,7 +37,7 @@ The **Jev** panel sits beside Output and Terminal. Reopen it through **View → 
 
 ## Verify
 
-Control 0.9.11 packs each judged line into a single row. A ten-character bar and a 0–100% value show its score. Columns adapt to the panel width. Hover for the full excerpt, precise probability, and reason. Known command envelopes in code-mode `exec` and `wait` can be shortened. Metadata stays protected, and a complete typed original is saved. The panel labels previews explicitly.
+The control packs each judged line into a single row. A ten-character bar and a 0–100% value show its score. Columns adapt to the panel width. Hover for the full excerpt, precise probability, and reason. Known command envelopes in code-mode `exec` and `wait` can be shortened. Metadata stays protected, and a complete typed original is saved. The panel labels previews explicitly.
 
 ```bash
 npm test

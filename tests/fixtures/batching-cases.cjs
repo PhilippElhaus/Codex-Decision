@@ -23,5 +23,5 @@ crlf[190]="\x1b[31mERROR: upstream port 8443 refused the connection\x1b[0m";
 crlf.push("Run ended with return value 73.");
 add("crlf-ansi-batches",crlf,[191,451],{newline:"\r\n",terminated:false,min_batches:2});
 add("unpackable-task-context",Array(80).fill("routine line"),[80],
-  {command:"printf "+"x".repeat(64000),tool:"Read",expect_full:true,expected_calls:1});
+  {command:"printf "+"x".repeat(64000),tool:"mcp__files__inspect",expect_full:true,expected_calls:1});
 module.exports=cases;

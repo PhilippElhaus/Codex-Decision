@@ -56,6 +56,16 @@ const OCTOBER_5: Profile = Profile {
     route_anchor: "function nq(){return OK(tq(),`useLocation() may be used only in the context of a <Router> component.`),lq.useContext(Fq).location}",
 };
 
+const OCTOBER_6: Profile = Profile {
+    version: "26.930.61225",
+    image: "webview/assets/app-initial-5120fa5fe295.js",
+    route: "webview/assets/app-initial-efe028fd535e.js",
+    index_anchor:
+        "<script type=\"module\" crossorigin src=\"./assets/index-4017ebb039b8.js\"></script>",
+    image_anchor: OCTOBER_5.image_anchor,
+    route_anchor: OCTOBER_5.route_anchor,
+};
+
 pub(super) fn spec(version: &str) -> Result<Spec, String> {
     let (profile, hashes) = match version {
         VERSION => (LEGACY, ORIGINAL),
@@ -143,6 +153,27 @@ pub(super) fn spec(version: &str) -> Result<Spec, String> {
                 ),
             ],
         ),
+        "26.930.61225" => (
+            OCTOBER_6,
+            [
+                (
+                    HOST,
+                    "1f051b97e1388816133ba9a5070832bf77ccd3e47b47fbda88f7a3d0be809e40",
+                ),
+                (
+                    INDEX,
+                    "26406f804f8aad62f2961095524c3e7ac1f8f20d14d0cce09f7ea42e6b621eab",
+                ),
+                (
+                    IMAGE,
+                    "3e661c7e7feaa43d23e70f990deaa0b67369dca6073a435e05964a5fb752d754",
+                ),
+                (
+                    ROUTE,
+                    "08e129f3c48cd331ea5de470a438a1a8bcd755e40cc607513d348026fe7014f9",
+                ),
+            ],
+        ),
         _ => {
             return Err("unsupported Codex extension version; revalidate the composer patch".into())
         }
@@ -161,13 +192,14 @@ pub(super) fn route_fragment(source: String, profile: Profile) -> String {
         return source;
     }
     // Rebind only the pinned fragment, never search and replace Codex source.
-    let (router, assert, in_router, react, context) = if profile.version == OCTOBER_5.version {
-        ("nq", "OK", "tq", "lq", "Fq")
-    } else if [LATEST.version, OCTOBER_4.version].contains(&profile.version) {
-        ("JG", "bG", "qG", "tK", "DK")
-    } else {
-        ("KG", "vG", "GG", "$G", "TK")
-    };
+    let (router, assert, in_router, react, context) =
+        if [OCTOBER_5.version, OCTOBER_6.version].contains(&profile.version) {
+            ("nq", "OK", "tq", "lq", "Fq")
+        } else if [LATEST.version, OCTOBER_4.version].contains(&profile.version) {
+            ("JG", "bG", "qG", "tK", "DK")
+        } else {
+            ("KG", "vG", "GG", "$G", "TK")
+        };
     source
         .replace("vK", router)
         .replace("WG", assert)

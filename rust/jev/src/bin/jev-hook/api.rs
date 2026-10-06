@@ -32,5 +32,5 @@ pub(super) fn evaluate(
     if body.len() > 1_000_000 {
         return Err("Jev response too large".into());
     }
-    serde_json::from_slice(&body).map_err(|_| "invalid Jev response".into())
+    strict_json::parse(&body).map_err(|_| "invalid Jev response".into())
 }

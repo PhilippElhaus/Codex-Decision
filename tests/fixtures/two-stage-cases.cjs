@@ -16,6 +16,12 @@ add("cargo-success", "progress_output", "Did compilation finish successfully?",
   [...routine(120, "Compiling synthetic_module"), "Finished release profile in 1.23s"], [121], { command: "cargo build" });
 add("pytest-traceback", "repetitive_log", "Find the cause of the test failure.",
   [...routine(100, "test_case ... ok"), "Traceback (most recent call last):", "  File synthetic_test.py, line 73", "    assert actual == expected", "AssertionError: actual 7, expected 9", "FAILED synthetic_test.py::test_example"], [101, 102, 103, 104, 105], { command: "pytest" });
+const deepTrace = [...routine(40), "thread 'worker' panicked at synthetic.rs:73:",
+  "assertion failed: expected 9, actual 7", "stack backtrace:",
+  ...Array.from({length:100}, (_, i) => `  ${i}: synthetic::frame_${i} at synthetic.rs:${i + 1}`),
+  ...routine(40), "test result: FAILED. 1 failure"];
+add("deep-rust-backtrace", "repetitive_log", "Find the cause and call chain of this test failure.",
+  deepTrace, [...Array.from({length:103}, (_, i) => i + 41), deepTrace.length], {command:"cargo test"});
 add("npm-build", "progress_output", "Check whether this build succeeded.",
   [...routine(80, "bundling module"), "Build successful: 80 modules"], [81], { command: "npm run build" });
 add("download-progress", "progress_output", "Check the download's final status and checksum.",
@@ -63,6 +69,16 @@ add("session-shaped-test", "repetitive_log", "Find the test assertion and expect
   [...routine(90, "test synthetic::worker ... ok"), "assertion failed: expected 6000, actual 5998", "test result: FAILED"], [91, 92], { command: "cargo test" });
 add("small-output", "exact_content", "Read the result.", ["small synthetic result"], [1], { expect_full: true, expected_calls: 0 });
 add("sensitive-sentinel", "mixed_or_unknown", "Read the log.", [...routine(50), "password=synthetic-sentinel-only"], [51], { expect_full: true, expected_calls: 0 });
+for (const [id, text] of [
+  ["password-colon", "password: synthetic-sentinel-only"],
+  ["password-spaced-equals", "PASSWORD   = synthetic-sentinel-only"],
+  ["password-json", '{"password":"synthetic-sentinel-only"}'],
+  ["api-key-json", '{"api_key" : "synthetic-sentinel-only"}'],
+  ["token-json", '{"token":"synthetic-sentinel-only"}'],
+  ["password-xml", "<password>synthetic-sentinel-only</password>"],
+  ["authorization-spaces", "Authorization : Basic synthetic-sentinel-only"],
+]) add(id, "mixed_or_unknown", "Read the log.", [...routine(50), text], [51],
+  { expect_full: true, expected_calls: 0 });
 add("physical-line-overflow", "repetitive_log", "Read the log.", routine(10001), [10001], { expect_full: true, expected_calls: 0 });
 add("metadata-result", "repetitive_log", "Find the failure in the command output.",
   [...routine(80), "ERROR: synthetic failure", "Done"], [81,82], { metadata: true });

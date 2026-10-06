@@ -241,9 +241,13 @@ def main():
             if panel:
                 panel.screenshot(path=str(args.out / 'panel.png'))
             print(json.dumps(summary), flush=True)
-        except Exception:
+        except Exception as error:
+            print(f'Primary browser quality failure: {error}', flush=True)
             if 'page' in locals() and not page.is_closed():
-                page.screenshot(path=str(args.out / 'failure.png'))
+                try:
+                    page.screenshot(path=str(args.out / 'failure.png'))
+                except Exception as capture_error:
+                    print(f'Failure capture unavailable: {capture_error}', flush=True)
             raise
         finally:
             browser.close()

@@ -17,6 +17,9 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 use uuid::Uuid;
 
+#[path = "jev-hook/strict_json.rs"]
+mod strict_json;
+
 #[path = "jev-hook/runtime.rs"]
 mod runtime;
 use runtime::*;

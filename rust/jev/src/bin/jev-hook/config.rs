@@ -50,7 +50,7 @@ pub(super) fn apply_shared_settings(data_dir: &Path, config: &mut Config) -> Res
         return Err("unsafe shared settings".into());
     }
     let bytes = read_bounded(&path, 8192).map_err(|_| "settings read failed")?;
-    let raw: Value = serde_json::from_slice(&bytes).map_err(|_| "invalid shared settings")?;
+    let raw = strict_json::parse(&bytes).map_err(|_| "invalid shared settings")?;
     let settings: SharedSettings =
         serde_json::from_value(codex_jev::contract::validate("settings", &raw)?)
             .map_err(|_| "invalid shared settings")?;
@@ -82,7 +82,7 @@ pub(super) fn config(data_dir: &Path) -> Result<Option<Config>, String> {
     if bytes.len() > 64_000 {
         return Err("config too large".into());
     }
-    let raw: Value = serde_json::from_slice(&bytes).map_err(|_| "invalid config")?;
+    let raw = strict_json::parse(&bytes).map_err(|_| "invalid config")?;
     if !matches!(
         raw.get("schema_version").and_then(Value::as_u64),
         Some(2..=4)

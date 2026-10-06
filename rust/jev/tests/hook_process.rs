@@ -777,6 +777,7 @@ fn plain_local_read_and_text_search_results_share_one_policy() {
             "tool_input":if index == 5 { json!({"command":"rg -n context src | head -n 45"}) }
                 else if index == 6 { json!({"command":"rg -n context src\nrg -n other tests"}) }
                 else if *tool == "exec_command" { json!({"cmd":"rg -n context src"}) }
+                else if *tool == "Read" { json!({"file_path":"search.log"}) }
                 else { json!({"query":"Find useful source lines"}) },
             "tool_response":result});
         let mut child = Command::new(env!("CARGO_BIN_EXE_jev-hook"))

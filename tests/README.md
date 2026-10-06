@@ -28,6 +28,8 @@ Run the reviewed dummy corpus against the debug hook:
 node scripts/two_stage_quality.cjs --out .local/two-stage/offline
 node scripts/two_stage_quality.cjs --holdout --skip-faults --out .local/two-stage/offline-holdout
 node scripts/two_stage_quality.cjs --batching --skip-faults --out .local/two-stage/offline-batching
+node scripts/two_stage_quality.cjs --precision --skip-faults --out .local/two-stage/offline-precision
+node scripts/two_stage_quality.cjs --precision-holdout --skip-faults --out .local/two-stage/offline-precision-holdout
 node scripts/two_stage_quality.cjs --live --data-dir <installed-PLUGIN_DATA> --out .local/two-stage/live
 node scripts/two_stage_quality.cjs --live --holdout --data-dir <installed-PLUGIN_DATA> --out .local/two-stage/live-holdout
 ```
@@ -36,11 +38,19 @@ Live runs use the installed key only in the proxy process memory. The hook uses 
 
 Batching fixtures cover 251–10,000 lines, long target text, Unicode, escaped JSON, ANSI/CRLF, and unpackable context. All emitted requests must fit both conservative API token bounds. The runner checks exactly-once coverage and complete target text. Later-batch fault cases verify rollback after an earlier valid relevance batch. The current panel accepts complete version-6 snapshots up to 10,000 source lines and 8 MiB. It includes earlier batches and protected lines; its row counts must match all recorded totals.
 
-The base corpus includes all 27 protocol, timeout, and later-batch faults. Use
+The base corpus includes all 34 protocol, timeout, and later-batch faults. Use
 `--skip-faults` for additional corpus splits to avoid repeating that identical
 fault suite. CI runs every reviewed output case and every fault scenario once.
 Publication regressions also verify retries after failed original-pair or
 receipt writes and rollback when hooks overlap in the same session.
+
+Precision cases cover late exhaustive requirements, extensionless and mixed
+source reads, file-reading tools, heredocs, summary-plus-patch output, stale
+task prevention, duplicate disabled settings, requested passing tests, exact
+aggregates, and provenance. Holdout cases add semantic test names, multiple
+requested tests and values, Unicode facts, timing, retry counts, and sequence
+requirements. Credential sentinels require zero requests. Fault cases also
+cover duplicate JSON fields and response bodies that trickle past the deadline.
 
 ## Composer and panel quality checks
 
