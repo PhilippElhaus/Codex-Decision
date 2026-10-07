@@ -24,6 +24,9 @@ jobs:
       - run: node scripts/two_stage_quality.cjs --precision --skip-faults --hook target/debug/decision-hook --out .local/two-stage/offline-precision
       - run: node scripts/two_stage_quality.cjs --precision-holdout --skip-faults --hook target/debug/decision-hook --out .local/two-stage/offline-precision-holdout
       - run: cargo +stable clippy --locked --all-targets -- -D warnings
+      - run: node scripts/pipeline_interrupt.cjs --hook target/debug/decision-hook --out .local/quality/pipeline-ci-interrupt
+      - run: node scripts/pipeline_stress.cjs --hook target/debug/decision-hook --provider openai --concurrency 4 --rounds 6 --lines 256,1024 --faults http,json,oversize,probability,model,timeout --jitter-ms 10 --out .local/quality/pipeline-ci-openai
+      - run: node scripts/pipeline_stress.cjs --hook target/debug/decision-hook --provider typesafe --concurrency 4 --rounds 6 --lines 256,1024 --faults http,json,oversize,probability,model,timeout --jitter-ms 10 --out .local/quality/pipeline-ci-typesafe
       - run: npm test --prefix vscode-control
       - run: python3 -m unittest discover -s tests -p 'test_*.py'
       - run: ./scripts/build_submission.sh
@@ -37,3 +40,5 @@ jobs:
       - run: python3 -m playwright install --with-deps chromium
       - run: python3 vscode-control/scripts/browser_smoke.py --browser chromium
       - run: python3 vscode-control/scripts/browser_quality.py --rounds 50 --seed 7 --fallback-every 5 --out .local/quality/browser-ci
+      - run: node -e 'const fs=require("node:fs"); globalThis.window={}; require("./tests/fixtures/reviewed-test-failure-panel.js"); fs.writeFileSync(".local/quality/resident-panel.json", JSON.stringify(window.DECISION_REVIEWED_TEST_FAILURE));'
+      - run: python3 vscode-control/scripts/browser_quality.py --rounds 4 --seed 7 --resident-panels --reload-every 2 --settle-every 1 --fallback-every 2 --panel .local/quality/resident-panel.json --panel tests/fixtures/resident-panel.json --out .local/quality/resident-panel-ci

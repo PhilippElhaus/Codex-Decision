@@ -1,5 +1,7 @@
 use super::*;
 
+mod openai;
+
 // Local caps based on Jev 1.13: https://docs.typesafe.ai/models
 // OpenAI uses the same conservative caps, including its wire-format overhead.
 pub const DECISION_STATE_QUESTION_TOKENS: usize = 32_000;
@@ -29,36 +31,20 @@ impl std::io::Write for EncodedSize {
 }
 
 pub fn request_budget(request: &Value) -> Result<RequestBudget, String> {
-    let wire;
-    let request = if request["model"] == "gpt-6-luna" {
-        wire = crate::provider::wire_request(request)?;
-        &wire
-    } else {
-        request
-    };
+    if request["model"] == "gpt-6-luna" {
+        return openai::request_budget(request);
+    }
     let state = request
         .get("state")
         .or_else(|| request.get("input"))
         .ok_or("missing request state")?;
-    let questions: Vec<&Value> = if let Some(questions) = request["questions"].as_object() {
-        questions.values().collect()
+    let longest = if let Some(questions) = request["questions"].as_object() {
+        longest_question(questions.values())?
     } else if let Some(questions) = request["questions"].as_array() {
-        questions.iter().collect()
+        longest_question(questions.iter())?
     } else {
         return Err("missing questions".into());
     };
-    if questions.is_empty() {
-        return Err("empty questions".into());
-    }
-    let encoded_size = |value: &Value| {
-        let mut size = EncodedSize::default();
-        serde_json::to_writer(&mut size, value)
-            .map(|()| size.0)
-            .map_err(|_| "request encoding".to_owned())
-    };
-    let longest = questions.iter().try_fold(0, |longest, value| {
-        encoded_size(value).map(|n| longest.max(n))
-    })?;
     // No official local tokenizer is published. Count every serialized UTF-8
     // byte as a token, including JSON/question overhead, and reserve headroom
     // for the service's framing. Never assume four characters per token.
@@ -68,6 +54,47 @@ pub fn request_budget(request: &Value) -> Result<RequestBudget, String> {
             .saturating_add(TOKEN_HEADROOM),
         whole_request_bound: encoded_size(request)?.saturating_add(TOKEN_HEADROOM),
     })
+}
+
+pub(super) fn encoded_size<T: serde::Serialize + ?Sized>(value: &T) -> Result<usize, String> {
+    let mut size = EncodedSize::default();
+    serde_json::to_writer(&mut size, value)
+        .map(|()| size.0)
+        .map_err(|_| "request encoding".to_owned())
+}
+
+pub(super) fn state_size<T: serde::Serialize + ?Sized>(
+    model: &str,
+    state: &T,
+) -> Result<usize, String> {
+    if model == "gpt-6-luna" {
+        openai::quoted_size(state)
+    } else {
+        encoded_size(state)
+    }
+}
+
+pub(super) fn question_sizes(
+    model: &str,
+    name: &str,
+    question: &Value,
+) -> Result<(usize, usize), String> {
+    if model == "gpt-6-luna" {
+        let size = openai::question_size(name, question)?;
+        Ok((size, size))
+    } else {
+        let size = encoded_size(question)?;
+        Ok((size, encoded_size(name)? + 1 + size))
+    }
+}
+
+fn longest_question<'a>(questions: impl Iterator<Item = &'a Value>) -> Result<usize, String> {
+    let mut longest = None;
+    for question in questions {
+        let length = encoded_size(question)?;
+        longest = Some(longest.map_or(length, |previous: usize| previous.max(length)));
+    }
+    longest.ok_or_else(|| "empty questions".into())
 }
 
 pub fn validate_request_budget(request: &Value) -> Result<RequestBudget, String> {

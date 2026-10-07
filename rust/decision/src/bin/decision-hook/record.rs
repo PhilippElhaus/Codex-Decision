@@ -1,6 +1,10 @@
 //! Atomic publication of receipts, batches, totals, and completion events.
 use super::*;
 
+#[path = "record/staging.rs"]
+mod staging;
+use staging::{cleanup_pending_batches, PreparedBatches};
+
 #[allow(clippy::too_many_arguments)] // Keep event and decision evidence explicit at the write boundary.
 pub(super) fn record(
     data_dir: &Path,
@@ -24,7 +28,7 @@ pub(super) fn record(
     ensure_dir(&logs)?;
     let prepared = PreparedBatches::new(&logs, receipt_id, gate_record, batches)?;
     let last_batch = batches.last().ok_or("missing batch")?;
-    let mut snapshot = line_snapshot(
+    let snapshot = prepare_line_snapshot(
         receipt_id,
         snapshot_id,
         route,
@@ -35,22 +39,7 @@ pub(super) fn record(
         batches.len(),
         batches.len(),
         usize::from(gate_record.is_some()),
-    );
-    let _lock = lock_logs(&logs)?;
-    cleanup_pending_batches(&logs);
-    let now = Utc::now();
-    let session = event
-        .get("session_id")
-        .and_then(Value::as_str)
-        .unwrap_or("unknown");
-    let session_hash = format!("{:x}", Sha256::digest(session.as_bytes()));
-    let folder = logs.join(format!(
-        "{}-{}",
-        now.format("%Y-%m-%d"),
-        &session_hash[..10]
-    ));
-    ensure_dir(&folder)?;
-    let id = receipt_id;
+    )?;
     let original_hash = format!("{:x}", Sha256::digest(source.as_bytes()));
     let seen = lines.len();
     let judged = decisions
@@ -84,10 +73,20 @@ pub(super) fn record(
         .iter()
         .filter(|row| row.reason == "task_relevant")
         .count();
-    let summary = json!({"version":3,"id":id,"at":now.to_rfc3339(),"filter":route,"status":status,
+    let original_chars = source.chars().count();
+    let visible_chars = visible.chars().count();
+    let elapsed_ms =
+        batches.iter().map(|batch| batch.elapsed_ms).sum::<u64>() + gate_elapsed_ms.unwrap_or(0);
+    let session = event
+        .get("session_id")
+        .and_then(Value::as_str)
+        .unwrap_or("unknown");
+    let session_hash = format!("{:x}", Sha256::digest(session.as_bytes()));
+    let id = receipt_id;
+    let mut summary = json!({"version":3,"id":id,"at":"","filter":route,"status":status,
         "reason":reason,
-        "tool":event.get("tool_name"),"capsule_chars":visible.chars().count(),
-        "elapsed_ms":batches.iter().map(|batch| batch.elapsed_ms).sum::<u64>() + gate_elapsed_ms.unwrap_or(0),
+        "tool":event.get("tool_name"),"capsule_chars":visible_chars,
+        "elapsed_ms":elapsed_ms,
         "source_sha256":original_hash,"lines_seen":seen,"lines_judged":judged,"lines_kept":seen-omitted,
         "lines_omitted":omitted,"lines_protected":protected,"lines_unjudged":unjudged,
         "lines_relevance_judged":relevance_judged,"lines_below_omit_cutoff":below_omit_cutoff,
@@ -100,36 +99,33 @@ pub(super) fn record(
             "output_tokens":gate_record.into_iter().chain(batches.iter()).filter_map(|record|record.response.pointer("/usage/output_tokens").and_then(Value::as_u64)).sum::<u64>()},
         "requests":batches.len()+usize::from(gate_elapsed_ms.is_some()),
         "choice_gate_ran":gate_elapsed_ms.is_some(),
-        "original_chars":source.chars().count(),"visible_chars":visible.chars().count()});
-    let receipt = json!({"version":3,"manifest":summary,"tool":event.get("tool_name"),
-        "tool_input":event.get("tool_input"),"initial_output":source,
-        "visible_output":if status == "replace" { Some(visible) } else { None },
-        "decisions":decisions});
-    let receipt_bytes = serde_json::to_vec(&receipt).map_err(|_| "receipt encoding")?;
-    if receipt_bytes.len() > MAX_RECEIPT_BYTES {
-        return Err("receipt too large".into());
-    }
+        "original_chars":original_chars,"visible_chars":visible_chars});
+    let receipt = prepare_receipt(
+        &summary,
+        event,
+        source,
+        if status == "replace" {
+            Some(visible)
+        } else {
+            None
+        },
+        decisions,
+    )?;
+    let _lock = lock_logs(&logs)?;
+    cleanup_pending_batches(&logs);
+    let now = Utc::now();
+    let folder = logs.join(format!(
+        "{}-{}",
+        now.format("%Y-%m-%d"),
+        &session_hash[..10]
+    ));
+    ensure_dir(&folder)?;
+    let timestamp = now.to_rfc3339();
+    summary["at"] = json!(timestamp);
+    let receipt_bytes = receipt.finish(&timestamp)?;
     let artifacts = vec![(folder.join(format!("receipt-{id}.json")), receipt_bytes)];
-    let event_path = logs.join("events.jsonl");
-    if event_path.is_symlink() {
-        return Err("linked event log".into());
-    }
-    let mut event_options = OpenOptions::new();
-    event_options.append(true).create(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        event_options.mode(0o600).custom_flags(libc::O_NOFOLLOW);
-    }
-    let mut event_file = event_options.open(&event_path).map_err(|_| "event log")?;
+    let mut event_file = open_event_log(&logs)?;
     let event_size = event_file.metadata().map_err(|_| "event log stat")?.len();
-    if !event_file
-        .metadata()
-        .map_err(|_| "event log stat")?
-        .is_file()
-    {
-        return Err("unsafe event log".into());
-    }
     let stats_path = data_dir.join("stats.json");
     let mut stats = load_stats(&stats_path)?;
     if status == "candidate" {
@@ -153,18 +149,11 @@ pub(super) fn record(
             "timed",
             batches.len() as u64 + u64::from(gate_elapsed_ms.is_some()),
         ),
-        (
-            "elapsedMs",
-            batches.iter().map(|batch| batch.elapsed_ms).sum::<u64>()
-                + gate_elapsed_ms.unwrap_or(0),
-        ),
+        ("elapsedMs", elapsed_ms),
         (
             "savedChars",
             if status == "replace" {
-                source
-                    .chars()
-                    .count()
-                    .saturating_sub(visible.chars().count()) as u64
+                original_chars.saturating_sub(visible_chars) as u64
             } else {
                 0
             },
@@ -194,11 +183,7 @@ pub(super) fn record(
             .saturating_add(increment));
     }
     let snapshot_path = logs.join("latest-decision.json");
-    snapshot["at"] = json!(Utc::now().to_rfc3339());
-    let snapshot_bytes = serde_json::to_vec(&snapshot).map_err(|_| "snapshot encoding")?;
-    if snapshot_bytes.len() > PANEL_SNAPSHOT_MAX_BYTES {
-        return Err("panel snapshot too large".into());
-    }
+    let snapshot_bytes = snapshot.finish(&Utc::now().to_rfc3339())?;
     let stats_bytes = serde_json::to_vec(&stats).map_err(|_| "stats encoding")?;
     let previous_stats = private_backup(&stats_path, 8192)?;
     let previous_snapshot = private_backup(&snapshot_path, PANEL_SNAPSHOT_MAX_BYTES)?;
@@ -235,320 +220,4 @@ pub(super) fn record(
         prune(&logs, config.log_limit_mb * 1_000_000);
     }
     Ok(())
-}
-
-// Immutable API evidence can be encoded and synced without the session lock.
-// Publication links the same verified bytes while the existing transaction owns
-// the lock. Dropping the preparation removes only its own pending paths.
-struct PreparedBatches {
-    files: Vec<(usize, PathBuf)>,
-}
-
-impl PreparedBatches {
-    fn new(
-        logs: &Path,
-        receipt_id: &str,
-        gate: Option<&BatchRecord>,
-        batches: &[BatchRecord],
-    ) -> Result<Self, String> {
-        let mut prepared = Self { files: Vec::new() };
-        for batch in gate.into_iter().chain(batches.iter()) {
-            remaining()?;
-            let bytes =
-                serde_json::to_vec(&json!({"version":2,"receipt_id":receipt_id,"batch":batch}))
-                    .map_err(|_| "batch encoding")?;
-            if bytes.len() > 2 * 1024 * 1024 {
-                return Err("batch record too large".into());
-            }
-            let path = logs.join(format!(".jev-batch-{receipt_id}-{}.pending", batch.id));
-            write_private(&path, &bytes, false)?;
-            prepared.files.push((batch.id, path));
-        }
-        Ok(prepared)
-    }
-
-    fn publish(
-        &self,
-        folder: &Path,
-        receipt_id: &str,
-        created: &mut Vec<PathBuf>,
-    ) -> Result<(), String> {
-        for (batch_id, source) in &self.files {
-            remaining()?;
-            let target = folder.join(format!("batch-{receipt_id}-{batch_id}.json"));
-            if source.is_symlink() || target.is_symlink() {
-                return Err("linked file".into());
-            }
-            let mut options = OpenOptions::new();
-            options.read(true);
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::OpenOptionsExt;
-                options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
-            }
-            let mut file = options.open(source).map_err(|_| "batch stage open")?;
-            if !file.metadata().map_err(|_| "batch stage stat")?.is_file() {
-                return Err("unsafe staged batch".into());
-            }
-            match fs::hard_link(source, &target) {
-                Ok(()) => {
-                    created.push(target);
-                    file.set_modified(std::time::SystemTime::now())
-                        .map_err(|_| "batch timestamp")?;
-                }
-                Err(error) if error.kind() == std::io::ErrorKind::CrossesDevices => {
-                    // A mounted log folder can use another filesystem. Keep
-                    // its existing private, atomic write behavior.
-                    let mut bytes = Vec::new();
-                    Read::by_ref(&mut file)
-                        .take(2 * 1024 * 1024 + 1)
-                        .read_to_end(&mut bytes)
-                        .map_err(|_| "batch stage read")?;
-                    if bytes.len() > 2 * 1024 * 1024 {
-                        return Err("batch record too large".into());
-                    }
-                    write_private(&target, &bytes, false)?;
-                    created.push(target);
-                }
-                Err(_) => return Err("original already exists".into()),
-            }
-        }
-        Ok(())
-    }
-}
-
-impl Drop for PreparedBatches {
-    fn drop(&mut self) {
-        for (_, path) in &self.files {
-            let _ = fs::remove_file(path);
-        }
-    }
-}
-
-// A terminated invocation cannot run Drop. Recover only private, recognized
-// pending batches older than the hook's entire 60-second outer timeout.
-fn cleanup_pending_batches(logs: &Path) {
-    let Ok(entries) = fs::read_dir(logs) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let name = entry.file_name();
-        let Some(name) = name
-            .to_str()
-            .and_then(|name| name.strip_prefix(".jev-batch-"))
-            .and_then(|name| name.strip_suffix(".pending"))
-        else {
-            continue;
-        };
-        let Some((id, number)) = name.split_once('-') else {
-            continue;
-        };
-        if id.len() != 32
-            || !id
-                .bytes()
-                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-            || !number
-                .parse::<usize>()
-                .is_ok_and(|value| value <= MAX_SOURCE_LINES && value.to_string() == number)
-        {
-            continue;
-        }
-        let path = entry.path();
-        let Ok(metadata) = fs::symlink_metadata(&path) else {
-            continue;
-        };
-        if !metadata.is_file()
-            || metadata.len() > 2 * 1024 * 1024
-            || !metadata.modified().is_ok_and(|time| {
-                time.elapsed()
-                    .is_ok_and(|age| age >= Duration::from_secs(60))
-            })
-        {
-            continue;
-        }
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::{MetadataExt, PermissionsExt};
-            if metadata.uid() != unsafe { libc::geteuid() }
-                || metadata.permissions().mode() & 0o077 != 0
-            {
-                continue;
-            }
-        }
-        let _ = fs::remove_file(path);
-    }
-}
-
-#[cfg(test)]
-mod staging_tests {
-    use super::*;
-
-    fn batch(id: usize) -> BatchRecord {
-        BatchRecord {
-            id,
-            target_numbers: vec![1],
-            request: json!({"state":{"output_kind":"repetitive_log"}}),
-            response: json!({}),
-            elapsed_ms: 1,
-        }
-    }
-
-    #[test]
-    fn prepared_batches_keep_exact_bytes_and_remove_only_pending_paths() {
-        let root = tempfile::tempdir().unwrap();
-        let logs = root.path().join("logs");
-        ensure_dir(&logs).unwrap();
-        let folder = logs.join("published");
-        ensure_dir(&folder).unwrap();
-        let id = "a".repeat(32);
-        let batches = vec![batch(1), batch(2)];
-        let prepared = PreparedBatches::new(&logs, &id, None, &batches).unwrap();
-        let mut created = Vec::new();
-        prepared.publish(&folder, &id, &mut created).unwrap();
-        assert_eq!(created.len(), 2);
-        for (record, path) in batches.iter().zip(&created) {
-            assert_eq!(
-                fs::read(path).unwrap(),
-                serde_json::to_vec(&json!({"version":2,"receipt_id":id,"batch":record})).unwrap()
-            );
-        }
-        drop(prepared);
-        assert!(created.iter().all(|path| path.is_file()));
-        assert!(!fs::read_dir(&logs)
-            .unwrap()
-            .flatten()
-            .any(|entry| entry.file_name().to_string_lossy().ends_with(".pending")));
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn nonregular_pending_batch_is_rejected_without_waiting_for_a_writer() {
-        let root = tempfile::tempdir().unwrap();
-        let logs = root.path().join("logs");
-        ensure_dir(&logs).unwrap();
-        let folder = logs.join("published");
-        ensure_dir(&folder).unwrap();
-        let id = "f".repeat(32);
-        let prepared = PreparedBatches::new(&logs, &id, None, &[batch(1)]).unwrap();
-        let pending = &prepared.files[0].1;
-        fs::remove_file(pending).unwrap();
-        use std::os::unix::ffi::OsStrExt;
-        let name = std::ffi::CString::new(pending.as_os_str().as_bytes()).unwrap();
-        assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o600) }, 0);
-        let (sender, receiver) = std::sync::mpsc::channel();
-        std::thread::spawn(move || {
-            let mut created = Vec::new();
-            let result = prepared.publish(&folder, &id, &mut created);
-            sender.send((result.is_err(), created.is_empty())).unwrap();
-            drop(prepared);
-            drop(root);
-        });
-        assert_eq!(
-            receiver
-                .recv_timeout(Duration::from_secs(1))
-                .expect("batch publication blocked"),
-            (true, true)
-        );
-    }
-
-    #[test]
-    fn recovery_preserves_fresh_unknown_and_linked_content() {
-        let root = tempfile::tempdir().unwrap();
-        let expired = root
-            .path()
-            .join(format!(".jev-batch-{}-1.pending", "a".repeat(32)));
-        let fresh = root
-            .path()
-            .join(format!(".jev-batch-{}-2.pending", "b".repeat(32)));
-        let unknown = root.path().join(".jev-batch-user-owned-1.pending");
-        for path in [&expired, &fresh, &unknown] {
-            write_private(path, b"fixture", false).unwrap();
-        }
-        let old = std::time::SystemTime::now() - Duration::from_secs(61);
-        File::open(&expired).unwrap().set_modified(old).unwrap();
-        File::open(&unknown).unwrap().set_modified(old).unwrap();
-        #[cfg(unix)]
-        let linked = {
-            let path = root
-                .path()
-                .join(format!(".jev-batch-{}-3.pending", "c".repeat(32)));
-            std::os::unix::fs::symlink(&unknown, &path).unwrap();
-            path
-        };
-        cleanup_pending_batches(root.path());
-        assert!(!expired.exists());
-        assert!(fresh.is_file());
-        assert!(unknown.is_file());
-        #[cfg(unix)]
-        assert!(linked.is_symlink());
-    }
-
-    #[test]
-    fn failed_batch_publication_restores_receipt_transaction_and_pending_files() {
-        let root = tempfile::tempdir().unwrap();
-        let logs = root.path().join("logs");
-        ensure_dir(&logs).unwrap();
-        let config_path = root.path().join("config.json");
-        write_private(&config_path, br#"{"schema_version":4,"enabled":true,"mode":"replace","never_delete_logs":true,"relevance_policy":{"relevant_max":5}}"#, false).unwrap();
-        let config = config(root.path()).unwrap().unwrap();
-        let stats = b"{\"completed\":7}";
-        let snapshot = b"{\"id\":\"previous\"}";
-        let events = b"{\"status\":\"keep\"}\n";
-        write_private(&root.path().join("stats.json"), stats, false).unwrap();
-        write_private(&logs.join("latest-decision.json"), snapshot, false).unwrap();
-        write_private(&logs.join("events.jsonl"), events, false).unwrap();
-        let session = "staged-publication-regression";
-        let session_hash = format!("{:x}", Sha256::digest(session.as_bytes()));
-        let id = "d".repeat(32);
-        let mut folders = Vec::new();
-        for day in [-1, 0, 1] {
-            let date = Utc::now() + chrono::Duration::days(day);
-            let folder = logs.join(format!(
-                "{}-{}",
-                date.format("%Y-%m-%d"),
-                &session_hash[..10]
-            ));
-            ensure_dir(&folder).unwrap();
-            fs::create_dir(folder.join(format!("batch-{id}-2.json"))).unwrap();
-            folders.push(folder);
-        }
-        let source = "INFO synthetic poll\n".repeat(40) + "ERROR: synthetic failure\nDone\n";
-        let mut lines = source_lines(&source);
-        protect_neighbors(&mut lines);
-        let probabilities = lines.iter().map(|line| (line.number, 0.01)).collect();
-        let decisions = apply_relevance(&lines, &probabilities, 5);
-        let event = json!({"tool_name":"Bash","session_id":session});
-        let result = record(
-            root.path(),
-            &event,
-            "output",
-            "replace",
-            "relevance_policy",
-            &source,
-            "filtered",
-            &lines,
-            &decisions,
-            &[batch(1), batch(2)],
-            None,
-            &config,
-            &id,
-            &"e".repeat(32),
-        );
-        assert!(result.is_err());
-        assert_eq!(fs::read(root.path().join("stats.json")).unwrap(), stats);
-        assert_eq!(
-            fs::read(logs.join("latest-decision.json")).unwrap(),
-            snapshot
-        );
-        assert_eq!(fs::read(logs.join("events.jsonl")).unwrap(), events);
-        for folder in folders {
-            assert!(!folder.join(format!("receipt-{id}.json")).exists());
-            assert!(!folder.join(format!("batch-{id}-1.json")).exists());
-            assert!(folder.join(format!("batch-{id}-2.json")).is_dir());
-        }
-        assert!(!fs::read_dir(&logs)
-            .unwrap()
-            .flatten()
-            .any(|entry| entry.file_name().to_string_lossy().starts_with(".jev-")));
-    }
 }

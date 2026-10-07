@@ -49,10 +49,14 @@ Both providers use local bounds of 32,000 units for shared evidence plus the lon
 
 The packer includes complete targets and nearby context. It adapts batch sizes without a candidate-line or batch-count cap. Every eligible line belongs to exactly one batch. Inputs above the existing 10,000 physical-line bound remain intact. An unpackable target, failed request, malformed answer, or later-batch failure rolls back progress and leaves the full original visible.
 
+Window fitting measures borrowed source rows once and uses exact prefix costs for later probes. It builds only the selected requests. A separate final serialized-size check remains active. OpenAI size measurement counts the second JSON escaping layer without constructing a wire buffer. Execution serializes borrowed OpenAI question and choice views directly into the outgoing buffer. TypeSafe serializes its existing request. These changes preserve the emitted request bytes, question wording, complete targets, and context.
+
 ## Configuration and evaluation
 
 New configs use schema 5; shared settings use schema 4. They record `provider` and `model`. Legacy schemas migrate conservatively and retain TypeSafe. Provider and model must agree. Shared provider settings apply installation-wide; session enablement stays independent. There is no automatic provider fallback.
 
 The same synthetic quality runner accepts `--provider openai` or `--provider typesafe`. It exercises the real debug hook, panel parser, saved originals, and quality replay. Live mode uses the selected saved key only in proxy memory. It records HTTP and complete-output latency separately. It limits calls and usage tokens and sends only reviewed synthetic data. See [provider benchmarks](../development/provider_benchmarks_2026-10-07.md) for measured results and limitations.
+
+Use the offline packing fingerprints and frozen response oracle to check request and normalization parity after an adapter change. The [pipeline optimization report](../development/pipeline_optimization_2026-10-07.md) separates local CPU measurements, concurrent fault checks, and live query trials.
 
 Official contracts: [OpenAI Decisions](https://developers.openai.com/api/reference/typescript/resources/decisions/methods/create), [TypeSafe HTTP API](https://docs.typesafe.ai/api).

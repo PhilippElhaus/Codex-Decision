@@ -70,13 +70,24 @@ def composer_round(page, rng, benchmark=False):
     return {'width': width, 'gap': gap, 'visible': geometry['visible']}
 
 
-def panel_round(page, snapshot, round_number, width):
+def load_panel_fixtures(page, snapshots):
+    page.evaluate('snapshots => { window.__decisionQualitySnapshots = snapshots; }', snapshots)
+
+
+def panel_round(page, snapshot, round_number, width, fixture_index=None):
     page.set_viewport_size({'width': width, 'height': 600})
-    payload = {**snapshot, 'id': f'{round_number:032x}'}
+    payload = {**snapshot, 'id': f'{round_number:032x}'} if fixture_index is None else None
     before = time.perf_counter()
-    page.evaluate("""decision => window.dispatchEvent(new MessageEvent('message', {
-      data: {type: 'decision', decision}
-    }))""", payload)
+    if fixture_index is None:
+        page.evaluate("""decision => window.dispatchEvent(new MessageEvent('message', {
+          data: {type: 'decision', decision}
+        }))""", payload)
+    else:
+        page.evaluate("""({index, id}) => {
+          const decision = structuredClone(window.__decisionQualitySnapshots[index]);
+          decision.id = id;
+          window.dispatchEvent(new MessageEvent('message', {data: {type: 'decision', decision}}));
+        }""", {'index': fixture_index, 'id': f'{round_number:032x}'})
     report = page.evaluate("""() => ({rows: document.querySelectorAll('.batch-row').length,
       title: document.querySelector('.batch-title').textContent,
       overflow: document.documentElement.scrollWidth > innerWidth + 1})""")
@@ -132,6 +143,8 @@ def main():
     parser.add_argument('--minutes', type=float, default=0)
     parser.add_argument('--seed', type=int, default=1)
     parser.add_argument('--panel', type=Path, action='append', help='Normalized snapshot; repeat to rotate snapshots')
+    parser.add_argument('--resident-panels', action='store_true',
+                        help='Load fixtures once and clone fresh messages inside the page to limit debugger overhead')
     parser.add_argument('--control', type=Path, help='Optional baseline composer script')
     parser.add_argument('--benchmark-only', action='store_true', help='Use gaps supported by the baseline')
     parser.add_argument('--settle-every', type=int, default=100, help='Verify completed panel animations every N rounds')
@@ -189,6 +202,8 @@ def main():
                 panel_metrics.send('Performance.enable')
                 panel.goto((ROOT / 'tests/browser/decision_panel_harness.html').as_uri() + '?dense&capture')
                 panel.wait_for_function('document.title === "DECISION_LINE_PANEL_READY"')
+                if args.resident_panels:
+                    load_panel_fixtures(panel, snapshots)
             iteration = 0
             while iteration < args.rounds or time.monotonic() < deadline:
                 iteration += 1
@@ -197,12 +212,16 @@ def main():
                     reports[-1] = composer_fallback(page, rng)
                     fallback_checks += 1
                 if panel:
-                    snapshot = snapshots[(iteration - 1) % len(snapshots)]
+                    fixture_index = (iteration - 1) % len(snapshots)
+                    snapshot = snapshots[fixture_index]
                     if args.reload_every and iteration % args.reload_every == 0:
                         panel.reload()
                         panel.wait_for_function('document.title === "DECISION_LINE_PANEL_READY"')
                         panel_reloads += 1
-                    panel_times.append(panel_round(panel, snapshot, iteration, reports[-1]['width']))
+                        if args.resident_panels:
+                            load_panel_fixtures(panel, snapshots)
+                    panel_times.append(panel_round(panel, snapshot, iteration, reports[-1]['width'],
+                                                   fixture_index if args.resident_panels else None))
                     if iteration % args.settle_every == 0:
                         panel_settled(panel, snapshot)
                         settled_checks += 1
@@ -216,6 +235,7 @@ def main():
                         panel_measured = {item['name']: item['value'] for item in
                                          panel_metrics.send('Performance.getMetrics')['metrics']}
                         checkpoint['panel_heap_bytes'] = round(panel_measured['JSHeapUsedSize'])
+                        checkpoint['panel_nodes'] = round(panel_measured['Nodes'])
                     checkpoints.append(checkpoint)
                     (args.out / 'checkpoint.json').write_text(json.dumps(checkpoint) + '\n')
                     print(json.dumps(checkpoint), flush=True)
@@ -223,6 +243,7 @@ def main():
             times = sorted(layout['ms'])
             summary = {'seed': args.seed, 'rounds': iteration, 'elapsed_seconds': round(time.monotonic()-started, 3),
                        'device_scale': args.device_scale, 'reduced_motion': args.reduced_motion,
+                       'panel_transport': 'resident' if args.resident_panels else 'debugger',
                        'panel_row_counts': sorted({len(value['rows']) for value in snapshots}),
                        'layout_calls': layout['calls'], 'visited_text_nodes': layout['textNodes'],
                        'layout_p50_ms': times[len(times)//2], 'layout_p95_ms': times[min(len(times)-1, int(len(times)*.95))],
@@ -233,7 +254,9 @@ def main():
                        'page_errors': page_errors,
                        'max_checkpoint_heap_bytes': max((item['heap_bytes'] for item in checkpoints), default=0),
                        'max_panel_checkpoint_heap_bytes': max((item.get('panel_heap_bytes', 0)
-                                                               for item in checkpoints), default=0)}
+                                                               for item in checkpoints), default=0),
+                       'max_panel_checkpoint_nodes': max((item.get('panel_nodes', 0)
+                                                          for item in checkpoints), default=0)}
             (args.out / 'report.json').write_text(json.dumps({'summary': summary, 'cases': reports,
                                                             'checkpoints': checkpoints}, indent=2) + '\n')
             page.set_viewport_size({'width': 1200, 'height': 600})

@@ -1,5 +1,6 @@
 //! Provider wire formats. The evidence pipeline uses one named-question contract.
-use serde_json::{json, Map, Value};
+use serde_json::{json, Value};
+use std::fmt::Write;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Provider {
@@ -55,90 +56,35 @@ pub fn wire_request(request: &Value) -> Result<Value, String> {
             .as_str()
             .ok_or("invalid instructions")?
             .to_owned();
-        let answer = match question["type"].as_str() {
+        let mut answer = match question["type"].as_str() {
             Some("noul") => {
                 if let Some(criteria) = question.get("criteria") {
                     instructions.push_str("\nPredicate criteria: ");
-                    instructions.push_str(&criteria.to_string());
+                    write!(&mut instructions, "{criteria}").map_err(|_| "invalid instructions")?;
                 }
-                json!({"name":name,"type":"predicate","instructions":instructions})
+                json!({"name":name,"type":"predicate"})
             }
             Some("choice") => {
                 let criteria = question["criteria"].as_object().ok_or("missing choices")?;
                 let choices: Vec<_> = criteria.iter().map(|(value, description)| {
                     json!({"value":value,"description":description.as_str().unwrap_or("")})
                 }).collect();
-                json!({"name":name,"type":"choice","instructions":instructions,"choices":choices})
+                let mut answer = json!({"name":name,"type":"choice"});
+                answer["choices"] = Value::Array(choices);
+                answer
             }
             _ => return Err("unsupported decision question".into()),
         };
+        answer["instructions"] = Value::String(instructions);
         ordered.push(answer);
     }
-    Ok(json!({"model":request["model"],"input":request["state"].to_string(),"questions":ordered}))
+    let mut wire = json!({"model":request["model"],"input":null,"questions":[]});
+    wire["input"] = Value::String(request["state"].to_string());
+    wire["questions"] = Value::Array(ordered);
+    Ok(wire)
 }
 
-pub fn normalize_response(request: &Value, response: Value) -> Result<Value, String> {
-    let model = request["model"].as_str().ok_or("missing model")?;
-    let provider = Provider::for_model(model)?;
-    if Provider::for_model(response["model"].as_str().ok_or("missing response model")?)? != provider
-    {
-        return Err("response provider mismatch".into());
-    }
-    if provider == Provider::TypeSafe {
-        return Ok(response);
-    }
-    let envelope = response.as_object().ok_or("invalid decision envelope")?;
-    if envelope
-        .keys()
-        .any(|key| !["model", "answers", "usage"].contains(&key.as_str()))
-    {
-        return Err("invalid decision envelope".into());
-    }
-    let questions = request["questions"]
-        .as_object()
-        .ok_or("missing questions")?;
-    let answers = response["answers"]
-        .as_array()
-        .ok_or("missing ordered answers")?;
-    if answers.len() != questions.len() {
-        return Err("decision answer count mismatch".into());
-    }
-    let mut named = Map::new();
-    for ((name, question), answer) in questions.iter().zip(answers) {
-        if answer["name"].as_str() != Some(name) {
-            return Err("decision answer order or name mismatch".into());
-        }
-        let object = answer.as_object().ok_or("invalid answer")?;
-        let normalized = match (question["type"].as_str(), answer["type"].as_str()) {
-            (Some("noul"), Some("predicate")) if object.len() == 3 => {
-                json!({"type":"noul","noul":answer["probability"]})
-            }
-            (Some("choice"), Some("choice")) if object.len() == 5 => {
-                let mut probabilities = Map::new();
-                for row in answer["probabilities"]
-                    .as_array()
-                    .ok_or("missing choice probabilities")?
-                {
-                    if row.as_object().is_none_or(|o| o.len() != 2) {
-                        return Err("invalid choice probability".into());
-                    }
-                    let value = row["value"].as_str().ok_or("invalid choice value")?;
-                    if probabilities
-                        .insert(value.into(), row["probability"].clone())
-                        .is_some()
-                    {
-                        return Err("duplicate choice probability".into());
-                    }
-                }
-                json!({"type":"choice","choice":answer["choice"],"confidence":answer["confidence"],"probabilities":probabilities})
-            }
-            _ => return Err("refused or invalid decision answer".into()),
-        };
-        named.insert(name.clone(), normalized);
-    }
-    let mut normalized = json!({"model":response["model"],"answers":named});
-    if let Some(usage) = response.get("usage") {
-        normalized["usage"] = usage.clone();
-    }
-    Ok(normalized)
-}
+mod response;
+pub use response::normalize_response;
+mod encoding;
+pub use encoding::encode_request;

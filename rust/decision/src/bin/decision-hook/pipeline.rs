@@ -92,11 +92,7 @@ pub(super) fn process_event(
     if sensitive(&source) || sensitive(command(event)) || sensitive_input(event) {
         return skip(scoped, "sensitive");
     }
-    if serde_json::to_vec(&event["tool_input"])
-        .map_err(|_| "tool input encoding")?
-        .len()
-        > 256 * 1024
-    {
+    if !json_limit::within(&event["tool_input"], 256 * 1024)? {
         return skip(scoped, "tool_input_budget");
     }
     let user_task = match task_context(event) {

@@ -1,4 +1,5 @@
 //! Sensitive input detection and safe plain-text responses.
+use super::projection::command_projection;
 use super::*;
 use std::borrow::Cow;
 
@@ -169,20 +170,6 @@ fn command_preview(text: &str) -> Cow<'_, str> {
         return Cow::Borrowed(text);
     }
     Cow::Owned(command_projection(&object))
-}
-
-fn command_projection(object: &serde_json::Map<String, Value>) -> String {
-    // Metadata is small; borrow the potentially large stdout directly.
-    let metadata = object
-        .iter()
-        .filter(|(key, _)| key.as_str() != "output")
-        .map(|(key, value)| (key.clone(), value.clone()))
-        .collect();
-    format!(
-        "Command result metadata: {}\n{}",
-        Value::Object(metadata),
-        object["output"].as_str().unwrap()
-    )
 }
 
 pub(super) fn known_command_result(body: &Value) -> bool {

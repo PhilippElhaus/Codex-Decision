@@ -1,0 +1,20 @@
+{
+  "version": 6,
+  "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "receipt_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "at": "2026-10-07T12:00:00Z",
+  "filter": "output",
+  "status": "replace",
+  "batch": { "number": 1, "count": 1, "target_count": 2 },
+  "batch_elapsed_ms": 20,
+  "rows": [
+    { "line": 1, "excerpt": "INFO synthetic heartbeat", "action": "omit", "reason": "irrelevant",
+      "can_omit": null, "exact_needed": null, "task_relevant": 0.03, "retention_index": 0.03, "protected_reason": null },
+    { "line": 2, "excerpt": "Synthetic required value · λ", "action": "keep", "reason": "task_relevant",
+      "can_omit": null, "exact_needed": null, "task_relevant": 0.94, "retention_index": 0.94, "protected_reason": null },
+    { "line": 3, "excerpt": "ERROR: synthetic diagnostic", "action": "keep", "reason": "protected",
+      "can_omit": null, "exact_needed": null, "task_relevant": null, "retention_index": null, "protected_reason": "diagnostic_context" }
+  ],
+  "totals": { "seen": 3, "judged": 2, "kept": 2, "omitted": 1, "protected": 1, "unjudged": 0,
+    "requests": 1, "classification_requests": 0 }
+}

@@ -1,7 +1,11 @@
 //! Live batch panels and rollback on incomplete judgments.
 use super::*;
+#[path = "snapshot/encoding.rs"]
+mod encoding;
+pub(super) use encoding::prepare_line_snapshot;
 
 #[allow(clippy::too_many_arguments)] // A complete immutable batch record is assembled here.
+#[cfg(test)]
 pub(super) fn line_snapshot(
     receipt_id: &str,
     snapshot_id: &str,
@@ -31,14 +35,16 @@ pub(super) fn line_snapshot(
         .iter()
         .zip(decisions)
         .map(|(line, decision)| {
-            let excerpt: String = line
+            let mut units = 0usize;
+            let end = line
                 .model_text
-                .chars()
-                .scan(0usize, |units, character| {
-                    *units += character.len_utf16();
-                    (*units <= 120).then_some(character)
+                .char_indices()
+                .find_map(|(index, character)| {
+                    units += character.len_utf16();
+                    (units > 120).then_some(index)
                 })
-                .collect();
+                .unwrap_or(line.model_text.len());
+            let excerpt = &line.model_text[..end];
             json!({"line":line.number,"excerpt":excerpt,
                 "action":if decision.action == Action::Omit { "omit" } else { "keep" },
                 "reason":decision.reason,"can_omit":decision.p_can_omit,
@@ -53,13 +59,15 @@ pub(super) fn line_snapshot(
             line.eligible && line.protected_reason.is_none() && decision.batch_id.is_none()
         })
         .count();
-    json!({"version":6,"id":snapshot_id,"receipt_id":receipt_id,"at":Utc::now().to_rfc3339(),
+    let mut snapshot = json!({"version":6,"id":snapshot_id,"receipt_id":receipt_id,"at":Utc::now().to_rfc3339(),
         "filter":route,"status":status,"batch":{"number":batch_number,"count":batch_count,
-            "target_count":batch.target_numbers.len()},"rows":rows,
+            "target_count":batch.target_numbers.len()},"rows":[],
         "totals":{"seen":seen,"judged":judged,"kept":seen-omitted,"omitted":omitted,
             "protected":protected,"unjudged":unjudged,"requests":batch_number + classification_requests,
             "classification_requests":classification_requests},
-        "batch_elapsed_ms":batch.elapsed_ms})
+        "batch_elapsed_ms":batch.elapsed_ms});
+    snapshot["rows"] = Value::Array(rows);
+    snapshot
 }
 
 pub(super) struct ProgressSnapshot {
@@ -136,6 +144,21 @@ impl ProgressSnapshot {
         batch_number: usize,
         batch_count: usize,
     ) -> Result<(), String> {
+        // Row assembly is immutable work. Keep it outside the session lock;
+        // ownership, rollback state and publication time remain locked below.
+        let id = Uuid::new_v4().simple().to_string();
+        let snapshot = prepare_line_snapshot(
+            &self.receipt_id,
+            &id,
+            route,
+            "processing",
+            lines,
+            decisions,
+            batch,
+            batch_number,
+            batch_count,
+            self.classification_requests,
+        )?;
         let _lock = lock_logs(&self.logs)?;
         let path = self.logs.join("latest-decision.json");
         let current = private_backup(&path, PANEL_SNAPSHOT_MAX_BYTES)?;
@@ -154,23 +177,7 @@ impl ProgressSnapshot {
             // the lock, including completions that arrived between batches.
             self.previous = current;
         }
-        let id = Uuid::new_v4().simple().to_string();
-        let snapshot = line_snapshot(
-            &self.receipt_id,
-            &id,
-            route,
-            "processing",
-            lines,
-            decisions,
-            batch,
-            batch_number,
-            batch_count,
-            self.classification_requests,
-        );
-        let bytes = serde_json::to_vec(&snapshot).map_err(|_| "snapshot encoding")?;
-        if bytes.len() > PANEL_SNAPSHOT_MAX_BYTES {
-            return Err("panel snapshot too large".into());
-        }
+        let bytes = snapshot.finish(&Utc::now().to_rfc3339())?;
         remaining()?;
         write_private(&path, &bytes, true)?;
         self.last_snapshot_id = id;
@@ -204,6 +211,54 @@ impl Drop for ProgressSnapshot {
             let _ = write_private(&path, previous, true);
         } else {
             let _ = fs::remove_file(path);
+        }
+    }
+}
+
+#[cfg(test)]
+mod excerpt_tests {
+    use super::*;
+    #[test]
+    fn excerpts_keep_the_same_unicode_scalar_and_utf16_boundaries() {
+        for text in [
+            "a".repeat(300),
+            "🌍".repeat(100),
+            "λ🌍x".repeat(100),
+            "状态\r\n".repeat(50),
+        ] {
+            let lines = source_lines(&text);
+            let probabilities = lines.iter().map(|line| (line.number, (0.01, 1))).collect();
+            let decisions = apply_relevance_batches(&lines, &probabilities, 5);
+            let batch = BatchRecord {
+                id: 1,
+                target_numbers: vec![1],
+                request: json!({}),
+                response: json!({}),
+                elapsed_ms: 1,
+            };
+            let snapshot = line_snapshot(
+                "receipt",
+                "snapshot",
+                "output",
+                "processing",
+                &lines,
+                &decisions,
+                &batch,
+                1,
+                1,
+                0,
+            );
+            for (line, row) in lines.iter().zip(snapshot["rows"].as_array().unwrap()) {
+                let expected: String = line
+                    .model_text
+                    .chars()
+                    .scan(0usize, |units, ch| {
+                        *units += ch.len_utf16();
+                        (*units <= 120).then_some(ch)
+                    })
+                    .collect();
+                assert_eq!(row["excerpt"], expected);
+            }
         }
     }
 }

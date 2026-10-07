@@ -39,6 +39,34 @@
       completionVisible:document.getElementById("app").textContent.includes("Done"),
       pending,
     };
+    send({...complete, id:"d".repeat(32), rows:rows.slice(0,3),
+      totals:{...complete.totals,seen:3,judged:3,kept:0,omitted:3,protected:0}});
+    report.smallerResultHasNoStaleRows = document.querySelectorAll(".batch-row").length === 3 &&
+      [...document.querySelectorAll(".batch-line-number")].every((node,index) => Number(node.textContent) === index+1);
+    const changed = rows.map((row,index) => ({...row, line:index+1001, excerpt:`Updated synthetic line ${index} · λ`,
+      action:index % 2 ? "keep" : "omit", reason:index % 2 ? "task_relevant" : "irrelevant",
+      protected_reason:null, task_relevant:index % 2 ? .8 : .03, retention_index:index % 2 ? .8 : .03}));
+    send({...complete, id:"e".repeat(32), rows:changed,
+      totals:{...complete.totals,judged:72,kept:36,omitted:36,protected:0}});
+    report.largerResultUpdatesEveryRow = document.querySelectorAll(".batch-row").length === 72 &&
+      [...document.querySelectorAll(".batch-row")].every((node,index) =>
+        node.querySelector(".batch-line-number").textContent === String(index+1001) &&
+        node.querySelector(".batch-excerpt").textContent === changed[index].excerpt &&
+        node.querySelector(".batch-value").textContent === (index % 2 ? "80%" : "3%") &&
+        !node.classList.contains("unscored") && !node.title.includes("Protected:"));
+    report.newResultRestartsAnimation = [...document.querySelectorAll(".batch-row")].every(node =>
+      node.querySelector(".batch-bar-fill").getBoundingClientRect().width === 0 &&
+      Number(getComputedStyle(node.querySelector(".batch-value")).opacity) === 0);
+    window.dispatchEvent(new MessageEvent("message", {data:{type:"decision",decision:null,
+      activity:{message:"Synthetic idle state",calls:4,skipped:2}}}));
+    report.emptyResultClearsAllRows = document.querySelectorAll(".batch-row").length === 0 &&
+      document.querySelector(".empty-status").textContent === "Synthetic idle state";
+    send({...complete, id:"f".repeat(32)});
+    report.resultAfterEmptyRestoresProtectedRows = document.querySelectorAll(".batch-row").length === 72 &&
+      document.querySelectorAll(".batch-row.unscored").length === 3 &&
+      [...document.querySelectorAll(".batch-row.unscored")].every(node =>
+        node.querySelector(".batch-value").textContent === "—" &&
+        Number(getComputedStyle(node.querySelector(".batch-value")).opacity) === 1);
     document.body.dataset.result = JSON.stringify(report);
     document.title = Object.values(report).every(Boolean) ? "DECISION_PROTECTED_READY" : "DECISION_PROTECTED_FAILED";
   </script>

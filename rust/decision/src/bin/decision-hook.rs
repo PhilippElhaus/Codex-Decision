@@ -17,6 +17,8 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 use uuid::Uuid;
 
+#[path = "decision-hook/json_limit.rs"]
+mod json_limit;
 #[path = "decision-hook/strict_json.rs"]
 mod strict_json;
 
@@ -35,6 +37,8 @@ use routing::*;
 #[path = "decision-hook/context.rs"]
 mod context;
 use context::*;
+#[path = "decision-hook/projection.rs"]
+mod projection;
 #[path = "decision-hook/task.rs"]
 mod task;
 use task::*;
@@ -53,6 +57,9 @@ use api::*;
 #[path = "decision-hook/storage.rs"]
 mod storage;
 use storage::*;
+#[path = "decision-hook/private_file.rs"]
+mod private_file;
+use private_file::*;
 #[path = "decision-hook/retention.rs"]
 mod retention;
 use retention::*;
@@ -62,6 +69,12 @@ use telemetry::*;
 #[path = "decision-hook/snapshot.rs"]
 mod snapshot;
 use snapshot::*;
+#[path = "decision-hook/prepared_json.rs"]
+mod prepared_json;
+use prepared_json::*;
+#[path = "decision-hook/encoding.rs"]
+mod encoding;
+use encoding::*;
 #[path = "decision-hook/record.rs"]
 mod record;
 use record::*;

@@ -11,8 +11,7 @@ pub(super) fn evaluate(
     let provider = codex_decision::provider::Provider::for_model(
         request["model"].as_str().ok_or("missing model")?,
     )?;
-    let wire = codex_decision::provider::wire_request(request)?;
-    let encoded = serde_json::to_vec(&wire).map_err(|_| "request encoding")?;
+    let encoded = codex_decision::provider::encode_request(request)?;
     #[cfg(debug_assertions)]
     let endpoint = std::env::var("CODEX_DECISION_TEST_ENDPOINT")
         .ok()

@@ -7,13 +7,18 @@ pub(super) fn ensure_dir(path: &Path) -> Result<(), String> {
         return Err("linked directory".into());
     }
     if !path.exists() {
-        fs::create_dir_all(path).map_err(|_| "directory create failed")?;
+        let mut builder = fs::DirBuilder::new();
+        builder.recursive(true);
         #[cfg(unix)]
         {
-            use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(path, fs::Permissions::from_mode(0o700))
-                .map_err(|_| "directory permissions")?;
+            use std::os::unix::fs::DirBuilderExt;
+            // Apply private permissions at creation. Concurrent first hooks
+            // must never observe a public directory before a later chmod.
+            builder.mode(0o700);
         }
+        builder
+            .create(path)
+            .map_err(|_| "directory create failed")?;
     }
     let metadata = fs::symlink_metadata(path).map_err(|_| "directory stat failed")?;
     if !metadata.is_dir() || metadata.file_type().is_symlink() {
@@ -28,6 +33,10 @@ pub(super) fn ensure_dir(path: &Path) -> Result<(), String> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "storage_tests.rs"]
+mod tests;
 
 pub(super) fn check_dir_if_exists(path: &Path) -> Result<(), String> {
     check_ancestors(path)?;
@@ -85,6 +94,29 @@ pub(super) fn lock_logs(logs: &Path) -> Result<File, String> {
     lock_logs_with_timeout(logs, remaining()?.min(Duration::from_secs(2)))
 }
 
+pub(super) fn open_event_log(logs: &Path) -> Result<File, String> {
+    let path = logs.join("events.jsonl");
+    if path.is_symlink() {
+        return Err("linked event log".into());
+    }
+    let mut options = OpenOptions::new();
+    options.append(true).create(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        // A FIFO must fail promptly before any model request or write. The
+        // opened handle, rather than an earlier path stat, defines the target.
+        options
+            .mode(0o600)
+            .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
+    }
+    let file = options.open(path).map_err(|_| "event log")?;
+    if !file.metadata().map_err(|_| "event log stat")?.is_file() {
+        return Err("unsafe event log".into());
+    }
+    Ok(file)
+}
+
 // Rollback and error reporting must still run after the invocation budget expires.
 pub(super) fn cleanup_log_lock(logs: &Path) -> Result<File, String> {
     lock_logs_with_timeout(logs, Duration::from_millis(250))
@@ -100,13 +132,19 @@ fn lock_logs_with_timeout(logs: &Path, timeout: Duration) -> Result<File, String
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600).custom_flags(libc::O_NOFOLLOW);
+        options
+            .mode(0o600)
+            .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
     }
     let file = options.open(path).map_err(|_| "log lock open")?;
+    if !file.metadata().map_err(|_| "log lock stat")?.is_file() {
+        return Err("unsafe log lock".into());
+    }
     #[cfg(unix)]
     {
         use std::os::fd::AsRawFd;
         let deadline = Instant::now() + timeout;
+        // SAFETY: file owns a valid descriptor for the duration of this lock attempt.
         while unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
             let error = std::io::Error::last_os_error();
             if error.kind() != std::io::ErrorKind::WouldBlock {
@@ -161,56 +199,4 @@ pub(super) fn output_path(data_dir: &Path, event: &Value) -> Result<PathBuf, Str
         .join("outputs")
         .join(hash(session))
         .join(format!("{}.txt", hash(call))))
-}
-
-pub(super) fn private_backup(path: &Path, limit: usize) -> Result<Option<Vec<u8>>, String> {
-    match fs::symlink_metadata(path) {
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Ok(metadata)
-            if metadata.is_file()
-                && !metadata.file_type().is_symlink()
-                && metadata.len() <= limit as u64 =>
-        {
-            read_bounded(path, limit)
-                .map(Some)
-                .map_err(|_| "state backup read".into())
-        }
-        _ => Err("unsafe state backup".into()),
-    }
-}
-
-pub(super) fn read_bounded(path: &Path, limit: usize) -> std::io::Result<Vec<u8>> {
-    let mut options = OpenOptions::new();
-    options.read(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
-    }
-    let file = options.open(path)?;
-    let metadata = file.metadata()?;
-    if !metadata.is_file() || metadata.len() > limit as u64 {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            "unsafe private file",
-        ));
-    }
-    // Enforce the bound on the open handle: another writer may grow or
-    // replace the file after a caller's initial stat check.
-    let mut bytes = Vec::with_capacity(metadata.len() as usize);
-    file.take(limit as u64 + 1).read_to_end(&mut bytes)?;
-    if bytes.len() > limit {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            "unsafe private file",
-        ));
-    }
-    Ok(bytes)
-}
-pub(super) fn restore_private(path: &Path, previous: Option<Vec<u8>>) {
-    if let Some(bytes) = previous {
-        let _ = write_private(path, &bytes, true);
-    } else {
-        let _ = fs::remove_file(path);
-    }
 }

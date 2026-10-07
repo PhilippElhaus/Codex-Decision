@@ -80,16 +80,7 @@ pub(super) fn classification_start(data_dir: &Path) -> Result<(), String> {
     let logs = data_dir.join("logs");
     ensure_dir(&logs)?;
     let _lock = lock_logs(&logs)?;
-    let mut options = OpenOptions::new();
-    options.append(true).create(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600).custom_flags(libc::O_NOFOLLOW);
-    }
-    let mut file = options
-        .open(logs.join("events.jsonl"))
-        .map_err(|_| "event log")?;
+    let mut file = open_event_log(&logs)?;
     writeln!(
         file,
         "{}",
@@ -133,18 +124,7 @@ pub(super) fn record_gate_skip(
     let _lock = lock_logs(&logs)?;
     let stats_path = data_dir.join("stats.json");
     let mut stats = load_stats(&stats_path)?;
-    let path = logs.join("events.jsonl");
-    if path.is_symlink() {
-        return Err("linked event log".into());
-    }
-    let mut options = OpenOptions::new();
-    options.append(true).create(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600).custom_flags(libc::O_NOFOLLOW);
-    }
-    let mut file = options.open(path).map_err(|_| "event log")?;
+    let mut file = open_event_log(&logs)?;
     writeln!(
         file,
         "{}",

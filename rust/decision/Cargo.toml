@@ -1,6 +1,6 @@
 [package]
 name = "codex-decision"
-version = "0.11.0"
+version = "0.11.1"
 edition = "2021"
 license = "MIT"
 
@@ -15,6 +15,18 @@ path = "src/bin/decision-hook.rs"
 [[bin]]
 name = "decisionctl"
 path = "src/bin/decisionctl.rs"
+
+[[bench]]
+name = "pipeline"
+harness = false
+
+[[bench]]
+name = "publication"
+harness = false
+
+[[bench]]
+name = "projection"
+harness = false
 
 [dependencies]
 chrono = "0.4"
