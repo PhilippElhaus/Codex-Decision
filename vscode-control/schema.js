@@ -5,6 +5,14 @@ function defaults(kind) {
     .map(([key, spec]) => [key, structuredClone(spec.default)]));
 }
 function validate(kind, value) {
+  if ((kind === "config" && value?.schema_version === 4) ||
+      (kind === "settings" && value?.schema_version === 3)) {
+    const current = validate(kind === "config" ? "config_v4" : "settings_v3", value);
+    current.schema_version = kind === "config" ? 5 : 4;
+    current.provider = "typesafe";
+    if (kind === "settings") current.model = "jev-latest";
+    return validate(kind, current);
+  }
   if ((kind === "config" && value?.schema_version === 2) ||
       (kind === "settings" && value?.schema_version === 1)) {
     const old = validate(kind === "config" ? "config_v2" : "settings_v1", value);
@@ -28,11 +36,11 @@ function validate(kind, value) {
   }
   const fields = contract[kind];
   if (!value || typeof value !== "object" || Array.isArray(value) ||
-      Object.keys(value).some((key) => !Object.hasOwn(fields, key))) throw new Error("Invalid Jev " + kind);
+      Object.keys(value).some((key) => !Object.hasOwn(fields, key))) throw new Error("Invalid Decision " + kind);
   const result = {};
   for (const [key, spec] of Object.entries(fields)) {
     if (!Object.hasOwn(value, key)) {
-      if (spec.required) throw new Error("Invalid Jev " + kind + ": missing " + key);
+      if (spec.required) throw new Error("Invalid Decision " + kind + ": missing " + key);
       if (Object.hasOwn(spec, "default")) result[key] = structuredClone(spec.default);
       continue;
     }
@@ -41,15 +49,20 @@ function validate(kind, value) {
     else {
       const valid = spec.type === "integer" ? Number.isSafeInteger(entered) :
         spec.type === "number" ? typeof entered === "number" && Number.isFinite(entered) :
-        spec.type === "model" ? typeof entered === "string" && /^jev-[A-Za-z0-9._-]{1,40}$/.test(entered) :
+        spec.type === "model" ? typeof entered === "string" && (entered === "gpt-6-luna" || /^jev-[A-Za-z0-9._-]{1,40}$/.test(entered)) :
         typeof entered === spec.type;
       if (!valid || (spec.min !== undefined && entered < spec.min) ||
           (spec.max !== undefined && entered > spec.max) ||
-          (spec.values && !spec.values.includes(entered))) throw new Error("Invalid Jev " + kind + ": " + key);
+          (spec.values && !spec.values.includes(entered))) throw new Error("Invalid Decision " + kind + ": " + key);
     }
     result[key] = entered;
   }
-  if (kind === "config" && result.min_chars > result.max_chars) throw new Error("Invalid Jev config size bounds");
+  if (kind === "config" && result.min_chars > result.max_chars) throw new Error("Invalid Decision config size bounds");
+  if (["config", "settings"].includes(kind)) {
+    if (!Object.hasOwn(value, "model") && result.provider === "typesafe") result.model = "jev-latest";
+    if (result.provider === "openai" ? result.model !== "gpt-6-luna" : !result.model.startsWith("jev-"))
+      throw new Error("Decision provider/model mismatch");
+  }
   return result;
 }
 module.exports = { contract, defaults, validate };

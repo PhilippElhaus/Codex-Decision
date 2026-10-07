@@ -33,8 +33,8 @@ def chromium_smoke() -> None:
             for width in (360, 1200):
                 for sample in ('fifty', 'legacy'):
                     page = browser.new_page(viewport={'width': width, 'height': 600})
-                    page.goto((ROOT.parent / 'tests/browser/jev_panel_harness.html').as_uri() + '?' + sample)
-                    page.wait_for_function('document.title === "JEV_LINE_PANEL_READY"')
+                    page.goto((ROOT.parent / 'tests/browser/decision_panel_harness.html').as_uri() + '?' + sample)
+                    page.wait_for_function('document.title === "DECISION_LINE_PANEL_READY"')
                     report = json.loads(page.locator('body').get_attribute('data-report'))
                     for field in ('newBatchShown', 'minimalHeader', 'outputStatusClear', 'sameDecisionDidNotRestart',
                                   'positionsStable', 'parallelGrowth', 'fadeAfterGrowth', 'noNestedScroll',
@@ -44,14 +44,14 @@ def chromium_smoke() -> None:
                     reports.append({'panel': sample, 'requested_width': width, **report})
                     page.close()
             page = browser.new_page()
-            page.goto((ROOT.parent / 'tests/browser/jev_panel_empty_harness.html').as_uri())
-            page.wait_for_function('document.title === "JEV_EMPTY_READY"')
+            page.goto((ROOT.parent / 'tests/browser/decision_panel_empty_harness.html').as_uri())
+            page.wait_for_function('document.title === "DECISION_EMPTY_READY"')
             assert json.loads(page.locator('body').get_attribute('data-result'))['activity']
             page.close()
             for width in (360, 1200):
                 page = browser.new_page(viewport={'width': width, 'height': 600})
-                page.goto((ROOT.parent / 'tests/browser/jev_panel_protected_harness.html').as_uri())
-                page.wait_for_function('document.title === "JEV_PROTECTED_READY"')
+                page.goto((ROOT.parent / 'tests/browser/decision_panel_protected_harness.html').as_uri())
+                page.wait_for_function('document.title === "DECISION_PROTECTED_READY"')
                 report = json.loads(page.locator('body').get_attribute('data-result'))
                 assert all(report.values()), report
                 reports.append({'protected_panel': True, 'requested_width': width, **report})
@@ -90,7 +90,7 @@ def main() -> None:
             if not outcome.get('ok'):
                 raise AssertionError({'viewport': width, **outcome})
             reports.append({'requested_width': width, 'motion': motion, **outcome})
-        panel_target = windows_path(ROOT.parent / 'tests/browser/jev_panel_harness.html').replace('\\', '/')
+        panel_target = windows_path(ROOT.parent / 'tests/browser/decision_panel_harness.html').replace('\\', '/')
         panel_address = 'file:///' + quote(panel_target, safe='/:')
         for width in (360, 1200):
             for sample in ('fifty', 'legacy'):
@@ -111,7 +111,7 @@ def main() -> None:
                     assert report[field], {'viewport': width, 'sample': sample, **report}
                 assert not report['horizontalOverflow'], report
                 reports.append({'panel': sample, 'requested_width': width, **report})
-        empty = windows_path(ROOT.parent / 'tests/browser/jev_panel_empty_harness.html').replace('\\', '/')
+        empty = windows_path(ROOT.parent / 'tests/browser/decision_panel_empty_harness.html').replace('\\', '/')
         empty_address = 'file:///' + quote(empty, safe='/:')
         result = subprocess.run([
             str(edge), '--headless', '--disable-gpu', '--no-first-run',
@@ -119,9 +119,9 @@ def main() -> None:
             f'--user-data-dir={windows_path(profile / "empty-panel")}',
             '--dump-dom', empty_address,
         ], capture_output=True, text=True, timeout=30, check=False)
-        if result.returncode != 0 or '<title>JEV_EMPTY_READY</title>' not in result.stdout:
-            raise RuntimeError('Jev empty panel activity check failed')
-        protected = windows_path(ROOT.parent / 'tests/browser/jev_panel_protected_harness.html').replace('\\', '/')
+        if result.returncode != 0 or '<title>DECISION_EMPTY_READY</title>' not in result.stdout:
+            raise RuntimeError('Decision empty panel activity check failed')
+        protected = windows_path(ROOT.parent / 'tests/browser/decision_panel_protected_harness.html').replace('\\', '/')
         protected_address = 'file:///' + quote(protected, safe='/:')
         for width in (360, 1200):
             result = subprocess.run([
@@ -130,8 +130,8 @@ def main() -> None:
                 f'--user-data-dir={windows_path(profile / f"protected-{width}")}',
                 '--dump-dom', protected_address,
             ], capture_output=True, text=True, timeout=30, check=False)
-            if result.returncode != 0 or '<title>JEV_PROTECTED_READY</title>' not in result.stdout:
-                raise RuntimeError(f'Jev protected panel check failed at {width}px')
+            if result.returncode != 0 or '<title>DECISION_PROTECTED_READY</title>' not in result.stdout:
+                raise RuntimeError(f'Decision protected panel check failed at {width}px')
         print(json.dumps(reports))
     finally:
         remove_profile(profile, 'jev-edge-test-')

@@ -1,7 +1,7 @@
-// Recorded Jev 1.13.0 judgments on the synthetic test-failure fixture, 2026-10-01.
+// Recorded Decision 1.13.0 judgments on the synthetic test-failure fixture, 2026-10-01.
 // Trial: omit_min=70, exact_max=25. Not the installed 95/5 defaults.
 // Source SHA-256: 5e8377b2c2b34fd3587b087a75de938cb176c393bef8fb019ba6391ebfebbdde
-window.JEV_REVIEWED_TEST_FAILURE = {
+window.DECISION_REVIEWED_TEST_FAILURE = {
   "version": 3,
   "id": "dc4efc1f9b2d46ada7427fc4184a1356",
   "receipt_id": "dc4efc1f9b2d46ada7427fc4184a1356",

@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Decision empty panel</title>
+  <link rel="stylesheet" href="../../vscode-control/webview/decision-panel.css">
+  <script>window.acquireVsCodeApi = () => ({ postMessage() {} });</script>
+</head>
+<body>
+  <main id="app"></main>
+  <script src="../../vscode-control/webview/decision-panel.js"></script>
+  <script>
+    const app = document.getElementById("app");
+    const clean = () => app.textContent.trim() === "Decision" && !app.querySelector("h1,p,.empty-glyph");
+    const first = clean();
+    window.dispatchEvent(new MessageEvent("message", { data: {
+      type: "decision", decision: null, error: "The latest Decision decision could not be read."
+    } }));
+    const afterReadFault = clean();
+    window.dispatchEvent(new MessageEvent("message", { data: {
+      type: "decision", decision: null, activity: {
+        message: "Decision classified the output and kept it complete. No line judgments were needed.",
+        calls: 11, skipped: 341
+      }
+    } }));
+    const activity = app.textContent.includes("11 API requests") && app.textContent.includes("341 skipped outputs") &&
+      app.textContent.includes("No line judgments were needed.");
+    document.body.dataset.result = JSON.stringify({ initial: first, afterReadFault, activity });
+    document.title = first && afterReadFault && activity ? "DECISION_EMPTY_READY" : "DECISION_EMPTY_FAILED";
+  </script>
+</body>
+</html>

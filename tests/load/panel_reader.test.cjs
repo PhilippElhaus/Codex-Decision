@@ -8,7 +8,7 @@ const test = require("node:test");
 const { readLatestPanelDecision } = require("../../vscode-control/panel-state");
 
 test("concurrent panel readers recover repeated atomic snapshot replacements", async () => {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-panel-atomic-"));
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "decision-panel-atomic-"));
   const filename = path.join(directory, "logs/latest-decision.json");
   const decision = (sequence) => ({ version: 4, id: sequence.toString(16).padStart(32, "0"),
     receipt_id: "b".repeat(32), at: "2020-01-01T00:00:00Z", filter: "output", status: "keep",

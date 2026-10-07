@@ -1,48 +1,48 @@
-# Codex Jev
+# Codex Decision
 
-<img src="assets/logo.png" width="56" alt="Codex Jev logo">
+<img src="assets/logo.png" width="56" alt="Codex Decision logo">
 
-Codex Jev removes repetitive lines from local tool output before Codex reads them. Errors and useful evidence stay visible. Every shortened result links to the complete original.
+Codex Decision removes repetitive lines from local tool output before Codex reads them. Errors and useful evidence stay visible. Every shortened result links to the complete original.
 
-**Jev 0.10.11 · VS Code control 0.9.14** — [Download the latest release](https://github.com/PhilippElhaus/Codex-Jev/releases/tag/v0.10.11).
+**Codex Decision 0.11.0 · VS Code control 0.10.3** — [Download the latest release](https://github.com/PhilippElhaus/Codex-Decision/releases/tag/v0.11.0).
 
 ## Get started
 
 Install the plugin on Linux x86_64:
 
 ```bash
-codex plugin marketplace add https://github.com/PhilippElhaus/Codex-Jev
-codex plugin add codex-jev@codex-jev
+codex plugin marketplace add https://github.com/PhilippElhaus/Codex-Decision
+codex plugin add codex-decision@codex-decision
 ```
 
-Trust the Jev hook in `/hooks`. For the screens below, install the optional [VS Code control and composer patch](vscode-control/README.md#install). Run **Developer: Reload Window**, then start a new local Codex thread. See [installation and upgrades](docs/setup/setup_installation.md) for details.
+Trust the Decision hook in `/hooks`. For the screens below, install the optional [VS Code control and composer patch](vscode-control/README.md#install). Run **Developer: Reload Window**, then start a new local Codex thread. See [installation and upgrades](docs/setup/setup_installation.md) for details.
 
-### 1. Connect Jev
+### 1. Connect Decision
 
-Sign in to Codex, then enter and test your typesafe.ai API key in **Connect Jev**. The key stays out of chat.
+Sign in to Codex, select **OpenAI Decisions** (default) or **TypeSafe Jev**, then enter and test that provider’s API key in **Connect Decision**. The key stays out of chat.
 
-<img src="docs/images/jev-connect.png" width="760" alt="Connect Jev screen with an empty API key field">
+<img src="docs/images/decision-connect.png" width="760" alt="Connect Decision screen with an empty API key field">
 
-### 2. Turn Jev on or off
+### 2. Turn Decision on or off
 
-Click **jev** in the composer. Each thread remembers its choice. Eligible output is sent to TypeSafe while Jev is enabled.
+Click **decision** in the composer. Each thread remembers its choice. Eligible output is sent to the selected provider while Decision is enabled.
 
-<img src="docs/images/jev-toggle.png" width="620" alt="Jev on/off button on the Codex composer toolbar">
+<img src="docs/images/decision-toggle.png" width="620" alt="Decision on/off button on the Codex composer toolbar">
 
 ### 3. Adjust the details
 
-Open **Codex settings → Jev** to choose **Monitor** (keep full output) or **Filter** (shorten approved output). Manage the relevance cutoff, API key, and log retention here. Settings apply to all sessions.
+Open **Codex settings → Decision** to choose **Monitor** (keep full output) or **Filter** (shorten approved output). Manage the relevance cutoff, API key, and log retention here. Settings apply to all sessions.
 
-<img src="docs/images/jev-settings-overview.png" width="760" alt="Jev settings showing activity, API key controls, and log retention">
+<img src="docs/images/decision-settings-overview.png" width="760" alt="Decision settings showing activity, API key controls, and log retention">
 
 ### 4. Inspect a result
 
-Open the **Jev** panel beside **Terminal** and **Output**. Blue rows mark proposed omissions; gold rows mark kept lines. Bars show relevance. Hover for excerpts and reasons. Before the first decision, the panel shows hook activity and skip reasons.
+Open the **Decision** panel beside **Terminal** and **Output**. Blue rows mark proposed omissions; gold rows mark kept lines. Bars show relevance. Hover for excerpts and reasons. Before the first decision, the panel shows hook activity and skip reasons.
 
-<img src="docs/images/jev-panel.png" width="1000" alt="Jev panel showing 3 kept lines and 47 proposed omissions from a synthetic 50-line result">
+<img src="docs/images/decision-panel.png" width="1000" alt="Decision panel showing 3 kept lines and 47 proposed omissions from a synthetic 50-line result">
 
 Screenshots use synthetic data. For a missing decision or failed connection, see [troubleshooting](docs/setup/setup_installation.md).
 
 ## Documentation
 
-[API key](docs/setup/setup_credentials.md) · [Filtering rules](docs/architecture/design_integrations.md) · [Privacy and safeguards](docs/architecture/design_data.md) · [Tests](tests/README.md) · [Usage verification](docs/development/usage_optimization_2026-10-05.md) · [Quality verification](docs/development/quality_pass_2026-10-06.md) · [45-second Jev explainer](https://x.com/MatijaSosic/status/2100190746389135772)
+[API key](docs/setup/setup_credentials.md) · [Filtering rules](docs/architecture/design_integrations.md) · [Privacy and safeguards](docs/architecture/design_data.md) · [Tests](tests/README.md) · [Usage verification](docs/development/usage_optimization_2026-10-05.md) · [Provider benchmarks](docs/development/provider_benchmarks_2026-10-07.md)

@@ -1,11 +1,11 @@
 {
-  "name": "codex-jev",
+  "name": "codex-decision",
   "interface": {
-    "displayName": "Codex Jev"
+    "displayName": "Codex Decision"
   },
   "plugins": [
     {
-      "name": "codex-jev",
+      "name": "codex-decision",
       "source": {
         "source": "local",
         "path": "./"

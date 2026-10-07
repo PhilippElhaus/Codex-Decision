@@ -10,7 +10,7 @@ const { promisify } = require("node:util");
 const runFile = promisify(execFile);
 const { restrictWslPath, wslLocation } = require("./private-paths");
 const securedWslPaths = new Map();
-const JEV_ENDPOINT = "https://api.typesafe.ai/v1/systemone";
+const { provider, wireRequest, parseHealthResult } = require("./providers");
 const { defaults, validate } = require("./schema");
 const DEFAULT_RELEVANCE_POLICY = Object.freeze(defaults("config").relevance_policy);
 const { schema_version: _schemaVersion, ...settingsDefaults } = defaults("settings");
@@ -21,12 +21,12 @@ function completeRelevancePolicy(value = {}) {
 }
 
 function defaultDataDirectory() {
-  return process.env.CODEX_JEV_DATA_DIRECTORY || "";
+  return process.env.CODEX_DECISION_DATA_DIRECTORY || "";
 }
 
 function sessionDirectory(directory, sessionId) {
   if (typeof sessionId !== "string" || !/^[A-Za-z0-9._-]{1,128}$/.test(sessionId)) {
-    throw new Error("Jev needs a valid Codex session ID");
+    throw new Error("Decision needs a valid Codex session ID");
   }
   return path.join(directory, "sessions", crypto.createHash("sha256").update(sessionId).digest("hex"));
 }
@@ -41,7 +41,7 @@ async function validateDirectoryPath(directory) {
     try { details = await fs.lstat(current); }
     catch (error) { if (error.code === "ENOENT") return; throw error; }
     if (!details.isDirectory() || details.isSymbolicLink()) {
-      throw new Error("Unsafe Jev session directory path");
+      throw new Error("Unsafe Decision session directory path");
     }
   }
 }
@@ -55,7 +55,7 @@ async function validateSessionPath(directory) {
     try { details = await fs.lstat(folder); }
     catch (error) { if (error.code === "ENOENT") return; throw error; }
     if (process.platform !== "win32" && (details.mode & 0o077)) {
-      throw new Error("Unsafe Jev session directory permissions");
+      throw new Error("Unsafe Decision session directory permissions");
     }
   }
 }
@@ -67,7 +67,7 @@ async function withWriteLock(directory, operation) {
   await fs.mkdir(directory, { recursive: true, mode: 0o700 });
   await secureWslDirectories(directory);
   await validateSessionPath(directory);
-  const lock = path.join(directory, ".jev-write.lock");
+  const lock = path.join(directory, ".decision-write.lock");
   const deadline = performance.now() + 2000;
   while (true) {
     try { await fs.mkdir(lock, { mode: 0o700 }); break; }
@@ -76,8 +76,8 @@ async function withWriteLock(directory, operation) {
       let details;
       try { details = await fs.lstat(lock); }
       catch (statError) { if (statError.code === "ENOENT") continue; throw statError; }
-      if (!details.isDirectory() || details.isSymbolicLink()) throw new Error("Unsafe Jev write lock");
-      if (performance.now() >= deadline) throw new Error("Jev settings write lock timed out");
+      if (!details.isDirectory() || details.isSymbolicLink()) throw new Error("Unsafe Decision write lock");
+      if (performance.now() >= deadline) throw new Error("Decision settings write lock timed out");
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
   }
@@ -96,7 +96,7 @@ async function secureExistingWslPath(filename, directory) {
   if (process.platform !== "win32" || !wslLocation(filename)) return;
   const details = await fs.lstat(filename);
   if (details.isSymbolicLink() || (directory ? !details.isDirectory() : !details.isFile())) {
-    throw new Error("Unsafe Jev state path");
+    throw new Error("Unsafe Decision state path");
   }
   const identity = `${details.dev}:${details.ino}:${details.birthtimeMs}:${directory ? "" : `${details.mtimeMs}:${details.size}`}`;
   if (securedWslPaths.get(filename) === identity) return;
@@ -134,9 +134,9 @@ async function readHookHealth(directory) {
     await validateSessionPath(directory);
     await validateDirectoryPath(path.join(directory, "logs"));
     const logs = await fs.lstat(path.dirname(filename));
-    if (!logs.isDirectory() || logs.isSymbolicLink()) throw new Error("Unsafe Jev hook health directory");
+    if (!logs.isDirectory() || logs.isSymbolicLink()) throw new Error("Unsafe Decision hook health directory");
     const details = await fs.lstat(filename);
-    if (!details.isFile() || details.isSymbolicLink() || details.size > 4096) throw new Error("Unsafe Jev hook health");
+    if (!details.isFile() || details.isSymbolicLink() || details.size > 4096) throw new Error("Unsafe Decision hook health");
     const health = JSON.parse(await fs.readFile(filename, "utf8"));
     if (!health || health.version !== 1 || typeof health.hook_version !== "string" ||
         !/^\d+\.\d+\.\d+$/.test(health.hook_version) ||
@@ -148,7 +148,7 @@ async function readHookHealth(directory) {
             health[key] > health.last_seen_ms)) ||
         ["last_error", "last_skip"].some((key) =>
           health[key] !== undefined && (typeof health[key] !== "string" || health[key].length > 80))) {
-      throw new Error("Invalid Jev hook health");
+      throw new Error("Invalid Decision hook health");
     }
     return health;
   } catch (error) {
@@ -163,7 +163,7 @@ async function readConfig(directory) {
     const filename = path.join(directory, "config.json");
     const details = await fs.lstat(filename);
     if (!details.isFile() || details.isSymbolicLink() || details.size > 64_000) {
-      throw new Error("Unsafe Jev config");
+      throw new Error("Unsafe Decision config");
     }
     const raw = JSON.parse(await fs.readFile(filename, "utf8"));
     return validate("config", raw);
@@ -179,29 +179,28 @@ async function writeConfig(directory, updates, createOnly = false) {
 
 async function updateConfig(directory, updates, createOnly) {
   const old = await readConfig(directory);
-  const config = { ...old, ...updates, schema_version: 4,
-    relevance_policy: completeRelevancePolicy(updates.relevance_policy ?? old.relevance_policy) };
-  validate("config", config);
+  const config = validate("config", { ...old, ...updates, schema_version: 5,
+    relevance_policy: completeRelevancePolicy(updates.relevance_policy ?? old.relevance_policy) });
   const parent = path.dirname(directory);
   if (path.basename(parent) === "sessions") {
     const root = await fs.lstat(path.dirname(parent));
-    if (!root.isDirectory() || root.isSymbolicLink()) throw new Error("Unsafe Jev data directory");
+    if (!root.isDirectory() || root.isSymbolicLink()) throw new Error("Unsafe Decision data directory");
     await fs.mkdir(parent, { recursive: true, mode: 0o700 });
     const sessions = await fs.lstat(parent);
     if (!sessions.isDirectory() || sessions.isSymbolicLink() ||
         (process.platform !== "win32" && (sessions.mode & 0o077))) {
-      throw new Error("Unsafe Jev sessions directory");
+      throw new Error("Unsafe Decision sessions directory");
     }
   }
   await fs.mkdir(directory, { recursive: true, mode: 0o700 });
   const folder = await fs.lstat(directory);
   if (!folder.isDirectory() || folder.isSymbolicLink() ||
       (process.platform !== "win32" && (folder.mode & 0o077))) {
-    throw new Error("Unsafe Jev config directory");
+    throw new Error("Unsafe Decision config directory");
   }
   const target = path.join(directory, "config.json");
   try {
-    if ((await fs.lstat(target)).isSymbolicLink()) throw new Error("Jev config is a link");
+    if ((await fs.lstat(target)).isSymbolicLink()) throw new Error("Decision config is a link");
   } catch (error) {
     if (error.code !== "ENOENT") throw error;
   }
@@ -221,7 +220,7 @@ async function updateConfig(directory, updates, createOnly) {
 
 async function ensureSessionDefaults(directory) {
   if (path.basename(path.dirname(directory)) !== "sessions") {
-    throw new Error("Jev defaults require a session directory");
+    throw new Error("Decision defaults require a session directory");
   }
   try {
     await fs.lstat(path.join(directory, "config.json"));
@@ -241,34 +240,34 @@ async function writeSelection(directory, enabled) {
 
 function completeSettings(value) {
   const { schema_version: _version, ...settings } = validate("settings", {
-    schema_version: 3, ...DEFAULT_SETTINGS, ...value,
+    schema_version: 4, ...DEFAULT_SETTINGS, ...value,
   });
   return settings;
 }
 
-async function readGlobalSettings(directory) {
+async function readGlobalSettings(directory, fallback = {}) {
   await validateSessionPath(directory);
   const filename = path.join(directory, "settings.json");
   try {
     const details = await fs.lstat(filename);
     if (!details.isFile() || details.isSymbolicLink() || details.size > 8192) {
-      throw new Error("Unsafe Jev settings file");
+      throw new Error("Unsafe Decision settings file");
     }
     const raw = JSON.parse(await fs.readFile(filename, "utf8"));
-    if (![1, 2, 3].includes(raw?.schema_version)) throw new Error("Invalid Jev settings version");
+    if (![1, 2, 3, 4].includes(raw?.schema_version)) throw new Error("Invalid Decision settings version");
     const { schema_version: _version, ...settings } = validate("settings", raw);
     return settings;
   } catch (error) {
-    if (error.code === "ENOENT") return completeSettings({});
+    if (error.code === "ENOENT") return completeSettings(fallback);
     throw error;
   }
 }
 
-async function writeGlobalSettings(directory, changes) {
+async function writeGlobalSettings(directory, changes, fallback = {}) {
   return withWriteLock(directory, async () => {
-    const settings = completeSettings({ ...await readGlobalSettings(directory), ...changes });
+    const settings = completeSettings({ ...await readGlobalSettings(directory, fallback), ...changes });
     await atomicWrite(path.join(directory, "settings.json"),
-      JSON.stringify({ schema_version: 3, ...settings }, null, 2) + "\n");
+      JSON.stringify({ schema_version: 4, ...settings }, null, 2) + "\n");
     return settings;
   });
 }
@@ -278,17 +277,17 @@ async function readInstallationStats(directory) {
   let entries;
   try {
     const parent = await fs.lstat(path.join(directory, "sessions"));
-    if (!parent.isDirectory() || parent.isSymbolicLink()) throw new Error("Unsafe Jev sessions directory");
+    if (!parent.isDirectory() || parent.isSymbolicLink()) throw new Error("Unsafe Decision sessions directory");
     entries = await fs.readdir(path.join(directory, "sessions"), { withFileTypes: true });
   }
   catch (error) {
     if (error.code === "ENOENT") return totals;
     throw error;
   }
-  if (entries.length > 10_000) throw new Error("Too many Jev sessions");
+  if (entries.length > 10_000) throw new Error("Too many Decision sessions");
   for (const entry of entries) {
     if (!/^[a-f0-9]{64}$/.test(entry.name)) continue;
-    if (!entry.isDirectory() || entry.isSymbolicLink()) throw new Error("Unsafe Jev session directory");
+    if (!entry.isDirectory() || entry.isSymbolicLink()) throw new Error("Unsafe Decision session directory");
     const stats = await readLifetimeStats(path.join(directory, "sessions", entry.name));
     for (const key of Object.keys(totals)) {
       if (key === "averageMs") continue;
@@ -305,9 +304,9 @@ async function activityLogPath(directory) {
     await validateSessionPath(directory);
     await validateDirectoryPath(path.join(directory, "logs"));
     const logs = await fs.lstat(path.join(directory, "logs"));
-    if (!logs.isDirectory() || logs.isSymbolicLink()) throw new Error("Unsafe Jev logs directory");
+    if (!logs.isDirectory() || logs.isSymbolicLink()) throw new Error("Unsafe Decision logs directory");
     const index = await fs.lstat(current);
-    if (!index.isFile() || index.isSymbolicLink()) throw new Error("Unsafe Jev activity index");
+    if (!index.isFile() || index.isSymbolicLink()) throw new Error("Unsafe Decision activity index");
     return current;
   } catch (error) {
     if (error.code !== "ENOENT") throw error;
@@ -315,7 +314,7 @@ async function activityLogPath(directory) {
   }
 }
 
-function isJevOutcome(event) {
+function isDecisionOutcome(event) {
   return ["candidate", "keep", "replace"].includes(event.status);
 }
 
@@ -353,7 +352,7 @@ async function readEventOffset(directory) {
 
 async function eventCursor(file, offset) {
   const details = await file.stat();
-  if (!details.isFile()) throw new Error("Unsafe Jev activity index");
+  if (!details.isFile()) throw new Error("Unsafe Decision activity index");
   const length = Math.min(offset, 8192);
   const buffer = Buffer.alloc(length);
   const { bytesRead } = await file.read(buffer, 0, length, offset - length);
@@ -395,7 +394,7 @@ async function readEventsSince(directory, position) {
   }
   try {
     const details = await file.stat();
-    if (!details.isFile()) throw new Error("Unsafe Jev activity index");
+    if (!details.isFile()) throw new Error("Unsafe Decision activity index");
     const { size } = details;
     let reset = offset < 0 || offset > size;
     if (tracked) {
@@ -444,17 +443,17 @@ async function readLifetimeStats(directory) {
   try {
     await validateSessionPath(directory);
     const details = await fs.lstat(statsFile);
-    if (!details.isFile() || details.isSymbolicLink() || details.size > 8192) throw new Error("Unsafe Jev stats file");
+    if (!details.isFile() || details.isSymbolicLink() || details.size > 8192) throw new Error("Unsafe Decision stats file");
     const stats = JSON.parse(await fs.readFile(statsFile, "utf8"));
     for (const key of ["calls", "completed", "replaced", "timed", "elapsedMs"]) {
-      if (!Number.isSafeInteger(stats[key]) || stats[key] < 0) throw new Error("Invalid Jev stats file");
+      if (!Number.isSafeInteger(stats[key]) || stats[key] < 0) throw new Error("Invalid Decision stats file");
     }
     const savedChars = stats.savedChars ?? 0;
-    if (!Number.isSafeInteger(savedChars) || savedChars < 0) throw new Error("Invalid Jev stats file");
+    if (!Number.isSafeInteger(savedChars) || savedChars < 0) throw new Error("Invalid Decision stats file");
     const lineStats = Object.fromEntries(["linesSeen", "linesJudged", "linesKept", "linesOmitted",
       "linesProtected", "linesUnjudged", "linesRelevanceJudged", "linesBelowOmitCutoff", "linesRelevanceKept"].map((key) => {
       const value = stats[key] ?? 0;
-      if (!Number.isSafeInteger(value) || value < 0) throw new Error("Invalid Jev line stats");
+      if (!Number.isSafeInteger(value) || value < 0) throw new Error("Invalid Decision line stats");
       return [key, value];
     }));
     return { calls: stats.calls, completed: stats.completed, replaced: stats.replaced,
@@ -467,7 +466,7 @@ async function readLifetimeStats(directory) {
   let file;
   try {
     const details = await fs.lstat(filename);
-    if (!details.isFile() || details.isSymbolicLink()) throw new Error("Unsafe Jev decision log");
+    if (!details.isFile() || details.isSymbolicLink()) throw new Error("Unsafe Decision decision log");
     file = await fs.open(filename, constants.O_RDONLY | (constants.O_NOFOLLOW || 0));
   } catch (error) {
     if (error.code === "ENOENT") return totals;
@@ -483,14 +482,14 @@ async function readLifetimeStats(directory) {
       if (!event) continue;
       if (event.status === "calling") totals.calls += 1;
       else totals.calls += event.requests;
-      if ((isJevOutcome(event) || event.reason === "choice_kept_full_output") &&
+      if ((isDecisionOutcome(event) || event.reason === "choice_kept_full_output") &&
           Number.isFinite(event.elapsed_ms) && event.elapsed_ms > 0) {
         // Legacy calling/outcome pairs represent one request. Current completion
         // events contain the total elapsed time for all requests in the result.
         timed += event.requests || 1;
         elapsedMs += event.elapsed_ms;
       }
-      if (!isJevOutcome(event)) continue;
+      if (!isDecisionOutcome(event)) continue;
       totals.completed += 1;
       if (event.status === "replace") totals.replaced += 1;
       totals.savedChars += savedCharacters(event);
@@ -531,37 +530,32 @@ function estimateTokensSaved(characters) {
 
 function decisionSummary(event) {
   if (!event) return "No hook decision recorded yet";
-  if (event.status === "calling") return `Checking ${event.tool || "tool"} output with Jev`;
+  if (event.status === "calling") return `Checking ${event.tool || "tool"} output with Decision`;
   const action = event.status === "replace" ? "replaced" :
     event.status === "candidate" ? "candidate" :
     event.status === "keep" ? "kept" : "skipped";
   return `Last decision: ${action} ${event.tool || "tool"} output (${event.reason}); ${event.original_chars.toLocaleString("en-US")} chars`;
 }
 
-function parseHealthOutput(stdout) {
-  const result = JSON.parse(stdout);
-  const answer = result.answers?.ready;
-  if (typeof result.model !== "string" || answer?.type !== "noul" ||
-      typeof answer.noul !== "number" || answer.noul < 0 || answer.noul > 1) {
-    throw new Error("Invalid Jev health result");
-  }
-  return { ok: true, model: result.model };
+function parseHealthOutput(stdout, selected = "openai") {
+  return parseHealthResult(JSON.parse(stdout), selected);
 }
 
-async function readApiKey(directory) {
+async function readApiKey(directory, selected = "openai") {
+  const keyName = provider(selected).keyName;
   await validateSessionPath(directory);
   const filename = path.join(directory, ".env");
   const details = await fs.lstat(filename);
   if (!details.isFile() || details.isSymbolicLink() || details.size > 8192 ||
-      (process.platform !== "win32" && (details.mode & 0o077))) throw new Error("Unsafe Jev credential file");
+      (process.platform !== "win32" && (details.mode & 0o077))) throw new Error("Unsafe Decision credential file");
   const lines = (await fs.readFile(filename, "utf8")).replace(/^\uFEFF/, "").split(/\r?\n/);
-  const values = lines.filter((line) => /^\s*JEV_API_KEY\s*=/.test(line)).map((line) => {
+  const values = lines.filter((line) => line.trim().split("=", 1)[0].trim() === keyName).map((line) => {
     let value = line.slice(line.indexOf("=") + 1).trim();
     if (value.length >= 2 && ["'", '"'].includes(value[0]) && value.at(-1) === value[0]) value = value.slice(1, -1);
     return value;
   });
   if (values.length !== 1 || values[0].length < 8 || values[0].length > 4096 || /\s|\0/.test(values[0])) {
-    throw new Error("Jev API key is missing or invalid");
+    throw new Error("Decision API key is missing or invalid");
   }
   return values[0];
 }
@@ -570,7 +564,7 @@ async function boundedResponse(response, limit) {
   if (!response.body?.getReader) {
     // Small injected responses used by callers without a Fetch stream.
     const text = await response.text();
-    if (Buffer.byteLength(text) > limit) throw new Error("Jev response too large");
+    if (Buffer.byteLength(text) > limit) throw new Error("Decision response too large");
     return text;
   }
   const reader = response.body.getReader();
@@ -581,37 +575,39 @@ async function boundedResponse(response, limit) {
       const { done, value } = await reader.read();
       if (done) break;
       size += value.byteLength;
-      if (size > limit) { await reader.cancel(); throw new Error("Jev response too large"); }
+      if (size > limit) { await reader.cancel(); throw new Error("Decision response too large"); }
       chunks.push(Buffer.from(value));
     }
     return Buffer.concat(chunks).toString("utf8");
   } finally { reader.releaseLock(); }
 }
 
-async function checkHealth(dataDirectory, send = globalThis.fetch, suppliedKey = null) {
+async function checkHealth(dataDirectory, send = globalThis.fetch, suppliedKey = null, selected = null) {
+  try { selected ??= (await readGlobalSettings(dataDirectory)).provider; provider(selected); }
+  catch { return { ok: false, reason: "DECISION_INVALID_SETTINGS" }; }
   let key;
   try {
-    key = suppliedKey === null ? await readApiKey(dataDirectory) : validateApiKey(suppliedKey);
+    key = suppliedKey === null ? await readApiKey(dataDirectory, selected) : validateApiKey(suppliedKey);
   } catch {
-    return { ok: false, reason: "JEV_KEY_MISSING" };
+    return { ok: false, reason: "DECISION_KEY_MISSING" };
   }
-  const body = JSON.stringify({
+  const body = JSON.stringify(wireRequest({
     state: { output_sample: "Compiling module 1 done\nCompiling module 2 done" },
-    model: "jev-1.13.0",
+    model: provider(selected).model,
     questions: { ready: { type: "noul", instructions: "Is output_sample routine build progress?" } },
-  });
+  }));
   let response;
   try {
-    response = await send(JEV_ENDPOINT, {
+    response = await send(provider(selected).endpoint, {
       method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
       body, signal: AbortSignal.timeout(6000),
     });
   } catch (error) {
     return { ok: false, reason: ["AbortError", "TimeoutError"].includes(error?.name)
-      ? "JEV_TIMEOUT" : "JEV_NETWORK_ERROR" };
+      ? "DECISION_TIMEOUT" : "DECISION_NETWORK_ERROR" };
   }
   if (!response || typeof response.ok !== "boolean") {
-    return { ok: false, reason: "JEV_INVALID_RESPONSE" };
+    return { ok: false, reason: "DECISION_INVALID_RESPONSE" };
   }
   if (!response.ok) {
     if ([401, 403].includes(response.status) && typeof response.text === "function") {
@@ -619,32 +615,34 @@ async function checkHealth(dataDirectory, send = globalThis.fetch, suppliedKey =
         const error = JSON.parse(await boundedResponse(response, 4096));
         const details = [error.code, error.message, error.error?.code, error.error?.message];
         if (details.some((value) => typeof value === "string" && /expir/i.test(value))) {
-          return { ok: false, reason: "JEV_KEY_EXPIRED" };
+          return { ok: false, reason: "DECISION_KEY_EXPIRED" };
         }
       } catch { /* An unstructured error keeps its HTTP status. */ }
     }
-    return { ok: false, reason: `JEV_HTTP_${response.status}` };
+    return { ok: false, reason: `DECISION_HTTP_${response.status}` };
   }
   try {
     const output = await boundedResponse(response, 262144);
-    return parseHealthOutput(output);
+    return parseHealthOutput(output, selected);
   } catch {
-    return { ok: false, reason: "JEV_INVALID_RESPONSE" };
+    return { ok: false, reason: "DECISION_INVALID_RESPONSE" };
   }
 }
 
 function validateApiKey(key) {
   if (typeof key !== "string" || key.length < 8 || key.length > 4096 || /\s|\0/.test(key)) {
-    throw new Error("Jev API key is missing or invalid");
+    throw new Error("Decision API key is missing or invalid");
   }
   return key;
 }
 
-async function writeApiKey(directory, key) {
-  return withWriteLock(directory, () => updateApiKey(directory, key));
+async function writeApiKey(directory, key, selected = "openai") {
+  provider(selected);
+  return withWriteLock(directory, () => updateApiKey(directory, key, selected));
 }
 
-async function updateApiKey(directory, key) {
+async function updateApiKey(directory, key, selected) {
+  const keyName = provider(selected).keyName;
   validateApiKey(key);
   await fs.mkdir(directory, { recursive: true, mode: 0o700 });
   if (!(await fs.lstat(directory)).isDirectory() || (await fs.lstat(directory)).isSymbolicLink()) {
@@ -656,14 +654,14 @@ async function updateApiKey(directory, key) {
   try {
     const details = await fs.lstat(target);
     if (!details.isFile() || details.isSymbolicLink() || details.size > 8192 ||
-        (process.platform !== "win32" && (details.mode & 0o077))) throw new Error("Unsafe Jev credential file");
+        (process.platform !== "win32" && (details.mode & 0o077))) throw new Error("Unsafe Decision credential file");
     lines = (await fs.readFile(target, "utf8")).split(/\r?\n/)
-      .filter((line) => !/^\s*JEV_API_KEY\s*=/.test(line));
+      .filter((line) => line.trim().split("=", 1)[0].trim() !== keyName);
   } catch (error) {
     if (error.code !== "ENOENT") throw error;
   }
-  const content = [...lines.filter(Boolean), `JEV_API_KEY=${key}`].join("\n") + "\n";
-  if (Buffer.byteLength(content) > 8192) throw new Error("Jev credential file is too large");
+  const content = [...lines.filter(Boolean), `${keyName}=${key}`].join("\n") + "\n";
+  if (Buffer.byteLength(content) > 8192) throw new Error("Decision credential file is too large");
   const temporary = path.join(directory, `.env-${crypto.randomUUID()}.tmp`);
   let owned = false;
   try {
@@ -686,7 +684,7 @@ module.exports = {
   completeRelevancePolicy, DEFAULT_RELEVANCE_POLICY,
 
   decisionSummary, defaultDataDirectory, estimateTokensSaved,
-  isJevOutcome, outcomeLine, parseHealthOutput, readConfig,
+  isDecisionOutcome, outcomeLine, parseHealthOutput, readConfig,
   readApiKey, readEventOffset, readEventCursor, readEventsSince, readLifetimeStats,
   savedCharacters, writeApiKey, writeSelection,
   ensureSessionDefaults,

@@ -12,6 +12,7 @@ const holdout = require("../tests/fixtures/two-stage-holdout.cjs");
 const batching = require("../tests/fixtures/batching-cases.cjs");
 const precision = require("../tests/fixtures/precision-cases.cjs");
 const precisionHoldout = require("../tests/fixtures/precision-holdout.cjs");
+const { provider: providerSpec } = require("../vscode-control/providers");
 const { readApiKey, sessionDirectory } = require("../vscode-control/core");
 const { readLatestPanelDecision } = require("../vscode-control/panel-state");
 const kinds = ["repetitive_log", "progress_output", "independent_matches", "independent_records", "exact_content", "prose", "structured_payload", "mixed_or_unknown"];
@@ -22,9 +23,12 @@ faults.push("choice-trickle", "line-trickle", "line-late-trickle");
 const arg = (flag, fallback) => process.argv.includes(flag) ? process.argv[process.argv.indexOf(flag) + 1] : fallback;
 async function main() {
   const live = process.argv.includes("--live");
+  const provider = arg("--provider", "openai");
+  const spec = providerSpec(provider);
+  const providerFaults = provider === "openai" ? ["line-refusal", "line-order", "line-name", "choice-duplicate-option"] : [];
   if (live && !process.argv.includes("--data-dir")) throw new Error("Live mode requires --data-dir; the saved key stays in memory.");
-  const key = live ? await readApiKey(arg("--data-dir")) : null;
-  const hook = path.resolve(arg("--hook", path.join(os.homedir(), ".cache/codex-jev/cargo-target/debug/jev-hook")));
+  const key = live ? await readApiKey(arg("--data-dir"), provider) : null;
+  const hook = path.resolve(arg("--hook", path.join(os.homedir(), ".cache/codex-decision/cargo-target/debug/decision-hook")));
   const out = path.resolve(arg("--out", `.local/two-stage/${live ? "live" : "offline"}-${Date.now()}`));
   const maxCalls = Number(arg("--max-calls", "120"));
   const maxTokens = Number(arg("--max-tokens", "500000"));
@@ -32,23 +36,36 @@ async function main() {
   if (!Number.isInteger(relevantMax) || relevantMax < 0 || relevantMax > 100) throw new Error("Relevance cutoff must be an integer from 0 to 100");
   if (![maxCalls,maxTokens].every(value=>Number.isInteger(value)&&value>0)) throw new Error("Evaluation budgets must be positive integers");
   await fs.mkdir(out, { recursive: true, mode: 0o700 });
-  const temporary = await fs.mkdtemp(path.join(os.tmpdir(), "jev-two-stage-"));
+  const temporary = await fs.mkdtemp(path.join(os.tmpdir(), "decision-two-stage-"));
   if (temporary.startsWith("/mnt/d/")) throw new Error("Temporary work must be off D:");
   let current, calls = 0, totalCalls = 0, inputTokens = 0, outputTokens = 0;
   const reports = [];
+  const remoteTimes = [];
   const qualityCases = [];
   let judged = new Set(), requestBudgets = [], protocolFailures = [];
   const server = http.createServer(async (req, res) => {
     try {
       const chunks = []; let bytes = 0;
       for await (const chunk of req) { bytes += chunk.length; if (bytes + 4096 > 64000) throw new Error("request limit"); chunks.push(chunk); }
-      const request = JSON.parse(Buffer.concat(chunks));
+      const wire = JSON.parse(Buffer.concat(chunks));
+      const request = Array.isArray(wire.questions) ? { model: wire.model, state: JSON.parse(wire.input),
+        questions: Object.fromEntries(wire.questions.map(q => [q.name, { type: q.type === "predicate" ? "noul" : q.type,
+          instructions: q.instructions, ...(q.choices ? {criteria: Object.fromEntries(q.choices.map(c => [c.value,c.description]))} : {}) }])) } : wire;
+      const encodeResponse = body => {
+        if (provider === "typesafe") return body;
+        return { ...body, model: body.model === "jev-1.13.0" ? spec.model : body.model,
+          answers: Object.entries(body.answers).map(([name,a]) => {
+            if (a.type === "noul") { const {noul,type,...other}=a; return {name,type:"predicate",probability:noul,...other}; }
+            if (a.type === "choice") return {name,...a,probabilities:Object.entries(a.probabilities).map(([value,probability])=>({value,probability}))};
+            return {name,...a};
+          }) };
+      };
       calls += 1; totalCalls += 1;
       const first = !!request.questions.output_kind;
       const caseId=current.id;
       const stage=calls;
-      const budget={state_longest_question_bound:Buffer.byteLength(JSON.stringify(request.state))+
-        Math.max(...Object.values(request.questions).map(question=>Buffer.byteLength(JSON.stringify(question))))+4096,
+      const budget={state_longest_question_bound:Buffer.byteLength(JSON.stringify(wire.input ?? wire.state))+
+        Math.max(...Object.values(wire.questions).map(question=>Buffer.byteLength(JSON.stringify(question))))+4096,
         whole_request_bound:bytes+4096};
       requestBudgets.push(budget);
       if (budget.state_longest_question_bound>32000 || budget.whole_request_bound>64000 || first && calls!==1) {
@@ -63,12 +80,14 @@ async function main() {
       }
       if (live) {
         if (totalCalls > maxCalls || inputTokens + outputTokens >= maxTokens) throw new Error("live evaluation budget");
-        const response = await fetch("https://api.typesafe.ai/v1/systemone", { method: "POST",
+        const remoteStarted = Date.now();
+        const response = await fetch(spec.endpoint, { method: "POST",
           headers: {Authorization: `Bearer ${key}`, "Content-Type": "application/json"},
-          body: JSON.stringify(request), signal: AbortSignal.timeout(10000) });
+          body: JSON.stringify(wire), signal: AbortSignal.timeout(10000) });
         const text = await response.text();
+        remoteTimes.push(Date.now() - remoteStarted);
         const dest = path.join(out,caseId);await fs.mkdir(dest,{recursive:true,mode:0o700});
-        await fs.writeFile(path.join(dest,`remote-call-${stage}.json`), JSON.stringify({request,status:response.status,response:JSON.parse(text)},null,2)+"\n");
+        await fs.writeFile(path.join(dest,`remote-call-${stage}.json`), JSON.stringify({request:wire,status:response.status,response:JSON.parse(text)},null,2)+"\n");
         try { const body = JSON.parse(text); inputTokens += body.usage?.input_tokens || 0; outputTokens += body.usage?.output_tokens || 0;
           if (body.usage?.input_tokens>budget.whole_request_bound) protocolFailures.push("reported usage exceeds conservative request bound"); } catch {}
         res.writeHead(response.status, {"Content-Type":"application/json"});res.end(text);return;
@@ -84,7 +103,7 @@ async function main() {
         const suffix = fault.slice(fault.indexOf("-") + 1);
         if (suffix === "timeout") { setTimeout(() => res.end("{}"), 500);return; }
         if (suffix === "trickle") {
-          const encoded=JSON.stringify(body);let offset=0;
+          const encoded=JSON.stringify(encodeResponse(body));let offset=0;
           res.setHeader("Content-Type","application/json");res.write(encoded.slice(0,1));offset=1;
           const timer=setInterval(()=>{
             if (offset>=encoded.length) {clearInterval(timer);res.end();return;}
@@ -96,13 +115,21 @@ async function main() {
         if (suffix === "json") {res.end("{broken");return;}
         if (suffix === "oversized") {res.end("x".repeat(1000001));return;}
         const id = Object.keys(body.answers)[0];
+        if (["refusal", "order", "name", "duplicate-option"].includes(suffix)) {
+          const invalid = encodeResponse(body);
+          if (suffix === "refusal") invalid.answers[0] = {name:invalid.answers[0].name,type:"refusal"};
+          if (suffix === "order") invalid.answers.reverse();
+          if (suffix === "name") invalid.answers[0].name = "unexpected";
+          if (suffix === "duplicate-option") invalid.answers[0].probabilities[1] = invalid.answers[0].probabilities[0];
+          res.end(JSON.stringify(invalid));return;
+        }
         if (suffix.startsWith("duplicate-")) {
-          let encoded = JSON.stringify(body);
+          let encoded = JSON.stringify(encodeResponse(body));
           if (suffix === "duplicate-model") encoded = encoded.replace('"model":', '"model":"other-model","model":');
-          if (suffix === "duplicate-probability") encoded = encoded.replace('"noul":', '"noul":0.99,"noul":');
+          if (suffix === "duplicate-probability") encoded = encoded.replace(provider === "openai" ? '"probability":' : '"noul":', provider === "openai" ? '"probability":0.99,"probability":' : '"noul":0.99,"noul":');
           if (suffix === "duplicate-id") {
             const original = JSON.stringify(id) + ":" + JSON.stringify(body.answers[id]);
-            encoded = encoded.replace(original, JSON.stringify(id) + ': {"type":"noul","noul":0.99},' + original);
+            encoded = provider === "openai" ? encoded.replace('"name":'+JSON.stringify(id), '"name":"wrong","name":'+JSON.stringify(id)) : encoded.replace(original, JSON.stringify(id) + ': {"type":"noul","noul":0.99},' + original);
           }
           res.end(encoded);return;
         }
@@ -116,7 +143,7 @@ async function main() {
         if (suffix === "sum") body.answers[id].probabilities.repetitive_log = .5;
         if (suffix === "argmax") {body.answers[id].choice = "prose";}
       }
-      res.setHeader("Content-Type","application/json");res.end(JSON.stringify(body));
+      res.setHeader("Content-Type","application/json");res.end(JSON.stringify(encodeResponse(body)));
     } catch { if (!res.headersSent) res.writeHead(502);res.end("{}"); }
   });
   try {
@@ -124,7 +151,7 @@ async function main() {
     let selected = (process.argv.includes("--precision-holdout") ? precisionHoldout : process.argv.includes("--precision") ? precision : process.argv.includes("--batching") ? batching : process.argv.includes("--holdout") ? holdout : fixtures).filter(item => !process.argv.includes("--case") || arg("--case").split(",").includes(item.id));
     if (!selected.length) throw new Error("No matching case");
     if (!live && !process.argv.includes("--case") && !process.argv.includes("--skip-faults")) selected = [...selected,
-      ...faults.map(fault => {
+      ...[...faults, ...providerFaults].map(fault => {
         const fixture=fixtures.find(item => item.id === "log-failure-240");
         return {...fixture, id:fault, fault, expect_full:true,
           lines:fault.startsWith("choice-") ? fixture.lines.map(line=>line.replace(/^INFO /,"Routine ")) : fixture.lines};
@@ -132,9 +159,9 @@ async function main() {
     for (const item of selected) {
       current = item;calls = 0;judged = new Set();requestBudgets=[];protocolFailures=[];
       const data = path.join(temporary,item.id);await fs.mkdir(data,{mode:0o700});
-      await fs.writeFile(path.join(data,".env"),"JEV_API_KEY=synthetic-proxy-key\n",{mode:0o600});
-      await fs.writeFile(path.join(data,"config.json"),item.config_raw || JSON.stringify({schema_version:4,scope:"global",enabled:item.enabled !== false,
-        mode:item.mode || "replace",model:"jev-latest",timeout_seconds:/timeout$|trickle$/.test(item.fault || "") ? .15 : 4,
+      await fs.writeFile(path.join(data,".env"),`${spec.keyName}=synthetic-proxy-key\n`,{mode:0o600});
+      await fs.writeFile(path.join(data,"config.json"),item.config_raw || JSON.stringify({schema_version:5,provider,scope:"global",enabled:item.enabled !== false,
+        mode:item.mode || "replace",model:spec.model,timeout_seconds:/timeout$|trickle$/.test(item.fault || "") ? .15 : 4,
         relevance_policy:{relevant_max:relevantMax}}),{mode:0o600});
       const transcript=path.join(data,"transcript.jsonl");
       const userRecord = content => JSON.stringify({type:"response_item",payload:{role:"user",content}})+"\n";
@@ -150,7 +177,7 @@ async function main() {
         tool_input:item.tool_input || {command:item.command},tool_response:item.metadata ? {output:source,exit_code:1} : source};
       if (item.no_transcript) delete event.transcript_path;
       const started=Date.now();
-      const child=spawn(hook,[],{env:{...process.env,PLUGIN_DATA:data,CODEX_JEV_TEST_ENDPOINT:`http://127.0.0.1:${server.address().port}/`},stdio:["pipe","pipe","pipe"]});
+      const child=spawn(hook,[],{env:{...process.env,PLUGIN_DATA:data,CODEX_DECISION_TEST_ENDPOINT:`http://127.0.0.1:${server.address().port}/`},stdio:["pipe","pipe","pipe"]});
       let stdout="",stderr="";child.stdout.on("data",chunk=>stdout+=chunk);child.stderr.on("data",chunk=>stderr+=chunk);
       child.stdin.end(JSON.stringify(event));
       const code=await new Promise((resolve,reject)=>{child.on("error",reject);child.on("close",resolve);});
@@ -199,7 +226,10 @@ async function main() {
       reports.push(report);console.log(JSON.stringify(report));
     }
     const times=reports.map(item=>item.elapsed_ms).sort((a,b)=>a-b);
-    const summary={live,cases:reports.length,calls:totalCalls,input_tokens:inputTokens,output_tokens:outputTokens,
+    remoteTimes.sort((a,b)=>a-b);
+    const calledTimes=reports.filter(item=>item.calls>0).map(item=>item.elapsed_ms).sort((a,b)=>a-b);
+    const percentile=(values,p)=>values.length ? values[Math.min(values.length-1,Math.floor(values.length*p))] : null;
+    const summary={live,provider,model:spec.model,api_calls:remoteTimes.length,api_p50_ms:percentile(remoteTimes,.5),api_p95_ms:percentile(remoteTimes,.95),called_output_p50_ms:percentile(calledTimes,.5),called_output_p95_ms:percentile(calledTimes,.95),cases:reports.length,calls:totalCalls,input_tokens:inputTokens,output_tokens:outputTokens,
       replaced:reports.filter(item=>item.status==="replace").length,required_lines:reports.reduce((sum,item)=>sum+item.required,0),
       panel_decisions:reports.filter(item=>item.panel_rows>0).length,
       required_lost:reports.reduce((sum,item)=>sum+item.required_lost.length,0),
@@ -212,7 +242,7 @@ async function main() {
     if (qualityCases.length) {
       const casesPath=path.join(out,"quality-cases.json");
       await fs.writeFile(casesPath,JSON.stringify(qualityCases,null,2)+"\n");
-      const audit=spawnSync(path.join(path.dirname(hook),"jevctl"),["evaluate-quality","--cases",casesPath],{encoding:"utf8",maxBuffer:16000000});
+      const audit=spawnSync(path.join(path.dirname(hook),"decisionctl"),["evaluate-quality","--cases",casesPath],{encoding:"utf8",maxBuffer:16000000});
       if (audit.status !== 0) throw new Error(`Quality replay failed: ${audit.stderr || audit.error?.message}`);
       await fs.writeFile(path.join(out,"quality-audit.json"),audit.stdout);
     }

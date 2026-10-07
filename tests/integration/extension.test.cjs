@@ -16,8 +16,8 @@ async function until(predicate, timeoutMs = 2000) {
   }
 }
 
-test("composer bridge toggles Jev and reports view-scoped activity without a status item", async () => {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-control-test-"));
+test("composer bridge toggles Decision and reports view-scoped activity without a status item", async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "decision-control-test-"));
   const commands = new Map();
   let mode = "replace";
   let health = { ok: true, model: "jev-1.13.0" };
@@ -32,7 +32,7 @@ test("composer bridge toggles Jev and reports view-scoped activity without a sta
     window: {
       createStatusBarItem: () => { throw new Error("Status bar item must not be created"); },
       showInformationMessage: () => {},
-      createWebviewPanel: () => { throw new Error("Jev settings must stay in Codex settings"); },
+      createWebviewPanel: () => { throw new Error("Decision settings must stay in Codex settings"); },
       registerWebviewViewProvider: (_id, provider) => { panel = provider; return { dispose() {} }; },
     },
     Uri: { joinPath: () => ({}), file: (filename) => ({ fsPath: filename }), parse: (uri) => ({ toString: () => uri }) }, ViewColumn: { Active: 1 }, ConfigurationTarget: { Global: 1 },
@@ -65,10 +65,10 @@ test("composer bridge toggles Jev and reports view-scoped activity without a sta
   const context = { subscriptions: [], extensionUri: {} };
   try {
     extension.activate(context);
-    await commands.get("codexJev.showLatestDecision")();
-    assert.equal(executedCommand, "codexJevDecision.focus");
-    assert.equal(commands.has("codexJev.selectHooks"), false);
-    const rawBridge = commands.get("codexJev.bridge");
+    await commands.get("codexDecision.showLatestDecision")();
+    assert.equal(executedCommand, "codexDecisionDecision.focus");
+    assert.equal(commands.has("codexDecision.selectHooks"), false);
+    const rawBridge = commands.get("codexDecision.bridge");
     const sessionId = "fixture-session";
     const scoped = core.sessionDirectory(directory, sessionId);
     const bridge = (request) => rawBridge({ sessionId, viewId: "view-one", focused: true, ...request });
@@ -76,7 +76,7 @@ test("composer bridge toggles Jev and reports view-scoped activity without a sta
       () => bridge({ action: "status", viewId: "view-one", focused: false })));
     const defaultView = initialReplies[0];
     assert.ok(initialReplies.every((reply) => reply.enabled),
-      "concurrent startup replies must not briefly report Jev off");
+      "concurrent startup replies must not briefly report Decision off");
     assert.equal(defaultView.enabled, true);
     assert.equal(defaultView.needsKey, true);
     assert.equal(panel.dataDirectory(), scoped,
@@ -103,19 +103,19 @@ test("composer bridge toggles Jev and reports view-scoped activity without a sta
     await Promise.all(Array.from({ length: 12 }, () => bridge({ action: "status" })));
     assert.equal(panelRefreshes, 0,
       "unchanged composer status must not duplicate the panel's own polling");
-    assert.equal((await bridge({ action: "openTypeSafe", viewId: "view-one" })).externalOpen, true);
-    assert.equal(openedExternal, "https://typesafe.ai/");
+    assert.equal((await bridge({ action: "openProvider", viewId: "view-one" })).externalOpen, true);
+    assert.equal(openedExternal, "https://platform.openai.com/api-keys");
     browserAvailable = false;
-    assert.equal((await bridge({ action: "openTypeSafe", viewId: "view-one" })).externalOpen, false);
+    assert.equal((await bridge({ action: "openProvider", viewId: "view-one" })).externalOpen, false);
     browserAvailable = true;
     const firstSelection = await bridge({ action: "setSelection", enabled: true, viewId: "view-one" });
     assert.equal(firstSelection.needsKey, true);
-    assert.equal(firstSelection.expectedHookVersion, require("../../vscode-control/package.json").codexJevHookVersion);
+    assert.equal(firstSelection.expectedHookVersion, require("../../vscode-control/package.json").codexDecisionHookVersion);
     const firstTest = await bridge({ action: "testApiKey", key: "example-test-key", viewId: "view-one" });
     assert.equal(firstTest.keyTest.ok, true);
     assert.equal(suppliedKey, "example-test-key");
     assert.equal(JSON.stringify(firstTest).includes("example-test-key"), false);
-    assert.equal((await bridge({ action: "status", viewId: "view-one" })).health?.reason, "JEV_KEY_MISSING");
+    assert.equal((await bridge({ action: "status", viewId: "view-one" })).health?.reason, "DECISION_KEY_MISSING");
     assert.equal((await core.readConfig(scoped)).enabled, true);
     assert.equal(firstSelection.classificationPulse, 0, "key probes do not signal classification");
 
@@ -161,7 +161,7 @@ test("composer bridge toggles Jev and reports view-scoped activity without a sta
     await until(async () =>
       (await bridge({ action: "status", viewId: "view-one" })).stats.completed === 2);
     assert.equal(probes, beforeFailureProbe, "missing key does not trigger a network probe");
-    assert.equal((await bridge({ action: "status", viewId: "view-one" })).health.reason, "JEV_KEY_MISSING");
+    assert.equal((await bridge({ action: "status", viewId: "view-one" })).health.reason, "DECISION_KEY_MISSING");
     assert.equal((await bridge({ action: "status", viewId: "view-one" })).stats.estimatedTokensSaved, 2652);
 
     await Promise.all([
@@ -197,16 +197,16 @@ test("composer bridge toggles Jev and reports view-scoped activity without a sta
     await bridge({ action: "setSelection", enabled: false,
       viewId: "view-one" });
 
-    await commands.get("codexJev.checkConnection")();
-    assert.equal((await bridge({ action: "status", viewId: "view-two" })).health.reason, "JEV_KEY_MISSING");
+    await commands.get("codexDecision.checkConnection")();
+    assert.equal((await bridge({ action: "status", viewId: "view-two" })).health.reason, "DECISION_KEY_MISSING");
 
-    assert.equal(commands.has("codexJev.openSettings"), false);
+    assert.equal(commands.has("codexDecision.openSettings"), false);
     const ready = (await bridge({ action: "settingsRead" })).settings;
     assert.equal(ready.action, "ready");
     assert.equal(ready.hasKey, false);
     assert.equal(ready.keyLength, 0);
     assert.equal(ready.config.relevance_policy.relevant_max, 5);
-    assert.deepEqual(ready.defaults, { mode: "replace", relevance_policy: core.DEFAULT_RELEVANCE_POLICY,
+    assert.deepEqual(ready.defaults, { provider:"openai", model:"gpt-6-luna", mode: "replace", relevance_policy: core.DEFAULT_RELEVANCE_POLICY,
       log_limit_mb: 50, never_delete_logs: false });
     assert.equal(ready.config.log_limit_mb, 50);
     assert.equal(ready.lifetime.calls, 2);
@@ -254,9 +254,9 @@ test("composer bridge toggles Jev and reports view-scoped activity without a sta
     assert.equal(saved.needsKey, false);
     assert.equal(await core.readApiKey(directory), "another-test-key-123");
     assert.equal(JSON.stringify(saved).includes("another-test-key-123"), false);
-    health = { ok: false, reason: "JEV_HTTP_ERROR" };
-    await commands.get("codexJev.checkConnection")();
-    assert.equal((await bridge({ action: "status", viewId: "view-two" })).health.reason, "JEV_HTTP_ERROR");
+    health = { ok: false, reason: "DECISION_HTTP_ERROR" };
+    await commands.get("codexDecision.checkConnection")();
+    assert.equal((await bridge({ action: "status", viewId: "view-two" })).health.reason, "DECISION_HTTP_ERROR");
     health = { ok: true, model: "jev-1.13.0" };
     assert.equal((await bridge({ action: "retryConnection", viewId: "view-two" })).health.ok, true);
 
@@ -279,8 +279,8 @@ test("composer bridge toggles Jev and reports view-scoped activity without a sta
 
     await fs.writeFile(path.join(scoped, "config.json"), '{"schema_version":1,"enabled":true}');
     const broken = await bridge({ action: "status", viewId: "view-five" });
-    assert.equal(broken.configurationError, "Jev configuration could not be read");
-    assert.equal(broken.health.reason, "JEV_CONFIG_ERROR");
+    assert.equal(broken.configurationError, "Decision configuration could not be read");
+    assert.equal(broken.health.reason, "DECISION_CONFIG_ERROR");
     const missingView = await bridge({ action: "setSelection", viewId: "", enabled: true });
     assert.equal(missingView.configurationError, "Codex session could not be identified");
     assert.equal(missingView.enabled, false);
@@ -318,7 +318,7 @@ test("composer bridge toggles Jev and reports view-scoped activity without a sta
     assert.equal(unknownLocal.configurationError, "Codex session could not be identified");
     assert.equal(unknownLocal.sessionPending, false);
     const recovered = await bridge({ action: "status", viewId: "restored-view" });
-    assert.equal(recovered.configurationError, "Jev configuration could not be read");
+    assert.equal(recovered.configurationError, "Decision configuration could not be read");
     assert.equal(recovered.sessionPending, false);
   } finally {
     for (const disposable of context.subscriptions.reverse()) disposable.dispose();

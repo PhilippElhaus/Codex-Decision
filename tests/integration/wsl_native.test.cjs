@@ -9,7 +9,7 @@ const test = require("node:test");
 const core = require("../../vscode-control/core");
 const { readLatestPanelDecision } = require("../../vscode-control/panel-state");
 
-const distro = process.env.CODEX_JEV_TEST_WSL_DISTRO;
+const distro = process.env.CODEX_DECISION_TEST_WSL_DISTRO;
 test("native Windows reads panel snapshots and preserves private WSL session state", {
   skip: process.platform !== "win32" || !distro,
   timeout: 60_000,

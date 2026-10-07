@@ -1,23 +1,29 @@
-# Configure the Jev API key
+# Configure provider keys
 
-Codex Jev reads `JEV_API_KEY` from `PLUGIN_DATA/.env`. This plaintext file belongs in the installed plugin's user-local data directory, outside the Git repository. Keep it private. On Linux, the hook requires owner-only file permissions. A missing or invalid key leaves the original tool output visible.
+Codex Decision defaults to OpenAI Decisions with `gpt-6-luna`. TypeSafe Jev remains available with `jev-latest`. Select the provider in **Connect Decision** or **Codex settings → Decision**. Keys stay local and never enter the webview when read from disk.
 
-For a default `codex-jev@codex-jev` installation, the data directory is `~/.codex/plugins/data/codex-jev-codex-jev`. Create `.env` there with a text editor. Its only required line is:
+Store keys in the installed plugin’s private `PLUGIN_DATA/.env`, outside the repository:
 
 ```dotenv
-JEV_API_KEY=your-key
+OPENAI_API_KEY=your-openai-key
+JEV_API_KEY=your-typesafe-key
 ```
 
-On Linux or WSL, make the directory private and set the file mode to `600`. The bundled Rust `jevctl` accepts a key from a pipe; it refuses interactive terminal input so the key is not echoed. For example, pass the key from a local secret manager to:
+Only the selected provider’s key is required. Saving one key preserves the other. Requests never fall back to another provider. A missing key, refusal, invalid answer, or API error keeps the original output visible.
+
+A default marketplace installation uses `~/.codex/plugins/data/codex-decision-codex-decision`. A personal marketplace installation uses `~/.codex/plugins/data/codex-decision-personal`. Use the directory reported by your installation. Set `codexDecision.dataDirectory` in VS Code to that absolute directory. For Windows VS Code with WSL, use a `\\wsl.localhost\<distro>\...` path. `CODEX_DECISION_DATA_DIRECTORY` is the equivalent environment setting.
+
+On Linux, directories must use mode `700` and `.env` must use mode `600`. The parser treats the key as text and does not execute shell code. Use an editor or pipe a secret-manager value to the CLI. Do not put the value in arguments or chat:
 
 ```bash
-jevctl set-key --data-dir "$HOME/.codex/plugins/data/codex-jev-codex-jev"
+decisionctl set-key --data-dir <PLUGIN_DATA>
+decisionctl set-key --data-dir <PLUGIN_DATA> --provider typesafe
 ```
 
-The parser treats the value as text. It does not execute shell code. The hook sends bounded requests directly to `https://api.typesafe.ai/v1/systemone` with the key in the HTTPS Authorization header. The key does not enter command arguments, tool output, or decision logs. If you use the Codex side window setup, the entered key passes through its local webview bridge to the extension. The extension checks for a saved key and probes Jev health when an integration is enabled.
+The first command writes `OPENAI_API_KEY`. The second writes `JEV_API_KEY`. Both require piped standard input. OpenAI requests go directly to `https://api.openai.com/v1/decisions`; TypeSafe requests go to `https://api.typesafe.ai/v1/systemone`. Only the matching key enters the HTTPS Authorization header.
 
-Set `codexJev.dataDirectory` in VS Code to the same absolute directory. For a WSL installation used by Windows VS Code, use a `\\wsl.localhost\<distro>\...` path. `CODEX_JEV_DATA_DIRECTORY` is an alternative setting for the control.
+In settings, choose the provider before testing or saving a key. Leave the key field empty to test that provider’s saved key. A provider change clears the draft field. Shared provider settings apply to all sessions; each session keeps its own enabled flag. Legacy configurations retain TypeSafe until you explicitly change providers.
 
-Enabling an integration without a key opens **Connect Jev** over the Codex side window. Enter a typesafe.ai API key there, test it, then save it. A link below Save and Skip opens the typesafe.ai homepage in the system browser. **Skip for now** closes the prompt without saving; **Connect Jev…** in the Jev menu and **Connect** in the missing-key tooltip reopen it. In **Codex settings → Jev**, below **Voice**, a saved key is indicated by a masked placeholder; its value never reaches the webview. Click **Test API key** with the field empty to test the saved key; enter a different key to test or save a replacement. The result appears beside the button. Changes to hook cutoffs also live there.
+For this workstation, Vaultwarden is authoritative. The exact shared secure notes are `openai-decisions-api-key` and `typesafe-api-key` in organization `Elhaus`, collection `OpenClaw`. Use the supported Vaultwarden materialization helper for authorized operations. Keep temporary materializations private and remove them after use.
 
-See [data handling](../architecture/design_data.md) for the text sent to Jev and the saved originals.
+See [data handling](../architecture/design_data.md) for transmitted text and saved originals.

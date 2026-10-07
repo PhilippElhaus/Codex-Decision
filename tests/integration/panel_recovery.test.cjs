@@ -151,7 +151,7 @@ test("panel subscribes before document load and waits for the renderer to be rea
   view.onDidChangeVisibility = () => ({ dispose() {} });
   view.onDidDispose = () => {};
   Object.defineProperty(view.webview, "html", { set(html) {
-    assert.ok(html.includes("jev-panel.js"));
+    assert.ok(html.includes("decision-panel.js"));
     assert.equal(typeof ready, "function", "the listener must exist before HTML loads");
   } });
   try {
@@ -175,7 +175,7 @@ test("an unavailable data directory reports a fault and recovers on the next ref
     f.provider.dataDirectory = () => { throw new Error("configuration missing"); };
     await f.provider.refresh();
     assert.equal(f.messages.at(-1).decision, null);
-    assert.equal(f.faults.at(-1), "Latest Jev decision could not be read");
+    assert.equal(f.faults.at(-1), "Latest Decision decision could not be read");
     f.provider.dataDirectory = directory;
     await f.provider.refresh();
     assert.equal(f.messages.at(-1).decision.id, "latest");

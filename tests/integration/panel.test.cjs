@@ -9,7 +9,7 @@ const test = require("node:test");
 
 test("empty panel explains real API requests and skipped outputs for its selected thread", async () => {
   const { readPanelActivity } = require("../../vscode-control/panel-state");
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-panel-activity-"));
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "decision-panel-activity-"));
   try {
     await fs.mkdir(path.join(directory, "logs"));
     const config = { schema_version: 4, enabled: true, mode: "replace", relevance_policy: { relevant_max: 5 } };
@@ -23,10 +23,10 @@ test("empty panel explains real API requests and skipped outputs for its selecte
     const activity = await readPanelActivity(directory);
     assert.equal(activity.calls, 11);
     assert.equal(activity.skipped, 341);
-    assert.match(activity.message, /Jev classified.*No line judgments/);
+    assert.match(activity.message, /Decision classified.*No line judgments/);
     health.last_skip = "unsupported_route";
     await fs.writeFile(path.join(directory, "logs", "hook-health.json"), JSON.stringify(health));
-    assert.match((await readPanelActivity(directory)).message, /before calling Jev/);
+    assert.match((await readPanelActivity(directory)).message, /before calling Decision/);
     await fs.writeFile(path.join(directory, "config.json"), JSON.stringify({ ...config, enabled: false }));
     assert.match((await readPanelActivity(directory)).message, /off for this thread/);
   } finally { await fs.rm(directory, { recursive: true, force: true }); }
@@ -37,12 +37,12 @@ test("panel manifest registers a visible view in a valid container", () => {
   const [container] = manifest.contributes.viewsContainers.panel;
   assert.match(container.id, /^[A-Za-z0-9_-]+$/);
   const [view] = manifest.contributes.views[container.id];
-  assert.equal(view.id, "codexJevDecision");
+  assert.equal(view.id, "codexDecisionDecision");
   assert.equal(view.visibility, "visible");
 });
 
 test("panel keeps each decision visible through its animation and a one second rest", async () => {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-panel-test-"));
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "decision-panel-test-"));
   const logs = path.join(directory, "logs");
   await fs.mkdir(logs);
   const filename = path.join(logs, "latest-decision.json");
@@ -131,7 +131,7 @@ test("panel keeps each decision visible through its animation and a one second r
 });
 
 test("panel is empty without a thread and reports corrupt session data outside the panel", async () => {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-panel-test-"));
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "decision-panel-test-"));
   const messages = [];
   const faults = [];
   const fake = { Uri: { joinPath: (_root, ...parts) => parts.join("/") } };
@@ -158,7 +158,7 @@ test("panel is empty without a thread and reports corrupt session data outside t
     await fs.writeFile(path.join(directory, "logs", "latest-decision.json"), "{broken");
     await provider.refresh();
     assert.deepEqual(messages.at(-1), { type: "decision", decision: null });
-    assert.equal(faults.at(-1), "Latest Jev decision could not be read");
+    assert.equal(faults.at(-1), "Latest Decision decision could not be read");
     await fs.rm(path.join(directory, "logs", "latest-decision.json"));
     await provider.refresh();
     assert.equal(faults.at(-1), null);

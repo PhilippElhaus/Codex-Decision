@@ -3,11 +3,11 @@
 const path = require("node:path");
 const fs = require("node:fs/promises");
 const vscode = require("vscode");
-const EXPECTED_HOOK_VERSION = require("./package.json").codexJevHookVersion;
+const EXPECTED_HOOK_VERSION = require("./package.json").codexDecisionHookVersion;
 const { LatestDecisionProvider, VIEW_ID } = require("./panel");
 const {
   checkHealth, decisionSummary, defaultDataDirectory, estimateTokensSaved,
-  isJevOutcome, outcomeLine, readConfig, readEventCursor, readEventsSince, savedCharacters,
+  isDecisionOutcome, outcomeLine, readConfig, readEventCursor, readEventsSince, savedCharacters,
   readApiKey, writeApiKey, writeSelection,
   completeRelevancePolicy,
   sessionDirectory, readHookHealth, ensureSessionDefaults,
@@ -26,7 +26,12 @@ function createController(dataDirectory) {
   let entering = Promise.resolve();
   let probePromise = null;
   const activeDirectory = () => sessionDirectory(dataDirectory(), state.sessionId);
+  const providerFallback = () => ({ provider: state.provider || "openai",
+    model: state.model || (state.provider === "typesafe" ? "jev-latest" : "gpt-6-luna") });
+  const readSettings = () => readGlobalSettings(dataDirectory(), providerFallback());
+  const writeSettings = (changes) => writeGlobalSettings(dataDirectory(), changes, providerFallback());
   const snapshot = () => ({
+    provider: state.provider || "openai",
     enabled: state.enabled,
     needsKey: state.needsKey,
     health: state.health,
@@ -125,21 +130,24 @@ function createController(dataDirectory) {
         state.eventDirectory = directory;
         state.health = null;
       }
-      const [config, settings] = await Promise.all([
-        ensureSessionDefaults(directory), readGlobalSettings(dataDirectory()),
-      ]);
+      const config = await ensureSessionDefaults(directory);
+      const settings = await readGlobalSettings(dataDirectory(), {
+        provider: config.provider, model: config.model,
+      });
       if (generation !== state.generation) return;
       const selected = config.enabled;
       let needsKey = false;
-      try { await readApiKey(dataDirectory()); }
+      try { await readApiKey(dataDirectory(), settings.provider); }
       catch { needsKey = true; }
       if (generation !== state.generation) return;
       state.configurationError = null;
       state.enabled = selected;
       state.mode = settings.mode;
+      state.provider = settings.provider;
+      state.model = settings.model;
       const wasMissingKey = state.needsKey;
       state.needsKey = needsKey;
-      if (state.needsKey) state.health = { ok: false, reason: "JEV_KEY_MISSING" };
+      if (state.needsKey) state.health = { ok: false, reason: "DECISION_KEY_MISSING" };
       if (!state.needsKey && (wasMissingKey || directoryChanged || !state.health)) {
         void (probePromise ? probePromise.then(() => probe()) : probe());
       }
@@ -147,9 +155,9 @@ function createController(dataDirectory) {
       if (generation !== state.generation) return;
       state.enabled = false;
       state.needsKey = false;
-      state.health = { ok: false, reason: "JEV_CONFIG_ERROR" };
+      state.health = { ok: false, reason: "DECISION_CONFIG_ERROR" };
       state.configurationError = /session ID/.test(error.message) ? "Codex session could not be identified" :
-        "Jev configuration could not be read";
+        "Decision configuration could not be read";
     }
   }
 
@@ -159,14 +167,17 @@ function createController(dataDirectory) {
     state.checking = true;
     probePromise = (async () => {
       try {
-        const result = await checkHealth(dataDirectory());
+        const settings = await readSettings();
+        const result = await checkHealth(dataDirectory(), globalThis.fetch, null, settings.provider);
         if (generation === state.generation) {
+          state.provider = settings.provider;
+          state.model = settings.model;
           state.health = result;
-          state.needsKey = result.reason === "JEV_KEY_MISSING";
+          state.needsKey = result.reason === "DECISION_KEY_MISSING";
         }
       } catch {
         if (generation === state.generation) {
-          state.health = { ok: false, reason: "JEV_CONFIG_ERROR" };
+          state.health = { ok: false, reason: "DECISION_CONFIG_ERROR" };
         }
       }
     })().finally(() => {
@@ -204,7 +215,7 @@ function createController(dataDirectory) {
             if (state.enabled) state.classificationPulse += 1;
           } else if (event.status === "calling") {
             state.stats.calls += 1;
-          } else if (isJevOutcome(event)) {
+          } else if (isDecisionOutcome(event)) {
             state.stats.calls += event.requests;
             state.stats.completed += 1;
             state.stats.checkedChars += event.original_chars;
@@ -258,9 +269,9 @@ function createController(dataDirectory) {
     try {
       const directory = dataDirectory();
       if (request.action === "settingsRead") {
-        const config = await readGlobalSettings(directory);
+        const config = await readSettings();
         let keyLength = 0;
-        try { keyLength = (await readApiKey(dataDirectory())).length; } catch { /* no usable key */ }
+        try { keyLength = (await readApiKey(dataDirectory(), config.provider)).length; } catch { /* no usable key */ }
         const lifetime = await readInstallationStats(directory);
         return { action: "ready", config,
           defaults: DEFAULT_SETTINGS,
@@ -268,17 +279,17 @@ function createController(dataDirectory) {
       }
       if (request.action === "settingsOpenLogs") {
         const parent = await fs.lstat(directory);
-        if (!parent.isDirectory() || parent.isSymbolicLink()) throw new Error("Unsafe Jev data directory");
-        if (!await vscode.env.openExternal(vscode.Uri.file(directory))) throw new Error("Could not open Jev logs");
+        if (!parent.isDirectory() || parent.isSymbolicLink()) throw new Error("Unsafe Decision data directory");
+        if (!await vscode.env.openExternal(vscode.Uri.file(directory))) throw new Error("Could not open Decision logs");
         return { action: "openedLogs" };
       }
       if (request.action === "settingsTest") {
         const key = typeof request.key === "string" && request.key ? request.key : null;
-        return { action: "tested", result: await checkHealth(dataDirectory(), globalThis.fetch, key) };
+        return { action: "tested", result: await checkHealth(dataDirectory(), globalThis.fetch, key, request.provider || (await readSettings()).provider) };
       }
       if (request.action === "settingsSetNeverDeleteLogs") {
         if (typeof request.neverDeleteLogs !== "boolean") throw new Error("Never delete logs must be a boolean");
-        const task = selectionQueue.then(() => writeGlobalSettings(directory,
+        const task = selectionQueue.then(() => writeSettings(
           { never_delete_logs: request.neverDeleteLogs }));
         selectionQueue = task.catch(() => {});
         await task;
@@ -287,32 +298,35 @@ function createController(dataDirectory) {
       if (request.action === "settingsSave") {
         if (!["observe", "replace"].includes(request.mode)) throw new Error("Invalid mode");
         if (!Number.isInteger(request.logLimitMb) || request.logLimitMb < 1 || request.logLimitMb > 9999 ||
-            typeof request.neverDeleteLogs !== "boolean") throw new Error("Invalid Jev settings");
+            typeof request.neverDeleteLogs !== "boolean") throw new Error("Invalid Decision settings");
         const relevancePolicy = completeRelevancePolicy(request.relevancePolicy);
+        const selected = request.provider || (await readSettings()).provider;
+        const model = selected === "openai" ? "gpt-6-luna" : "jev-latest";
+        if (!["openai", "typesafe"].includes(selected)) throw new Error("Invalid decision provider");
         const task = selectionQueue.then(async () => {
-          await writeGlobalSettings(directory, { mode: request.mode, relevance_policy: relevancePolicy,
+          await writeSettings({ provider: selected, model, mode: request.mode, relevance_policy: relevancePolicy,
             log_limit_mb: request.logLimitMb, never_delete_logs: request.neverDeleteLogs });
-          if (request.key) await writeApiKey(dataDirectory(), request.key);
+          if (request.key) await writeApiKey(dataDirectory(), request.key, selected);
           if (state.sessionId) await sync();
-          if (request.key) await probe();
+          await probe();
         });
         selectionQueue = task.catch(() => {});
         await task;
         let keyLength = 0;
-        try { keyLength = (await readApiKey(dataDirectory())).length; } catch { /* optional key */ }
+        try { keyLength = (await readApiKey(dataDirectory(), selected)).length; } catch { /* optional key */ }
         return { action: "saved", hasKey: keyLength > 0, keyLength };
       }
     } catch (error) {
-      return { action: "error", message: error.message || "Jev settings failed" };
+      return { action: "error", message: error.message || "Decision settings failed" };
     }
     return { action: "error", message: "Unknown settings action" };
   }
 
   async function bridge(request) {
     await enterView(request?.viewId, request?.sessionId, request?.expectsLocalSession === true);
-    if (request?.action === "openTypeSafe") {
+    if (["openTypeSafe", "openProvider"].includes(request?.action)) {
       try {
-        const externalOpen = await vscode.env.openExternal(vscode.Uri.parse("https://typesafe.ai/"));
+        const externalOpen = await vscode.env.openExternal(vscode.Uri.parse((request.provider || state.provider) === "typesafe" ? "https://typesafe.ai/" : "https://platform.openai.com/api-keys"));
         return { ...snapshot(), externalOpen: externalOpen === true };
       } catch {
         return { ...snapshot(), externalOpen: false };
@@ -323,12 +337,17 @@ function createController(dataDirectory) {
     }
     if (request?.action === "testApiKey") {
       const keyTest = await checkHealth(dataDirectory(), globalThis.fetch,
-        typeof request.key === "string" ? request.key : "");
+        typeof request.key === "string" ? request.key : "", request.provider || (await readSettings()).provider);
       return { ...snapshot(), keyTest };
     }
     if (request?.action === "saveApiKey") {
       try {
-        await writeApiKey(dataDirectory(), request.key);
+        const selected = request.provider || (await readSettings()).provider;
+        if (!["openai", "typesafe"].includes(selected)) throw new Error("Invalid decision provider");
+        await writeApiKey(dataDirectory(), request.key, selected);
+        await writeSettings({ provider: selected, model: selected === "openai" ? "gpt-6-luna" : "jev-latest" });
+        state.provider = selected;
+        state.model = selected === "openai" ? "gpt-6-luna" : "jev-latest";
         state.needsKey = false;
         if (probePromise) await probePromise;
         await probe();
@@ -354,11 +373,11 @@ function createController(dataDirectory) {
 function activate(context) {
   const controllers = new Map();
   let active = null;
-  const settings = () => vscode.workspace.getConfiguration("codexJev");
+  const settings = () => vscode.workspace.getConfiguration("codexDecision");
   const dataDirectory = () => {
     const directory = settings().get("dataDirectory") || defaultDataDirectory();
     if (typeof directory !== "string" || !path.isAbsolute(directory)) {
-      throw new Error("Set codexJev.dataDirectory to the installed plugin's absolute PLUGIN_DATA path.");
+      throw new Error("Set codexDecision.dataDirectory to the installed plugin's absolute PLUGIN_DATA path.");
     }
     return directory;
   };
@@ -379,9 +398,9 @@ function activate(context) {
     (fault) => { if (active) active.state.panelFault = fault; });
   context.subscriptions.push(vscode.window.registerWebviewViewProvider(VIEW_ID, decisionPanel));
   context.subscriptions.push(decisionPanel);
-  context.subscriptions.push(vscode.commands.registerCommand("codexJev.showLatestDecision", () =>
+  context.subscriptions.push(vscode.commands.registerCommand("codexDecision.showLatestDecision", () =>
     vscode.commands.executeCommand(`${VIEW_ID}.focus`)));
-  context.subscriptions.push(vscode.commands.registerCommand("codexJev.bridge", async (request) => {
+  context.subscriptions.push(vscode.commands.registerCommand("codexDecision.bridge", async (request) => {
     const controller = controllerFor(request?.viewId);
     const previousController = active;
     const previousSession = active?.state.sessionId;
@@ -389,7 +408,7 @@ function activate(context) {
       active = controller;
     }
     const reply = await controller.bridge(request);
-    // A restored Codex view can start while focus remains in the Jev panel.
+    // A restored Codex view can start while focus remains in the Decision panel.
     if (!active && controller.state.sessionId) active = controller;
     if (active === controller && (active !== previousController ||
         active.state.sessionId !== previousSession)) void decisionPanel.refresh();
@@ -409,11 +428,11 @@ function activate(context) {
     }
     return reply;
   }));
-  context.subscriptions.push(vscode.commands.registerCommand("codexJev.checkConnection", async () => {
+  context.subscriptions.push(vscode.commands.registerCommand("codexDecision.checkConnection", async () => {
     await (active || createController(dataDirectory)).probe();
   }));
   context.subscriptions.push(vscode.workspace.onDidChangeConfiguration((event) => {
-    if (event.affectsConfiguration("codexJev")) {
+    if (event.affectsConfiguration("codexDecision")) {
       for (const { controller } of controllers.values()) void controller.sync();
     }
   }));

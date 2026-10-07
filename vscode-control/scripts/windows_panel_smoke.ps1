@@ -8,7 +8,7 @@ $temporary = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\')
 if ([IO.Path]::GetPathRoot($temporary) -ieq 'D:\') { throw 'Test temporary root must be off D:.' }
 if (-not (Test-Path -LiteralPath $CodeExecutable -PathType Leaf)) { throw 'VS Code executable was not found.' }
 $runId = [Guid]::NewGuid().ToString('N')
-$taskRoot = Join-Path $temporary ('jev-vscode-panel-' + $runId)
+$taskRoot = Join-Path $temporary ('decision-vscode-panel-' + $runId)
 $control = Join-Path $taskRoot 'control'
 $profile = Join-Path $taskRoot 'profile'
 $report = Join-Path $repository '.local\quality\windows-panel-smoke.json'
@@ -17,18 +17,18 @@ $linuxRoot = $null
 $codeProcess = $null
 $ownedProcessStopped = $true
 $savedEnvironment = @{}
-foreach ($name in @('ELECTRON_RUN_AS_NODE', 'JEV_PANEL_TEST_CONTROL', 'JEV_PANEL_TEST_DATA', 'JEV_PANEL_TEST_REPORT', 'JEV_PANEL_TEST_RUN')) {
+foreach ($name in @('ELECTRON_RUN_AS_NODE', 'DECISION_PANEL_TEST_CONTROL', 'DECISION_PANEL_TEST_DATA', 'DECISION_PANEL_TEST_REPORT', 'DECISION_PANEL_TEST_RUN')) {
     $savedEnvironment[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
 }
 try {
     New-Item -ItemType Directory -Path $control, (Join-Path $profile 'User'), (Join-Path $taskRoot 'extensions') -Force | Out-Null
     New-Item -ItemType Directory -Path (Split-Path $report) -Force | Out-Null
-    $linuxRoot = (& wsl.exe -d $Distro -e mktemp -d -p /tmp jev-vscode-panel-XXXXXXXX).Trim()
-    if ($LASTEXITCODE -ne 0 -or $linuxRoot -notmatch '^/tmp/jev-vscode-panel-[A-Za-z0-9]{8}$') { throw 'Unexpected Linux fixture root.' }
+    $linuxRoot = (& wsl.exe -d $Distro -e mktemp -d -p /tmp decision-vscode-panel-XXXXXXXX).Trim()
+    if ($LASTEXITCODE -ne 0 -or $linuxRoot -notmatch '^/tmp/decision-vscode-panel-[A-Za-z0-9]{8}$') { throw 'Unexpected Linux fixture root.' }
     $data = '\\wsl.localhost\' + $Distro + $linuxRoot.Replace('/', '\')
     $files = @('package.json', 'config-contract.json', 'core.js', 'extension.js', 'panel.js', 'panel-state.js',
-        'private-paths.js', 'schema.js', 'icon.png', 'LICENSE', 'README.md', 'media\jev-panel.svg',
-        'webview\jev-control.js', 'webview\jev-settings.js', 'webview\jev-panel.js', 'webview\jev-panel.css')
+        'private-paths.js', 'schema.js', 'providers.js', 'icon.png', 'LICENSE', 'README.md', 'media\decision-panel.svg',
+        'webview\decision-control.js', 'webview\decision-settings.js', 'webview\decision-panel.js', 'webview\decision-panel.css')
     foreach ($file in $files) {
         $source = Join-Path $repository ('vscode-control\' + $file)
         if (((Get-Item -LiteralPath $source).Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'Linked test source.' }
@@ -41,17 +41,17 @@ try {
     $source = [IO.File]::ReadAllText($providerPath)
     $needle = 'this.extensionUri = extensionUri;'
     if ($source.IndexOf($needle) -ne $source.LastIndexOf($needle) -or -not $source.Contains($needle)) { throw 'Provider instrumentation anchor changed.' }
-    [IO.File]::WriteAllText($providerPath, $source.Replace($needle, $needle + ' globalThis.__jevPanelTestProvider = this;'), $utf8)
-    $rendererPath = Join-Path $control 'webview\jev-panel.js'
+    [IO.File]::WriteAllText($providerPath, $source.Replace($needle, $needle + ' globalThis.__decisionPanelTestProvider = this;'), $utf8)
+    $rendererPath = Join-Path $control 'webview\decision-panel.js'
     $source = [IO.File]::ReadAllText($rendererPath)
     $needle = 'else showEmpty(event.data.activity);'
     if ($source.IndexOf($needle) -ne $source.LastIndexOf($needle) -or -not $source.Contains($needle)) { throw 'Renderer instrumentation anchor changed.' }
-    $ack = ' vscode.postMessage({type:"jev-test-rendered", id:event.data.decision?.id || null, rows:document.querySelectorAll(".batch-row").length, kept:document.querySelectorAll(".batch-row.keep").length, unscored:[...document.querySelectorAll(".batch-row.unscored")].map(row => ({score:row.querySelector(".batch-value").textContent, title:row.title})), title:document.querySelector(".batch-title")?.textContent || "Jev", status:document.querySelector(".batch-status")?.textContent || null, activity:document.querySelector(".empty")?.textContent || null, layout:document.querySelector(".batch-list") ? getComputedStyle(document.querySelector(".batch-list")).display : null, tenCharacterBars:[...document.querySelectorAll(".batch-bar-fill,.batch-bar-empty")].every(node => [...node.textContent].length === 10), compactRows:[...document.querySelectorAll(".batch-row")].every(node => node.getBoundingClientRect().height <= 28)});'
+    $ack = ' vscode.postMessage({type:"decision-test-rendered", id:event.data.decision?.id || null, rows:document.querySelectorAll(".batch-row").length, kept:document.querySelectorAll(".batch-row.keep").length, unscored:[...document.querySelectorAll(".batch-row.unscored")].map(row => ({score:row.querySelector(".batch-value").textContent, title:row.title})), title:document.querySelector(".batch-title")?.textContent || "Decision", status:document.querySelector(".batch-status")?.textContent || null, activity:document.querySelector(".empty")?.textContent || null, layout:document.querySelector(".batch-list") ? getComputedStyle(document.querySelector(".batch-list")).display : null, tenCharacterBars:[...document.querySelectorAll(".batch-bar-fill,.batch-bar-empty")].every(node => [...node.textContent].length === 10), compactRows:[...document.querySelectorAll(".batch-row")].every(node => node.getBoundingClientRect().height <= 28)});'
     [IO.File]::WriteAllText($rendererPath, $source.Replace($needle, $needle + $ack), $utf8)
     [IO.File]::WriteAllText((Join-Path $profile 'User\settings.json'), (@{
         'telemetry.telemetryLevel' = 'off'; 'update.mode' = 'none'; 'extensions.autoUpdate' = $false;
         'workbench.startupEditor' = 'none'; 'workbench.enableExperiments' = $false;
-        'codexJev.dataDirectory' = $data
+        'codexDecision.dataDirectory' = $data
     } | ConvertTo-Json), $utf8)
     $runner = @'
 "use strict";
@@ -59,7 +59,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs/promises");
 const path = require("node:path");
 const vscode = require("vscode");
-const core = require(path.join(process.env.JEV_PANEL_TEST_CONTROL, "core.js"));
+const core = require(path.join(process.env.DECISION_PANEL_TEST_CONTROL, "core.js"));
 async function until(predicate) {
   const deadline = Date.now() + 20_000;
   while (!predicate()) {
@@ -68,7 +68,7 @@ async function until(predicate) {
   }
 }
 exports.run = async () => {
-  const result = {ok:false, runId:process.env.JEV_PANEL_TEST_RUN, checks:[]};
+  const result = {ok:false, runId:process.env.DECISION_PANEL_TEST_RUN, checks:[]};
   let subscription;
   try {
     const make = (id) => ({version:4, id, receipt_id:"b".repeat(32), at:"2020-01-01T00:00:00Z",
@@ -76,7 +76,7 @@ exports.run = async () => {
       rows:[{line:1,excerpt:"Synthetic routine line",action:"omit",reason:"irrelevant",task_relevant:.01},
         {line:2,excerpt:"Synthetic required diagnostic",action:"keep",reason:"task_relevant",task_relevant:.99}],
       totals:{seen:2,judged:2,kept:1,omitted:1,protected:0,unjudged:0,requests:2}});
-    const root = process.env.JEV_PANEL_TEST_DATA;
+    const root = process.env.DECISION_PANEL_TEST_DATA;
     const one = core.sessionDirectory(root, "native-one");
     const two = core.sessionDirectory(root, "native-two");
     const firstId = "a".repeat(32), secondId = "c".repeat(32);
@@ -85,15 +85,15 @@ exports.run = async () => {
       await fs.mkdir(path.join(directory,"logs"));
       await fs.writeFile(path.join(directory,"logs/latest-decision.json"), JSON.stringify(make(id)));
     }
-    await vscode.extensions.getExtension("elhaus-labs.codex-jev-control").activate();
-    await vscode.commands.executeCommand("codexJev.bridge", {action:"status",viewId:"native-view",sessionId:"native-one",focused:false});
-    await vscode.commands.executeCommand("codexJev.showLatestDecision");
-    await until(() => globalThis.__jevPanelTestProvider?.view && !globalThis.__jevPanelTestProvider.awaitingReady);
-    const provider = globalThis.__jevPanelTestProvider;
+    await vscode.extensions.getExtension("elhaus-labs.codex-decision-control").activate();
+    await vscode.commands.executeCommand("codexDecision.bridge", {action:"status",viewId:"native-view",sessionId:"native-one",focused:false});
+    await vscode.commands.executeCommand("codexDecision.showLatestDecision");
+    await until(() => globalThis.__decisionPanelTestProvider?.view && !globalThis.__decisionPanelTestProvider.awaitingReady);
+    const provider = globalThis.__decisionPanelTestProvider;
     await provider.pending;
     let acknowledged;
     subscription = provider.view.webview.onDidReceiveMessage(message => {
-      if(message?.type === "jev-test-rendered") acknowledged = message;
+      if(message?.type === "decision-test-rendered") acknowledged = message;
     });
     const check = async (id, label) => {
       await provider.pending;
@@ -118,10 +118,10 @@ exports.run = async () => {
     }
     await vscode.commands.executeCommand("workbench.action.togglePanel");
     await until(() => !provider.view.visible);
-    await vscode.commands.executeCommand("codexJev.showLatestDecision");
+    await vscode.commands.executeCommand("codexDecision.showLatestDecision");
     await until(() => provider.view.visible);
     await check(firstId, "hide and reopen restores the renderer");
-    await vscode.commands.executeCommand("codexJev.bridge", {action:"status",viewId:"native-view",sessionId:"native-two",focused:true});
+    await vscode.commands.executeCommand("codexDecision.bridge", {action:"status",viewId:"native-view",sessionId:"native-two",focused:true});
     await check(secondId, "session switch renders the new saved decision");
     const protectedId = "d".repeat(32);
     await fs.writeFile(path.join(two,"logs/latest-decision.json"), JSON.stringify({
@@ -138,7 +138,7 @@ exports.run = async () => {
     assert.equal(acknowledged.kept, 3);
     assert.equal(acknowledged.title, "3 / 72 kept");
     assert.equal(acknowledged.unscored.length, 3);
-    assert(acknowledged.unscored.every(row => row.score === "—" && row.title.includes("no Jev relevance score")));
+    assert(acknowledged.unscored.every(row => row.score === "—" && row.title.includes("no Decision relevance score")));
     assert.equal(acknowledged.status, "Preview · full output kept");
     result.checks.push("version-6 requests, all 72 rows, protected keeps, and preview status render under the real webview CSP");
     const empty = core.sessionDirectory(root, "native-empty");
@@ -149,7 +149,7 @@ exports.run = async () => {
       version:1,hook_version:"0.10.6",last_seen_ms:seen,last_skip_ms:seen,
       last_skip:"choice_kept_full_output",skipped:341}));
     await fs.writeFile(path.join(empty,"stats.json"), JSON.stringify({calls:11,completed:0,replaced:0,timed:11,elapsedMs:4000}));
-    await vscode.commands.executeCommand("codexJev.bridge", {action:"status",viewId:"native-view",sessionId:"native-empty",focused:true});
+    await vscode.commands.executeCommand("codexDecision.bridge", {action:"status",viewId:"native-view",sessionId:"native-empty",focused:true});
     await provider.pending;
     acknowledged = null;
     provider.lastMessage = "";
@@ -165,16 +165,16 @@ exports.run = async () => {
     throw error;
   } finally {
     subscription?.dispose();
-    await fs.writeFile(process.env.JEV_PANEL_TEST_REPORT, JSON.stringify(result,null,2)+"\n");
+    await fs.writeFile(process.env.DECISION_PANEL_TEST_REPORT, JSON.stringify(result,null,2)+"\n");
   }
 };
 '@
     [IO.File]::WriteAllText((Join-Path $taskRoot 'runner.cjs'), $runner, $utf8)
     $env:ELECTRON_RUN_AS_NODE = $null
-    $env:JEV_PANEL_TEST_CONTROL = $control
-    $env:JEV_PANEL_TEST_DATA = $data
-    $env:JEV_PANEL_TEST_REPORT = $report
-    $env:JEV_PANEL_TEST_RUN = $runId
+    $env:DECISION_PANEL_TEST_CONTROL = $control
+    $env:DECISION_PANEL_TEST_DATA = $data
+    $env:DECISION_PANEL_TEST_REPORT = $report
+    $env:DECISION_PANEL_TEST_RUN = $runId
     Write-Output "Native panel test root: $taskRoot"
     Write-Output "Linux panel test root: $linuxRoot"
     $arguments = @('--new-window', '--disable-extensions', '--disable-gpu', '--skip-welcome', '--skip-release-notes',
@@ -192,8 +192,8 @@ exports.run = async () => {
 } finally {
     foreach ($name in $savedEnvironment.Keys) { [Environment]::SetEnvironmentVariable($name, $savedEnvironment[$name], 'Process') }
     if ($ownedProcessStopped) {
-        if ($linuxRoot -match '^/tmp/jev-vscode-panel-[A-Za-z0-9]{8}$') {
-            $cleanup = "import os,pathlib,shutil,stat,sys; p=pathlib.Path(sys.argv[1]); assert p.parent==pathlib.Path('/tmp') and p.name.startswith('jev-vscode-panel-'); assert p.resolve()==p and p.stat().st_uid==os.geteuid(); assert all(not stat.S_ISLNK(os.lstat(x).st_mode) for x in p.rglob('*')); shutil.rmtree(p)"
+        if ($linuxRoot -match '^/tmp/decision-vscode-panel-[A-Za-z0-9]{8}$') {
+            $cleanup = "import os,pathlib,shutil,stat,sys; p=pathlib.Path(sys.argv[1]); assert p.parent==pathlib.Path('/tmp') and p.name.startswith('decision-vscode-panel-'); assert p.resolve()==p and p.stat().st_uid==os.geteuid(); assert all(not stat.S_ISLNK(os.lstat(x).st_mode) for x in p.rglob('*')); shutil.rmtree(p)"
             & wsl.exe -d $Distro -e python3 -c $cleanup $linuxRoot
             if ($LASTEXITCODE -ne 0) { throw 'Linux fixture cleanup failed.' }
         }

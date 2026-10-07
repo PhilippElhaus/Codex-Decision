@@ -9,15 +9,15 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_FILES = (
-    ".codex-plugin/plugin.json", "skills/jev-output/SKILL.md", "hooks/hooks.json",
-    "hooks/bin/linux-x86_64/jev-hook", "hooks/bin/linux-x86_64/jevctl",
+    ".codex-plugin/plugin.json", "skills/decision-output/SKILL.md", "hooks/hooks.json",
+    "hooks/bin/linux-x86_64/decision-hook", "hooks/bin/linux-x86_64/decisionctl",
     "assets/logo.png", "assets/icon.png", "config.example.json", "LICENSE",
 )
 CONTROL_FILES = (
     "config-contract.json", "core.js", "extension.js", "icon.png", "package.json",
-    "panel-state.js", "panel.js", "schema.js", "private-paths.js", "media/jev-panel.svg",
-    "webview/jev-control.js", "webview/jev-panel.css", "webview/jev-panel.js",
-    "webview/jev-settings.js",
+    "panel-state.js", "panel.js", "schema.js", "providers.js", "private-paths.js", "media/decision-panel.svg",
+    "webview/decision-control.js", "webview/decision-panel.css", "webview/decision-panel.js",
+    "webview/decision-settings.js",
 )
 
 
@@ -42,16 +42,16 @@ def check_elf(data):
 
 
 def verify_plugin(path, root=ROOT):
-    mapping = {f"codex-jev/{name}": name for name in PLUGIN_FILES}
+    mapping = {f"codex-decision/{name}": name for name in PLUGIN_FILES}
     with zipfile.ZipFile(path) as archive:
         check_entries(archive, mapping)
         check_bytes(archive, mapping, root)
-        manifest = json.loads(archive.read("codex-jev/.codex-plugin/plugin.json"))
+        manifest = json.loads(archive.read("codex-decision/.codex-plugin/plugin.json"))
         control = json.loads((root / "vscode-control/package.json").read_text())
-        if manifest["name"] != "codex-jev" or manifest["version"].split("+", 1)[0] != control["codexJevHookVersion"]:
+        if manifest["name"] != "codex-decision" or manifest["version"].split("+", 1)[0] != control["codexDecisionHookVersion"]:
             raise ValueError("Plugin and control hook versions differ")
-        for binary in ("jev-hook", "jevctl"):
-            name = f"codex-jev/hooks/bin/linux-x86_64/{binary}"
+        for binary in ("decision-hook", "decisionctl"):
+            name = f"codex-decision/hooks/bin/linux-x86_64/{binary}"
             check_elf(archive.read(name))
             if not (archive.getinfo(name).external_attr >> 16) & 0o111:
                 raise ValueError(f"Packaged binary is not executable: {binary}")

@@ -31,11 +31,11 @@ class PackageTests(unittest.TestCase):
                         data = (root / name).read_bytes()
                         if changed and name == "LICENSE":
                             data += b"stale"
-                        info = zipfile.ZipInfo("codex-jev/" + name)
+                        info = zipfile.ZipInfo("codex-decision/" + name)
                         info.external_attr = 0o100755 << 16
                         output.writestr(info, data)
                     if extra:
-                        output.writestr("codex-jev/unexpected.txt", b"fixture")
+                        output.writestr("codex-decision/unexpected.txt", b"fixture")
                 return path
 
             verify_plugin(archive(), root)
@@ -44,7 +44,7 @@ class PackageTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "differs from source"):
                 verify_plugin(archive(changed=True), root)
             # The source and archive agree, but both carry the wrong target.
-            binary = root / "hooks/bin/linux-x86_64/jev-hook"
+            binary = root / "hooks/bin/linux-x86_64/decision-hook"
             data = binary.read_bytes()
             binary.write_bytes(data[:18] + b"\xb7\x00" + data[20:])
             with self.assertRaisesRegex(ValueError, "Linux x86_64"):

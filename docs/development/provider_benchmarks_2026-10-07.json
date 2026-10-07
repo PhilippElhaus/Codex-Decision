@@ -1,0 +1,3807 @@
+{
+  "date": "2026-10-07",
+  "timezone": "Europe/Berlin",
+  "hook_version": "0.11.0",
+  "relevance_max": 5,
+  "max_calls_per_run": 120,
+  "max_tokens_per_run": 2000000,
+  "runs": [
+    {
+      "summary": {
+        "live": true,
+        "provider": "openai",
+        "model": "gpt-6-luna",
+        "api_calls": 39,
+        "api_p50_ms": 698,
+        "api_p95_ms": 933,
+        "called_output_p50_ms": 847,
+        "called_output_p95_ms": 2619,
+        "cases": 46,
+        "calls": 39,
+        "input_tokens": 566133,
+        "output_tokens": 0,
+        "replaced": 18,
+        "required_lines": 737,
+        "panel_decisions": 20,
+        "required_lost": 0,
+        "labeled_judgments": 86,
+        "routine_kept": 0,
+        "failures": [],
+        "errors": [],
+        "saved_bytes": 67810,
+        "p50_ms": 315,
+        "p95_ms": 2444
+      },
+      "cases": [
+        {
+          "id": "log-failure-20",
+          "expected_kind": "repetitive_log",
+          "kind": "repetitive_log",
+          "status": "replace",
+          "lines": 22,
+          "required": 2,
+          "calls": 1,
+          "relevance_batches": 1,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 7867,
+              "whole_request_bound": 18407
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 617,
+          "saved_bytes": 569,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 22,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "log-failure-60",
+          "expected_kind": "repetitive_log",
+          "kind": "repetitive_log",
+          "status": "replace",
+          "lines": 62,
+          "required": 2,
+          "calls": 1,
+          "relevance_batches": 1,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 11987,
+              "whole_request_bound": 45887
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 658,
+          "saved_bytes": 2169,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 62,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "log-failure-120",
+          "expected_kind": "repetitive_log",
+          "kind": "repetitive_log",
+          "status": "replace",
+          "lines": 122,
+          "required": 2,
+          "calls": 2,
+          "relevance_batches": 2,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 14773,
+              "whole_request_bound": 63857
+            },
+            {
+              "state_longest_question_bound": 9760,
+              "whole_request_bound": 29116
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 1384,
+          "saved_bytes": 4565,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 122,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "log-failure-240",
+          "expected_kind": "repetitive_log",
+          "kind": "repetitive_log",
+          "status": "replace",
+          "lines": 242,
+          "required": 2,
+          "calls": 3,
+          "relevance_batches": 3,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 14773,
+              "whole_request_bound": 63857
+            },
+            {
+              "state_longest_question_bound": 15066,
+              "whole_request_bound": 63722
+            },
+            {
+              "state_longest_question_bound": 13521,
+              "whole_request_bound": 54001
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 2619,
+          "saved_bytes": 9365,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 242,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "cargo-success",
+          "expected_kind": "progress_output",
+          "kind": "progress_output",
+          "status": "replace",
+          "lines": 121,
+          "required": 1,
+          "calls": 2,
+          "relevance_batches": 2,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 14048,
+              "whole_request_bound": 63716
+            },
+            {
+              "state_longest_question_bound": 9237,
+              "whole_request_bound": 28595
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 1642,
+          "saved_bytes": 3647,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 121,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "pytest-traceback",
+          "expected_kind": "repetitive_log",
+          "kind": null,
+          "status": "structure_guard",
+          "lines": 105,
+          "required": 5,
+          "calls": 0,
+          "relevance_batches": null,
+          "request_budgets": [],
+          "protocol_failures": [],
+          "elapsed_ms": 16,
+          "saved_bytes": 0,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": null,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 0,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "deep-rust-backtrace",
+          "expected_kind": "repetitive_log",
+          "kind": "repetitive_log",
+          "status": "candidate",
+          "lines": 184,
+          "required": 104,
+          "calls": 2,
+          "relevance_batches": 2,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 24151,
+              "whole_request_bound": 63363
+            },
+            {
+              "state_longest_question_bound": 7377,
+              "whole_request_bound": 12697
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 1379,
+          "saved_bytes": 0,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": null,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 184,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "npm-build",
+          "expected_kind": "progress_output",
+          "kind": "repetitive_log",
+          "status": "replace",
+          "lines": 81,
+          "required": 1,
+          "calls": 1,
+          "relevance_batches": 1,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 12399,
+              "whole_request_bound": 57979
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 1049,
+          "saved_bytes": 1473,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 81,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "download-progress",
+          "expected_kind": "progress_output",
+          "kind": "progress_output",
+          "status": "choice_kept_full_output",
+          "lines": 81,
+          "required": 1,
+          "calls": 1,
+          "relevance_batches": null,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 7391,
+              "whole_request_bound": 7437
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 312,
+          "saved_bytes": 0,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": null,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 0,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "heartbeat",
+          "expected_kind": "repetitive_log",
+          "kind": "repetitive_log",
+          "status": "replace",
+          "lines": 102,
+          "required": 2,
+          "calls": 2,
+          "relevance_batches": 2,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 13449,
+              "whole_request_bound": 63701
+            },
+            {
+              "state_longest_question_bound": 7183,
+              "whole_request_bound": 13653
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 1314,
+          "saved_bytes": 2090,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 102,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "search-subset",
+          "expected_kind": "independent_matches",
+          "kind": "independent_matches",
+          "status": "replace",
+          "lines": 70,
+          "required": 2,
+          "calls": 1,
+          "relevance_batches": 1,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 13715,
+              "whole_request_bound": 54039
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 813,
+          "saved_bytes": 3293,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 2,
+          "routine_kept": 0,
+          "panel_rows": 70,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "search-exhaustive",
+          "expected_kind": "exact_content",
+          "kind": null,
+          "status": "exhaustive_task",
+          "lines": 70,
+          "required": 70,
+          "calls": 0,
+          "relevance_batches": null,
+          "request_budgets": [],
+          "protocol_failures": [],
+          "elapsed_ms": 42,
+          "saved_bytes": 0,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": null,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 0,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "listing-subset",
+          "expected_kind": "independent_records",
+          "kind": "independent_records",
+          "status": "replace",
+          "lines": 60,
+          "required": 1,
+          "calls": 1,
+          "relevance_batches": 1,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 10763,
+              "whole_request_bound": 45247
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 937,
+          "saved_bytes": 931,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 1,
+          "routine_kept": 0,
+          "panel_rows": 60,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "listing-exhaustive",
+          "expected_kind": "exact_content",
+          "kind": null,
+          "status": "exhaustive_task",
+          "lines": 60,
+          "required": 60,
+          "calls": 0,
+          "relevance_batches": null,
+          "request_budgets": [],
+          "protocol_failures": [],
+          "elapsed_ms": 44,
+          "saved_bytes": 0,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": null,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 0,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "connected-prose",
+          "expected_kind": "prose",
+          "kind": "prose",
+          "status": "choice_kept_full_output",
+          "lines": 30,
+          "required": 30,
+          "calls": 1,
+          "relevance_batches": null,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 9075,
+              "whole_request_bound": 9121
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 435,
+          "saved_bytes": 0,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": null,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 0,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "source-code",
+          "expected_kind": "exact_content",
+          "kind": null,
+          "status": "exact_content",
+          "lines": 45,
+          "required": 45,
+          "calls": 0,
+          "relevance_batches": null,
+          "request_budgets": [],
+          "protocol_failures": [],
+          "elapsed_ms": 15,
+          "saved_bytes": 0,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": null,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 0,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "source-diff",
+          "expected_kind": "exact_content",
+          "kind": null,
+          "status": "exact_content",
+          "lines": 48,
+          "required": 48,
+          "calls": 0,
+          "relevance_batches": null,
+          "request_budgets": [],
+          "protocol_failures": [],
+          "elapsed_ms": 15,
+          "saved_bytes": 0,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": null,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 0,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "nested-json",
+          "expected_kind": "structured_payload",
+          "kind": null,
+          "status": "structure_guard",
+          "lines": 105,
+          "required": 105,
+          "calls": 0,
+          "relevance_batches": null,
+          "request_budgets": [],
+          "protocol_failures": [],
+          "elapsed_ms": 15,
+          "saved_bytes": 0,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": null,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 0,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "xml-payload",
+          "expected_kind": "structured_payload",
+          "kind": "structured_payload",
+          "status": "choice_kept_full_output",
+          "lines": 47,
+          "required": 47,
+          "calls": 1,
+          "relevance_batches": null,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 7750,
+              "whole_request_bound": 7796
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 304,
+          "saved_bytes": 0,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": null,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 0,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "csv-payload",
+          "expected_kind": "structured_payload",
+          "kind": "exact_content",
+          "status": "choice_kept_full_output",
+          "lines": 46,
+          "required": 46,
+          "calls": 1,
+          "relevance_batches": null,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 7088,
+              "whole_request_bound": 7134
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 293,
+          "saved_bytes": 0,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": null,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 0,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "unique-measurements",
+          "expected_kind": "exact_content",
+          "kind": null,
+          "status": "exhaustive_task",
+          "lines": 45,
+          "required": 45,
+          "calls": 0,
+          "relevance_batches": null,
+          "request_budgets": [],
+          "protocol_failures": [],
+          "elapsed_ms": 14,
+          "saved_bytes": 0,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": null,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 0,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "mixed-log-prose",
+          "expected_kind": "mixed_or_unknown",
+          "kind": "repetitive_log",
+          "status": "choice_kept_full_output",
+          "lines": 60,
+          "required": 4,
+          "calls": 1,
+          "relevance_batches": null,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 8376,
+              "whole_request_bound": 8422
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 315,
+          "saved_bytes": 0,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": null,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 0,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "injected-instructions",
+          "expected_kind": "mixed_or_unknown",
+          "kind": "repetitive_log",
+          "status": "replace",
+          "lines": 63,
+          "required": 2,
+          "calls": 1,
+          "relevance_batches": 1,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 12158,
+              "whole_request_bound": 46642
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 847,
+          "saved_bytes": 2202,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 63,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "unicode-log",
+          "expected_kind": "repetitive_log",
+          "kind": "repetitive_log",
+          "status": "choice_kept_full_output",
+          "lines": 82,
+          "required": 2,
+          "calls": 1,
+          "relevance_batches": null,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 7428,
+              "whole_request_bound": 7474
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 311,
+          "saved_bytes": 0,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": null,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 0,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "ansi-log",
+          "expected_kind": "repetitive_log",
+          "kind": "repetitive_log",
+          "status": "replace",
+          "lines": 82,
+          "required": 2,
+          "calls": 1,
+          "relevance_batches": 1,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 14001,
+              "whole_request_bound": 59581
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 830,
+          "saved_bytes": 3765,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 82,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "unterminated-log",
+          "expected_kind": "repetitive_log",
+          "kind": "repetitive_log",
+          "status": "replace",
+          "lines": 82,
+          "required": 2,
+          "calls": 1,
+          "relevance_batches": 1,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 14008,
+              "whole_request_bound": 59588
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 762,
+          "saved_bytes": 2967,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 82,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "long-line",
+          "expected_kind": "exact_content",
+          "kind": null,
+          "status": "no_eligible_lines",
+          "lines": 1,
+          "required": 1,
+          "calls": 0,
+          "relevance_batches": null,
+          "request_budgets": [],
+          "protocol_failures": [],
+          "elapsed_ms": 15,
+          "saved_bytes": 0,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": null,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 0,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "many-targets-300",
+          "expected_kind": "repetitive_log",
+          "kind": "repetitive_log",
+          "status": "replace",
+          "lines": 301,
+          "required": 1,
+          "calls": 4,
+          "relevance_batches": 4,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 14621,
+              "whole_request_bound": 63705
+            },
+            {
+              "state_longest_question_bound": 14914,
+              "whole_request_bound": 63570
+            },
+            {
+              "state_longest_question_bound": 14931,
+              "whole_request_bound": 63615
+            },
+            {
+              "state_longest_question_bound": 10872,
+              "whole_request_bound": 38460
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 3706,
+          "saved_bytes": 11804,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 1,
+          "routine_kept": 0,
+          "panel_rows": 301,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "wide-lines-40",
+          "expected_kind": "repetitive_log",
+          "kind": "repetitive_log",
+          "status": "choice_kept_full_output",
+          "lines": 41,
+          "required": 1,
+          "calls": 1,
+          "relevance_batches": null,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 11689,
+              "whole_request_bound": 11735
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 449,
+          "saved_bytes": 0,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": null,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 0,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "session-shaped-build",
+          "expected_kind": "progress_output",
+          "kind": "repetitive_log",
+          "status": "replace",
+          "lines": 181,
+          "required": 1,
+          "calls": 3,
+          "relevance_batches": 3,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 14893,
+              "whole_request_bound": 63977
+            },
+            {
+              "state_longest_question_bound": 15192,
+              "whole_request_bound": 63848
+            },
+            {
+              "state_longest_question_bound": 7182,
+              "whole_request_bound": 12502
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 2444,
+          "saved_bytes": 7497,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 181,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "session-shaped-test",
+          "expected_kind": "repetitive_log",
+          "kind": "repetitive_log",
+          "status": "replace",
+          "lines": 92,
+          "required": 2,
+          "calls": 2,
+          "relevance_batches": 2,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 14323,
+              "whole_request_bound": 63407
+            },
+            {
+              "state_longest_question_bound": 6591,
+              "whole_request_bound": 8389
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 1302,
+          "saved_bytes": 2919,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 92,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "small-output",
+          "expected_kind": "exact_content",
+          "kind": null,
+          "status": "small",
+          "lines": 1,
+          "required": 1,
+          "calls": 0,
+          "relevance_batches": null,
+          "request_budgets": [],
+          "protocol_failures": [],
+          "elapsed_ms": 44,
+          "saved_bytes": 0,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": null,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 0,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "sensitive-sentinel",
+          "expected_kind": "mixed_or_unknown",
+          "kind": null,
+          "status": "sensitive",
+          "lines": 51,
+          "required": 1,
+          "calls": 0,
+          "relevance_batches": null,
+          "request_budgets": [],
+          "protocol_failures": [],
+          "elapsed_ms": 43,
+          "saved_bytes": 0,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": null,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 0,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "password-colon",
+          "expected_kind": "mixed_or_unknown",
+          "kind": null,
+          "status": "sensitive",
+          "lines": 51,
+          "required": 1,
+          "calls": 0,
+          "relevance_batches": null,
+          "request_budgets": [],
+          "protocol_failures": [],
+          "elapsed_ms": 43,
+          "saved_bytes": 0,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": null,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 0,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "password-spaced-equals",
+          "expected_kind": "mixed_or_unknown",
+          "kind": null,
+          "status": "sensitive",
+          "lines": 51,
+          "required": 1,
+          "calls": 0,
+          "relevance_batches": null,
+          "request_budgets": [],
+          "protocol_failures": [],
+          "elapsed_ms": 43,
+          "saved_bytes": 0,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": null,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 0,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "password-json",
+          "expected_kind": "mixed_or_unknown",
+          "kind": null,
+          "status": "sensitive",
+          "lines": 51,
+          "required": 1,
+          "calls": 0,
+          "relevance_batches": null,
+          "request_budgets": [],
+          "protocol_failures": [],
+          "elapsed_ms": 42,
+          "saved_bytes": 0,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": null,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 0,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "api-key-json",
+          "expected_kind": "mixed_or_unknown",
+          "kind": null,
+          "status": "sensitive",
+          "lines": 51,
+          "required": 1,
+          "calls": 0,
+          "relevance_batches": null,
+          "request_budgets": [],
+          "protocol_failures": [],
+          "elapsed_ms": 41,
+          "saved_bytes": 0,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": null,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 0,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "token-json",
+          "expected_kind": "mixed_or_unknown",
+          "kind": null,
+          "status": "sensitive",
+          "lines": 51,
+          "required": 1,
+          "calls": 0,
+          "relevance_batches": null,
+          "request_budgets": [],
+          "protocol_failures": [],
+          "elapsed_ms": 43,
+          "saved_bytes": 0,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": null,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 0,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "password-xml",
+          "expected_kind": "mixed_or_unknown",
+          "kind": null,
+          "status": "sensitive",
+          "lines": 51,
+          "required": 1,
+          "calls": 0,
+          "relevance_batches": null,
+          "request_budgets": [],
+          "protocol_failures": [],
+          "elapsed_ms": 42,
+          "saved_bytes": 0,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": null,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 0,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "authorization-spaces",
+          "expected_kind": "mixed_or_unknown",
+          "kind": null,
+          "status": "sensitive",
+          "lines": 51,
+          "required": 1,
+          "calls": 0,
+          "relevance_batches": null,
+          "request_budgets": [],
+          "protocol_failures": [],
+          "elapsed_ms": 43,
+          "saved_bytes": 0,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": null,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 0,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "physical-line-overflow",
+          "expected_kind": "repetitive_log",
+          "kind": null,
+          "status": "line_budget",
+          "lines": 10001,
+          "required": 1,
+          "calls": 0,
+          "relevance_batches": null,
+          "request_budgets": [],
+          "protocol_failures": [],
+          "elapsed_ms": 109,
+          "saved_bytes": 0,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": null,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 0,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "metadata-result",
+          "expected_kind": "repetitive_log",
+          "kind": "repetitive_log",
+          "status": "replace",
+          "lines": 82,
+          "required": 2,
+          "calls": 1,
+          "relevance_batches": 1,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 14107,
+              "whole_request_bound": 59689
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 898,
+          "saved_bytes": 2799,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": true,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 83,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "disabled-output",
+          "expected_kind": "repetitive_log",
+          "kind": null,
+          "status": "disabled",
+          "lines": 81,
+          "required": 1,
+          "calls": 0,
+          "relevance_batches": null,
+          "request_budgets": [],
+          "protocol_failures": [],
+          "elapsed_ms": 34,
+          "saved_bytes": 0,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": null,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 0,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "known-log-finding",
+          "expected_kind": "repetitive_log",
+          "kind": "repetitive_log",
+          "status": "replace",
+          "lines": 81,
+          "required": 2,
+          "calls": 1,
+          "relevance_batches": 1,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 13973,
+              "whole_request_bound": 60137
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 956,
+          "saved_bytes": 2859,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 1,
+          "routine_kept": 0,
+          "panel_rows": 81,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "known-log-injection",
+          "expected_kind": "repetitive_log",
+          "kind": "repetitive_log",
+          "status": "replace",
+          "lines": 81,
+          "required": 2,
+          "calls": 1,
+          "relevance_batches": 1,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 14037,
+              "whole_request_bound": 60201
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 847,
+          "saved_bytes": 2896,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 1,
+          "routine_kept": 0,
+          "panel_rows": 81,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "known-log-counts",
+          "expected_kind": "repetitive_log",
+          "kind": "repetitive_log",
+          "status": "candidate",
+          "lines": 81,
+          "required": 81,
+          "calls": 1,
+          "relevance_batches": 1,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 13993,
+              "whole_request_bound": 60157
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 972,
+          "saved_bytes": 0,
+          "required_lost": [],
+          "proposed_required_lost": [
+            37,
+            50,
+            54,
+            59,
+            63,
+            74
+          ],
+          "original_exact": null,
+          "envelope_exact": null,
+          "labeled_judgments": 80,
+          "routine_kept": 0,
+          "panel_rows": 81,
+          "panel_matches_receipt": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "summary": {
+        "live": true,
+        "provider": "typesafe",
+        "model": "jev-latest",
+        "api_calls": 46,
+        "api_p50_ms": 397,
+        "api_p95_ms": 487,
+        "called_output_p50_ms": 522,
+        "called_output_p95_ms": 1911,
+        "cases": 46,
+        "calls": 46,
+        "input_tokens": 430390,
+        "output_tokens": 43818,
+        "replaced": 19,
+        "required_lines": 737,
+        "panel_decisions": 23,
+        "required_lost": 0,
+        "labeled_judgments": 88,
+        "routine_kept": 0,
+        "failures": [],
+        "errors": [],
+        "saved_bytes": 55755,
+        "p50_ms": 400,
+        "p95_ms": 1631
+      },
+      "cases": [
+        {
+          "id": "log-failure-20",
+          "expected_kind": "repetitive_log",
+          "kind": "repetitive_log",
+          "status": "replace",
+          "lines": 22,
+          "required": 2,
+          "calls": 1,
+          "relevance_batches": 1,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 7579,
+              "whole_request_bound": 17589
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 545,
+          "saved_bytes": 569,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 22,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "log-failure-60",
+          "expected_kind": "repetitive_log",
+          "kind": "repetitive_log",
+          "status": "replace",
+          "lines": 62,
+          "required": 2,
+          "calls": 1,
+          "relevance_batches": 1,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 11299,
+              "whole_request_bound": 43469
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 400,
+          "saved_bytes": 2169,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 62,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "log-failure-120",
+          "expected_kind": "repetitive_log",
+          "kind": "repetitive_log",
+          "status": "replace",
+          "lines": 122,
+          "required": 2,
+          "calls": 2,
+          "relevance_batches": 2,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 14280,
+              "whole_request_bound": 63624
+            },
+            {
+              "state_longest_question_bound": 8826,
+              "whole_request_bound": 24433
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 1030,
+          "saved_bytes": 4565,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 122,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "log-failure-240",
+          "expected_kind": "repetitive_log",
+          "kind": "repetitive_log",
+          "status": "replace",
+          "lines": 242,
+          "required": 2,
+          "calls": 3,
+          "relevance_batches": 3,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 14280,
+              "whole_request_bound": 63624
+            },
+            {
+              "state_longest_question_bound": 14562,
+              "whole_request_bound": 63529
+            },
+            {
+              "state_longest_question_bound": 11752,
+              "whole_request_bound": 44613
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 1631,
+          "saved_bytes": 9365,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 242,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "cargo-success",
+          "expected_kind": "progress_output",
+          "kind": "progress_output",
+          "status": "replace",
+          "lines": 121,
+          "required": 1,
+          "calls": 2,
+          "relevance_batches": 2,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 13515,
+              "whole_request_bound": 63413
+            },
+            {
+              "state_longest_question_bound": 8363,
+              "whole_request_bound": 23972
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 923,
+          "saved_bytes": 1775,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 121,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "pytest-traceback",
+          "expected_kind": "repetitive_log",
+          "kind": null,
+          "status": "structure_guard",
+          "lines": 105,
+          "required": 5,
+          "calls": 0,
+          "relevance_batches": null,
+          "request_budgets": [],
+          "protocol_failures": [],
+          "elapsed_ms": 16,
+          "saved_bytes": 0,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": null,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 0,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "deep-rust-backtrace",
+          "expected_kind": "repetitive_log",
+          "kind": "repetitive_log",
+          "status": "candidate",
+          "lines": 184,
+          "required": 104,
+          "calls": 2,
+          "relevance_batches": 2,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 22896,
+              "whole_request_bound": 63445
+            },
+            {
+              "state_longest_question_bound": 6574,
+              "whole_request_bound": 8299
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 926,
+          "saved_bytes": 0,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": null,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 184,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "npm-build",
+          "expected_kind": "progress_output",
+          "kind": "repetitive_log",
+          "status": "candidate",
+          "lines": 81,
+          "required": 1,
+          "calls": 1,
+          "relevance_batches": 1,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 11521,
+              "whole_request_bound": 54771
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 471,
+          "saved_bytes": 0,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": null,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 81,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "download-progress",
+          "expected_kind": "progress_output",
+          "kind": "progress_output",
+          "status": "replace",
+          "lines": 81,
+          "required": 1,
+          "calls": 2,
+          "relevance_batches": 1,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 7029,
+              "whole_request_bound": 7089
+            },
+            {
+              "state_longest_question_bound": 11718,
+              "whole_request_bound": 56076
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 782,
+          "saved_bytes": 1646,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 1,
+          "routine_kept": 0,
+          "panel_rows": 81,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "heartbeat",
+          "expected_kind": "repetitive_log",
+          "kind": "repetitive_log",
+          "status": "replace",
+          "lines": 102,
+          "required": 2,
+          "calls": 2,
+          "relevance_batches": 2,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 12927,
+              "whole_request_bound": 63933
+            },
+            {
+              "state_longest_question_bound": 6479,
+              "whole_request_bound": 9305
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 899,
+          "saved_bytes": 2090,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 102,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "search-subset",
+          "expected_kind": "independent_matches",
+          "kind": "independent_matches",
+          "status": "replace",
+          "lines": 70,
+          "required": 2,
+          "calls": 1,
+          "relevance_batches": 1,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 12947,
+              "whole_request_bound": 51211
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 495,
+          "saved_bytes": 3293,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 2,
+          "routine_kept": 0,
+          "panel_rows": 70,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "search-exhaustive",
+          "expected_kind": "exact_content",
+          "kind": null,
+          "status": "exhaustive_task",
+          "lines": 70,
+          "required": 70,
+          "calls": 0,
+          "relevance_batches": null,
+          "request_budgets": [],
+          "protocol_failures": [],
+          "elapsed_ms": 14,
+          "saved_bytes": 0,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": null,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 0,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "listing-subset",
+          "expected_kind": "independent_records",
+          "kind": "independent_records",
+          "status": "replace",
+          "lines": 60,
+          "required": 1,
+          "calls": 1,
+          "relevance_batches": 1,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 10095,
+              "whole_request_bound": 42819
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 451,
+          "saved_bytes": 1053,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 1,
+          "routine_kept": 0,
+          "panel_rows": 60,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "listing-exhaustive",
+          "expected_kind": "exact_content",
+          "kind": null,
+          "status": "exhaustive_task",
+          "lines": 60,
+          "required": 60,
+          "calls": 0,
+          "relevance_batches": null,
+          "request_budgets": [],
+          "protocol_failures": [],
+          "elapsed_ms": 14,
+          "saved_bytes": 0,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": null,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 0,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "connected-prose",
+          "expected_kind": "prose",
+          "kind": "prose",
+          "status": "choice_kept_full_output",
+          "lines": 30,
+          "required": 30,
+          "calls": 1,
+          "relevance_batches": null,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 8713,
+              "whole_request_bound": 8773
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 289,
+          "saved_bytes": 0,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": null,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 0,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "source-code",
+          "expected_kind": "exact_content",
+          "kind": null,
+          "status": "exact_content",
+          "lines": 45,
+          "required": 45,
+          "calls": 0,
+          "relevance_batches": null,
+          "request_budgets": [],
+          "protocol_failures": [],
+          "elapsed_ms": 15,
+          "saved_bytes": 0,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": null,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 0,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "source-diff",
+          "expected_kind": "exact_content",
+          "kind": null,
+          "status": "exact_content",
+          "lines": 48,
+          "required": 48,
+          "calls": 0,
+          "relevance_batches": null,
+          "request_budgets": [],
+          "protocol_failures": [],
+          "elapsed_ms": 14,
+          "saved_bytes": 0,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": null,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 0,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "nested-json",
+          "expected_kind": "structured_payload",
+          "kind": null,
+          "status": "structure_guard",
+          "lines": 105,
+          "required": 105,
+          "calls": 0,
+          "relevance_batches": null,
+          "request_budgets": [],
+          "protocol_failures": [],
+          "elapsed_ms": 15,
+          "saved_bytes": 0,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": null,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 0,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "xml-payload",
+          "expected_kind": "structured_payload",
+          "kind": "structured_payload",
+          "status": "choice_kept_full_output",
+          "lines": 47,
+          "required": 47,
+          "calls": 1,
+          "relevance_batches": null,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 7236,
+              "whole_request_bound": 7296
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 314,
+          "saved_bytes": 0,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": null,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 0,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "csv-payload",
+          "expected_kind": "structured_payload",
+          "kind": "structured_payload",
+          "status": "choice_kept_full_output",
+          "lines": 46,
+          "required": 46,
+          "calls": 1,
+          "relevance_batches": null,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 6726,
+              "whole_request_bound": 6786
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 360,
+          "saved_bytes": 0,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": null,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 0,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "unique-measurements",
+          "expected_kind": "exact_content",
+          "kind": null,
+          "status": "exhaustive_task",
+          "lines": 45,
+          "required": 45,
+          "calls": 0,
+          "relevance_batches": null,
+          "request_budgets": [],
+          "protocol_failures": [],
+          "elapsed_ms": 13,
+          "saved_bytes": 0,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": null,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 0,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "mixed-log-prose",
+          "expected_kind": "mixed_or_unknown",
+          "kind": "mixed_or_unknown",
+          "status": "choice_kept_full_output",
+          "lines": 60,
+          "required": 4,
+          "calls": 1,
+          "relevance_batches": null,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 8014,
+              "whole_request_bound": 8074
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 314,
+          "saved_bytes": 0,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": null,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 0,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "injected-instructions",
+          "expected_kind": "mixed_or_unknown",
+          "kind": "repetitive_log",
+          "status": "replace",
+          "lines": 63,
+          "required": 2,
+          "calls": 1,
+          "relevance_batches": 1,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 11460,
+              "whole_request_bound": 44184
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 453,
+          "saved_bytes": 2202,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 63,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "unicode-log",
+          "expected_kind": "repetitive_log",
+          "kind": "repetitive_log",
+          "status": "replace",
+          "lines": 82,
+          "required": 2,
+          "calls": 2,
+          "relevance_batches": 1,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 7060,
+              "whole_request_bound": 7120
+            },
+            {
+              "state_longest_question_bound": 11780,
+              "whole_request_bound": 55030
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 825,
+          "saved_bytes": 1629,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 82,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "ansi-log",
+          "expected_kind": "repetitive_log",
+          "kind": "repetitive_log",
+          "status": "replace",
+          "lines": 82,
+          "required": 2,
+          "calls": 1,
+          "relevance_batches": 1,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 13113,
+              "whole_request_bound": 56363
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 482,
+          "saved_bytes": 3765,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 82,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "unterminated-log",
+          "expected_kind": "repetitive_log",
+          "kind": "repetitive_log",
+          "status": "replace",
+          "lines": 82,
+          "required": 2,
+          "calls": 1,
+          "relevance_batches": 1,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 13120,
+              "whole_request_bound": 56370
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 462,
+          "saved_bytes": 2967,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 82,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "long-line",
+          "expected_kind": "exact_content",
+          "kind": null,
+          "status": "no_eligible_lines",
+          "lines": 1,
+          "required": 1,
+          "calls": 0,
+          "relevance_batches": null,
+          "request_budgets": [],
+          "protocol_failures": [],
+          "elapsed_ms": 16,
+          "saved_bytes": 0,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": null,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 0,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "many-targets-300",
+          "expected_kind": "repetitive_log",
+          "kind": "repetitive_log",
+          "status": "replace",
+          "lines": 301,
+          "required": 1,
+          "calls": 4,
+          "relevance_batches": 4,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 14138,
+              "whole_request_bound": 63482
+            },
+            {
+              "state_longest_question_bound": 14420,
+              "whole_request_bound": 63387
+            },
+            {
+              "state_longest_question_bound": 14432,
+              "whole_request_bound": 63417
+            },
+            {
+              "state_longest_question_bound": 8883,
+              "whole_request_bound": 26732
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 1911,
+          "saved_bytes": 2987,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 1,
+          "routine_kept": 0,
+          "panel_rows": 301,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "wide-lines-40",
+          "expected_kind": "repetitive_log",
+          "kind": "repetitive_log",
+          "status": "keep",
+          "lines": 41,
+          "required": 1,
+          "calls": 8,
+          "relevance_batches": 7,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 11327,
+              "whole_request_bound": 11387
+            },
+            {
+              "state_longest_question_bound": 31655,
+              "whole_request_bound": 35022
+            },
+            {
+              "state_longest_question_bound": 29759,
+              "whole_request_bound": 32581
+            },
+            {
+              "state_longest_question_bound": 29764,
+              "whole_request_bound": 32590
+            },
+            {
+              "state_longest_question_bound": 29764,
+              "whole_request_bound": 32590
+            },
+            {
+              "state_longest_question_bound": 29764,
+              "whole_request_bound": 32590
+            },
+            {
+              "state_longest_question_bound": 29764,
+              "whole_request_bound": 32590
+            },
+            {
+              "state_longest_question_bound": 17952,
+              "whole_request_bound": 19670
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 3298,
+          "saved_bytes": 0,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": null,
+          "envelope_exact": null,
+          "labeled_judgments": 1,
+          "routine_kept": 0,
+          "panel_rows": 41,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "session-shaped-build",
+          "expected_kind": "progress_output",
+          "kind": "repetitive_log",
+          "status": "replace",
+          "lines": 181,
+          "required": 1,
+          "calls": 2,
+          "relevance_batches": 2,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 14425,
+              "whole_request_bound": 63769
+            },
+            {
+              "state_longest_question_bound": 14614,
+              "whole_request_bound": 63581
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 1046,
+          "saved_bytes": 4061,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 181,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "session-shaped-test",
+          "expected_kind": "repetitive_log",
+          "kind": "repetitive_log",
+          "status": "replace",
+          "lines": 92,
+          "required": 2,
+          "calls": 1,
+          "relevance_batches": 1,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 13627,
+              "whole_request_bound": 62417
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 556,
+          "saved_bytes": 2919,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 92,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "small-output",
+          "expected_kind": "exact_content",
+          "kind": null,
+          "status": "small",
+          "lines": 1,
+          "required": 1,
+          "calls": 0,
+          "relevance_batches": null,
+          "request_budgets": [],
+          "protocol_failures": [],
+          "elapsed_ms": 14,
+          "saved_bytes": 0,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": null,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 0,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "sensitive-sentinel",
+          "expected_kind": "mixed_or_unknown",
+          "kind": null,
+          "status": "sensitive",
+          "lines": 51,
+          "required": 1,
+          "calls": 0,
+          "relevance_batches": null,
+          "request_budgets": [],
+          "protocol_failures": [],
+          "elapsed_ms": 13,
+          "saved_bytes": 0,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": null,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 0,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "password-colon",
+          "expected_kind": "mixed_or_unknown",
+          "kind": null,
+          "status": "sensitive",
+          "lines": 51,
+          "required": 1,
+          "calls": 0,
+          "relevance_batches": null,
+          "request_budgets": [],
+          "protocol_failures": [],
+          "elapsed_ms": 12,
+          "saved_bytes": 0,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": null,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 0,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "password-spaced-equals",
+          "expected_kind": "mixed_or_unknown",
+          "kind": null,
+          "status": "sensitive",
+          "lines": 51,
+          "required": 1,
+          "calls": 0,
+          "relevance_batches": null,
+          "request_budgets": [],
+          "protocol_failures": [],
+          "elapsed_ms": 13,
+          "saved_bytes": 0,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": null,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 0,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "password-json",
+          "expected_kind": "mixed_or_unknown",
+          "kind": null,
+          "status": "sensitive",
+          "lines": 51,
+          "required": 1,
+          "calls": 0,
+          "relevance_batches": null,
+          "request_budgets": [],
+          "protocol_failures": [],
+          "elapsed_ms": 13,
+          "saved_bytes": 0,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": null,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 0,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "api-key-json",
+          "expected_kind": "mixed_or_unknown",
+          "kind": null,
+          "status": "sensitive",
+          "lines": 51,
+          "required": 1,
+          "calls": 0,
+          "relevance_batches": null,
+          "request_budgets": [],
+          "protocol_failures": [],
+          "elapsed_ms": 13,
+          "saved_bytes": 0,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": null,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 0,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "token-json",
+          "expected_kind": "mixed_or_unknown",
+          "kind": null,
+          "status": "sensitive",
+          "lines": 51,
+          "required": 1,
+          "calls": 0,
+          "relevance_batches": null,
+          "request_budgets": [],
+          "protocol_failures": [],
+          "elapsed_ms": 12,
+          "saved_bytes": 0,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": null,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 0,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "password-xml",
+          "expected_kind": "mixed_or_unknown",
+          "kind": null,
+          "status": "sensitive",
+          "lines": 51,
+          "required": 1,
+          "calls": 0,
+          "relevance_batches": null,
+          "request_budgets": [],
+          "protocol_failures": [],
+          "elapsed_ms": 13,
+          "saved_bytes": 0,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": null,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 0,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "authorization-spaces",
+          "expected_kind": "mixed_or_unknown",
+          "kind": null,
+          "status": "sensitive",
+          "lines": 51,
+          "required": 1,
+          "calls": 0,
+          "relevance_batches": null,
+          "request_budgets": [],
+          "protocol_failures": [],
+          "elapsed_ms": 13,
+          "saved_bytes": 0,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": null,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 0,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "physical-line-overflow",
+          "expected_kind": "repetitive_log",
+          "kind": null,
+          "status": "line_budget",
+          "lines": 10001,
+          "required": 1,
+          "calls": 0,
+          "relevance_batches": null,
+          "request_budgets": [],
+          "protocol_failures": [],
+          "elapsed_ms": 79,
+          "saved_bytes": 0,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": null,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 0,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "metadata-result",
+          "expected_kind": "repetitive_log",
+          "kind": "repetitive_log",
+          "status": "replace",
+          "lines": 82,
+          "required": 2,
+          "calls": 1,
+          "relevance_batches": 1,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 13205,
+              "whole_request_bound": 56457
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 504,
+          "saved_bytes": 2799,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": true,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 83,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "disabled-output",
+          "expected_kind": "repetitive_log",
+          "kind": null,
+          "status": "disabled",
+          "lines": 81,
+          "required": 1,
+          "calls": 0,
+          "relevance_batches": null,
+          "request_budgets": [],
+          "protocol_failures": [],
+          "elapsed_ms": 9,
+          "saved_bytes": 0,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": null,
+          "envelope_exact": null,
+          "labeled_judgments": 0,
+          "routine_kept": 0,
+          "panel_rows": 0,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "known-log-finding",
+          "expected_kind": "repetitive_log",
+          "kind": "repetitive_log",
+          "status": "replace",
+          "lines": 81,
+          "required": 2,
+          "calls": 1,
+          "relevance_batches": 1,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 13095,
+              "whole_request_bound": 56899
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 562,
+          "saved_bytes": 2932,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 1,
+          "routine_kept": 0,
+          "panel_rows": 81,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "known-log-injection",
+          "expected_kind": "repetitive_log",
+          "kind": "repetitive_log",
+          "status": "replace",
+          "lines": 81,
+          "required": 2,
+          "calls": 1,
+          "relevance_batches": 1,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 13159,
+              "whole_request_bound": 56963
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 522,
+          "saved_bytes": 2969,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 1,
+          "routine_kept": 0,
+          "panel_rows": 81,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "known-log-counts",
+          "expected_kind": "repetitive_log",
+          "kind": "repetitive_log",
+          "status": "keep",
+          "lines": 81,
+          "required": 81,
+          "calls": 1,
+          "relevance_batches": 1,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 13115,
+              "whole_request_bound": 56919
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 449,
+          "saved_bytes": 0,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": null,
+          "envelope_exact": null,
+          "labeled_judgments": 80,
+          "routine_kept": 0,
+          "panel_rows": 81,
+          "panel_matches_receipt": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "summary": {
+        "live": true,
+        "provider": "openai",
+        "model": "gpt-6-luna",
+        "api_calls": 37,
+        "api_p50_ms": 696,
+        "api_p95_ms": 1770,
+        "called_output_p50_ms": 1638,
+        "called_output_p95_ms": 3556,
+        "cases": 18,
+        "calls": 37,
+        "input_tokens": 583255,
+        "output_tokens": 0,
+        "replaced": 16,
+        "required_lines": 123,
+        "panel_decisions": 18,
+        "required_lost": 0,
+        "labeled_judgments": 2144,
+        "routine_kept": 159,
+        "failures": [],
+        "errors": [],
+        "saved_bytes": 59306,
+        "p50_ms": 1638,
+        "p95_ms": 3556
+      },
+      "cases": [
+        {
+          "id": "semantic-passing-17",
+          "expected_kind": "repetitive_log",
+          "kind": "repetitive_log",
+          "status": "replace",
+          "lines": 121,
+          "required": 2,
+          "calls": 2,
+          "relevance_batches": 2,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 13783,
+              "whole_request_bound": 63451
+            },
+            {
+              "state_longest_question_bound": 9186,
+              "whole_request_bound": 27958
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 1958,
+          "saved_bytes": 3080,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 119,
+          "routine_kept": 0,
+          "panel_rows": 121,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "semantic-passing-89",
+          "expected_kind": "repetitive_log",
+          "kind": "repetitive_log",
+          "status": "replace",
+          "lines": 121,
+          "required": 2,
+          "calls": 2,
+          "relevance_batches": 2,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 13764,
+              "whole_request_bound": 63432
+            },
+            {
+              "state_longest_question_bound": 9205,
+              "whole_request_bound": 27977
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 1638,
+          "saved_bytes": 3081,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 119,
+          "routine_kept": 0,
+          "panel_rows": 121,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "two-named-tests",
+          "expected_kind": "repetitive_log",
+          "kind": "repetitive_log",
+          "status": "replace",
+          "lines": 121,
+          "required": 3,
+          "calls": 2,
+          "relevance_batches": 2,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 14512,
+              "whole_request_bound": 63596
+            },
+            {
+              "state_longest_question_bound": 9646,
+              "whole_request_bound": 29002
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 1980,
+          "saved_bytes": 3652,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 119,
+          "routine_kept": 9,
+          "panel_rows": 121,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "immutable-mount",
+          "expected_kind": "repetitive_log",
+          "kind": "repetitive_log",
+          "status": "replace",
+          "lines": 121,
+          "required": 2,
+          "calls": 2,
+          "relevance_batches": 2,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 14185,
+              "whole_request_bound": 63853
+            },
+            {
+              "state_longest_question_bound": 9321,
+              "whole_request_bound": 29265
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 1779,
+          "saved_bytes": 3709,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 121,
+          "routine_kept": 0,
+          "panel_rows": 121,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "listener-value",
+          "expected_kind": "repetitive_log",
+          "kind": "repetitive_log",
+          "status": "replace",
+          "lines": 121,
+          "required": 2,
+          "calls": 2,
+          "relevance_batches": 2,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 14150,
+              "whole_request_bound": 63818
+            },
+            {
+              "state_longest_question_bound": 9295,
+              "whole_request_bound": 29239
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 1636,
+          "saved_bytes": 3710,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 121,
+          "routine_kept": 0,
+          "panel_rows": 121,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "unicode-authority",
+          "expected_kind": "repetitive_log",
+          "kind": "repetitive_log",
+          "status": "replace",
+          "lines": 121,
+          "required": 2,
+          "calls": 2,
+          "relevance_batches": 2,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 14159,
+              "whole_request_bound": 63827
+            },
+            {
+              "state_longest_question_bound": 9306,
+              "whole_request_bound": 29250
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 1822,
+          "saved_bytes": 3707,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 121,
+          "routine_kept": 0,
+          "panel_rows": 121,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "two-search-values",
+          "expected_kind": "independent_matches",
+          "kind": "independent_matches",
+          "status": "replace",
+          "lines": 100,
+          "required": 2,
+          "calls": 2,
+          "relevance_batches": 2,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 15361,
+              "whole_request_bound": 63861
+            },
+            {
+              "state_longest_question_bound": 7782,
+              "whole_request_bound": 16588
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 1997,
+          "saved_bytes": 2860,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 100,
+          "routine_kept": 28,
+          "panel_rows": 100,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "sequence-gap",
+          "expected_kind": "exact_content",
+          "kind": "repetitive_log",
+          "status": "candidate",
+          "lines": 81,
+          "required": 81,
+          "calls": 1,
+          "relevance_batches": 1,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 13131,
+              "whole_request_bound": 59879
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 2572,
+          "saved_bytes": 0,
+          "required_lost": [],
+          "proposed_required_lost": [
+            1,
+            2,
+            26,
+            31,
+            36,
+            40,
+            77
+          ],
+          "original_exact": null,
+          "envelope_exact": null,
+          "labeled_judgments": 81,
+          "routine_kept": 0,
+          "panel_rows": 81,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "acceptance-passing-90",
+          "expected_kind": "repetitive_log",
+          "kind": "repetitive_log",
+          "status": "replace",
+          "lines": 91,
+          "required": 2,
+          "calls": 2,
+          "relevance_batches": 2,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 14847,
+              "whole_request_bound": 63347
+            },
+            {
+              "state_longest_question_bound": 6701,
+              "whole_request_bound": 9083
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 1219,
+          "saved_bytes": 3423,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 89,
+          "routine_kept": 2,
+          "panel_rows": 91,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "acceptance-passing-300",
+          "expected_kind": "repetitive_log",
+          "kind": "repetitive_log",
+          "status": "replace",
+          "lines": 301,
+          "required": 2,
+          "calls": 4,
+          "relevance_batches": 4,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 14847,
+              "whole_request_bound": 63347
+            },
+            {
+              "state_longest_question_bound": 15330,
+              "whole_request_bound": 63984
+            },
+            {
+              "state_longest_question_bound": 15258,
+              "whole_request_bound": 63356
+            },
+            {
+              "state_longest_question_bound": 11370,
+              "whole_request_bound": 38958
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 3556,
+          "saved_bytes": 12600,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 299,
+          "routine_kept": 3,
+          "panel_rows": 301,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "acceptance-median",
+          "expected_kind": "repetitive_log",
+          "kind": "repetitive_log",
+          "status": "replace",
+          "lines": 101,
+          "required": 4,
+          "calls": 2,
+          "relevance_batches": 2,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 14089,
+              "whole_request_bound": 63757
+            },
+            {
+              "state_longest_question_bound": 7335,
+              "whole_request_bound": 15559
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 1519,
+          "saved_bytes": 2799,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 101,
+          "routine_kept": 0,
+          "panel_rows": 101,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "acceptance-transition",
+          "expected_kind": "repetitive_log",
+          "kind": "repetitive_log",
+          "status": "replace",
+          "lines": 101,
+          "required": 3,
+          "calls": 2,
+          "relevance_batches": 2,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 14120,
+              "whole_request_bound": 63788
+            },
+            {
+              "state_longest_question_bound": 7350,
+              "whole_request_bound": 15574
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 1393,
+          "saved_bytes": 2859,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 101,
+          "routine_kept": 0,
+          "panel_rows": 101,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "acceptance-temporal-cause",
+          "expected_kind": "repetitive_log",
+          "kind": "repetitive_log",
+          "status": "replace",
+          "lines": 101,
+          "required": 3,
+          "calls": 2,
+          "relevance_batches": 2,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 14111,
+              "whole_request_bound": 63779
+            },
+            {
+              "state_longest_question_bound": 7354,
+              "whole_request_bound": 15578
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 1312,
+          "saved_bytes": 2855,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 101,
+          "routine_kept": 0,
+          "panel_rows": 101,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "acceptance-unicode",
+          "expected_kind": "repetitive_log",
+          "kind": "repetitive_log",
+          "status": "replace",
+          "lines": 101,
+          "required": 2,
+          "calls": 2,
+          "relevance_batches": 2,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 14090,
+              "whole_request_bound": 63758
+            },
+            {
+              "state_longest_question_bound": 7338,
+              "whole_request_bound": 15562
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 1531,
+          "saved_bytes": 2928,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 101,
+          "routine_kept": 0,
+          "panel_rows": 101,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "acceptance-artifact",
+          "expected_kind": "repetitive_log",
+          "kind": "repetitive_log",
+          "status": "replace",
+          "lines": 101,
+          "required": 2,
+          "calls": 2,
+          "relevance_batches": 2,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 14096,
+              "whole_request_bound": 63764
+            },
+            {
+              "state_longest_question_bound": 7336,
+              "whole_request_bound": 15560
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 1433,
+          "saved_bytes": 2927,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 101,
+          "routine_kept": 0,
+          "panel_rows": 101,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "acceptance-retry-count",
+          "expected_kind": "repetitive_log",
+          "kind": "repetitive_log",
+          "status": "replace",
+          "lines": 101,
+          "required": 4,
+          "calls": 2,
+          "relevance_batches": 2,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 14097,
+              "whole_request_bound": 63765
+            },
+            {
+              "state_longest_question_bound": 7338,
+              "whole_request_bound": 15562
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 1276,
+          "saved_bytes": 2760,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 101,
+          "routine_kept": 1,
+          "panel_rows": 101,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "acceptance-two-tests",
+          "expected_kind": "repetitive_log",
+          "kind": "repetitive_log",
+          "status": "replace",
+          "lines": 151,
+          "required": 3,
+          "calls": 2,
+          "relevance_batches": 2,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 13695,
+              "whole_request_bound": 63947
+            },
+            {
+              "state_longest_question_bound": 11772,
+              "whole_request_bound": 47540
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 2690,
+          "saved_bytes": 2356,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 149,
+          "routine_kept": 27,
+          "panel_rows": 151,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "acceptance-two-buffer-values",
+          "expected_kind": "independent_matches",
+          "kind": "independent_matches",
+          "status": "candidate",
+          "lines": 100,
+          "required": 2,
+          "calls": 2,
+          "relevance_batches": 2,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 15122,
+              "whole_request_bound": 63622
+            },
+            {
+              "state_longest_question_bound": 7741,
+              "whole_request_bound": 16547
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 1375,
+          "saved_bytes": 0,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": null,
+          "envelope_exact": null,
+          "labeled_judgments": 100,
+          "routine_kept": 89,
+          "panel_rows": 100,
+          "panel_matches_receipt": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "summary": {
+        "live": true,
+        "provider": "typesafe",
+        "model": "jev-latest",
+        "api_calls": 36,
+        "api_p50_ms": 397,
+        "api_p95_ms": 476,
+        "called_output_p50_ms": 905,
+        "called_output_p95_ms": 2010,
+        "cases": 18,
+        "calls": 36,
+        "input_tokens": 356965,
+        "output_tokens": 41108,
+        "replaced": 16,
+        "required_lines": 123,
+        "panel_decisions": 18,
+        "required_lost": 0,
+        "labeled_judgments": 2144,
+        "routine_kept": 237,
+        "failures": [],
+        "errors": [],
+        "saved_bytes": 57412,
+        "p50_ms": 905,
+        "p95_ms": 2010
+      },
+      "cases": [
+        {
+          "id": "semantic-passing-17",
+          "expected_kind": "repetitive_log",
+          "kind": "repetitive_log",
+          "status": "replace",
+          "lines": 121,
+          "required": 2,
+          "calls": 2,
+          "relevance_batches": 2,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 13311,
+              "whole_request_bound": 63763
+            },
+            {
+              "state_longest_question_bound": 8251,
+              "whole_request_bound": 22750
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 1080,
+          "saved_bytes": 1926,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 119,
+          "routine_kept": 36,
+          "panel_rows": 121,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "semantic-passing-89",
+          "expected_kind": "repetitive_log",
+          "kind": "repetitive_log",
+          "status": "replace",
+          "lines": 121,
+          "required": 2,
+          "calls": 2,
+          "relevance_batches": 2,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 13311,
+              "whole_request_bound": 63763
+            },
+            {
+              "state_longest_question_bound": 8251,
+              "whole_request_bound": 22750
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 905,
+          "saved_bytes": 2258,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 119,
+          "routine_kept": 30,
+          "panel_rows": 121,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "two-named-tests",
+          "expected_kind": "repetitive_log",
+          "kind": "repetitive_log",
+          "status": "replace",
+          "lines": 121,
+          "required": 3,
+          "calls": 2,
+          "relevance_batches": 2,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 14019,
+              "whole_request_bound": 63363
+            },
+            {
+              "state_longest_question_bound": 8732,
+              "whole_request_bound": 24339
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 917,
+          "saved_bytes": 4042,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 119,
+          "routine_kept": 4,
+          "panel_rows": 121,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "immutable-mount",
+          "expected_kind": "repetitive_log",
+          "kind": "repetitive_log",
+          "status": "replace",
+          "lines": 121,
+          "required": 2,
+          "calls": 2,
+          "relevance_batches": 2,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 13657,
+              "whole_request_bound": 63555
+            },
+            {
+              "state_longest_question_bound": 8442,
+              "whole_request_bound": 24607
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 939,
+          "saved_bytes": 3709,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 121,
+          "routine_kept": 0,
+          "panel_rows": 121,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "listener-value",
+          "expected_kind": "repetitive_log",
+          "kind": "repetitive_log",
+          "status": "replace",
+          "lines": 121,
+          "required": 2,
+          "calls": 2,
+          "relevance_batches": 2,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 13622,
+              "whole_request_bound": 63520
+            },
+            {
+              "state_longest_question_bound": 8416,
+              "whole_request_bound": 24581
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 963,
+          "saved_bytes": 3710,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 121,
+          "routine_kept": 0,
+          "panel_rows": 121,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "unicode-authority",
+          "expected_kind": "repetitive_log",
+          "kind": "repetitive_log",
+          "status": "replace",
+          "lines": 121,
+          "required": 2,
+          "calls": 2,
+          "relevance_batches": 2,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 13631,
+              "whole_request_bound": 63529
+            },
+            {
+              "state_longest_question_bound": 8427,
+              "whole_request_bound": 24592
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 931,
+          "saved_bytes": 3707,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 121,
+          "routine_kept": 0,
+          "panel_rows": 121,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "two-search-values",
+          "expected_kind": "independent_matches",
+          "kind": "independent_matches",
+          "status": "replace",
+          "lines": 100,
+          "required": 2,
+          "calls": 2,
+          "relevance_batches": 2,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 14933,
+              "whole_request_bound": 63723
+            },
+            {
+              "state_longest_question_bound": 7013,
+              "whole_request_bound": 12610
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 895,
+          "saved_bytes": 3697,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 100,
+          "routine_kept": 15,
+          "panel_rows": 100,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "sequence-gap",
+          "expected_kind": "exact_content",
+          "kind": "repetitive_log",
+          "status": "keep",
+          "lines": 81,
+          "required": 81,
+          "calls": 1,
+          "relevance_batches": 1,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 12253,
+              "whole_request_bound": 56611
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 498,
+          "saved_bytes": 0,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": null,
+          "envelope_exact": null,
+          "labeled_judgments": 81,
+          "routine_kept": 0,
+          "panel_rows": 81,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "acceptance-passing-90",
+          "expected_kind": "repetitive_log",
+          "kind": "repetitive_log",
+          "status": "replace",
+          "lines": 91,
+          "required": 2,
+          "calls": 1,
+          "relevance_batches": 1,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 14291,
+              "whole_request_bound": 63081
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 602,
+          "saved_bytes": 3298,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 89,
+          "routine_kept": 5,
+          "panel_rows": 91,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "acceptance-passing-300",
+          "expected_kind": "repetitive_log",
+          "kind": "repetitive_log",
+          "status": "replace",
+          "lines": 301,
+          "required": 2,
+          "calls": 4,
+          "relevance_batches": 4,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 14485,
+              "whole_request_bound": 63829
+            },
+            {
+              "state_longest_question_bound": 14863,
+              "whole_request_bound": 63830
+            },
+            {
+              "state_longest_question_bound": 14889,
+              "whole_request_bound": 63874
+            },
+            {
+              "state_longest_question_bound": 9103,
+              "whole_request_bound": 25840
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 2010,
+          "saved_bytes": 11400,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 299,
+          "routine_kept": 25,
+          "panel_rows": 301,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "acceptance-median",
+          "expected_kind": "repetitive_log",
+          "kind": "repetitive_log",
+          "status": "replace",
+          "lines": 101,
+          "required": 4,
+          "calls": 2,
+          "relevance_batches": 2,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 13556,
+              "whole_request_bound": 63454
+            },
+            {
+              "state_longest_question_bound": 6661,
+              "whole_request_bound": 11706
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 898,
+          "saved_bytes": 2799,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 101,
+          "routine_kept": 0,
+          "panel_rows": 101,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "acceptance-transition",
+          "expected_kind": "repetitive_log",
+          "kind": "repetitive_log",
+          "status": "replace",
+          "lines": 101,
+          "required": 3,
+          "calls": 2,
+          "relevance_batches": 2,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 13587,
+              "whole_request_bound": 63485
+            },
+            {
+              "state_longest_question_bound": 6676,
+              "whole_request_bound": 11721
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 989,
+          "saved_bytes": 2859,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 101,
+          "routine_kept": 0,
+          "panel_rows": 101,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "acceptance-temporal-cause",
+          "expected_kind": "repetitive_log",
+          "kind": "repetitive_log",
+          "status": "replace",
+          "lines": 101,
+          "required": 3,
+          "calls": 2,
+          "relevance_batches": 2,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 13578,
+              "whole_request_bound": 63476
+            },
+            {
+              "state_longest_question_bound": 6680,
+              "whole_request_bound": 11725
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 866,
+          "saved_bytes": 2406,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 101,
+          "routine_kept": 13,
+          "panel_rows": 101,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "acceptance-unicode",
+          "expected_kind": "repetitive_log",
+          "kind": "repetitive_log",
+          "status": "replace",
+          "lines": 101,
+          "required": 2,
+          "calls": 2,
+          "relevance_batches": 2,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 13557,
+              "whole_request_bound": 63455
+            },
+            {
+              "state_longest_question_bound": 6664,
+              "whole_request_bound": 11709
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 902,
+          "saved_bytes": 2928,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 101,
+          "routine_kept": 0,
+          "panel_rows": 101,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "acceptance-artifact",
+          "expected_kind": "repetitive_log",
+          "kind": "repetitive_log",
+          "status": "replace",
+          "lines": 101,
+          "required": 2,
+          "calls": 2,
+          "relevance_batches": 2,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 13563,
+              "whole_request_bound": 63461
+            },
+            {
+              "state_longest_question_bound": 6662,
+              "whole_request_bound": 11707
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 873,
+          "saved_bytes": 2927,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 101,
+          "routine_kept": 0,
+          "panel_rows": 101,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "acceptance-retry-count",
+          "expected_kind": "repetitive_log",
+          "kind": "repetitive_log",
+          "status": "replace",
+          "lines": 101,
+          "required": 4,
+          "calls": 2,
+          "relevance_batches": 2,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 13564,
+              "whole_request_bound": 63462
+            },
+            {
+              "state_longest_question_bound": 6664,
+              "whole_request_bound": 11709
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 839,
+          "saved_bytes": 2792,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 101,
+          "routine_kept": 0,
+          "panel_rows": 101,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "acceptance-two-tests",
+          "expected_kind": "repetitive_log",
+          "kind": "repetitive_log",
+          "status": "replace",
+          "lines": 151,
+          "required": 3,
+          "calls": 2,
+          "relevance_batches": 2,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 13122,
+              "whole_request_bound": 63574
+            },
+            {
+              "state_longest_question_bound": 10638,
+              "whole_request_bound": 41817
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 1024,
+          "saved_bytes": 2954,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": true,
+          "envelope_exact": null,
+          "labeled_judgments": 149,
+          "routine_kept": 17,
+          "panel_rows": 151,
+          "panel_matches_receipt": true,
+          "error": null
+        },
+        {
+          "id": "acceptance-two-buffer-values",
+          "expected_kind": "independent_matches",
+          "kind": "independent_matches",
+          "status": "candidate",
+          "lines": 100,
+          "required": 2,
+          "calls": 2,
+          "relevance_batches": 2,
+          "request_budgets": [
+            {
+              "state_longest_question_bound": 14679,
+              "whole_request_bound": 63469
+            },
+            {
+              "state_longest_question_bound": 6987,
+              "whole_request_bound": 12584
+            }
+          ],
+          "protocol_failures": [],
+          "elapsed_ms": 889,
+          "saved_bytes": 0,
+          "required_lost": [],
+          "proposed_required_lost": [],
+          "original_exact": null,
+          "envelope_exact": null,
+          "labeled_judgments": 100,
+          "routine_kept": 92,
+          "panel_rows": 100,
+          "panel_matches_receipt": true,
+          "error": null
+        }
+      ]
+    }
+  ]
+}

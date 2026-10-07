@@ -20,7 +20,7 @@ class DefaultsContractTests(unittest.TestCase):
         )
         node_defaults = json.loads(result.stdout)
         example = json.loads((ROOT / "config.example.json").read_text(encoding="utf-8"))
-        self.assertEqual(example["schema_version"], 4)
+        self.assertEqual(example["schema_version"], 5)
         self.assertEqual(example["relevance_policy"], node_defaults)
         self.assertNotIn("thresholds", example)
         self.assertNotIn("decision_methods", example)

@@ -11,7 +11,7 @@ test("flat legacy policies migrate conservatively and cannot disable classificat
   const old = {...defaults("config_v3"),enabled:true,choice_gate_enabled:false,
     line_policy:{omit_min:70,exact_max:25}};
   const migrated=validate("config",old);
-  assert.equal(migrated.schema_version,4);
+  assert.equal(migrated.schema_version,5);
   assert.deepEqual(migrated.relevance_policy,{relevant_max:5});
   assert.equal("choice_gate_enabled" in migrated,false);
   assert.equal("line_policy" in migrated,false);
@@ -25,7 +25,7 @@ test("legacy selections migrate to one switch with conservative shared cutoffs",
         line_policy: { output: { omit_min: 80, exact_max: 20 },
           test_build: { omit_min: 98, exact_max: 4 }, search_listing: { omit_min: 92, exact_max: 2 } } };
       const migrated = validate("config", raw);
-      assert.equal(migrated.schema_version, 4);
+      assert.equal(migrated.schema_version, 5);
       assert.equal(migrated.enabled, enabled || test_build_enabled || search_listing_enabled);
       assert.deepEqual(migrated.relevance_policy, { relevant_max: 2 });
       assert.equal("test_build_enabled" in migrated, false);
@@ -47,7 +47,7 @@ test("saving a legacy session or shared settings writes only the current contrac
     assert.deepEqual(JSON.parse(await fs.readFile(path.join(root, "config.json"))), raw);
     await core.writeSelection(root, false);
     const stored = JSON.parse(await fs.readFile(path.join(root, "config.json")));
-    assert.equal(stored.schema_version, 4);
+    assert.equal(stored.schema_version, 5);
     assert.equal(stored.enabled, false);
     assert.equal(stored.min_chars, 4096);
     assert.equal("test_build_enabled" in stored, false);
@@ -58,7 +58,7 @@ test("saving a legacy session or shared settings writes only the current contrac
     assert.deepEqual((await core.readGlobalSettings(root)).relevance_policy, { relevant_max: 3 });
     await core.writeGlobalSettings(root, { mode: "replace" });
     const settings = JSON.parse(await fs.readFile(path.join(root, "settings.json")));
-    assert.equal(settings.schema_version, 3);
+    assert.equal(settings.schema_version, 4);
     assert.equal(settings.log_limit_mb, 123);
     assert.equal(settings.never_delete_logs, true);
     assert.equal("search_relevance" in settings, false);

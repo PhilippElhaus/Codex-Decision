@@ -9,12 +9,12 @@ const FILTERS = new Set(["output", "test_build", "search_listing"]);
 const MAX_SNAPSHOT_BYTES = 8 * 1024 * 1024;
 function probability(value) {
   if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 1) {
-    throw new Error("Invalid Jev panel probability");
+    throw new Error("Invalid Decision panel probability");
   }
   return value;
 }
 
-// A visual retention index, not a Jev probability. The action separates kept
+// A visual retention index, not a Decision probability. The action separates kept
 // and omitted lines; the original Noul values determine position within each band.
 function retentionIndex(row) {
   if (row.can_omit == null) return row.task_relevant ?? null;
@@ -26,7 +26,7 @@ function retentionIndex(row) {
 }
 
 function parsePanelDecision(value) {
-  if (!value || ![3, 4, 5, 6].includes(value.version)) throw new Error("Unsupported Jev panel decision");
+  if (!value || ![3, 4, 5, 6].includes(value.version)) throw new Error("Unsupported Decision panel decision");
   return parseBatchDecision(value);
 }
 
@@ -53,7 +53,7 @@ function parseBatchDecision(value) {
       totals.protected > totals.seen || totals.unjudged > totals.seen ||
       totals.omitted > totals.judged || totals.kept + totals.omitted !== totals.seen ||
       !integer(classificationRequests, 1) || totals.requests !== batch.number + classificationRequests || !integer(value.batch_elapsed_ms, 3_600_000)) {
-    throw new Error("Invalid Jev batch decision");
+    throw new Error("Invalid Decision batch decision");
   }
   let previousLine = 0;
   const rows = value.rows.map((row, index) => {
@@ -69,7 +69,7 @@ function parseBatchDecision(value) {
           !/^[a-z0-9_]{1,80}$/.test(row.protected_reason) || row.action !== "keep" ||
           !["protected", "representative", "last_line"].includes(row.reason))) ||
         (row.task_relevant != null && typeof row.task_relevant !== "number")) {
-      throw new Error("Invalid Jev batch row");
+      throw new Error("Invalid Decision batch row");
     }
     previousLine = row.line;
     if (value.version === 3) { probability(row.can_omit); probability(row.exact_needed); }
@@ -83,7 +83,7 @@ function parseBatchDecision(value) {
       rows.filter(row => row.action === "omit").length !== totals.omitted ||
       rows.filter(row => row.protected_reason !== null).length !== totals.protected ||
       rows.filter(row => row.reason === "budget_unjudged").length !== totals.unjudged)) {
-    throw new Error("Jev panel rows do not match totals");
+    throw new Error("Decision panel rows do not match totals");
   }
   return { version: value.version, id: value.id, receipt_id: value.receipt_id, at: value.at,
     filter: value.filter, status: value.status, batch: { number: batch.number, count: batch.count,
@@ -98,13 +98,13 @@ async function readLatestPanelDecision(directory, cache = null) {
     await validateDirectoryPath(path.dirname(filename));
     const details = await fs.lstat(filename);
     if (!details.isFile() || details.isSymbolicLink() || details.size > MAX_SNAPSHOT_BYTES) {
-      throw new Error("Unsafe Jev panel decision file");
+      throw new Error("Unsafe Decision panel decision file");
     }
     const fingerprint = `${filename}:${details.dev}:${details.ino}:${details.mtimeMs}:${details.ctimeMs}:${details.size}`;
     if (cache?.fingerprint === fingerprint) return cache.value;
     file = await fs.open(filename, constants.O_RDONLY | (constants.O_NOFOLLOW || 0));
     const opened = await file.stat();
-    if (!opened.isFile() || opened.size > MAX_SNAPSHOT_BYTES) throw new Error("Unsafe Jev panel decision file");
+    if (!opened.isFile() || opened.size > MAX_SNAPSHOT_BYTES) throw new Error("Unsafe Decision panel decision file");
     // The writer can replace or grow the file after stat. Bound the read itself.
     const bytes = Buffer.alloc(MAX_SNAPSHOT_BYTES + 1);
     let length = 0;
@@ -113,7 +113,7 @@ async function readLatestPanelDecision(directory, cache = null) {
       if (!bytesRead) break;
       length += bytesRead;
     }
-    if (length > MAX_SNAPSHOT_BYTES) throw new Error("Unsafe Jev panel decision file");
+    if (length > MAX_SNAPSHOT_BYTES) throw new Error("Unsafe Decision panel decision file");
     const value = JSON.parse(bytes.toString("utf8", 0, length));
     const parsed = parsePanelDecision(value);
     if (cache) { cache.fingerprint = fingerprint; cache.value = parsed; }
@@ -131,18 +131,18 @@ async function readPanelActivity(directory) {
     readHookHealth(directory), readConfig(directory), readLifetimeStats(directory),
   ]);
   let message;
-  if (!config.enabled) message = "Jev is off for this thread.";
+  if (!config.enabled) message = "Decision is off for this thread.";
   else if (!health) message = "Waiting for tool output. If activity stays absent, check /hooks and start a new Codex thread.";
   else if (health.last_error_ms >= Math.max(health.last_skip_ms || 0, health.last_success_ms || 0)) {
     message = `Hook error: ${health.last_error}. Full output was kept.`;
   } else if (health.last_skip_ms >= (health.last_success_ms || 0)) {
     const reasons = {
-      choice_kept_full_output: "Jev classified the output and kept it complete. No line judgments were needed.",
-      unsupported_route: "The hook skipped this tool or command format before calling Jev.",
+      choice_kept_full_output: "Decision classified the output and kept it complete. No line judgments were needed.",
+      unsupported_route: "The hook skipped this tool or command format before calling Decision.",
       unsupported_result: "The hook kept this response format complete.",
       small: "The latest output was too short to evaluate.",
-      sensitive: "The latest output was protected from sending to Jev.",
-      unsafe_task_context: "The task context was protected from sending to Jev.",
+      sensitive: "The latest output was protected from sending to Decision.",
+      unsafe_task_context: "The task context was protected from sending to Decision.",
       exact_content: "The latest result requires exact source content and was kept complete.",
       exhaustive_task: "The task requires the complete result, so it was kept without an API request.",
       structure_guard: "The latest result has no validated independent-line format and was kept complete.",

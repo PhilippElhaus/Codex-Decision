@@ -36,8 +36,8 @@ INSTRUMENT = """() => {
 
 GEOMETRY = """() => {
   const rect = selector => document.querySelector(selector).getBoundingClientRect().toJSON();
-  return {access: rect('.access'), model: rect('.model'), button: rect('#codex-jev-button'),
-    dot: rect('#codex-jev-dot'), visible: document.getElementById('codex-jev').style.display !== 'none'};
+  return {access: rect('.access'), model: rect('.model'), button: rect('#codex-decision-button'),
+    dot: rect('#codex-decision-dot'), visible: document.getElementById('codex-decision').style.display !== 'none'};
 }"""
 
 
@@ -56,10 +56,10 @@ def composer_round(page, rng, benchmark=False):
     }""", {'gap': gap, 'height': rng.choice([28, 30, 34, 38, 44]),
             'label': rng.choice(['Full access', 'Workspace write', 'Read-only'])})
     page.wait_for_function("""() => {
-      const root = document.getElementById('codex-jev');
+      const root = document.getElementById('codex-decision');
       const a = document.querySelector('.access').getBoundingClientRect();
       const m = document.querySelector('.model').getBoundingClientRect();
-      const b = document.getElementById('codex-jev-button').getBoundingClientRect();
+      const b = document.getElementById('codex-decision-button').getBoundingClientRect();
       return m.left - a.right < 11 ? root.style.display === 'none' :
         root.style.display === 'block' && Math.abs(b.top + b.height / 2 - a.top - a.height / 2) <= 1 &&
         b.left >= a.right + 1 && b.right <= m.left - 1;
@@ -96,7 +96,7 @@ def composer_fallback(page, rng):
       window.dispatchEvent(new Event('resize'));
     }""")
     try:
-        page.wait_for_function("document.getElementById('codex-jev').style.display === 'none'")
+        page.wait_for_function("document.getElementById('codex-decision').style.display === 'none'")
     finally:
         page.evaluate("""() => {
           for (const [node, style] of window.__jevFallbackStyles) {
@@ -167,10 +167,10 @@ def main():
             page.add_init_script(f'({INSTRUMENT})()')
             if args.control:
                 source = args.control.read_text()
-                page.route('**/jev-control.js', lambda route: route.fulfill(body=source,
+                page.route('**/decision-control.js', lambda route: route.fulfill(body=source,
                            content_type='application/javascript'))
             page.goto((ROOT / 'tests/browser/visual_harness.html').as_uri() + '?demo=composer')
-            page.wait_for_function('document.title === "JEV_VISUAL_READY"')
+            page.wait_for_function('document.title === "DECISION_VISUAL_READY"')
             page.evaluate("""() => {
               const history = document.createElement('div');
               history.style.cssText = 'position:absolute;top:0;height:300px;overflow:auto';
@@ -187,8 +187,8 @@ def main():
                 panel.on('pageerror', lambda error: page_errors.append(str(error)))
                 panel_metrics = panel.context.new_cdp_session(panel)
                 panel_metrics.send('Performance.enable')
-                panel.goto((ROOT / 'tests/browser/jev_panel_harness.html').as_uri() + '?dense&capture')
-                panel.wait_for_function('document.title === "JEV_LINE_PANEL_READY"')
+                panel.goto((ROOT / 'tests/browser/decision_panel_harness.html').as_uri() + '?dense&capture')
+                panel.wait_for_function('document.title === "DECISION_LINE_PANEL_READY"')
             iteration = 0
             while iteration < args.rounds or time.monotonic() < deadline:
                 iteration += 1
@@ -200,7 +200,7 @@ def main():
                     snapshot = snapshots[(iteration - 1) % len(snapshots)]
                     if args.reload_every and iteration % args.reload_every == 0:
                         panel.reload()
-                        panel.wait_for_function('document.title === "JEV_LINE_PANEL_READY"')
+                        panel.wait_for_function('document.title === "DECISION_LINE_PANEL_READY"')
                         panel_reloads += 1
                     panel_times.append(panel_round(panel, snapshot, iteration, reports[-1]['width']))
                     if iteration % args.settle_every == 0:

@@ -1,40 +1,40 @@
 {
-  "name": "codex-jev-control",
-  "displayName": "Codex Jev Control",
-  "description": "Jev on/off control and live decision panel for VS Code",
-  "version": "0.9.14",
-  "codexJevHookVersion": "0.10.11",
+  "name": "codex-decision-control",
+  "displayName": "Codex Decision Control",
+  "description": "Decision on/off control and live decision panel for VS Code",
+  "version": "0.10.3",
+  "codexDecisionHookVersion": "0.11.0",
   "publisher": "elhaus-labs",
   "license": "MIT",
   "icon": "icon.png",
-  "repository": { "type": "git", "url": "https://github.com/PhilippElhaus/Codex-Jev.git" },
+  "repository": { "type": "git", "url": "https://github.com/PhilippElhaus/Codex-Decision.git" },
   "private": true,
   "main": "./extension.js",
   "engines": { "vscode": "^1.96.2" },
   "extensionKind": ["ui"],
-  "activationEvents": ["onStartupFinished", "onCommand:codexJev.bridge", "onView:codexJevDecision"],
+  "activationEvents": ["onStartupFinished", "onCommand:codexDecision.bridge", "onView:codexDecisionDecision"],
   "contributes": {
     "commands": [
-      { "command": "codexJev.checkConnection", "title": "Jev: Check API and Key" },
-      { "command": "codexJev.showLatestDecision", "title": "Jev: Show Latest Decision" }
+      { "command": "codexDecision.checkConnection", "title": "Decision: Check API and Key" },
+      { "command": "codexDecision.showLatestDecision", "title": "Decision: Show Latest Decision" }
     ],
     "viewsContainers": {
       "panel": [
-        { "id": "codexJevDecisionPanel", "title": "Jev", "icon": "media/jev-panel.svg" }
+        { "id": "codexDecisionDecisionPanel", "title": "Decision", "icon": "media/decision-panel.svg" }
       ]
     },
     "views": {
-      "codexJevDecisionPanel": [
-        { "id": "codexJevDecision", "name": "Latest decision", "type": "webview", "visibility": "visible" }
+      "codexDecisionDecisionPanel": [
+        { "id": "codexDecisionDecision", "name": "Latest decision", "type": "webview", "visibility": "visible" }
       ]
     },
     "configuration": {
-      "title": "Codex Jev Control",
+      "title": "Codex Decision Control",
       "properties": {
-        "codexJev.dataDirectory": {
+        "codexDecision.dataDirectory": {
           "type": "string",
           "default": "",
-          "description": "Absolute PLUGIN_DATA directory for Codex Jev. Set this to the installed plugin data directory, or set CODEX_JEV_DATA_DIRECTORY."
+          "description": "Absolute PLUGIN_DATA directory for Codex Decision. Set this to the installed plugin data directory, or set CODEX_DECISION_DATA_DIRECTORY."
         }
       }
     }

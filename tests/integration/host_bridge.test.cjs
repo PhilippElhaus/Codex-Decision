@@ -40,7 +40,7 @@ async function hostBridge(executeCommand) {
   };
 }
 
-test("patched host carries the Jev toggle through the extension to session storage", async () => {
+test("patched host carries the Decision toggle through the extension to session storage", async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-host-test-"));
   const commands = new Map();
   const context = { subscriptions: [], extensionUri: {} };
@@ -57,7 +57,7 @@ test("patched host carries the Jev toggle through the extension to session stora
   };
   const originalLoad = Module._load;
   const originalHealth = core.checkHealth;
-  core.checkHealth = async () => ({ ok: false, reason: "JEV_KEY_MISSING" });
+  core.checkHealth = async () => ({ ok: false, reason: "DECISION_KEY_MISSING" });
   Module._load = function (request, parent, isMain) {
     return request === "vscode" ? fake : originalLoad.call(this, request, parent, isMain);
   };
@@ -72,7 +72,7 @@ test("patched host carries the Jev toggle through the extension to session stora
     const bridge = await hostBridge(fake.commands.executeCommand);
     let id = 0;
     const request = async (action, extra = {}) => {
-      const message = { type: "codex-jev", id: ++id, action, viewId: "host-view",
+      const message = { type: "codex-decision", id: ++id, action, viewId: "host-view",
         sessionId: "host-session", expectsLocalSession: true, focused: true, ...extra };
       const before = bridge.replies.length;
       await bridge.send(message);
@@ -91,7 +91,7 @@ test("patched host carries the Jev toggle through the extension to session stora
       assert.equal(reply.enabled, enabled);
       const stored = await core.readConfig(core.sessionDirectory(directory, "host-session"));
       assert.equal(stored.enabled, enabled, "the toggle must reach the hook config");
-      assert.equal(stored.schema_version, 4);
+      assert.equal(stored.schema_version, 5);
       assert.equal("test_build_enabled" in stored, false);
       assert.equal("search_listing_enabled" in stored, false);
     }
@@ -113,7 +113,7 @@ test("patched host replies when command lookup throws or execution rejects", asy
     () => Promise.reject(new Error("host disconnected")),
   ]) {
     const bridge = await hostBridge(executeCommand);
-    const reply = await bridge.send({ type: "codex-jev", id: 17, action: "status" });
+    const reply = await bridge.send({ type: "codex-decision", id: 17, action: "status" });
     assert.equal(reply.id, 17);
     assert.equal(reply.status.health.reason, "BRIDGE_UNAVAILABLE");
   }
@@ -123,7 +123,7 @@ test("patched host rejects malformed selections and leaves ordinary messages wit
   let calls = 0;
   const bridge = await hostBridge(() => { calls += 1; return {}; });
   for (const extra of [{ enabled: null }, { enabled: "true" }, { enabled: true, sessionId: "../other" }]) {
-    await bridge.send({ type: "codex-jev", action: "setSelection", ...extra });
+    await bridge.send({ type: "codex-decision", action: "setSelection", ...extra });
   }
   assert.equal(calls, 0);
   await bridge.send({ type: "chunked-message-ack" });

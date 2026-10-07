@@ -42,7 +42,7 @@ async function restrictWslPath(filename, directory, run = runFile, platform = pr
     await run("wsl.exe", ["-d", location.distro, "-e", "python3", "-c", restrictScript,
       location.filename, directory ? "directory" : "file"], { timeout: 10_000, maxBuffer: 4096 });
   } catch {
-    throw new Error("Could not secure Jev state in WSL");
+    throw new Error("Could not secure Decision state in WSL");
   }
 }
 

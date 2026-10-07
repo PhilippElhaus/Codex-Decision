@@ -1,35 +1,37 @@
 {
-  "name": "codex-jev",
-  "version": "0.10.11",
-  "description": "One Jev switch for line-by-line filtering of supported local tool output.",
+  "name": "codex-decision",
+  "version": "0.11.0",
+  "description": "One Decision switch for line-by-line filtering of supported local tool output.",
   "author": {
     "name": "Philipp Elhaus",
     "url": "https://github.com/PhilippElhaus"
   },
-  "homepage": "https://github.com/PhilippElhaus/Codex-Jev",
-  "repository": "https://github.com/PhilippElhaus/Codex-Jev",
+  "homepage": "https://github.com/PhilippElhaus/Codex-Decision",
+  "repository": "https://github.com/PhilippElhaus/Codex-Decision",
   "license": "MIT",
   "keywords": [
     "codex",
-    "jev",
+    "decisions",
+    "openai",
+    "typesafe",
     "hooks",
     "context"
   ],
   "skills": "./skills/",
   "interface": {
-    "displayName": "Codex Jev",
+    "displayName": "Codex Decision",
     "shortDescription": "Trim repetitive tool output",
-    "longDescription": "Codex Jev adds one local PostToolUse filter for supported plain-text tool results. One session switch controls all output. A Rust hook validates known output formats locally, then asks TypeSafe AI’s Jev for independent line relevance judgments in API-bounded batches. Unrecognized formats use a conservative sampled classification. Code protects diagnostics and exact evidence. Failed or unsupported results remain intact. Every shortened result points to a private, exact original. The standalone hook requires explicit enablement and a TypeSafe API key. The optional VS Code control enables Jev for new local threads and provides one on/off button. The control and version-pinned composer patch are installed separately. This package contains a Linux x86_64 hook binary; other execution environments need their own native binary.",
+    "longDescription": "Codex Decision adds one local PostToolUse filter for supported plain-text tool results. One session switch controls all output. A Rust hook validates known output formats locally, then asks OpenAI Decisions or TypeSafe Jev for independent line relevance judgments in API-bounded batches. Unrecognized formats use a conservative sampled classification. Code protects diagnostics and exact evidence. Failed or unsupported results remain intact. Every shortened result points to a private, exact original. The standalone hook requires explicit enablement and the selected provider’s API key. The optional VS Code control enables Decision for new local threads and provides one on/off button. The control and version-pinned composer patch are installed separately. This package contains a Linux x86_64 hook binary; other execution environments need their own native binary.",
     "developerName": "Philipp Elhaus",
     "category": "Developer Tools",
     "capabilities": [
       "Local lifecycle hooks",
       "Tool-output evidence review"
     ],
-    "websiteURL": "https://github.com/PhilippElhaus/Codex-Jev",
+    "websiteURL": "https://github.com/PhilippElhaus/Codex-Decision",
     "defaultPrompt": [
-      "Help me set up Codex Jev for test logs.",
-      "Check whether this Jev-shortened result kept the evidence I need."
+      "Help me set up Codex Decision for test logs.",
+      "Check whether this Decision-shortened result kept the evidence I need."
     ],
     "brandColor": "#69AFF3",
     "logo": "./assets/logo.png",

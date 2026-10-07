@@ -37,7 +37,7 @@ test("global settings stay independent of session switches and aggregate activit
     assert.equal(totals.calls, 3);
     assert.equal(totals.replaced, 2);
     assert.equal(totals.averageMs, 167);
-    await assert.rejects(writeGlobalSettings(root, { log_limit_mb: 0 }), /Invalid Jev settings/);
+    await assert.rejects(writeGlobalSettings(root, { log_limit_mb: 0 }), /Invalid Decision settings/);
     assert.equal((await readGlobalSettings(root)).log_limit_mb, 72);
     await fs.rm(path.join(root, "settings.json"));
     await t.test("linked settings files are rejected", async (t) => {
@@ -48,12 +48,12 @@ test("global settings stay independent of session switches and aggregate activit
         t.skip("Windows file symlinks require Developer Mode or elevation");
         return;
       }
-      await assert.rejects(readGlobalSettings(root), /Unsafe Jev settings file/);
+      await assert.rejects(readGlobalSettings(root), /Unsafe Decision settings file/);
     });
   } finally { await fs.rm(root, { recursive: true, force: true }); }
 });
 
-test("new Codex sessions enable Jev once and preserve later choices", async () => {
+test("new Codex sessions enable Decision once and preserve later choices", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "jev-default-session-"));
   const first = sessionDirectory(root, "thread-one");
   const second = sessionDirectory(root, "thread-two");
@@ -79,10 +79,10 @@ test("session readers reject linked directories before opening state", async () 
     })));
     const linked = sessionDirectory(root, "linked-window");
     await fs.symlink(outside, linked, process.platform === "win32" ? "junction" : "dir");
-    await assert.rejects(readConfig(linked), /Unsafe Jev session directory/);
-    await assert.rejects(readHookHealth(linked), /Unsafe Jev session directory/);
-    await assert.rejects(readLifetimeStats(linked), /Unsafe Jev session directory/);
-    await assert.rejects(readEventOffset(linked), /Unsafe Jev session directory/);
+    await assert.rejects(readConfig(linked), /Unsafe Decision session directory/);
+    await assert.rejects(readHookHealth(linked), /Unsafe Decision session directory/);
+    await assert.rejects(readLifetimeStats(linked), /Unsafe Decision session directory/);
+    await assert.rejects(readEventOffset(linked), /Unsafe Decision session directory/);
   } finally { await fs.rm(root, { recursive: true, force: true }); }
 });
 
@@ -132,13 +132,13 @@ test("session activity index and cumulative stats use only current paths", async
 });
 
 test("settings save private key and test an unsaved key without exposing it", async () => {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-settings-test-"));
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "decision-settings-test-"));
   try {
     await writeApiKey(directory, "saved-key-123");
     assert.equal(await readApiKey(directory), "saved-key-123");
     const result = await checkHealth(directory, async (_url, options) => {
       assert.equal(options.headers.Authorization, "Bearer draft-key-456");
-      return { ok: true, text: async () => JSON.stringify({ model: "jev-1.13.0", answers: { ready: { type: "noul", noul: 0.9 } } }) };
+      return { ok: true, text: async () => JSON.stringify({ model: "gpt-6-luna", answers: [{name:"ready", type:"predicate", probability:0.9}] }) };
     }, "draft-key-456");
     assert.equal(result.ok, true);
     assert.equal(JSON.stringify(result).includes("draft-key-456"), false);
@@ -149,8 +149,8 @@ test("settings save private key and test an unsaved key without exposing it", as
   } finally { await fs.rm(directory, { recursive: true, force: true }); }
 });
 
-test("hook selection writes the config atomically and preserves the Jev mode", async () => {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-control-test-"));
+test("hook selection writes the config atomically and preserves the Decision mode", async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "decision-control-test-"));
   try {
     assert.deepEqual(await readConfig(directory), { enabled: false, mode: "replace" });
     await fs.writeFile(path.join(directory, "config.json"), JSON.stringify(withV3({ enabled: false, mode: "replace", min_chars: 10000 })));
@@ -176,8 +176,8 @@ test("outdated configuration is rejected without changing it", async () => {
     ]) {
       const bytes = JSON.stringify(outdated);
       await fs.writeFile(path.join(directory, "config.json"), bytes);
-      await assert.rejects(readConfig(directory), /Invalid Jev config/);
-      await assert.rejects(writeSelection(directory, true), /Invalid Jev config/);
+      await assert.rejects(readConfig(directory), /Invalid Decision config/);
+      await assert.rejects(writeSelection(directory, true), /Invalid Decision config/);
       assert.equal(await fs.readFile(path.join(directory, "config.json"), "utf8"), bytes);
     }
   } finally { await fs.rm(directory, { recursive: true, force: true }); }
@@ -196,7 +196,7 @@ test("session paths are stable, separate, and reject unsafe IDs", async () => {
 });
 
 test("hook health is private, bounded, and rejects corrupt or linked data", async () => {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-hook-health-"));
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "decision-hook-health-"));
   try {
     assert.equal(await readHookHealth(directory), null);
     const logs = path.join(directory, "logs");
@@ -206,27 +206,27 @@ test("hook health is private, bounded, and rejects corrupt or linked data", asyn
     await fs.writeFile(file, JSON.stringify(valid));
     assert.deepEqual(await readHookHealth(directory), valid);
     await fs.writeFile(file, JSON.stringify({ ...valid, skipped: -1 }));
-    await assert.rejects(readHookHealth(directory), /Invalid Jev hook health/);
+    await assert.rejects(readHookHealth(directory), /Invalid Decision hook health/);
     await fs.writeFile(file, JSON.stringify({ ...valid, last_error_ms: -1 }));
-    await assert.rejects(readHookHealth(directory), /Invalid Jev hook health/);
+    await assert.rejects(readHookHealth(directory), /Invalid Decision hook health/);
     await fs.writeFile(file, JSON.stringify({ ...valid, last_seen_ms: Date.now() + 600_000 }));
-    await assert.rejects(readHookHealth(directory), /Invalid Jev hook health/);
+    await assert.rejects(readHookHealth(directory), /Invalid Decision hook health/);
     await fs.writeFile(file, "x".repeat(5000));
-    await assert.rejects(readHookHealth(directory), /Unsafe Jev hook health/);
+    await assert.rejects(readHookHealth(directory), /Unsafe Decision hook health/);
   } finally { await fs.rm(directory, { recursive: true, force: true }); }
 });
 
 test("invalid config and linked target fail without changing a hook selection", async () => {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-control-test-"));
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "decision-control-test-"));
   try {
     await fs.writeFile(path.join(directory, "config.json"), JSON.stringify({ enabled: "yes" }));
-    await assert.rejects(writeSelection(directory, true), /Invalid Jev config/);
+    await assert.rejects(writeSelection(directory, true), /Invalid Decision config/);
     await fs.writeFile(path.join(directory, "config.json"), JSON.stringify({ test_build_enabled: "yes" }));
-    await assert.rejects(writeSelection(directory, false), /Invalid Jev config/);
+    await assert.rejects(writeSelection(directory, false), /Invalid Decision config/);
     await fs.writeFile(path.join(directory, "config.json"), JSON.stringify({ search_listing_enabled: "yes" }));
-    await assert.rejects(writeSelection(directory, false), /Invalid Jev config/);
+    await assert.rejects(writeSelection(directory, false), /Invalid Decision config/);
     await fs.writeFile(path.join(directory, "config.json"), JSON.stringify({ min_chars: 1 }));
-    await assert.rejects(writeSelection(directory, true), /Invalid Jev config/);
+    await assert.rejects(writeSelection(directory, true), /Invalid Decision config/);
     await fs.rm(path.join(directory, "config.json"));
     try {
       await fs.symlink(path.join(directory, "missing.json"), path.join(directory, "config.json"));
@@ -294,7 +294,7 @@ test("summary keeps three signals and missing capsule sizes do not imply savings
 });
 
 test("incremental event reader keeps incomplete lines for the next poll", async () => {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-control-test-"));
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "decision-control-test-"));
   try {
     await fs.mkdir(path.join(directory, "logs"));
     const file = path.join(directory, "logs", "events.jsonl");
@@ -314,7 +314,7 @@ test("incremental event reader keeps incomplete lines for the next poll", async 
 });
 
 test("new controls start after existing log entries", async () => {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-control-test-"));
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "decision-control-test-"));
   try {
     await fs.mkdir(path.join(directory, "logs"));
     assert.equal(await readEventOffset(directory), 0);
@@ -332,7 +332,7 @@ test("new controls start after existing log entries", async () => {
 });
 
 test("recent outcomes span tools and ignore calls, skips, and malformed rows", async () => {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-control-test-"));
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "decision-control-test-"));
   try {
     const rows = [
       { status: "candidate", reason: "observe", tool: "Bash", original_chars: 9000 },
@@ -356,7 +356,7 @@ test("recent outcomes span tools and ignore calls, skips, and malformed rows", a
 });
 
 test("incremental reader handles log truncation and a burst larger than one read", async () => {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-control-test-"));
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "decision-control-test-"));
   try {
     await fs.mkdir(path.join(directory, "logs"));
     const file = path.join(directory, "logs", "events.jsonl");
@@ -385,36 +385,36 @@ test("incremental reader handles log truncation and a burst larger than one read
 });
 
 test("health check reads the private .env and keeps the key out of status", async () => {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-health-test-"));
-  const response = JSON.stringify({ model: "jev-1.13.0", answers: { ready: { type: "noul", noul: 0.93 } } });
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "decision-health-test-"));
+  const response = JSON.stringify({ model: "gpt-6-luna", answers: [{name:"ready", type:"predicate", probability:0.93}] });
   try {
     assert.deepEqual(await checkHealth(directory, async () => { throw new Error("must not call"); }),
-      { ok: false, reason: "JEV_KEY_MISSING" });
-    await fs.writeFile(path.join(directory, ".env"), "JEV_API_KEY=test-key-only\n", { mode: 0o600 });
+      { ok: false, reason: "DECISION_KEY_MISSING" });
+    await fs.writeFile(path.join(directory, ".env"), "OPENAI_API_KEY=test-key-only\n", { mode: 0o600 });
     assert.equal(await readApiKey(directory), "test-key-only");
     const healthy = await checkHealth(directory, async (url, options) => {
-      assert.equal(url, "https://api.typesafe.ai/v1/systemone");
+      assert.equal(url, "https://api.openai.com/v1/decisions");
       assert.equal(options.headers.Authorization, "Bearer test-key-only");
-      assert.equal(JSON.parse(options.body).questions.ready.type, "noul");
+      assert.equal(JSON.parse(options.body).questions[0].type, "predicate");
       return { ok: true, text: async () => response };
     });
-    assert.deepEqual(healthy, { ok: true, model: "jev-1.13.0" });
+    assert.deepEqual(healthy, { ok: true, model: "gpt-6-luna" });
     assert.equal(JSON.stringify(healthy).includes("test-key-only"), false);
     assert.throws(() => parseHealthOutput('{"state":"unavailable"}'));
     assert.deepEqual(await checkHealth(directory, async () => ({ ok: false, status: 401 })),
-      { ok: false, reason: "JEV_HTTP_401" });
+      { ok: false, reason: "DECISION_HTTP_401" });
     assert.deepEqual(await checkHealth(directory, async () => ({ ok: false, status: 401,
       text: async () => '{"error":{"code":"expired_api_key"}}' })),
-    { ok: false, reason: "JEV_KEY_EXPIRED" });
+    { ok: false, reason: "DECISION_KEY_EXPIRED" });
     assert.deepEqual(await checkHealth(directory, async () => { throw new Error("network"); }),
-      { ok: false, reason: "JEV_NETWORK_ERROR" });
+      { ok: false, reason: "DECISION_NETWORK_ERROR" });
     assert.deepEqual(await checkHealth(directory, async () => { throw new DOMException("timed out", "TimeoutError"); }),
-      { ok: false, reason: "JEV_TIMEOUT" });
+      { ok: false, reason: "DECISION_TIMEOUT" });
     assert.deepEqual(await checkHealth(directory, async () => ({ ok: true, text: async () => "not json" })),
-      { ok: false, reason: "JEV_INVALID_RESPONSE" });
+      { ok: false, reason: "DECISION_INVALID_RESPONSE" });
     await fs.writeFile(path.join(directory, ".env"), "JEV_API_KEY=short\n");
     assert.deepEqual(await checkHealth(directory, async () => { throw new Error("must not call"); }),
-      { ok: false, reason: "JEV_KEY_MISSING" });
+      { ok: false, reason: "DECISION_KEY_MISSING" });
   } finally {
     await fs.rm(directory, { recursive: true, force: true });
   }

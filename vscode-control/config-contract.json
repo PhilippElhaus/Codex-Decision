@@ -2,10 +2,10 @@
   "config": {
     "schema_version": {
       "type": "integer",
-      "default": 4,
+      "default": 5,
       "required": true,
       "values": [
-        4
+        5
       ]
     },
     "scope": {
@@ -52,7 +52,7 @@
     },
     "model": {
       "type": "model",
-      "default": "jev-latest"
+      "default": "gpt-6-luna"
     },
     "timeout_seconds": {
       "type": "number",
@@ -70,15 +70,23 @@
         "relevant_max": 5
       },
       "required": true
+    },
+    "provider": {
+      "type": "string",
+      "default": "openai",
+      "values": [
+        "openai",
+        "typesafe"
+      ]
     }
   },
   "settings": {
     "schema_version": {
       "type": "integer",
-      "default": 3,
+      "default": 4,
       "required": true,
       "values": [
-        3
+        4
       ]
     },
     "mode": {
@@ -108,6 +116,18 @@
         "relevant_max": 5
       },
       "required": true
+    },
+    "provider": {
+      "type": "string",
+      "default": "openai",
+      "values": [
+        "openai",
+        "typesafe"
+      ]
+    },
+    "model": {
+      "type": "model",
+      "default": "gpt-6-luna"
     }
   },
   "thresholds": {
@@ -457,6 +477,117 @@
       "default": 5,
       "min": 0,
       "max": 100
+    }
+  },
+  "config_v4": {
+    "schema_version": {
+      "type": "integer",
+      "default": 4,
+      "required": true,
+      "values": [
+        4
+      ]
+    },
+    "scope": {
+      "type": "string",
+      "values": [
+        "global"
+      ]
+    },
+    "enabled": {
+      "type": "boolean",
+      "default": false,
+      "required": true
+    },
+    "mode": {
+      "type": "string",
+      "default": "replace",
+      "required": true,
+      "values": [
+        "observe",
+        "replace"
+      ]
+    },
+    "log_limit_mb": {
+      "type": "integer",
+      "default": 50,
+      "min": 1,
+      "max": 9999
+    },
+    "never_delete_logs": {
+      "type": "boolean",
+      "default": false
+    },
+    "min_chars": {
+      "type": "integer",
+      "default": 256,
+      "min": 256,
+      "max": 2000000
+    },
+    "max_chars": {
+      "type": "integer",
+      "default": 2000000,
+      "min": 256,
+      "max": 2000000
+    },
+    "model": {
+      "type": "model",
+      "default": "jev-latest"
+    },
+    "timeout_seconds": {
+      "type": "number",
+      "default": 3,
+      "min": 0.1,
+      "max": 4
+    },
+    "allow_mcp_replacement": {
+      "type": "boolean",
+      "default": false
+    },
+    "relevance_policy": {
+      "type": "relevance_threshold",
+      "default": {
+        "relevant_max": 5
+      },
+      "required": true
+    }
+  },
+  "settings_v3": {
+    "schema_version": {
+      "type": "integer",
+      "default": 3,
+      "required": true,
+      "values": [
+        3
+      ]
+    },
+    "mode": {
+      "type": "string",
+      "default": "replace",
+      "required": true,
+      "values": [
+        "observe",
+        "replace"
+      ]
+    },
+    "log_limit_mb": {
+      "type": "integer",
+      "default": 50,
+      "min": 1,
+      "max": 9999,
+      "required": true
+    },
+    "never_delete_logs": {
+      "type": "boolean",
+      "default": false,
+      "required": true
+    },
+    "relevance_policy": {
+      "type": "relevance_threshold",
+      "default": {
+        "relevant_max": 5
+      },
+      "required": true
     }
   }
 }

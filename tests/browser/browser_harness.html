@@ -1,8 +1,8 @@
 <!doctype html>
-<html lang="en" data-codex-jev-route-kind="local" data-codex-jev-session-id="fixture-session">
+<html lang="en" data-codex-decision-route-kind="local" data-codex-decision-session-id="fixture-session">
 <head>
   <meta charset="utf-8">
-  <title>Jev browser harness</title>
+  <title>Decision browser harness</title>
   <style>
     body { margin: 0; background: #181818; color: #ccc; font: 16px "Segoe UI", sans-serif; }
     .composer { position: absolute; left: 16px; width: calc(100% - 32px); bottom: 20px; height: 180px; border: 1px solid #333; border-radius: 30px; background: #202020; }
@@ -72,8 +72,8 @@
       }
       if (request.action === "retryConnection") health = { ok: true, model: "jev-1.13.0" };
       const keyTest = request.action === "testApiKey" ?
-        (request.key === "expired-example-key" ? { ok: false, reason: "JEV_KEY_EXPIRED" } :
-          request.key === "invalid-example-key" ? { ok: false, reason: "JEV_HTTP_401" } :
+        (request.key === "expired-example-key" ? { ok: false, reason: "DECISION_KEY_EXPIRED" } :
+          request.key === "invalid-example-key" ? { ok: false, reason: "DECISION_HTTP_401" } :
             { ok: true, model: "jev-1.13.0" }) : undefined;
       const keySaved = request.action === "saveApiKey";
       const waitingForThread = request.sessionId == null;
@@ -96,15 +96,15 @@
           request.action === "settingsTest" ? { action: "tested", result: { ok: true, model: "jev-1.13.0" } } :
             request.action === "settingsOpenLogs" ? { action: "openedLogs" } : undefined;
       queueMicrotask(() => window.dispatchEvent(new MessageEvent("message", { data: {
-        type: "codex-jev-reply", id: request.id,
-        status: { enabled: !waitingForThread && outputEnabled, sessionPending: waitingForThread, configurationError: waitingForThread && request.expectsLocalSession ? "Codex session could not be identified" : null, needsKey, keyTest, keySaved, externalOpen: request.action === "openTypeSafe" ? window.__jevHarnessExternalOpen : undefined, settings, health, hookHealth, expectedHookVersion: "0.8.1", viewStartedAt, classificationPulse, mode, recent: freshView ? "No decision recorded yet" : history[0],
+        type: "codex-decision-reply", id: request.id,
+        status: { enabled: !waitingForThread && outputEnabled, sessionPending: waitingForThread, configurationError: waitingForThread && request.expectsLocalSession ? "Codex session could not be identified" : null, needsKey, keyTest, keySaved, externalOpen: request.action === "openProvider" ? window.__jevHarnessExternalOpen : undefined, settings, health, hookHealth, expectedHookVersion: "0.8.1", viewStartedAt, classificationPulse, mode, recent: freshView ? "No decision recorded yet" : history[0],
           history: freshView ? [] : history,
           stats: freshView ? { calls: 0, candidates: 0, kept: 0, replaced: 0, checkedChars: 0, elapsedMs: 0, completed: 0 } : stats },
       } })));
     } });
   </script>
-  <script src="../../vscode-control/webview/jev-control.js"></script>
-  <script src="../../vscode-control/webview/jev-settings.js"></script>
+  <script src="../../vscode-control/webview/decision-control.js"></script>
+  <script src="../../vscode-control/webview/decision-settings.js"></script>
 </head>
 <body>
   <pre class="results" id="results">pending</pre>
@@ -129,19 +129,19 @@
     async function run() {
       await pause(100);
       const composer = document.querySelector(".composer");
-      const root = document.getElementById("codex-jev");
-      const button = document.getElementById("codex-jev-button");
+      const root = document.getElementById("codex-decision");
+      const button = document.getElementById("codex-decision-button");
       const option = button;
-      const label = document.getElementById("codex-jev-label");
+      const label = document.getElementById("codex-decision-label");
       check(root && button && root.style.display === "block", "control visible");
-      check(button.style.color === "rgb(154, 154, 154)" && button.getAttribute("aria-checked") === "false", "Jev off is gray");
-      check(button.getAttribute("role") === "switch" && !document.getElementById("codex-jev-menu"), "one switch and no popup");
+      check(button.style.color === "rgb(154, 154, 154)" && button.getAttribute("aria-checked") === "false", "Decision off is gray");
+      check(button.getAttribute("role") === "switch" && !document.getElementById("codex-decision-menu"), "one switch and no popup");
       const buttonStyle = getComputedStyle(button);
       const modelStyle = getComputedStyle(document.querySelector(".model"));
       check(buttonStyle.borderTopWidth === "0px" && buttonStyle.borderRadius === modelStyle.borderRadius &&
         buttonStyle.backgroundColor === "rgba(0, 0, 0, 0)" &&
         Math.abs(button.getBoundingClientRect().height - document.querySelector(".model").getBoundingClientRect().height) <= 1,
-        "Jev button has a transparent resting surface and matches model height");
+        "Decision button has a transparent resting surface and matches model height");
       const modelControl = document.querySelector(".model");
       const accessControl = document.querySelector(".access");
       for (const height of [30, 38, 34]) {
@@ -149,7 +149,7 @@
         await until(() => Math.abs(button.getBoundingClientRect().height - height) <= 1 &&
           (Math.abs(button.getBoundingClientRect().top - modelControl.getBoundingClientRect().top) <= 1 ||
             button.getBoundingClientRect().bottom <= modelControl.getBoundingClientRect().top - 7),
-          `Jev button tracks ${height}px model height without overlapping the toolbar`);
+          `Decision button tracks ${height}px model height without overlapping the toolbar`);
       }
       const anchor = () => document.querySelector(".access").getBoundingClientRect();
       const model = () => document.querySelector(".model").getBoundingClientRect();
@@ -171,7 +171,7 @@
         toolbar.append(icon);
         await pause(40);
         check(root.dataset.compact === "false" && docked() >= 7 && docked() <= 10,
-          "wide composer keeps full Jev control beside the model despite decorative content");
+          "wide composer keeps full Decision control beside the model despite decorative content");
         check(getComputedStyle(label).display !== "none" && rect().left > innerWidth / 2,
           "wide composer shows the full control on the right");
         document.documentElement.style.width = "500px";
@@ -180,7 +180,7 @@
         document.documentElement.style.width = "";
         composer.style.width = "";
         await until(() => root.dataset.compact === "false" && docked() >= 7 && docked() <= 10,
-          "expanded composer restores full right-docked Jev control");
+          "expanded composer restores full right-docked Decision control");
         const decoy = document.createElement("span");
         decoy.textContent = "Codex";
         decoy.setAttribute("role", "button");
@@ -199,16 +199,19 @@
       const wideWidth = composer.getBoundingClientRect().width;
       const paneWidth = document.documentElement.getBoundingClientRect().width;
       const gap = model().left - anchor().right - 15;
+      const previousCompact = root.dataset.compact;
+      root.dataset.compact = "false";
       const fullWidth = rect().width;
+      root.dataset.compact = previousCompact;
       document.documentElement.style.width = `${paneWidth - 80}px`;
       composer.style.width = `${wideWidth - (gap - fullWidth + 4)}px`;
-      await until(() => root.dataset.compact === "true" && root.style.display === "block", "compact after panel resize");
+      await until(() => root.dataset.compact === "true" && root.style.display === "block" && docked() >= 7 && docked() <= 10, "compact after panel resize");
       check(getComputedStyle(label).display === "none", "compact dot only");
       check(rect().left > anchor().right + 3 && docked() >= 7 && docked() <= 10,
         "compact dot docks beside the model control");
       button.click();
       await pause(50);
-      check(button.getAttribute("aria-checked") === "true", "compact switch enables Jev");
+      check(button.getAttribute("aria-checked") === "true", "compact switch enables Decision");
       button.click();
       await pause(50);
       document.documentElement.style.width = `${paneWidth - 110}px`;
@@ -216,9 +219,9 @@
       modelControl.innerHTML = '<svg width="22" height="22" aria-hidden="true"><circle cx="11" cy="11" r="9" fill="currentColor"/></svg>';
       await until(() => model().left - anchor().right > fullWidth + 15 &&
         docked() >= 7 && docked() <= 10,
-        "model icon frees room and Jev redocks after the pane narrows");
+        "model icon frees room and Decision redocks after the pane narrows");
       check(root.dataset.compact === "true" && getComputedStyle(label).display === "none",
-        "Jev stays compact after the model shrinks");
+        "Decision stays compact after the model shrinks");
       check(rect().left > anchor().right + 3 && docked() >= 7 && docked() <= 10,
         "compact dot stays docked after the model shrinks");
       document.documentElement.style.width = `${paneWidth - 140}px`;
@@ -227,9 +230,9 @@
       accessControl.innerHTML = '<svg width="22" height="22" aria-hidden="true"><path d="M11 1 L20 5 L18 16 L11 21 L4 16 L2 5 Z" fill="currentColor"/></svg>';
       await until(() => model().left - anchor().right > fullWidth + 15 &&
         docked() >= 7 && docked() <= 10,
-        "access icon frees room and Jev redocks at a narrower pane width");
+        "access icon frees room and Decision redocks at a narrower pane width");
       check(root.dataset.compact === "true" && docked() >= 7 && docked() <= 10,
-        "Jev stays compact and docked after both Codex controls shrink");
+        "Decision stays compact and docked after both Codex controls shrink");
       accessControl.textContent = "Full access";
       accessControl.removeAttribute("aria-label");
       modelControl.textContent = fixtureModelLabel;
@@ -246,103 +249,103 @@
         await until(() => root.style.display === "block" &&
           Math.abs(rect().top + rect().height / 2 - anchor().top - anchor().height / 2) <= 1 &&
           rect().left >= anchor().right + 1 && rect().right <= model().left - 1,
-          `Jev stays on the toolbar in a ${tightGap}px gap`);
-        check(document.getElementById("codex-jev-dot").getBoundingClientRect().width === 7,
+          `Decision stays on the toolbar in a ${tightGap}px gap`);
+        check(document.getElementById("codex-decision-dot").getBoundingClientRect().width === 7,
           "tight spacing preserves the status dot");
       }
       document.querySelector(".toolbar").style.gap = "8px";
-      await until(() => root.style.display === "none", "a closed toolbar gap hides Jev instead of covering the prompt");
+      await until(() => root.style.display === "none", "a closed toolbar gap hides Decision instead of covering the prompt");
       document.querySelector(".toolbar").style.gap = "";
       modelControl.style.marginLeft = "";
       document.documentElement.style.width = "";
       composer.style.width = "";
-      await until(() => root.style.display === "block" && root.dataset.compact === "false", "restore full control after resize");
-      check(getComputedStyle(label).display !== "none" && docked() >= 7 && docked() <= 10, "full control redocked");
+      await until(() => root.style.display === "block" && root.dataset.compact === previousCompact && docked() >= 7 && docked() <= 10, "restore original control after resize");
+      check((getComputedStyle(label).display === "none") === (previousCompact === "true") && docked() >= 7 && docked() <= 10, "original control redocked");
       const toolbarChildren = [...document.querySelector(".toolbar").children];
       const toolbarStyles = toolbarChildren.map(element => element.getAttribute("style"));
       for (const element of toolbarChildren) {
         if (!element.contains(accessControl)) element.style.display = "none";
       }
-      await until(() => root.style.display === "none", "an incomplete toolbar hides Jev");
+      await until(() => root.style.display === "none", "an incomplete toolbar hides Decision");
       toolbarChildren.forEach((element, index) => {
         if (toolbarStyles[index] === null) element.removeAttribute("style");
         else element.setAttribute("style", toolbarStyles[index]);
       });
       await until(() => root.style.display === "block" && rect().left >= anchor().right + 1 &&
-        rect().right <= model().left - 1, "Jev returns when the toolbar controls return");
+        rect().right <= model().left - 1, "Decision returns when the toolbar controls return");
       accessControl.setAttribute("aria-label", "Full access");
       modelControl.setAttribute("aria-label", "GPT-6 Sol model");
       accessControl.innerHTML = '<svg width="22" height="22" aria-hidden="true"><path d="M11 1 L20 5 L18 16 L11 21 L4 16 L2 5 Z" fill="currentColor"/></svg>';
       modelControl.innerHTML = '<svg width="22" height="22" aria-hidden="true"><circle cx="11" cy="11" r="9" fill="currentColor"/></svg>';
       document.documentElement.style.width = `${paneWidth - 100}px`;
       composer.style.width = "300px";
-      await until(() => root.style.display === "block" && rect().width > 0, "icon-only controls keep Jev visible");
+      await until(() => root.style.display === "block" && rect().width > 0, "icon-only controls keep Decision visible");
       button.click();
       await pause(50);
-      check(button.getAttribute("aria-checked") === "true", "icon-only Jev button enables filtering");
+      check(button.getAttribute("aria-checked") === "true", "icon-only Decision button enables filtering");
       button.click();
       await pause(50);
       accessControl.removeAttribute("aria-label");
-      await until(() => root.style.display === "block", "shield icon fallback keeps Jev visible");
+      await until(() => root.style.display === "block", "shield icon fallback keeps Decision visible");
       modelControl.removeAttribute("role");
-      await until(() => root.dataset.compact === "true", "missing model control keeps compact Jev visible");
+      await until(() => root.dataset.compact === "true", "missing model control keeps compact Decision visible");
       check(Math.abs(rect().top + rect().height / 2 - anchor().top - anchor().height / 2) <= 1,
-        "missing model control keeps Jev on the access row");
+        "missing model control keeps Decision on the access row");
       modelControl.setAttribute("role", "button");
       document.documentElement.style.width = "";
       composer.style.width = "";
       accessControl.textContent = "Full access";
       modelControl.textContent = fixtureModelLabel;
-      await until(() => root.dataset.compact === "false", "text controls restore normal position");
+      await until(() => root.dataset.compact === previousCompact && docked() >= 7 && docked() <= 10, "text controls restore normal position");
       document.documentElement.style.width = `${paneWidth - 80}px`;
       modelControl.removeAttribute("role");
       modelControl.innerHTML = '<svg width="22" height="22" aria-hidden="true"><circle cx="11" cy="11" r="9" fill="currentColor"/></svg>';
-      await until(() => root.dataset.compact === "true", "missing model compacts Jev after initial layout");
+      await until(() => root.dataset.compact === "true", "missing model compacts Decision after initial layout");
       document.documentElement.style.width = `${paneWidth - 110}px`;
       modelControl.setAttribute("role", "button");
       await pause(40);
       check(root.dataset.compact === "true" && getComputedStyle(label).display === "none",
-        "Jev stays compact when the model icon returns at a narrower width");
+        "Decision stays compact when the model icon returns at a narrower width");
       document.documentElement.style.width = "";
       modelControl.textContent = fixtureModelLabel;
-      await until(() => root.dataset.compact === "false", "wider pane restores full Jev label");
+      await until(() => root.dataset.compact === previousCompact && docked() >= 7 && docked() <= 10, "wider pane restores the Decision control");
       button.click();
       await pause(50);
-      await until(() => button.getAttribute("aria-checked") === "true" && !button.disabled, "click enables Jev directly");
-      check(!document.getElementById("codex-jev-menu") && !button.hasAttribute("aria-expanded"), "toggle does not open a popup");
+      await until(() => button.getAttribute("aria-checked") === "true" && !button.disabled, "click enables Decision directly");
+      check(!document.getElementById("codex-decision-menu") && !button.hasAttribute("aria-expanded"), "toggle does not open a popup");
       check(button.style.color === "rgb(135, 205, 164)", "connected green");
       hookHealth = null;
       await until(() => button.style.color === "rgb(135, 205, 164)", "API probe confirms the connection without a hook event");
-      const healthRow = document.getElementById("codex-jev-health-row");
-      const healthReason = document.getElementById("codex-jev-health-reason");
-      const tip = document.getElementById("codex-jev-tip");
+      const healthRow = document.getElementById("codex-decision-health-row");
+      const healthReason = document.getElementById("codex-decision-health-reason");
+      const tip = document.getElementById("codex-decision-tip");
       tip.style.display = "block";
       check(healthRow.hidden && getComputedStyle(healthReason).display === "none" &&
         !tip.textContent.includes("Run a local tool"), "no unverified hook error is shown");
       tip.style.removeProperty("display");
       hookHealth = { version: 1, hook_version: "0.8.1", last_seen_ms: Date.now(), last_skip_ms: Date.now(), last_skip: "small" };
       await until(() => button.style.color === "rgb(135, 205, 164)", "observed skip verifies hook invocation");
-      hookHealth = { ...hookHealth, last_error_ms: Date.now() + 1, last_error: "invalid Jev response" };
-      await until(() => document.getElementById("codex-jev-health-reason").textContent.includes("invalid Jev response"),
+      hookHealth = { ...hookHealth, last_error_ms: Date.now() + 1, last_error: "invalid Decision response" };
+      await until(() => document.getElementById("codex-decision-health-reason").textContent.includes("invalid Decision response"),
         "hook error is reported");
       check(button.style.color === "rgb(135, 205, 164)", "hook error does not change API color");
-      check(document.getElementById("codex-jev-health-reason").textContent.includes("invalid Jev response"),
+      check(document.getElementById("codex-decision-health-reason").textContent.includes("invalid Decision response"),
         "hook error is explained");
       hookHealth = { ...hookHealth, last_seen_ms: Date.now() + 2, last_success_ms: Date.now() + 2 };
       await until(() => button.style.color === "rgb(135, 205, 164)", "successful hook clears error state");
       hookHealth = { ...hookHealth, hook_version: "0.6.0", last_seen_ms: Date.now() + 3 };
-      await until(() => document.getElementById("codex-jev-health-reason").textContent.includes("Update the Jev plugin"),
+      await until(() => document.getElementById("codex-decision-health-reason").textContent.includes("Update the Decision plugin"),
         "old hook binary is reported");
       check(button.style.color === "rgb(135, 205, 164)", "old hook binary does not change API color");
-      check(document.getElementById("codex-jev-health-reason").textContent.includes("Update the Jev plugin"),
+      check(document.getElementById("codex-decision-health-reason").textContent.includes("Update the Decision plugin"),
         "version mismatch has a recovery step");
       hookHealth = { ...hookHealth, hook_version: "0.8.1", last_seen_ms: Date.now() + 4 };
       await until(() => button.style.color === "rgb(135, 205, 164)", "matching hook restores health");
-      health = { ok: false, reason: "JEV_NETWORK_ERROR" };
+      health = { ok: false, reason: "DECISION_NETWORK_ERROR" };
       await until(() => button.style.color === "rgb(233, 148, 144)", "unreachable API is red");
       health = { ok: true, model: "jev-1.13.0" };
       await until(() => button.style.color === "rgb(135, 205, 164)", "reachable API returns green");
-      const observeBadge = document.getElementById("codex-jev-observe");
+      const observeBadge = document.getElementById("codex-decision-observe");
       check(getComputedStyle(observeBadge).display === "none", "replacement mode has no observe badge");
       mode = "observe";
       await until(() => root.dataset.observe === "true", "observe mode arrives from settings");
@@ -361,13 +364,13 @@
       await until(() => root.dataset.compact === String(innerWidth < 500), "observe control fits after resize");
       mode = "replace";
       await until(() => root.dataset.observe === "false", "replacement mode restored");
-      const tooltip = document.getElementById("codex-jev-tip");
+      const tooltip = document.getElementById("codex-decision-tip");
       check(tooltip.textContent.includes("This session") && tooltip.textContent.includes("Recent Actions") &&
         tooltip.textContent.includes("7 checked · 1 replaced · 1,1s avg") &&
         tooltip.textContent.includes("Tokens saved: ~1,515") &&
         !tooltip.textContent.includes("chars checked") && !tooltip.textContent.includes("· replace") &&
-        !tooltip.textContent.includes("Jev connected") && !tooltip.textContent.includes("output +") &&
-        document.getElementById("codex-jev-health-row").hidden,
+        !tooltip.textContent.includes("Decision connected") && !tooltip.textContent.includes("output +") &&
+        document.getElementById("codex-decision-health-row").hidden,
         "session labels and estimated token savings");
       check(tooltip.querySelector("li strong")?.textContent === "-95%" &&
         !tooltip.querySelector("li")?.textContent.includes("1,2s"), "bold reductions without action timings");
@@ -380,7 +383,7 @@
       window.dispatchEvent(new Event("focus"));
       await until(() => root.dataset.classifying === "true", "classification flashes blue");
       check(button.style.color === "rgb(105, 174, 240)", "classification uses blue");
-      const dot = document.getElementById("codex-jev-dot");
+      const dot = document.getElementById("codex-decision-dot");
       // Edge's virtual clock does not advance CSS transitions. Inspect the
       // target glow separately from the eased color transition checked above.
       dot.style.transition = "none";
@@ -403,17 +406,17 @@
       window.dispatchEvent(new Event("focus"));
       await until(() => button.getAttribute("aria-checked") === "true", "activity test restores enabled state");
       check(root.dataset.classifying === "false", "enabling does not replay activity");
-      health = { ok: false, reason: "JEV_HTTP_401" };
+      health = { ok: false, reason: "DECISION_HTTP_401" };
       await pause(1100);
       check(button.style.color === "rgb(233, 148, 144)", "failure red");
-      const retry = document.getElementById("codex-jev-retry");
+      const retry = document.getElementById("codex-decision-retry");
       check(tooltip.textContent.includes("API key rejected") && retry.style.display !== "none" &&
-        !document.getElementById("codex-jev-health-row").hidden &&
+        !document.getElementById("codex-decision-health-row").hidden &&
         getComputedStyle(tooltip).pointerEvents === "auto" &&
         getComputedStyle(tooltip, "::after").height === "10px", "reachable retry and short failure reason");
       retry.click();
       await until(() => button.style.color === "rgb(135, 205, 164)" && retry.style.display === "none", "manual retry restores connection");
-      health = { ok: false, reason: "JEV_HTTP_401" };
+      health = { ok: false, reason: "DECISION_HTTP_401" };
       await until(() => button.style.color === "rgb(233, 148, 144)", "failure can be shown again");
       location.hash = "#reopened-thread";
       await until(() => freshView && tooltip.textContent.includes("0 checked") && tooltip.querySelectorAll("li").length === 0,
@@ -421,28 +424,28 @@
       button.click();
       await pause(50);
       await pause(50);
-      check(button.getAttribute("aria-checked") === "false" && button.style.color === "rgb(154, 154, 154)", "one click disables Jev");
+      check(button.getAttribute("aria-checked") === "false" && button.style.color === "rgb(154, 154, 154)", "one click disables Decision");
       button.click();
       await pause(50);
       await pause(50);
       check(button.getAttribute("aria-checked") === "true" && button.style.color === "rgb(233, 148, 144)", "enabled switch reports failed API health");
       health = { ok: true, model: "jev-1.13.0" };
-      await until(() => button.style.color === "rgb(135, 205, 164)" && document.getElementById("codex-jev-health-row").hidden, "enabled switch reports healthy API");
-      check(button.getAttribute("aria-label").includes("Jev API connected") &&
-        tooltip.querySelector("#codex-jev-empty").textContent.includes("latest output skipped: small") &&
-        tooltip.querySelector("#codex-jev-empty").style.display !== "none",
+      await until(() => button.style.color === "rgb(135, 205, 164)" && document.getElementById("codex-decision-health-row").hidden, "enabled switch reports healthy API");
+      check(button.getAttribute("aria-label").includes("Decision API connected") &&
+        tooltip.querySelector("#codex-decision-empty").textContent.includes("latest output skipped: small") &&
+        tooltip.querySelector("#codex-decision-empty").style.display !== "none",
         "verified hook with no decision explains normal skips");
       hookHealth = { version: 1, hook_version: "0.8.1", last_seen_ms: Date.now(),
         last_skip_ms: Date.now(), last_skip: "unsupported_route", skipped: 4 };
-      await until(() => tooltip.querySelector("#codex-jev-empty").textContent.includes("Hook ran; latest output skipped: unsupported route"),
+      await until(() => tooltip.querySelector("#codex-decision-empty").textContent.includes("Hook ran; latest output skipped: unsupported route"),
         "actual skip reason distinguishes hook dispatch from missing decisions");
       button.click();
       await pause(50);
       await until(() => button.getAttribute("aria-checked") === "false", "all output turns off together");
       button.focus();
       check(getComputedStyle(tooltip).display === "block" &&
-        tooltip.innerText.includes("Jev is off for this session") &&
-        getComputedStyle(tooltip.querySelector("#codex-jev-session-heading")).display === "none",
+        tooltip.innerText.includes("Decision is off for this session") &&
+        getComputedStyle(tooltip.querySelector("#codex-decision-session-heading")).display === "none",
         "disabled filters show an explanation instead of an empty tooltip");
       window.__jevHarnessDropReplies = true;
       option.click();
@@ -451,7 +454,7 @@
         "selection waits for acknowledgement instead of accepting duplicate clicks");
       const actualNow = Date.now;
       Date.now = () => actualNow() + 11000;
-      await until(() => tooltip.querySelector("#codex-jev-health-row strong").textContent === "Jev control unavailable",
+      await until(() => tooltip.querySelector("#codex-decision-health-row strong").textContent === "Decision control unavailable",
         "missing host reply times out visibly");
       Date.now = actualNow;
       check(button.style.color === "rgb(233, 148, 144)" && !option.disabled &&
@@ -470,27 +473,27 @@
         "selection can be disabled after reconnect");
       health = null;
       window.dispatchEvent(new Event("focus"));
-      await until(() => button.style.color === "rgb(154, 154, 154)" && tooltip.innerText.includes("Checking Jev API"), "off switch retains pending API status in tooltip");
-      check(!healthRow.hidden && tooltip.innerText.includes("Checking Jev API") &&
-        tooltip.innerText.includes("Jev is off for this session"),
+      await until(() => button.style.color === "rgb(154, 154, 154)" && tooltip.innerText.includes("Checking Decision API"), "off switch retains pending API status in tooltip");
+      check(!healthRow.hidden && tooltip.innerText.includes("Checking Decision API") &&
+        tooltip.innerText.includes("Decision is off for this session"),
         "pending API check keeps the disabled tooltip readable");
       outputEnabled = true;
       window.dispatchEvent(new Event("focus"));
       await until(() => option.getAttribute("aria-checked") === "true", "enable filtering during API check");
-      check(tooltip.innerText.includes("Checking Jev API") && tooltip.innerText.includes("0 checked") &&
+      check(tooltip.innerText.includes("Checking Decision API") && tooltip.innerText.includes("0 checked") &&
         tooltip.innerText.includes("Hook ran; latest output skipped: unsupported route"),
         "pending API check keeps enabled activity and empty-session details visible");
       outputEnabled = false;
-      health = { ok: false, reason: "JEV_TIMEOUT" };
+      health = { ok: false, reason: "DECISION_TIMEOUT" };
       window.dispatchEvent(new Event("focus"));
       await until(() => button.style.color === "rgb(154, 154, 154)" && tooltip.innerText.includes("Connection timed out"), "off switch retains failed API status in tooltip");
       check(tooltip.innerText.includes("Connection timed out") &&
-        tooltip.innerText.includes("Jev is off for this session") &&
+        tooltip.innerText.includes("Decision is off for this session") &&
         getComputedStyle(retry).display !== "none", "disabled filters preserve connection recovery");
       health = { ok: true, model: "jev-1.13.0" };
       window.dispatchEvent(new Event("focus"));
       await until(() => button.style.color === "rgb(154, 154, 154)" && healthRow.hidden, "off switch stays gray with a healthy API");
-      check(healthRow.hidden && tooltip.innerText.includes("Jev is off for this session"),
+      check(healthRow.hidden && tooltip.innerText.includes("Decision is off for this session"),
         "healthy disabled tooltip stays readable");
       const previousHook = hookHealth;
       const previousNow = Date.now;
@@ -498,7 +501,7 @@
       outputEnabled = true;
       Date.now = () => previousNow() + 61_000;
       window.dispatchEvent(new Event("focus"));
-      await until(() => healthRow.querySelector("strong").textContent === "No Jev hook activity",
+      await until(() => healthRow.querySelector("strong").textContent === "No Decision hook activity",
         "API connectivity without a hook receipt explains the missing activity");
       check(tooltip.innerText.includes("check /hooks and reload VS Code"), "missing hook activity explains recovery");
       hookHealth = previousHook;
@@ -507,54 +510,54 @@
       window.dispatchEvent(new Event("focus"));
       await until(() => healthRow.hidden, "a hook receipt clears the missing activity message");
       button.blur();
-      check(getComputedStyle(tooltip).display === "none", "tooltip closes when focus leaves Jev");
-      check(!document.getElementById("codex-jev-menu"), "no selection popup remains");
+      check(getComputedStyle(tooltip).display === "none", "tooltip closes when focus leaves Decision");
+      check(!document.getElementById("codex-decision-menu"), "no selection popup remains");
       const codexMenu = document.createElement("div");
       codexMenu.innerHTML = '<button role="menuitem"><span>Codex settings</span></button>';
       document.body.append(codexMenu);
       await pause(50);
-      check(!codexMenu.querySelector('[data-codex-jev-settings="true"]'), "no Jev item in Codex menu");
+      check(!codexMenu.querySelector('[data-codex-decision-settings="true"]'), "no Decision item in Codex menu");
       codexMenu.remove();
       const settingsScreen = document.getElementById("settings-screen");
       settingsScreen.style.display = "block";
-      await until(() => settingsScreen.querySelector('[data-codex-jev-settings="true"]'), "Jev appears in Codex settings");
-      const jevSettings = settingsScreen.querySelector('[data-codex-jev-settings="true"]');
-      check(jevSettings.closest(".settings-item").previousElementSibling.textContent.trim() === "Voice", "Jev follows Voice");
-      check(jevSettings.textContent.trim() === "Jev", "Jev navigation label");
-      check(jevSettings.querySelector('img[src$="jev-icon.png"]'), "Jev navigation uses the probability icon");
+      await until(() => settingsScreen.querySelector('[data-codex-decision-settings="true"]'), "Decision appears in Codex settings");
+      const jevSettings = settingsScreen.querySelector('[data-codex-decision-settings="true"]');
+      check(jevSettings.closest(".settings-item").previousElementSibling.textContent.trim() === "Voice", "Decision follows Voice");
+      check(jevSettings.textContent.trim() === "Decision", "Decision navigation label");
+      check(jevSettings.querySelector('img[src$="decision-icon.png"]'), "Decision navigation uses the probability icon");
       jevSettings.click();
-      await until(() => settingsScreen.querySelector("#codex-jev-settings-panel") &&
-        settingsScreen.querySelector("#codex-jev-settings-lifetime-tokens").textContent === "87,320", "Jev settings render lifetime line totals inline");
+      await until(() => settingsScreen.querySelector("#codex-decision-settings-panel") &&
+        settingsScreen.querySelector("#codex-decision-settings-lifetime-tokens").textContent === "87,320", "Decision settings render lifetime line totals inline");
       check(window.__jevHarnessSettingsRead === 1, "settings load through host bridge");
-      check(settingsScreen.querySelector("#codex-jev-settings-lifetime-calls").textContent === "126" &&
-        settingsScreen.querySelector("#codex-jev-settings-lifetime-time").textContent === "487 ms", "lifetime metrics loaded");
+      check(settingsScreen.querySelector("#codex-decision-settings-lifetime-calls").textContent === "126" &&
+        settingsScreen.querySelector("#codex-decision-settings-lifetime-time").textContent === "487 ms", "lifetime metrics loaded");
       check(!settingsScreen.textContent.includes("Changes apply to the next tool result") &&
         !settingsScreen.textContent.includes("An API key is saved") &&
         !settingsScreen.textContent.includes("The saved key is masked"), "no noisy settings copy");
-      check(settingsScreen.querySelector("#codex-jev-settings-mode").options[0].textContent === "Monitor" &&
-        settingsScreen.querySelector("#codex-jev-settings-mode").options[1].textContent === "Filter" &&
-        settingsScreen.querySelector("#codex-jev-settings-mode").value === "replace", "mode names preserve config values");
-      check(settingsScreen.querySelector('label[for="codex-jev-settings-mode"] small').textContent.includes("leaving tool output unchanged") &&
-        settingsScreen.querySelector('label[for="codex-jev-settings-mode"] small').textContent.includes("per-line"),
+      check(settingsScreen.querySelector("#codex-decision-settings-mode").options[0].textContent === "Monitor" &&
+        settingsScreen.querySelector("#codex-decision-settings-mode").options[1].textContent === "Filter" &&
+        settingsScreen.querySelector("#codex-decision-settings-mode").value === "replace", "mode names preserve config values");
+      check(settingsScreen.querySelector('label[for="codex-decision-settings-mode"] small').textContent.includes("leaving tool output unchanged") &&
+        settingsScreen.querySelector('label[for="codex-decision-settings-mode"] small').textContent.includes("per-line"),
         "Monitor explains the preview behavior");
-      const openLogs = settingsScreen.querySelector("#codex-jev-settings-open-logs");
+      const openLogs = settingsScreen.querySelector("#codex-decision-settings-open-logs");
       check(getComputedStyle(openLogs).borderRadius === "10px" &&
         getComputedStyle(openLogs).borderTopWidth === "1px", "Codex-sized button corners and border");
       openLogs.click();
       await until(() => window.__jevHarnessLastAction === "settingsOpenLogs", "Open logs routes through host bridge");
       await until(() => !openLogs.disabled, "Open logs request completes");
-      await until(() => settingsScreen.querySelector("main").style.display === "none", "Voice content hidden on Jev page");
-      check(settingsScreen.querySelector("#codex-jev-settings-output-relevant_max").value === "10%", "line threshold loaded with percent sign");
-      const routineNumber = settingsScreen.querySelector("#codex-jev-settings-output-relevant_max");
-      const routineSlider = settingsScreen.querySelector("#codex-jev-settings-output-relevant_max-slider");
-      check(!settingsScreen.querySelector('label[for="codex-jev-settings-output-relevant_max"]').textContent.includes("(%)") &&
+      await until(() => settingsScreen.querySelector("main").style.display === "none", "Voice content hidden on Decision page");
+      check(settingsScreen.querySelector("#codex-decision-settings-output-relevant_max").value === "10%", "line threshold loaded with percent sign");
+      const routineNumber = settingsScreen.querySelector("#codex-decision-settings-output-relevant_max");
+      const routineSlider = settingsScreen.querySelector("#codex-decision-settings-output-relevant_max-slider");
+      check(!settingsScreen.querySelector('label[for="codex-decision-settings-output-relevant_max"]').textContent.includes("(%)") &&
         getComputedStyle(routineSlider).backgroundImage.includes("linear-gradient"),
         "percent sign moves into the field and slider track is painted");
-      const descriptions = [...settingsScreen.querySelectorAll("#codex-jev-settings-thresholds .section-description")];
+      const descriptions = [...settingsScreen.querySelectorAll("#codex-decision-settings-thresholds .section-description")];
       check(descriptions.length === 1 && descriptions[0].textContent.includes("classifies an excerpt"), "settings explain one shared policy");
-      check(!settingsScreen.querySelector("#codex-jev-settings-relevance-guard") &&
-        !settingsScreen.querySelector("#codex-jev-settings-test_build-exact_max") &&
-        !settingsScreen.querySelector("#codex-jev-settings-search_listing-exact_max"), "category controls are absent");
+      check(!settingsScreen.querySelector("#codex-decision-settings-relevance-guard") &&
+        !settingsScreen.querySelector("#codex-decision-settings-test_build-exact_max") &&
+        !settingsScreen.querySelector("#codex-decision-settings-search_listing-exact_max"), "category controls are absent");
       routineSlider.value = "82";
       routineSlider.dispatchEvent(new Event("input", { bubbles: true }));
       check(routineNumber.value === "82%" && routineSlider.style.getPropertyValue("--fill") === "82%",
@@ -580,10 +583,19 @@
           routineSlider.style.getPropertyValue("--fill") === normalized,
           `percentage boundary ${entered} updates both controls`);
       }
-      settingsScreen.querySelector("#codex-jev-settings-mode").value = "observe";
-      const reset = settingsScreen.querySelector("#codex-jev-settings-reset");
-      const logLimit = settingsScreen.querySelector("#codex-jev-settings-log-limit");
-      const neverDelete = settingsScreen.querySelector("#codex-jev-settings-never-delete");
+      const initialKeyMask = settingsScreen.querySelector("#codex-decision-settings-key").placeholder;
+      check(initialKeyMask.length === 32 && /^•+$/.test(initialKeyMask), "saved key mask uses the exact stored key length");
+      const settingsProvider = settingsScreen.querySelector("#codex-decision-settings-provider");
+      const providerKey = settingsScreen.querySelector("#codex-decision-settings-key");
+      providerKey.value = "synthetic-provider-draft";
+      settingsProvider.value = "typesafe";
+      settingsProvider.dispatchEvent(new Event("change", {bubbles:true}));
+      check(providerKey.value === "", "changing provider clears the draft credential");
+      providerKey.value = "synthetic-typesafe-draft";
+      settingsScreen.querySelector("#codex-decision-settings-mode").value = "observe";
+      const reset = settingsScreen.querySelector("#codex-decision-settings-reset");
+      const logLimit = settingsScreen.querySelector("#codex-decision-settings-log-limit");
+      const neverDelete = settingsScreen.querySelector("#codex-decision-settings-never-delete");
       check(logLimit.value === "75" && !neverDelete.checked && !logLimit.disabled,
         "saved log retention is shown and editable");
       logLimit.value = "9999";
@@ -597,31 +609,30 @@
       neverDelete.click();
       await until(() => !neverDelete.disabled, "failed checkbox save returns control");
       check(neverDelete.checked && logLimit.disabled && window.__jevHarnessNeverDelete &&
-        settingsScreen.querySelector("#codex-jev-settings-message").textContent.includes("Could not save"),
+        settingsScreen.querySelector("#codex-decision-settings-message").textContent.includes("Could not save"),
         "failed checkbox save restores the persisted setting");
       window.__jevHarnessFailNeverDelete = false;
       neverDelete.click();
       await until(() => !window.__jevHarnessNeverDelete && !neverDelete.disabled, "checkbox clears persistently");
       check(!neverDelete.checked && !logLimit.disabled &&
         getComputedStyle(neverDelete, "::after").display === "none", "log limit returns when never delete is off");
-      const saveSettings = settingsScreen.querySelector("#codex-jev-settings-save");
+      const saveSettings = settingsScreen.querySelector("#codex-decision-settings-save");
       const settingsActions = reset.parentElement;
       check(settingsActions.classList.contains("save-actions") &&
         Math.abs(reset.getBoundingClientRect().right - settingsActions.getBoundingClientRect().right) <= 2 &&
         (reset.getBoundingClientRect().top >= saveSettings.getBoundingClientRect().bottom ||
           reset.getBoundingClientRect().left >= saveSettings.getBoundingClientRect().right + 11),
         "Reset defaults is right aligned and wraps when the settings pane is narrow");
-      const keyField = settingsScreen.querySelector("#codex-jev-settings-key");
-      check(keyField.placeholder.length === 32 && /^•+$/.test(keyField.placeholder),
-        "saved key mask uses the exact stored key length");
+      const keyField = settingsScreen.querySelector("#codex-decision-settings-key");
+      check(!/^•+$/.test(keyField.placeholder), "different provider does not inherit a saved key mask");
       keyField.value = "unsaved-key";
-      check(!reset.disabled && getComputedStyle(reset).color !== getComputedStyle(settingsScreen.querySelector("#codex-jev-settings-save")).color,
+      check(!reset.disabled && getComputedStyle(reset).color !== getComputedStyle(settingsScreen.querySelector("#codex-decision-settings-save")).color,
         "reset is available with a subdued style");
       for (const invalid of ["101%", "-1", "10.5%", "abc"]) {
         routineNumber.value = invalid;
-        settingsScreen.querySelector("#codex-jev-settings-save").click();
+        settingsScreen.querySelector("#codex-decision-settings-save").click();
         check(window.__jevHarnessLastSettingsSave === null &&
-          settingsScreen.querySelector("#codex-jev-settings-message").textContent.includes("0 to 100"),
+          settingsScreen.querySelector("#codex-decision-settings-message").textContent.includes("0 to 100"),
           `invalid percentage ${invalid} cannot be saved`);
         routineNumber.focus();
         routineNumber.blur();
@@ -637,17 +648,18 @@
         logLimit.value = invalid;
         saveSettings.click();
         check(window.__jevHarnessLastSettingsSave === null &&
-          settingsScreen.querySelector("#codex-jev-settings-message").textContent.includes("1 to 9999"),
+          settingsScreen.querySelector("#codex-decision-settings-message").textContent.includes("1 to 9999"),
           `invalid log limit ${invalid} cannot be saved`);
       }
       logLimit.value = "9999";
       reset.click();
-      check(settingsScreen.querySelector("#codex-jev-settings-mode").value === "replace" &&
+      check(settingsProvider.value === "openai" && providerKey.value === "", "reset defaults clears a different provider draft");
+      check(settingsScreen.querySelector("#codex-decision-settings-mode").value === "replace" &&
         logLimit.value === "50" && !neverDelete.checked &&
-        routineNumber.value === "5%" && routineSlider.value === "5" && keyField.value === "unsaved-key" &&
-        settingsScreen.querySelector("#codex-jev-settings-message").textContent.includes("Save settings to apply") &&
+        routineNumber.value === "5%" && routineSlider.value === "5" && keyField.value === "" &&
+        settingsScreen.querySelector("#codex-decision-settings-message").textContent.includes("Save settings to apply") &&
         window.__jevHarnessLastSettingsSave === null,
-        "reset stages default mode and line policy without changing the key or saving");
+        "reset stages default provider and policy and clears the draft without saving");
       keyField.value = "unsaved-key";
       const settingsContent = settingsScreen.querySelector(".settings-content");
       settingsContent.style.width = "320px";
@@ -659,10 +671,10 @@
         "narrow settings panel contains slider and number");
       settingsContent.style.width = "";
       settingsContent.style.right = "";
-      settingsScreen.querySelector("#codex-jev-settings-test").click();
-      await until(() => settingsScreen.querySelector("#codex-jev-settings-test-status").textContent === "OK", "saved key test result");
-      settingsScreen.querySelector("#codex-jev-settings-save").click();
-      await until(() => settingsScreen.querySelector("#codex-jev-settings-message").textContent === "Settings saved.", "settings saved inline");
+      settingsScreen.querySelector("#codex-decision-settings-test").click();
+      await until(() => settingsScreen.querySelector("#codex-decision-settings-test-status").textContent === "OK", "saved key test result");
+      settingsScreen.querySelector("#codex-decision-settings-save").click();
+      await until(() => settingsScreen.querySelector("#codex-decision-settings-message").textContent === "Settings saved.", "settings saved inline");
       check(keyField.placeholder.length === 11 && /^•+$/.test(keyField.placeholder),
         "saved key mask updates when a new key is stored");
       check(window.__jevHarnessLastSettingsSave.mode === "replace" &&
@@ -670,8 +682,8 @@
         window.__jevHarnessLastSettingsSave.logLimitMb === 50 &&
         window.__jevHarnessLastSettingsSave.neverDeleteLogs === false,
         "save submits the reset line policy");
-      const settingsTest = settingsScreen.querySelector("#codex-jev-settings-test");
-      const settingsMessage = settingsScreen.querySelector("#codex-jev-settings-message");
+      const settingsTest = settingsScreen.querySelector("#codex-decision-settings-test");
+      const settingsMessage = settingsScreen.querySelector("#codex-decision-settings-message");
       for (const control of [settingsTest, saveSettings, neverDelete]) {
         window.__jevHarnessDropSettingsReplies = true;
         control.click();
@@ -684,9 +696,9 @@
         check(!neverDelete.checked && !logLimit.disabled, "timed out retention restores the saved checkbox");
         window.__jevHarnessDropSettingsReplies = false;
         settingsTest.click();
-        await until(() => settingsScreen.querySelector("#codex-jev-settings-test-status").textContent === "OK",
+        await until(() => settingsScreen.querySelector("#codex-decision-settings-test-status").textContent === "OK",
           "settings request works after timeout");
-        window.dispatchEvent(new MessageEvent("message", { data: { type: "codex-jev-reply", id: dropped.id,
+        window.dispatchEvent(new MessageEvent("message", { data: { type: "codex-decision-reply", id: dropped.id,
           status: { settings: { action: "error", message: "obsolete reply" } } } }));
         check(!settingsMessage.textContent.includes("obsolete reply"), "late settings replies cannot replace recovery");
       }
@@ -704,49 +716,49 @@
         "never delete and maximum limit are sent together");
       settingsScreen.querySelector('button[aria-label="General"]').click();
       check(settingsScreen.querySelector("main").style.display !== "none" &&
-        !settingsScreen.querySelector("#codex-jev-settings-panel"), "native settings return after navigation");
+        !settingsScreen.querySelector("#codex-decision-settings-panel"), "native settings return after navigation");
       settingsScreen.querySelector(".settings-content").innerHTML = "<div><h3>Voice controls</h3></div>";
       jevSettings.click();
-      await until(() => settingsScreen.querySelector("#codex-jev-settings-panel") &&
+      await until(() => settingsScreen.querySelector("#codex-decision-settings-panel") &&
         settingsScreen.querySelector(".settings-content > div").style.display === "none",
-        "Jev opens in the Codex content shell without a Voice heading or main element");
-      await until(() => !settingsScreen.querySelector("#codex-jev-settings-never-delete").disabled,
+        "Decision opens in the Codex content shell without a Voice heading or main element");
+      await until(() => !settingsScreen.querySelector("#codex-decision-settings-never-delete").disabled,
         "reopened settings loads saved retention");
-      check(settingsScreen.querySelector("#codex-jev-settings-never-delete").checked &&
-        settingsScreen.querySelector("#codex-jev-settings-key").placeholder.length === 11 &&
-        settingsScreen.querySelector("#codex-jev-settings-output-relevant_max").value === "5%",
+      check(settingsScreen.querySelector("#codex-decision-settings-never-delete").checked &&
+        settingsScreen.querySelector("#codex-decision-settings-key").placeholder.length === 11 &&
+        settingsScreen.querySelector("#codex-decision-settings-output-relevant_max").value === "5%",
         "checkbox, line policy, and key mask persist after reopening settings");
       settingsScreen.querySelector('button[aria-label="General"]').click();
       settingsScreen.style.display = "none";
       outputEnabled = true;
       needsKey = true;
-      health = { ok: false, reason: "JEV_KEY_MISSING" };
-      const setup = document.getElementById("codex-jev-connect");
+      health = { ok: false, reason: "DECISION_KEY_MISSING" };
+      const setup = document.getElementById("codex-decision-connect");
       await until(() => setup.style.display === "flex", "missing key opens over Codex pane");
-      setup.querySelector("#codex-jev-connect-icon").src = "../../vscode-control/icon.png";
+      setup.querySelector("#codex-decision-connect-icon").src = "../../vscode-control/icon.png";
       const bounds = setup.getBoundingClientRect();
       check(bounds.left === 0 && bounds.top === 0 && bounds.width === innerWidth &&
         bounds.height === innerHeight && setup.parentElement === document.body,
         "setup covers the Codex webview");
-      check(setup.textContent.includes("Enter a typesafe.ai API key to use Jev.") &&
+      check(setup.textContent.includes("Choose a provider and enter its API key.") &&
         !setup.textContent.includes("Test it here before saving") &&
         !setup.textContent.includes("plugin data directory"), "concise onboarding copy");
       check(getComputedStyle(setup).backgroundColor === "rgb(17, 17, 17)", "opaque setup backdrop hides Codex content");
-      const keyLink = setup.querySelector("#codex-jev-connect-link a");
-      check(keyLink?.href === "https://typesafe.ai/" &&
-        getComputedStyle(keyLink.parentElement).textAlign === "center", "TypeSafe key link is centered below actions");
+      const keyLink = setup.querySelector("#codex-decision-connect-link a");
+      check(keyLink?.href === "https://platform.openai.com/api-keys" &&
+        getComputedStyle(keyLink.parentElement).textAlign === "center", "Provider key link is centered below actions");
       const linkClick = new MouseEvent("click", { bubbles: true, cancelable: true });
       const navigated = keyLink.dispatchEvent(linkClick);
-      check(!navigated && linkClick.defaultPrevented && window.__jevHarnessLastAction === "openTypeSafe" &&
-        setup.style.display === "flex", "TypeSafe link asks the extension to open the browser without navigating the webview");
+      check(!navigated && linkClick.defaultPrevented && window.__jevHarnessLastAction === "openProvider" &&
+        setup.style.display === "flex", "Provider link asks the extension to open the browser without navigating the webview");
       window.__jevHarnessExternalOpen = false;
       keyLink.click();
-      await until(() => setup.querySelector("#codex-jev-key-status").textContent === "Could not open browser",
-        "browser launch failure is shown in Connect Jev");
+      await until(() => setup.querySelector("#codex-decision-key-status").textContent === "Could not open browser",
+        "browser launch failure is shown in Connect Decision");
       window.__jevHarnessExternalOpen = true;
-      const footer = setup.querySelector("#codex-jev-connect-footer");
-      const saveButton = setup.querySelector("#codex-jev-save-key");
-      const skipButton = setup.querySelector("#codex-jev-skip-key");
+      const footer = setup.querySelector("#codex-decision-connect-footer");
+      const saveButton = setup.querySelector("#codex-decision-save-key");
+      const skipButton = setup.querySelector("#codex-decision-skip-key");
       check((innerWidth <= 420 ? skipButton.getBoundingClientRect().top >= saveButton.getBoundingClientRect().bottom :
         Math.abs(saveButton.getBoundingClientRect().top - skipButton.getBoundingClientRect().top) < 1) &&
         footer.contains(saveButton) && footer.contains(skipButton) &&
@@ -755,47 +767,54 @@
       setup.style.width = "300px";
       setup.style.right = "auto";
       await pause(30);
-      const card = setup.querySelector("#codex-jev-connect-card");
+      const card = setup.querySelector("#codex-decision-connect-card");
       check(card.scrollWidth <= card.clientWidth + 1 &&
         saveButton.getBoundingClientRect().right <= card.getBoundingClientRect().right &&
         skipButton.getBoundingClientRect().right <= card.getBoundingClientRect().right &&
         skipButton.getBoundingClientRect().top > saveButton.getBoundingClientRect().top &&
-        setup.querySelector("#codex-jev-connect-icon").getBoundingClientRect().right <= card.getBoundingClientRect().right,
-        "narrow Connect Jev panel contains heading, icon, and both actions");
+        setup.querySelector("#codex-decision-connect-icon").getBoundingClientRect().right <= card.getBoundingClientRect().right,
+        "narrow Connect Decision panel contains heading, icon, and both actions");
       setup.style.width = "";
       setup.style.right = "";
-      check(setup.querySelector("#codex-jev-connect-icon").getAttribute("src") === "../../vscode-control/icon.png" &&
-        getComputedStyle(setup.querySelector("#codex-jev-connect-art pre")).animationName ===
-          (matchMedia("(prefers-reduced-motion: reduce)").matches ? "none" : "codex-jev-art-drift"),
-        "Jev icon and motion-aware ASCII backdrop");
-      setup.querySelector("#codex-jev-skip-key").click();
+      check(setup.querySelector("#codex-decision-connect-icon").getAttribute("src") === "../../vscode-control/icon.png" &&
+        getComputedStyle(setup.querySelector("#codex-decision-connect-art pre")).animationName ===
+          (matchMedia("(prefers-reduced-motion: reduce)").matches ? "none" : "codex-decision-art-drift"),
+        "Decision icon and motion-aware ASCII backdrop");
+      setup.querySelector("#codex-decision-skip-key").click();
       check(setup.style.display === "none" && needsKey, "Skip restores Codex without saving a key");
-      const missingTip = document.getElementById("codex-jev-tip");
+      const missingTip = document.getElementById("codex-decision-tip");
       missingTip.style.display = "block";
       check(missingTip.dataset.needsKey === "true" &&
         missingTip.getBoundingClientRect().width <= 253 &&
-        getComputedStyle(missingTip.querySelector("#codex-jev-session-heading")).display === "none" &&
-        missingTip.querySelector("#codex-jev-retry").textContent === "Connect",
+        getComputedStyle(missingTip.querySelector("#codex-decision-session-heading")).display === "none" &&
+        missingTip.querySelector("#codex-decision-retry").textContent === "Connect",
         "missing-key tooltip is compact and action-oriented");
       missingTip.style.display = "";
-      missingTip.querySelector("#codex-jev-retry").click();
+      missingTip.querySelector("#codex-decision-retry").click();
       check(setup.style.display === "flex", "tooltip Connect reopens setup");
       skipButton.click();
-      missingTip.querySelector("#codex-jev-retry").click();
+      missingTip.querySelector("#codex-decision-retry").click();
       check(setup.style.display === "flex", "Connect remains reachable after skipping setup");
-      const key = setup.querySelector("#codex-jev-key");
-      const result = setup.querySelector("#codex-jev-key-status");
+      const key = setup.querySelector("#codex-decision-key");
+      const result = setup.querySelector("#codex-decision-key-status");
+      const connectProvider = setup.querySelector("#codex-decision-provider");
+      key.value = "synthetic-openai-draft";
+      connectProvider.value = "typesafe";
+      connectProvider.dispatchEvent(new Event("change", {bubbles:true}));
+      check(key.value === "" && keyLink.href === "https://typesafe.ai/", "connect provider change clears the key and changes its link");
+      connectProvider.value = "openai";
+      connectProvider.dispatchEvent(new Event("change", {bubbles:true}));
       key.value = "invalid-example-key";
-      setup.querySelector("#codex-jev-test-key").click();
+      setup.querySelector("#codex-decision-test-key").click();
       await until(() => result.textContent === "Invalid", "invalid key result beside Test button");
       key.value = "expired-example-key";
-      setup.querySelector("#codex-jev-test-key").click();
+      setup.querySelector("#codex-decision-test-key").click();
       await until(() => result.textContent === "Expired", "expired key result beside Test button");
       key.value = "working-example-key";
-      setup.querySelector("#codex-jev-test-key").click();
+      setup.querySelector("#codex-decision-test-key").click();
       await until(() => result.textContent === "OK", "good key result beside Test button");
       check(result.dataset.ok === "true", "success status is green");
-      setup.querySelector("#codex-jev-save-key").click();
+      setup.querySelector("#codex-decision-save-key").click();
       await until(() => setup.style.display === "none" && !needsKey, "saving key closes overlay");
       check(key.value === "", "key field cleared after save");
       window.__jevHarnessHoldNextStatus = true;
@@ -809,11 +828,11 @@
       await pause(1100);
       Date.now = actualNow;
       check(button.style.color === "rgb(135, 205, 164)" &&
-        !document.getElementById("codex-jev-health-reason").textContent.includes("did not respond"),
+        !document.getElementById("codex-decision-health-reason").textContent.includes("did not respond"),
         "an obsolete status timeout cannot replace a newer healthy reply");
       await pause(300);
       window.dispatchEvent(new MessageEvent("message", { data: {
-        type: "codex-jev-reply", id: oldReply.id,
+        type: "codex-decision-reply", id: oldReply.id,
         status: { enabled: false, sessionPending: false, health: null },
       } }));
       await pause(30);
@@ -823,61 +842,61 @@
       window.__jevHarnessHoldNextStatus = true;
       await until(() => window.__jevHarnessHeldStatus?.sessionId === "fixture-session",
         "hold a reply from the previous thread");
-      document.documentElement.dataset.codexJevRouteKind = "none";
-      delete document.documentElement.dataset.codexJevSessionId;
-      await until(() => document.getElementById("codex-jev-button").disabled &&
+      document.documentElement.dataset.codexDecisionRouteKind = "none";
+      delete document.documentElement.dataset.codexDecisionSessionId;
+      await until(() => document.getElementById("codex-decision-button").disabled &&
         button.style.color === "rgb(154, 154, 154)", "home view keeps the toggle gray without a thread");
       check(root.dataset.noSession === "true" &&
-        button.title === "Open a local Codex thread to turn Jev on or off.",
+        button.title === "Open a local Codex thread to turn Decision on or off.",
         "home view explains why session switches are unavailable");
-      const homeTip = document.getElementById("codex-jev-tip");
+      const homeTip = document.getElementById("codex-decision-tip");
       homeTip.style.display = "block";
       check(getComputedStyle(homeTip).display === "none", "home view suppresses the hover tooltip");
       homeTip.style.removeProperty("display");
       settingsScreen.style.display = "block";
       jevSettings.click();
-      await until(() => settingsScreen.querySelector("#codex-jev-settings-panel") &&
-        settingsScreen.querySelector("#codex-jev-settings-lifetime-calls").textContent === "126",
+      await until(() => settingsScreen.querySelector("#codex-decision-settings-panel") &&
+        settingsScreen.querySelector("#codex-decision-settings-lifetime-calls").textContent === "126",
         "global settings open from the home view");
-      check(settingsScreen.querySelector("#codex-jev-settings-panel h2").textContent === "All sessions",
+      check(settingsScreen.querySelector("#codex-decision-settings-panel h2").textContent === "All sessions",
         "settings totals cover all sessions");
       settingsScreen.querySelector('button[aria-label="General"]').click();
       settingsScreen.style.display = "none";
       window.dispatchEvent(new MessageEvent("message", { data: {
-        type: "codex-jev-reply", id: window.__jevHarnessHeldStatus.id,
+        type: "codex-decision-reply", id: window.__jevHarnessHeldStatus.id,
         status: { enabled: true, sessionPending: false, health: { ok: true } },
       } }));
       await pause(30);
-      check(document.getElementById("codex-jev-button").disabled,
+      check(document.getElementById("codex-decision-button").disabled,
         "late reply from an old thread cannot reactivate the home view");
-      document.documentElement.dataset.codexJevRouteKind = "local";
-      document.documentElement.dataset.codexJevSessionId = "next-thread";
+      document.documentElement.dataset.codexDecisionRouteKind = "local";
+      document.documentElement.dataset.codexDecisionSessionId = "next-thread";
       await until(() => window.__jevHarnessLastSessionId === "next-thread" &&
-        !document.getElementById("codex-jev-button").disabled &&
+        !document.getElementById("codex-decision-button").disabled &&
         root.dataset.noSession === "false",
         "internal Codex navigation activates the new thread without changing the webview URL");
-      document.documentElement.dataset.codexJevRouteKind = "none";
-      delete document.documentElement.dataset.codexJevSessionId;
-      await until(() => document.getElementById("codex-jev-button").disabled,
+      document.documentElement.dataset.codexDecisionRouteKind = "none";
+      delete document.documentElement.dataset.codexDecisionSessionId;
+      await until(() => document.getElementById("codex-decision-button").disabled,
         "leaving the internal thread route clears the session");
       check(calls >= 5, "host bridge used");
       document.getElementById("results").textContent = JSON.stringify({ ok: true, calls, viewport: innerWidth, height: innerHeight });
-      document.title = "JEV_BROWSER_PASS";
+      document.title = "DECISION_BROWSER_PASS";
     }
     run().catch((error) => {
-      const control = document.getElementById("codex-jev");
-      const button = document.getElementById("codex-jev-button");
+      const control = document.getElementById("codex-decision");
+      const button = document.getElementById("codex-decision-button");
       document.getElementById("results").textContent = JSON.stringify({ ok: false, error: error.message,
         composer: document.querySelector(".composer").getBoundingClientRect().width,
         accessRight: document.querySelector(".access").getBoundingClientRect().right,
-        iconSrc: document.getElementById("codex-jev-connect-icon")?.getAttribute("src"),
-        animation: getComputedStyle(document.querySelector("#codex-jev-connect-art pre")).animationName,
+        iconSrc: document.getElementById("codex-decision-connect-icon")?.getAttribute("src"),
+        animation: getComputedStyle(document.querySelector("#codex-decision-connect-art pre")).animationName,
         reducedMotion: matchMedia("(prefers-reduced-motion: reduce)").matches,
         modelLeft: document.querySelector(".model").getBoundingClientRect().left,
         buttonWidth: button?.getBoundingClientRect().width, compact: control?.dataset.compact,
-        display: control?.style.display, tooltip: document.getElementById("codex-jev-tip")?.textContent,
+        display: control?.style.display, tooltip: document.getElementById("codex-decision-tip")?.textContent,
         buttonRight: button?.getBoundingClientRect().right });
-      document.title = "JEV_BROWSER_FAIL";
+      document.title = "DECISION_BROWSER_FAIL";
     });
   </script>
 </body>

@@ -1,4 +1,4 @@
-"""Render the Jev probability-bar mark at the three required sizes."""
+"""Render the Decision probability-bar mark at the three required sizes."""
 
 from pathlib import Path
 

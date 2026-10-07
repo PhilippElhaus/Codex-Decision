@@ -19,7 +19,7 @@ test("Windows UNC permission commands use the selected distro and report failure
   assert.deepEqual(invocation[1].slice(6), ["/home/fixture/state", "directory"]);
   assert.equal(invocation[2].timeout, 10_000);
   await assert.rejects(restrictWslPath("\\\\wsl$\\Ubuntu\\home\\fixture", true,
-    async () => { throw new Error("synthetic process failure"); }, "win32"), /Could not secure Jev/);
+    async () => { throw new Error("synthetic process failure"); }, "win32"), /Could not secure Decision/);
 });
 
 test("WSL permissions restrict Linux owned inodes without following links",

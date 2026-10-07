@@ -3,9 +3,9 @@
 const vscode = require("vscode");
 const { readLatestPanelDecision, readPanelActivity } = require("./panel-state");
 
-const VIEW_ID = "codexJevDecision";
+const VIEW_ID = "codexDecisionDecision";
 const MIN_SETTLED_MS = 1000;
-// Match the line animation in webview/jev-panel.js before accepting a newer snapshot.
+// Match the line animation in webview/decision-panel.js before accepting a newer snapshot.
 const BAR_FILL_MS = 900;
 const PERCENT_FADE_MS = 180;
 const MIN_DISPLAY_MS = BAR_FILL_MS + PERCENT_FADE_MS + MIN_SETTLED_MS;
@@ -35,8 +35,8 @@ class LatestDecisionProvider {
     this.lastMessage = "";
     const webview = view.webview;
     webview.options = { enableScripts: true, localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, "webview")] };
-    const style = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "webview", "jev-panel.css"));
-    const script = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "webview", "jev-panel.js"));
+    const style = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "webview", "decision-panel.css"));
+    const script = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "webview", "decision-panel.js"));
     const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src ${webview.cspSource};"><link rel="stylesheet" href="${style}"></head><body><main id="app" aria-live="polite"></main><script src="${script}"></script></body></html>`;
     const ready = webview.onDidReceiveMessage((message) => {
       if (this.view === view && message?.type === "ready") {
@@ -107,7 +107,7 @@ class LatestDecisionProvider {
     const task = (async () => {
       let message;
       try {
-        if (directoryFault) throw new Error("Jev data directory is unavailable");
+        if (directoryFault) throw new Error("Decision data directory is unavailable");
         const decision = directory ? await readLatestPanelDecision(directory, this.cache) : null;
         const activity = directory && !decision ? await readPanelActivity(directory) : null;
         if (!current()) return;
@@ -115,7 +115,7 @@ class LatestDecisionProvider {
         message = { type: "decision", decision, ...(activity ? { activity } : {}) };
       } catch (error) {
         if (!current()) return;
-        this.onFault("Latest Jev decision could not be read");
+        this.onFault("Latest Decision decision could not be read");
         message = { type: "decision", decision: null };
       }
       const serialized = JSON.stringify(message);

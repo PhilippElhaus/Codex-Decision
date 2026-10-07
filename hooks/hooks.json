@@ -1,5 +1,5 @@
 {
-  "description": "One line-level Codex Jev PostToolUse filter. Controlled by the session enabled flag.",
+  "description": "One line-level Codex Decision PostToolUse filter. Controlled by the session enabled flag.",
   "hooks": {
     "PostToolUse": [
       {
@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"$PLUGIN_ROOT/hooks/bin/linux-x86_64/jev-hook\"",
+            "command": "\"$PLUGIN_ROOT/hooks/bin/linux-x86_64/decision-hook\"",
             "timeout": 60,
             "statusMessage": "Evaluating large tool output"
           }

@@ -1,0 +1,763 @@
+//! Local configuration and offline inspection for the Rust Decision hook.
+
+use codex_decision::{
+    apply_probabilities, source_lines, Action, LinePolicy, SearchRelevancePolicy,
+};
+use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
+use std::collections::{BTreeMap, HashSet};
+use std::fs::{self, OpenOptions};
+use std::io::{self, Read, Write};
+use std::path::{Path, PathBuf};
+use std::process::Command;
+
+#[path = "decisionctl/activity.rs"]
+mod activity;
+#[path = "decisionctl/patch.rs"]
+mod patch;
+#[path = "decisionctl/release.rs"]
+mod release;
+#[path = "decisionctl/trust.rs"]
+mod trust;
+
+fn write_private(path: &Path, data: &[u8]) -> Result<(), String> {
+    codex_decision::check_ancestors(path.parent().ok_or("missing file parent")?)?;
+    if path.is_symlink() {
+        return Err("linked file".into());
+    }
+    let temp = path.with_extension(format!("jev-{}.tmp", uuid::Uuid::new_v4()));
+    let mut options = OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options.open(&temp).map_err(|error| error.to_string())?;
+    let result = (|| -> Result<(), String> {
+        file.write_all(data).map_err(|error| error.to_string())?;
+        file.sync_all().map_err(|error| error.to_string())?;
+        fs::rename(&temp, path).map_err(|error| error.to_string())
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&temp);
+    }
+    result
+}
+
+fn set_key(data_dir: &Path, provider: codex_decision::provider::Provider) -> Result<(), String> {
+    #[cfg(unix)]
+    if unsafe { libc::isatty(libc::STDIN_FILENO) } != 0 {
+        return Err("pipe the key on stdin; interactive echo is disabled".into());
+    }
+    let mut input = String::new();
+    io::stdin()
+        .take(4098)
+        .read_to_string(&mut input)
+        .map_err(|error| error.to_string())?;
+    let key = input.trim();
+    if !(8..=4096).contains(&key.len()) || key.chars().any(char::is_whitespace) {
+        return Err("invalid key".into());
+    }
+    let path = data_dir.join(".env");
+    let name = provider.key_name();
+    let old = match fs::symlink_metadata(&path) {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => String::new(),
+        Err(_) => return Err("credential stat failed".into()),
+        Ok(metadata) => {
+            if !metadata.is_file() || metadata.file_type().is_symlink() || metadata.len() > 8192 {
+                return Err("unsafe credential".into());
+            }
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                if metadata.permissions().mode() & 0o077 != 0 {
+                    return Err("unsafe credential permissions".into());
+                }
+            }
+            fs::read_to_string(&path).map_err(|_| "credential read failed")?
+        }
+    };
+    let mut lines: Vec<_> = old
+        .lines()
+        .filter(|line| !line.trim().starts_with(&format!("{name}=")))
+        .map(str::to_owned)
+        .collect();
+    lines.push(format!("{name}={key}"));
+    let content = lines.join("\n") + "\n";
+    if content.len() > 8192 {
+        return Err("credential too large".into());
+    }
+    write_private(&path, content.as_bytes())
+}
+
+fn package(root: &Path) -> Result<(), String> {
+    if !root.is_absolute() || root.is_symlink() || !root.is_dir() {
+        return Err("package root must be an absolute checkout directory".into());
+    }
+    codex_decision::check_ancestors(root)?;
+    let files = [
+        ".codex-plugin/plugin.json",
+        "skills/decision-output/SKILL.md",
+        "hooks/hooks.json",
+        "hooks/bin/linux-x86_64/decision-hook",
+        "hooks/bin/linux-x86_64/decisionctl",
+        "assets/logo.png",
+        "assets/icon.png",
+        "config.example.json",
+        "LICENSE",
+    ];
+    for relative in files {
+        let mut path = root.to_path_buf();
+        for component in Path::new(relative).components() {
+            path.push(component);
+            if path.is_symlink() {
+                return Err(format!("linked package path: {relative}"));
+            }
+        }
+        if !path.is_file() {
+            return Err(format!("missing package file: {relative}"));
+        }
+    }
+    let manifest: Value =
+        serde_json::from_slice(&fs::read(root.join(files[0])).map_err(|error| error.to_string())?)
+            .map_err(|error| error.to_string())?;
+    let version = manifest
+        .get("version")
+        .and_then(Value::as_str)
+        .ok_or("manifest version missing")?;
+    if manifest.get("name").and_then(Value::as_str) != Some("codex-decision")
+        || version.len() > 64
+        || !version
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b".+-_".contains(&byte))
+    {
+        return Err("invalid package manifest".into());
+    }
+    for name in ["decision-hook", "decisionctl"] {
+        release::check_binary(
+            &root.join("hooks/bin/linux-x86_64").join(name),
+            name,
+            version.split('+').next().ok_or("invalid package version")?,
+        )?;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        for binary in [files[3], files[4]] {
+            if fs::metadata(root.join(binary))
+                .map_err(|error| error.to_string())?
+                .permissions()
+                .mode()
+                & 0o111
+                == 0
+            {
+                return Err(format!("non-executable package binary: {binary}"));
+            }
+        }
+    }
+    let destination_dir = root.join(".local/submission");
+    codex_decision::check_ancestors(&destination_dir)?;
+    fs::create_dir_all(&destination_dir).map_err(|error| error.to_string())?;
+    let destination = destination_dir.join(format!("codex-decision-{version}.zip"));
+    if destination.exists() {
+        return Err("package archive already exists; change cachebuster before rebuilding".into());
+    }
+    let stage_root = destination_dir.join("staging");
+    let stage = stage_root.join("codex-decision");
+    for directory in [&stage_root, &stage] {
+        if directory.is_symlink() {
+            return Err("linked package stage".into());
+        }
+        fs::create_dir_all(directory).map_err(|error| error.to_string())?;
+    }
+    for relative in files {
+        let mut target = stage.clone();
+        for component in Path::new(relative).components() {
+            target.push(component);
+            if target.is_symlink() {
+                return Err("linked package stage path".into());
+            }
+        }
+        let parent = target.parent().ok_or("invalid staged file")?;
+        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+        fs::copy(root.join(relative), target).map_err(|error| error.to_string())?;
+    }
+    let args: Vec<String> = files
+        .iter()
+        .map(|file| format!("codex-decision/{file}"))
+        .collect();
+    let result = Command::new("zip")
+        .current_dir(&stage_root)
+        .arg("-q")
+        .arg("-X")
+        .arg("-9")
+        .arg(&destination)
+        .args(&args)
+        .status()
+        .map_err(|error| error.to_string())?;
+    if !result.success() {
+        return Err("zip failed".into());
+    }
+    let bytes = fs::read(&destination).map_err(|error| error.to_string())?;
+    if bytes.len() > 100_000_000 {
+        return Err("package exceeds 100 MB".into());
+    }
+    let verified = Command::new("unzip")
+        .arg("-tqq")
+        .arg(&destination)
+        .status()
+        .map_err(|error| error.to_string())?;
+    if !verified.success() {
+        return Err("package integrity failed".into());
+    }
+    println!(
+        "{}\nSHA-256 {:x}\n{} allowlisted files",
+        destination.display(),
+        Sha256::digest(&bytes),
+        files.len()
+    );
+    Ok(())
+}
+
+fn read_json(path: &Path, max_bytes: u64) -> Result<Value, String> {
+    codex_decision::check_ancestors(path.parent().ok_or("missing file parent")?)?;
+    if path.is_symlink() {
+        return Err(format!("linked input: {}", path.display()));
+    }
+    let details = fs::metadata(path).map_err(|error| error.to_string())?;
+    if !details.is_file() || details.len() > max_bytes {
+        return Err("invalid input size".into());
+    }
+    let mut bytes = Vec::new();
+    fs::File::open(path)
+        .map_err(|error| error.to_string())?
+        .take(max_bytes + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|error| error.to_string())?;
+    if bytes.len() as u64 > max_bytes {
+        return Err("invalid input size".into());
+    }
+    serde_json::from_slice(&bytes).map_err(|error| error.to_string())
+}
+
+fn evaluate_case(receipt: &Value, required: &[usize]) -> Result<Value, String> {
+    if !matches!(receipt.get("version").and_then(Value::as_u64), Some(2 | 3)) {
+        return Err("expected a version 2 or 3 receipt".into());
+    }
+    let manifest = receipt.get("manifest").ok_or("receipt manifest missing")?;
+    let seen = manifest
+        .get("lines_seen")
+        .and_then(Value::as_u64)
+        .ok_or("line count missing")? as usize;
+    let decisions = receipt
+        .get("decisions")
+        .and_then(Value::as_array)
+        .ok_or("line decisions missing")?;
+    if decisions.len() != seen {
+        return Err("incomplete line decisions".into());
+    }
+    let mut omitted = HashSet::new();
+    for (index, decision) in decisions.iter().enumerate() {
+        if decision.get("number").and_then(Value::as_u64) != Some((index + 1) as u64) {
+            return Err("line order mismatch".into());
+        }
+        if decision.get("action").and_then(Value::as_str) == Some("omit") {
+            omitted.insert(index + 1);
+        }
+    }
+    let mut labels = HashSet::new();
+    for number in required {
+        if *number == 0 || *number > seen || !labels.insert(*number) {
+            return Err("invalid required line".into());
+        }
+    }
+    let mut false_omissions: Vec<usize> = labels.intersection(&omitted).copied().collect();
+    false_omissions.sort_unstable();
+    let original = manifest
+        .get("original_chars")
+        .and_then(Value::as_u64)
+        .ok_or("original size missing")?;
+    let visible = manifest
+        .get("visible_chars")
+        .and_then(Value::as_u64)
+        .ok_or("visible size missing")?;
+    let status = manifest
+        .get("status")
+        .and_then(Value::as_str)
+        .ok_or("status missing")?;
+    Ok(
+        json!({"required":labels.len(),"omitted":if status == "replace" { omitted.len() } else { 0 },
+        "proposed_omissions":omitted.len(),"proposed_required_losses":false_omissions,
+        "false_omissions":if status == "replace" { false_omissions } else { vec![] },
+        "saved_chars":if status == "replace" { original.saturating_sub(visible) } else { 0 },
+        "lines_seen":seen,"lines_judged":manifest.get("lines_judged"),
+        "lines_protected":manifest.get("lines_protected"),
+        "lines_relevance_judged":manifest.get("lines_relevance_judged"),
+        "elapsed_ms":manifest.get("elapsed_ms"),
+        "route":manifest.get("filter").and_then(Value::as_str).unwrap_or("output")}),
+    )
+}
+
+fn replay_gate(
+    receipt: &Value,
+    required: &[usize],
+    omit_min: u8,
+    exact_max: u8,
+    guard_enabled: bool,
+) -> Result<Option<Value>, String> {
+    if receipt["version"] == 3 {
+        return Ok(None);
+    }
+    let Some(source) = receipt.get("initial_output").and_then(Value::as_str) else {
+        return Ok(None);
+    };
+    let Some(recorded) = receipt.get("decisions").and_then(Value::as_array) else {
+        return Ok(None);
+    };
+    let mut lines = source_lines(source);
+    if lines.len() != recorded.len() {
+        return Ok(None);
+    }
+    let mut probabilities = BTreeMap::new();
+    for (index, (line, row)) in lines.iter_mut().zip(recorded).enumerate() {
+        if row.get("number").and_then(Value::as_u64) != Some((index + 1) as u64) {
+            return Err("line order mismatch".into());
+        }
+        let protection = row.get("protected_reason").and_then(Value::as_str);
+        line.protected_reason = protection
+            .filter(|reason| !matches!(*reason, "representative" | "last_line"))
+            .map(str::to_owned);
+        line.eligible = protection != Some("jsonl_structure");
+        let Some(omit) = row.get("p_can_omit").and_then(Value::as_f64) else {
+            continue;
+        };
+        let Some(exact) = row.get("p_exact_needed").and_then(Value::as_f64) else {
+            continue;
+        };
+        let relevant = row.get("p_task_relevant").and_then(Value::as_f64);
+        if !omit.is_finite()
+            || !(0.0..=1.0).contains(&omit)
+            || !exact.is_finite()
+            || !(0.0..=1.0).contains(&exact)
+            || relevant.is_some_and(|value| !value.is_finite() || !(0.0..=1.0).contains(&value))
+        {
+            return Err("invalid recorded probability".into());
+        }
+        if guard_enabled && relevant.is_none() {
+            return Ok(None);
+        }
+        probabilities.insert(index + 1, (omit, exact, relevant, 1));
+    }
+    let policy = LinePolicy {
+        omit_min,
+        exact_max,
+    };
+    let relevance = SearchRelevancePolicy {
+        guard_enabled,
+        relevant_max: 5,
+    };
+    let decisions = apply_probabilities(&lines, &probabilities, &policy, &relevance);
+    let omitted: HashSet<usize> = decisions
+        .iter()
+        .filter(|row| row.action == Action::Omit)
+        .map(|row| row.number)
+        .collect();
+    Ok(Some(
+        json!({"omitted":omitted.len(),"false_omissions":required.iter()
+        .filter(|number| omitted.contains(number)).count(),"required":required.len()}),
+    ))
+}
+
+fn replay_relevance(
+    receipt: &Value,
+    required: &[usize],
+    cutoff: u8,
+) -> Result<Option<Value>, String> {
+    if receipt["version"] != 3 {
+        return Ok(None);
+    }
+    let source = receipt["initial_output"].as_str().ok_or("missing source")?;
+    let recorded = receipt["decisions"].as_array().ok_or("missing decisions")?;
+    let mut lines = source_lines(source);
+    if lines.len() != recorded.len() {
+        return Err("incomplete decisions".into());
+    }
+    let mut probabilities = BTreeMap::new();
+    for (line, row) in lines.iter_mut().zip(recorded) {
+        line.protected_reason = row["protected_reason"]
+            .as_str()
+            .filter(|reason| !matches!(*reason, "representative" | "last_line"))
+            .map(str::to_owned);
+        if let Some(p) = row["p_task_relevant"].as_f64() {
+            if !p.is_finite() || !(0.0..=1.0).contains(&p) {
+                return Err("invalid relevance probability".into());
+            }
+            probabilities.insert(line.number, p);
+        }
+    }
+    let decisions = codex_decision::semantic::apply_relevance(&lines, &probabilities, cutoff);
+    let omitted: HashSet<_> = decisions
+        .iter()
+        .filter(|row| row.action == Action::Omit)
+        .map(|row| row.number)
+        .collect();
+    Ok(Some(
+        json!({"omitted":omitted.len(),"false_omissions":required.iter().filter(|n|omitted.contains(n)).count(),"required":required.len()}),
+    ))
+}
+
+fn evaluate_quality(cases_path: &Path) -> Result<(), String> {
+    let cases = read_json(cases_path, 1_000_000)?;
+    let rows = cases.as_array().ok_or("cases must be a JSON array")?;
+    if rows.is_empty() || rows.len() > 1000 {
+        return Err("cases must contain 1 to 1000 records".into());
+    }
+    let base = cases_path.parent().ok_or("cases path has no parent")?;
+    let mut evaluated = Vec::new();
+    for row in rows {
+        let relative = row
+            .get("receipt")
+            .and_then(Value::as_str)
+            .ok_or("receipt path missing")?;
+        if relative.is_empty() || relative.len() > 4096 {
+            return Err("invalid receipt path".into());
+        }
+        let receipt_path = if Path::new(relative).is_absolute() {
+            PathBuf::from(relative)
+        } else {
+            base.join(relative)
+        };
+        let receipt = read_json(&receipt_path, 16_000_000)?;
+        let required = row
+            .get("required_lines")
+            .and_then(Value::as_array)
+            .ok_or("required lines missing")?
+            .iter()
+            .map(|value| {
+                value
+                    .as_u64()
+                    .and_then(|number| usize::try_from(number).ok())
+                    .ok_or_else(|| "invalid required line".to_owned())
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let split = row
+            .get("split")
+            .and_then(Value::as_str)
+            .unwrap_or("unspecified");
+        if !matches!(split, "train" | "holdout" | "unspecified") {
+            return Err("invalid split".into());
+        }
+        let mut outcome = evaluate_case(&receipt, &required)?;
+        outcome["split"] = json!(split);
+        outcome["case"] = json!(row.get("id").and_then(Value::as_str).unwrap_or("unnamed"));
+        let route = outcome["route"].as_str().unwrap_or("output");
+        let mut trials = serde_json::Map::new();
+        for (name, omit_min, exact_max, guard) in [
+            ("default_95_5", 95, 5, false),
+            ("strict_98_2", 98, 2, false),
+            ("strict_99_1", 99, 1, false),
+            ("relevance_guard_95_5", 95, 5, true),
+        ] {
+            if guard && route != "search_listing" {
+                continue;
+            }
+            if let Some(trial) = replay_gate(&receipt, &required, omit_min, exact_max, guard)? {
+                trials.insert(name.into(), trial);
+            }
+        }
+        for cutoff in [1, 2, 5, 10, 20] {
+            if let Some(trial) = replay_relevance(&receipt, &required, cutoff)? {
+                trials.insert(format!("relevance_{cutoff}"), trial);
+            }
+        }
+        outcome["gate_trials"] = Value::Object(trials);
+        if let Some(solved) = row.get("task_solved").and_then(Value::as_bool) {
+            outcome["task_solved"] = json!(solved);
+        }
+        if let Some(solved) = row.get("baseline_task_solved").and_then(Value::as_bool) {
+            outcome["baseline_task_solved"] = json!(solved);
+        }
+        let id = receipt
+            .pointer("/manifest/id")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        let requests = receipt
+            .pointer("/manifest/requests")
+            .and_then(Value::as_u64)
+            .unwrap_or(0);
+        if id.len() == 32 && id.bytes().all(|byte| byte.is_ascii_hexdigit()) && requests <= 10_001 {
+            let mut input_tokens = 0u64;
+            let mut output_tokens = 0u64;
+            let mut measured = 0u64;
+            let gate = u64::from(
+                receipt
+                    .pointer("/manifest/choice_gate_ran")
+                    .and_then(Value::as_bool)
+                    == Some(true),
+            );
+            if gate > requests {
+                return Err("invalid request count".into());
+            }
+            for index in (1 - gate)..=(requests - gate) {
+                let batch = receipt_path
+                    .parent()
+                    .ok_or("receipt has no parent")?
+                    .join(format!("batch-{id}-{index}.json"));
+                if let Ok(value) = read_json(&batch, 1_000_000) {
+                    let usage = value.pointer("/batch/response/usage");
+                    if let (Some(input), Some(output)) = (
+                        usage
+                            .and_then(|row| row.get("input_tokens"))
+                            .and_then(Value::as_u64),
+                        usage
+                            .and_then(|row| row.get("output_tokens"))
+                            .and_then(Value::as_u64),
+                    ) {
+                        input_tokens = input_tokens.saturating_add(input);
+                        output_tokens = output_tokens.saturating_add(output);
+                        measured += 1;
+                    }
+                }
+            }
+            if measured == requests && measured > 0 {
+                outcome["billed_input_tokens"] = json!(input_tokens);
+                outcome["billed_output_tokens"] = json!(output_tokens);
+            }
+        }
+        evaluated.push(outcome);
+    }
+    let mut groups = serde_json::Map::new();
+    for split in ["train", "holdout", "unspecified"] {
+        let selected: Vec<&Value> = evaluated
+            .iter()
+            .filter(|row| row["split"] == split)
+            .collect();
+        if selected.is_empty() {
+            continue;
+        }
+        let false_omissions = selected
+            .iter()
+            .map(|row| row["false_omissions"].as_array().unwrap().len())
+            .sum::<usize>();
+        let saved_chars = selected
+            .iter()
+            .map(|row| row["saved_chars"].as_u64().unwrap())
+            .sum::<u64>();
+        let required = selected
+            .iter()
+            .map(|row| row["required"].as_u64().unwrap_or(0))
+            .sum::<u64>();
+        groups.insert(split.into(), json!({"cases":selected.len(),"required_lines":required,
+            "false_omissions":false_omissions,
+            "false_omission_rate":if required > 0 { Some(false_omissions as f64 / required as f64) } else { None },
+            "saved_chars":saved_chars,"task_solved":selected.iter().filter(|row| row["task_solved"] == true).count(),
+            "task_outcomes_labeled":selected.iter().filter(|row| row.get("task_solved").is_some()).count(),
+            "baseline_task_solved":selected.iter().filter(|row| row["baseline_task_solved"] == true).count(),
+            "billed_input_tokens":selected.iter().filter_map(|row| row.get("billed_input_tokens").and_then(Value::as_u64)).sum::<u64>(),
+            "billed_output_tokens":selected.iter().filter_map(|row| row.get("billed_output_tokens").and_then(Value::as_u64)).sum::<u64>()}));
+    }
+    let mut by_route = serde_json::Map::new();
+    for route in ["output", "test_build", "search_listing"] {
+        let mut splits = serde_json::Map::new();
+        for split in ["train", "holdout", "unspecified"] {
+            let selected: Vec<&Value> = evaluated
+                .iter()
+                .filter(|row| row["route"] == route && row["split"] == split)
+                .collect();
+            if selected.is_empty() {
+                continue;
+            }
+            let required = selected
+                .iter()
+                .map(|row| row["required"].as_u64().unwrap_or(0))
+                .sum::<u64>();
+            let lost = selected
+                .iter()
+                .map(|row| row["false_omissions"].as_array().map_or(0, Vec::len))
+                .sum::<usize>();
+            let mut trials = serde_json::Map::new();
+            for name in [
+                "default_95_5",
+                "strict_98_2",
+                "strict_99_1",
+                "relevance_guard_95_5",
+                "relevance_1",
+                "relevance_2",
+                "relevance_5",
+                "relevance_10",
+                "relevance_20",
+            ] {
+                let rows: Vec<&Value> = selected
+                    .iter()
+                    .filter_map(|row| row["gate_trials"].get(name))
+                    .collect();
+                if rows.is_empty() {
+                    continue;
+                }
+                trials.insert(name.into(), json!({"cases":rows.len(),
+                    "omitted_lines":rows.iter().map(|row| row["omitted"].as_u64().unwrap_or(0)).sum::<u64>(),
+                    "required_lines_lost":rows.iter().map(|row| row["false_omissions"].as_u64().unwrap_or(0)).sum::<u64>()}));
+            }
+            splits.insert(split.into(), json!({"cases":selected.len(),"required_lines":required,
+                "required_lines_lost":lost,"false_omission_rate":if required > 0 { Some(lost as f64 / required as f64) } else { None },
+                "saved_chars":selected.iter().map(|row| row["saved_chars"].as_u64().unwrap_or(0)).sum::<u64>(),
+                "relevance_judgments":selected.iter().map(|row| row["lines_relevance_judged"].as_u64().unwrap_or(0)).sum::<u64>(),
+                "elapsed_ms":selected.iter().map(|row| row["elapsed_ms"].as_u64().unwrap_or(0)).sum::<u64>(),
+                "gate_trials":trials}));
+        }
+        if !splits.is_empty() {
+            by_route.insert(route.into(), Value::Object(splits));
+        }
+    }
+    println!(
+        "{}",
+        json!({"version":2,"groups":groups,"by_route":by_route,"cases":evaluated})
+    );
+    Ok(())
+}
+
+fn run() -> Result<(), String> {
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() == 2 && args[1] == "--version" {
+        println!("decisionctl {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
+    if args.len() == 6 && args[1] == "activity" && args[2] == "--data-dir" && args[4] == "--session"
+    {
+        return activity::run(Path::new(&args[3]), &args[5]);
+    }
+    if args.len() == 9
+        && args[1] == "patch-webview"
+        && args[3] == "--root"
+        && args[5] == "--extension"
+        && args[7] == "--backup"
+    {
+        return patch::run(
+            &args[2],
+            Path::new(&args[4]),
+            Path::new(&args[6]),
+            Path::new(&args[8]),
+        );
+    }
+    if args.len() == 6
+        && args[1] == "check-hook-trust"
+        && args[2] == "--cwd"
+        && args[4] == "--plugin-id"
+    {
+        return trust::check_hook_trust(Path::new(&args[3]), Some(&args[5]));
+    }
+    if args.len() == 6 && args[1] == "set-key" && args[2] == "--data-dir" && args[4] == "--provider"
+    {
+        let directory = Path::new(&args[3]);
+        if !directory.is_absolute() || directory.is_symlink() || !directory.is_dir() {
+            return Err("unsafe data directory".into());
+        }
+        return set_key(
+            directory,
+            codex_decision::provider::Provider::parse(&args[5])?,
+        );
+    }
+    if args.len() != 4 {
+        return Err("usage: decisionctl activity --data-dir <PLUGIN_DATA> --session <thread-id> | set-key --data-dir <PLUGIN_DATA> | package|check-release-versions|cachebust --root <repository> | check-hook-trust --cwd <repository> [--plugin-id <id>] | patch-webview <apply|update|restore> --root <repository> --extension <path> --backup <path> | evaluate-quality --cases <private JSON>".into());
+    }
+    if args[2] == "--root" {
+        let root = Path::new(&args[3]);
+        return match args[1].as_str() {
+            "package" => package(root),
+            "check-release-versions" => release::check_versions(root),
+            "cachebust" => release::cachebust(root),
+            _ => Err("unknown repository command".into()),
+        };
+    }
+    if args[1] == "check-hook-trust" && args[2] == "--cwd" {
+        return trust::check_hook_trust(Path::new(&args[3]), None);
+    }
+    if args[1] == "evaluate-quality" && args[2] == "--cases" {
+        return evaluate_quality(&PathBuf::from(&args[3]));
+    }
+    if args[2] != "--data-dir" {
+        return Err("expected --data-dir".into());
+    }
+    let data_dir = PathBuf::from(&args[3]);
+    if !data_dir.is_absolute() || data_dir.is_symlink() || !data_dir.is_dir() {
+        return Err("unsafe data directory".into());
+    }
+    match args[1].as_str() {
+        "set-key" => set_key(&data_dir, codex_decision::provider::Provider::OpenAi),
+        _ => Err("unknown command".into()),
+    }
+}
+
+fn main() {
+    if let Err(error) = run() {
+        eprintln!("decisionctl: {error}");
+        std::process::exit(2);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn monitor_reports_proposals_without_claiming_evidence_was_lost() {
+        let receipt = json!({"version":2,"manifest":{"lines_seen":2,"status":"candidate","original_chars":100,"visible_chars":100},
+            "decisions":[{"number":1,"action":"keep"},{"number":2,"action":"omit"}]});
+        let report = evaluate_case(&receipt, &[2]).unwrap();
+        assert_eq!(report["false_omissions"], json!([]));
+        assert_eq!(report["omitted"], 0);
+        assert_eq!(report["proposed_required_losses"], json!([2]));
+        assert_eq!(report["proposed_omissions"], 1);
+    }
+
+    #[test]
+    fn quality_audit_counts_required_lines_lost_by_filter() {
+        let receipt = json!({"version":2,
+            "manifest":{"lines_seen":3,"lines_judged":3,"original_chars":100,"visible_chars":45,"status":"replace"},
+            "decisions":[{"number":1,"action":"keep"},{"number":2,"action":"omit"},
+                {"number":3,"action":"keep"}]});
+        let result = evaluate_case(&receipt, &[1, 2]).unwrap();
+        assert_eq!(result["false_omissions"], json!([2]));
+        assert_eq!(result["saved_chars"], 55);
+        assert!(evaluate_case(&receipt, &[4]).is_err());
+    }
+
+    #[test]
+    fn current_receipts_replay_relevance_with_local_protection_and_representatives() {
+        let receipt = json!({"version":3,"initial_output":"routine\nroutine\nunique port 8443\nlast\n",
+            "manifest":{"lines_seen":4,"status":"replace","original_chars":40,"visible_chars":30},
+            "decisions":[
+                {"number":1,"action":"keep","protected_reason":null,"p_task_relevant":0.01},
+                {"number":2,"action":"omit","protected_reason":null,"p_task_relevant":0.01},
+                {"number":3,"action":"keep_unjudged","protected_reason":"diagnostic_or_completion","p_task_relevant":0.01},
+                {"number":4,"action":"keep","protected_reason":null,"p_task_relevant":0.01}]});
+        assert_eq!(
+            evaluate_case(&receipt, &[1, 3, 4]).unwrap()["false_omissions"],
+            json!([])
+        );
+        assert!(replay_gate(&receipt, &[1, 3, 4], 95, 5, false)
+            .unwrap()
+            .is_none());
+        for cutoff in [1, 2, 5, 10, 20] {
+            let trial = replay_relevance(&receipt, &[1, 3, 4], cutoff)
+                .unwrap()
+                .unwrap();
+            assert_eq!(trial["false_omissions"], 0);
+            assert_eq!(trial["omitted"], 1);
+        }
+    }
+
+    #[test]
+    fn offline_gate_trials_show_when_relevance_preserves_required_evidence() {
+        let receipt = json!({"version":2,"initial_output":"src/a:1:important\nsrc/b:2:routine\nfinished\n",
+            "decisions":[
+                {"number":1,"protected_reason":null,"p_can_omit":0.99,"p_exact_needed":0.01,"p_task_relevant":0.91},
+                {"number":2,"protected_reason":null,"p_can_omit":0.99,"p_exact_needed":0.01,"p_task_relevant":0.01},
+                {"number":3,"protected_reason":"last_line","p_can_omit":0.99,"p_exact_needed":0.01,"p_task_relevant":0.01}]});
+        let preview = replay_gate(&receipt, &[1], 95, 5, false).unwrap().unwrap();
+        let guarded = replay_gate(&receipt, &[1], 95, 5, true).unwrap().unwrap();
+        assert_eq!(preview["false_omissions"], 1);
+        assert_eq!(guarded["false_omissions"], 0);
+        assert_eq!(guarded["omitted"], 1);
+    }
+}

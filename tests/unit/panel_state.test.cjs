@@ -81,14 +81,14 @@ test("current panels accept multiple relevance batches and more than 250 targets
 });
 
 test("panel reads the current snapshot and rejects linked files", async (t) => {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-panel-test-"));
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "decision-panel-test-"));
   try {
     assert.equal(await readLatestPanelDecision(directory), null);
     const logs = path.join(directory, "logs");
     await fs.mkdir(logs);
     const filename = path.join(logs, "latest-decision.json");
     await fs.writeFile(filename, JSON.stringify({ version: 2 }));
-    await assert.rejects(readLatestPanelDecision(directory), /Unsupported Jev panel decision/);
+    await assert.rejects(readLatestPanelDecision(directory), /Unsupported Decision panel decision/);
     const rows = Array.from({ length: 250 }, (_, index) => ({ line: index + 1,
       excerpt: `Synthetic source line ${index + 1} ${"x".repeat(90)}`, action: "keep",
       reason: "below_omit_cutoff", can_omit: 0.3, exact_needed: 0.2, task_relevant: null }));
@@ -137,7 +137,7 @@ test("panel reads the current snapshot and rejects linked files", async (t) => {
 });
 
 test("panel snapshot reads remain bounded when a file grows after stat", async () => {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-panel-growth-"));
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "decision-panel-growth-"));
   const filename = path.join(directory, "logs", "latest-decision.json");
   const originalOpen = fs.open;
   let bytesRequested = 0;
@@ -157,7 +157,7 @@ test("panel snapshot reads remain bounded when a file grows after stat", async (
         async close() { closed = true; await handle.close(); },
       };
     };
-    await assert.rejects(readLatestPanelDecision(directory), /Unsafe Jev panel decision file/);
+    await assert.rejects(readLatestPanelDecision(directory), /Unsafe Decision panel decision file/);
     assert.equal(bytesRequested, 8 * 1024 * 1024 + 1);
     assert.equal(closed, true);
   } finally {

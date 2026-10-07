@@ -1,15 +1,16 @@
 {
-  "schema_version": 4,
+  "schema_version": 5,
   "enabled": false,
   "mode": "replace",
   "min_chars": 256,
   "max_chars": 2000000,
   "timeout_seconds": 3.0,
-  "model": "jev-latest",
+  "model": "gpt-6-luna",
   "allow_mcp_replacement": false,
   "log_limit_mb": 50,
   "never_delete_logs": false,
   "relevance_policy": {
     "relevant_max": 5
-  }
+  },
+  "provider": "openai"
 }

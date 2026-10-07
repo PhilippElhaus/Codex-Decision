@@ -34,7 +34,7 @@ test("config selections serialize against independent setting changes", async ()
     await Promise.all(Array.from({ length: 12 }, (_, i) => core.writeSelection(root, i % 2 === 0)));
     const saved = await core.readConfig(root);
     assert.equal(typeof saved.enabled, "boolean");
-    assert.equal(saved.schema_version, 4);
+    assert.equal(saved.schema_version, 5);
     assert.equal("test_build_enabled" in saved, false);
     assert.equal((await fs.readdir(root)).some(name => name.endsWith(".tmp") || name.endsWith(".lock")), false);
   } finally { await fs.rm(root, { recursive: true, force: true }); }
@@ -65,7 +65,7 @@ test("a real Fetch stream is cancelled at the health response limit", async () =
     pull(controller) { controller.enqueue(new Uint8Array(128 * 1024)); },
     cancel() { cancelled = true; },
   })), "synthetic-test-key");
-  assert.equal(result.reason, "JEV_INVALID_RESPONSE"); assert.equal(cancelled, true);
+  assert.equal(result.reason, "DECISION_INVALID_RESPONSE"); assert.equal(cancelled, true);
 });
 
 test("the shared config contract accepts explicit global scope", async () => {
@@ -77,7 +77,7 @@ test("the shared config contract accepts explicit global scope", async () => {
     assert.equal((await core.readConfig(root)).scope, "global");
     config.scope = "session";
     await fs.writeFile(path.join(root, "config.json"), JSON.stringify(config));
-    await assert.rejects(core.readConfig(root), /Invalid Jev config/);
+    await assert.rejects(core.readConfig(root), /Invalid Decision config/);
   } finally { await fs.rm(root, { recursive: true, force: true }); }
 });
 

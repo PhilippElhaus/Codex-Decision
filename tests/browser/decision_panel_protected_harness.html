@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Decision protected lines</title>
+  <link rel="stylesheet" href="../../vscode-control/webview/decision-panel.css">
+  <script>window.acquireVsCodeApi = () => ({ postMessage() {} });</script>
+</head>
+<body>
+  <main id="app"></main>
+  <script src="../../vscode-control/webview/decision-panel.js"></script>
+  <script>
+    const rows = Array.from({length:72}, (_, index) => ({
+      line:index+1, excerpt:index < 70 ? `INFO synthetic heartbeat ${index}` : index === 70 ? "ERROR: synthetic diagnostic" : "Done",
+      action:index < 69 ? "omit" : "keep", reason:index < 69 ? "irrelevant" : "protected",
+      protected_reason:index < 69 ? null : "diagnostic_context", can_omit:null, exact_needed:null,
+      task_relevant:index < 69 ? .03 : null, retention_index:index < 69 ? .03 : null
+    }));
+    const complete = {version:5,id:"a".repeat(32),receipt_id:"b".repeat(32),status:"candidate",rows,
+      totals:{seen:72,judged:69,kept:3,omitted:69,protected:3,unjudged:0,requests:3}};
+    const send = decision => window.dispatchEvent(new MessageEvent("message", {data:{type:"decision",decision}}));
+    send({...complete, id:"c".repeat(32), status:"processing", totals:{...complete.totals,judged:36,omitted:36,kept:36,unjudged:33},
+      rows:rows.map(row => row.line > 36 && row.line < 70 ? {...row, action:"keep",reason:"budget_unjudged",
+        task_relevant:null,retention_index:null} : row)});
+    const pending = document.querySelectorAll(".batch-row.unscored").length === 36 &&
+      document.querySelectorAll(".batch-row").length === 72;
+    send(complete);
+    const report = {
+      allLines:document.querySelectorAll(".batch-row").length === 72,
+      allKeeps:document.querySelectorAll(".batch-row.keep").length === 3,
+      countsMatch:document.querySelector(".batch-title").textContent === "3 / 72 kept",
+      sourceOrder:[...document.querySelectorAll(".batch-line-number")].every((node,index) => Number(node.textContent) === index+1),
+      noInventedScores:[...document.querySelectorAll(".batch-row.keep")].every(row =>
+        row.querySelector(".batch-value").textContent === "—" && row.title.includes("no Decision relevance score") &&
+        row.querySelector(".batch-action").title.startsWith("Protected:") &&
+        Number(getComputedStyle(row.querySelector(".batch-value")).opacity) === 1),
+      diagnosticVisible:document.getElementById("app").textContent.includes("ERROR: synthetic diagnostic"),
+      completionVisible:document.getElementById("app").textContent.includes("Done"),
+      pending,
+    };
+    document.body.dataset.result = JSON.stringify(report);
+    document.title = Object.values(report).every(Boolean) ? "DECISION_PROTECTED_READY" : "DECISION_PROTECTED_FAILED";
+  </script>
+</body>
+</html>

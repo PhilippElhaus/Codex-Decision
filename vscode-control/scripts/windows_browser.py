@@ -37,10 +37,10 @@ def remove_profile(profile: Path, prefix: str) -> None:
     cleanup = r'''
 $ErrorActionPreference = 'Stop'
 $root = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath()).TrimEnd('\')
-$target = [System.IO.Path]::GetFullPath($env:JEV_BROWSER_PROFILE).TrimEnd('\')
+$target = [System.IO.Path]::GetFullPath($env:DECISION_BROWSER_PROFILE).TrimEnd('\')
 if ([System.IO.Path]::GetPathRoot($root) -ieq 'D:\' -or
     -not $target.StartsWith($root + '\', [System.StringComparison]::OrdinalIgnoreCase) -or
-    -not ([System.IO.Path]::GetFileName($target)).StartsWith($env:JEV_BROWSER_PREFIX)) {
+    -not ([System.IO.Path]::GetFileName($target)).StartsWith($env:DECISION_BROWSER_PREFIX)) {
     throw 'Unexpected Edge test profile path.'
 }
 if (Test-Path -LiteralPath $target) {
@@ -53,8 +53,8 @@ if (Test-Path -LiteralPath $target) {
 }
 '''
     quote = lambda value: "'" + value.replace("'", "''") + "'"
-    cleanup = cleanup.replace('$env:JEV_BROWSER_PROFILE', quote(windows_path(profile)))
-    cleanup = cleanup.replace('$env:JEV_BROWSER_PREFIX', quote(prefix))
+    cleanup = cleanup.replace('$env:DECISION_BROWSER_PROFILE', quote(windows_path(profile)))
+    cleanup = cleanup.replace('$env:DECISION_BROWSER_PREFIX', quote(prefix))
     result = subprocess.run(['pwsh.exe', '-NoProfile', '-NonInteractive', '-Command', cleanup],
                             capture_output=True, text=True, timeout=30)
     if result.returncode != 0:
