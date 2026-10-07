@@ -2,7 +2,7 @@
   "name": "codex-decision-control",
   "displayName": "Codex Decision Control",
   "description": "Decision on/off control and live decision panel for VS Code",
-  "version": "0.10.3",
+  "version": "0.10.4",
   "codexDecisionHookVersion": "0.11.0",
   "publisher": "elhaus-labs",
   "license": "MIT",

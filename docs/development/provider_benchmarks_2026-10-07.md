@@ -1,6 +1,6 @@
 # Provider benchmarks — 7 October 2026
 
-Codex Decision 0.11.0 defaults to OpenAI Decisions (`gpt-6-luna`) and retains TypeSafe Jev (`jev-latest`). Both providers preserved every required source line in the 64 reviewed live cases per provider. OpenAI saved more output bytes; TypeSafe returned individual requests faster in this run.
+Codex Decision 0.11.0 supports OpenAI Decisions (`gpt-6-luna`) and TypeSafe Jev (`jev-latest`). Both providers preserved every required source line in the 64 reviewed live cases per provider. OpenAI saved more output bytes; TypeSafe returned individual requests faster in this run.
 
 | Corpus | Provider | Cases | HTTP calls | HTTP p50 / p95, ms | Called-output p50 / p95, ms | Bytes saved | Required lines lost / reviewed |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |

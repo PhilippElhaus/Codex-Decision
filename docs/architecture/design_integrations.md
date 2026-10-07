@@ -4,7 +4,7 @@ One session `enabled` flag controls supported local tool output. Known independe
 
 ## Providers and wire formats
 
-OpenAI Decisions is the default. TypeSafe Jev is an explicit alternative. Both providers use HTTPS bearer authentication and return typed probabilities. The Rust provider adapter owns their wire formats; routing, protection, omission thresholds, publication, and rollback use the same validated evidence pipeline.
+OpenAI Decisions and TypeSafe Jev use HTTPS bearer authentication and return typed probabilities. The Rust provider adapter owns their wire formats; routing, protection, omission thresholds, publication, and rollback use the same validated evidence pipeline.
 
 | Contract | OpenAI Decisions | TypeSafe Jev |
 | --- | --- | --- |

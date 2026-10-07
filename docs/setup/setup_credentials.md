@@ -1,6 +1,6 @@
 # Configure provider keys
 
-Codex Decision defaults to OpenAI Decisions with `gpt-6-luna`. TypeSafe Jev remains available with `jev-latest`. Select the provider in **Connect Decision** or **Codex settings → Decision**. Keys stay local and never enter the webview when read from disk.
+Codex Decision supports OpenAI Decisions with `gpt-6-luna` and TypeSafe Jev with `jev-latest`. Select the provider in **Connect Decision** or **Codex settings → Decision**. Keys stay local and never enter the webview when read from disk.
 
 Store keys in the installed plugin’s private `PLUGIN_DATA/.env`, outside the repository:
 

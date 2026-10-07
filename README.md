@@ -4,7 +4,7 @@
 
 Codex Decision removes repetitive lines from local tool output before Codex reads them. Errors and useful evidence stay visible. Every shortened result links to the complete original.
 
-**Codex Decision 0.11.0 · VS Code control 0.10.3** — [Download the latest release](https://github.com/PhilippElhaus/Codex-Decision/releases/tag/v0.11.0).
+**Codex Decision 0.11.0 · VS Code control 0.10.4** — [Download the latest release](https://github.com/PhilippElhaus/Codex-Decision/releases/tag/v0.11.0).
 
 ## Get started
 
@@ -19,7 +19,7 @@ Trust the Decision hook in `/hooks`. For the screens below, install the optional
 
 ### 1. Connect Decision
 
-Sign in to Codex, select **OpenAI Decisions** (default) or **TypeSafe Jev**, then enter and test that provider’s API key in **Connect Decision**. The key stays out of chat.
+Sign in to Codex, select **OpenAI Decisions** or **TypeSafe Jev**, then enter and test that provider’s API key in **Connect Decision**. The key stays out of chat.
 
 <img src="docs/images/decision-connect.png" width="760" alt="Connect Decision screen with an empty API key field">
 
