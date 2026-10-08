@@ -61,6 +61,7 @@ for (const [id, part] of [
 });
 add("duplicate-enabled-config", "Confirm the build succeeded.", log, all(log), {
   kind:"exact_content", expect_full:true, expected_calls:0,
+  expect_error:true,
   config_raw:'{"schema_version":4,"scope":"global","enabled":false,"enabled":true,"mode":"replace","model":"jev-latest","timeout_seconds":4,"relevance_policy":{"relevant_max":5}}',
 });
 for (const [id, task] of [

@@ -4,7 +4,7 @@
 
 Codex Decision removes repetitive lines from local tool output before Codex reads them. Errors and useful evidence stay visible. Every shortened result links to the complete original.
 
-**Codex Decision 0.11.3 · VS Code control 0.10.8** — [Download the latest release](https://github.com/PhilippElhaus/Codex-Decision/releases/latest).
+**Codex Decision 0.11.4 · VS Code control 0.10.9** — [Download the latest release](https://github.com/PhilippElhaus/Codex-Decision/releases/latest).
 
 ## Get started
 

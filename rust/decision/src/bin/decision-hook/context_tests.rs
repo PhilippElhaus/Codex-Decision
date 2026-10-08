@@ -108,3 +108,71 @@ fn identifier_reference_does_not_override_a_credential_value() {
         assert!(sensitive(text), "{text}");
     }
 }
+
+#[test]
+fn precise_environment_member_reads_do_not_contain_credential_values() {
+    for text in [
+        "process.env.ACCESS_TOKEN",
+        "process.env.CLIENT_SECRET",
+        "process.env['ACCESS_TOKEN']",
+        "process.env[\"CLIENT_SECRET\"]",
+        "const value = process.env.ACCESS_TOKEN;",
+        "console.log(process.env.CLIENT_SECRET);",
+        "const values = [process.env.ACCESS_TOKEN, process.env['CLIENT_SECRET']];",
+    ] {
+        assert!(!sensitive(text), "{text}");
+        assert!(
+            !sensitive_input(&json!({"tool_input":{"cmd":text}})),
+            "serialized input: {text}"
+        );
+    }
+}
+
+#[test]
+fn environment_member_exemptions_never_hide_assignments_or_other_markers() {
+    for text in [
+        "process.env.ACCESS_TOKEN = synthetic-sentinel",
+        "process.env.CLIENT_SECRET: synthetic-sentinel",
+        "process.env['ACCESS_TOKEN'] = 'synthetic-sentinel'",
+        "process.env[\"CLIENT_SECRET\"]: 'synthetic-sentinel'",
+        "process.env.ACCESS_TOKEN === 'synthetic-sentinel'",
+        "process.env.ACCESS_TOKEN synthetic-sentinel",
+        "process.env.ACCESS_TOKEN_EXTRA",
+        "cat /tmp/process.env.ACCESS_TOKEN",
+        "cat process.env['CLIENT_SECRET']",
+        "const value = process.env.ACCESS_TOKEN; password=synthetic-sentinel",
+        "const value = process.env.CLIENT_SECRET; sk-synthetic-sentinel",
+        "access_token",
+        "client_secret",
+        "api key setup",
+        "api key synthetic-sentinel",
+        "\u{200b}sk-synthetic-sentinel",
+        "\u{2014}ghp_synthetic_sentinel",
+    ] {
+        assert!(sensitive(text), "{text}");
+        assert!(
+            sensitive_input(&json!({"tool_input":{"cmd":text}})),
+            "serialized input: {text}"
+        );
+    }
+    for field in [
+        "password",
+        "api_key",
+        "access_token",
+        "client_secret",
+        "authorization",
+    ] {
+        for value in [json!("synthetic-sentinel"), json!(null), json!(1)] {
+            assert!(
+                sensitive_input(&json!({"tool_input":{field:value}})),
+                "field: {field}"
+            );
+        }
+    }
+    assert!(sensitive_input(
+        &json!({"tool_input":{"paths":["process.env.ACCESS_TOKEN"]}})
+    ));
+    assert!(sensitive_input(
+        &json!({"tool_input":{"cmd":"process.env.CLIENT_SECRET", "options":{"password":"synthetic-sentinel"}}})
+    ));
+}

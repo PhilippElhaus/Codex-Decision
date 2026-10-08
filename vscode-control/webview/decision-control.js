@@ -26,6 +26,7 @@
   let compactAtWidth = 0;
   let seenModel = false;
   let viewId = newViewId();
+  const sourceId = newViewId();
   let viewLocation = null;
   let bridgeFault = null;
   let bridgeWaitingSince = Date.now();
@@ -87,7 +88,7 @@
     const current = currentViewId();
     sentViews.set(id, { viewId: current, action, expires: Date.now() + requestTimeoutMs });
     if (sentViews.size > 50) sentViews.delete(sentViews.keys().next().value);
-    api.postMessage({ type: "codex-decision", action, enabled, focused: document.hasFocus() && document.visibilityState === "visible", ...(key === undefined ? {} : { key, provider: setup?.querySelector("#codex-decision-provider")?.value || state.provider || "openai" }), viewId: current, sessionId: sessionId(), expectsLocalSession: expectsLocalSession(), id });
+    api.postMessage({ type: "codex-decision", action, enabled, sourceId, visible: document.visibilityState === "visible", focused: document.hasFocus() && document.visibilityState === "visible", ...(key === undefined ? {} : { key, provider: setup?.querySelector("#codex-decision-provider")?.value || state.provider || "openai" }), viewId: current, sessionId: sessionId(), expectsLocalSession: expectsLocalSession(), id });
     return id;
   }
 

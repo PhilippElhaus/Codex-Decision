@@ -37,6 +37,7 @@ test("session and installation activity count API attempts and preserve unknown 
         version: 1, hook_version: "0.11.2", last_seen_ms: Date.now(),
         api_requests: calls + 2, seen: 12, skipped: 8, errors: 1,
         skip_counts: { small: 7, choice_kept_full_output: 1 },
+        skip_details: { protected_command: 2 },
       }));
     }
     const selected = await readSessionActivity(one);
@@ -53,6 +54,7 @@ test("session and installation activity count API attempts and preserve unknown 
     assert.equal(totals.errors, 2);
     assert.equal(totals.linesActuallyOmitted, 8);
     assert.deepEqual(totals.skipCounts, { small: 14, choice_kept_full_output: 2 });
+    assert.deepEqual(totals.skipDetails, { protected_command: 4 });
     assert.equal(totals.averageMs, 100, "timing uses completed requests with recorded durations");
     const legacy = sessionDirectory(root, "legacy");
     await ensureSessionDefaults(legacy);

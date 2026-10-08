@@ -162,9 +162,15 @@ fn shell_scripts_and_mixed_commands_publish_previews_without_replacement() {
     for (session, command, source, reason) in [
         (
             "sensitive-script",
-            "cat .env > output",
+            "python3 runner.py --path .env",
             source.as_str(),
             "sensitive",
+        ),
+        (
+            "exact-environment-read",
+            "cat .env > output",
+            source.as_str(),
+            "exact_content",
         ),
         (
             "structured-script",

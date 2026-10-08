@@ -4,7 +4,7 @@ Run the current release checks from the repository root. The offline tests use s
 
 Use `cargo bench --locked -p codex-decision --bench pipeline -- all` for offline CPU and allocation measurements. Use `equivalence` instead of `all` to print fingerprints for 1,000 seeded complete packing cases. Give before and after builds different `CARGO_TARGET_DIR` paths. Compare fingerprints before interpreting timing results.
 
-Run `node scripts/pipeline_stress.cjs --hook <debug-hook> --rounds 32 --concurrency 4` to exercise a shared session through real hook processes. The loopback mock uses synthetic credentials. The runner checks exact readable and typed originals, completed panels, counters, deliberate failures, and a managed-log bound. Use `--minutes 45` for a timed run or `--provider typesafe` for the second wire format. Use `--faults http,json,oversize,probability,model,timeout` to rotate protocol and deadline failures. Use `--jitter-ms 20` to vary response timing. Use `--allow-deadline` only for a constrained debug pressure test; it separately verifies full-result fallback and rollback at request or invocation deadlines. Unexpected mock errors still fail the run. Each group completes before the next begins. Millisecond latency buckets use bounded memory. Its disposable fixture stays off D: and removes only verified task files. See the [pipeline optimization report](../docs/development/pipeline_optimization_2026-10-07.md) for current evidence and limits.
+Run `node scripts/pipeline_stress.cjs --hook <verification-hook> --rounds 32 --concurrency 4` to exercise a shared session through real hook processes. The loopback mock uses synthetic credentials. The runner checks exact readable and typed originals, completed panels, counters, deliberate failures, and a managed-log bound. Use `--minutes 45` for a timed run or `--provider typesafe` for the second wire format. Use `--faults http,json,oversize,probability,model,timeout` to rotate protocol and deadline failures. Use `--jitter-ms 20` to vary response timing. Use `--allow-deadline` only for a constrained debug pressure test; it separately verifies full-result fallback and rollback at request or invocation deadlines. Unexpected mock errors still fail the run. Each group completes before the next begins. Millisecond latency buckets use bounded memory. Its disposable fixture stays off D: and removes only verified task files. See the [pipeline optimization report](../docs/development/pipeline_optimization_2026-10-07.md) for current evidence and limits.
 
 ```bash
 CARGO_TARGET_DIR="$HOME/.cache/codex-decision/cargo-target" cargo test --locked -p codex-decision
@@ -29,6 +29,9 @@ Migration checks cover all eight legacy switch combinations, conservative cutoff
 Run the reviewed dummy corpus against the debug hook:
 
 ```bash
+# All five splits and one complete fault suite for each provider:
+node scripts/dummy_matrix.cjs --hook <debug-hook> --jobs 2 --out .local/quality/dummy-matrix
+# Individual splits or bounded live checks:
 node scripts/two_stage_quality.cjs --out .local/two-stage/offline
 node scripts/two_stage_quality.cjs --holdout --skip-faults --out .local/two-stage/offline-holdout
 node scripts/two_stage_quality.cjs --batching --skip-faults --out .local/two-stage/offline-batching
@@ -42,11 +45,21 @@ Live runs use the installed key only in the proxy process memory. The hook uses 
 
 Batching fixtures cover 251–10,000 lines, long target text, Unicode, escaped JSON, ANSI/CRLF, and unpackable context. All emitted requests must fit both conservative API token bounds. The runner checks exactly-once coverage and complete target text. Later-batch fault cases verify rollback after an earlier valid relevance batch. The current panel accepts complete version-6 snapshots up to 10,000 source lines and 8 MiB. It includes earlier batches and protected lines; its row counts must match all recorded totals.
 
+The runner requires a debug or verification hook and rejects the production binary before loading a live key. It reconciles proxy calls, persisted attempts, stage counts, receipts, errors, and completion counters. Eligible offline cases must produce their expected decision; local skips need an explicit expectation. Unexpected live errors stop further requests. Use `--case` with a fault ID for a focused failure rerun.
+
 The base corpus includes all 34 protocol, timeout, and later-batch faults. Use
 `--skip-faults` for additional corpus splits to avoid repeating that identical
 fault suite. CI runs every reviewed output case and every fault scenario once.
 Publication regressions also verify retries after failed original-pair or
 receipt writes and rollback when hooks overlap in the same session.
+
+The matrix runner starts at most two independent corpus processes by default.
+Use `--jobs 1` for sequential measurements or up to `--jobs 4` on a larger host.
+Each provider and split has its own log, receipts, and report. The destination
+must be new so an earlier report cannot mask a failed process. Both providers
+run the holdout, batching, and precision splits in CI; the identical fault cases
+run once per provider in the base split. `summary.json` records the complete
+matrix, case count, request count, evidence loss, failures, and wall time.
 
 The interruption check kills the real debug hook after its first relevance
 snapshot. It verifies that no completed receipt, replacement event, stats, or
@@ -66,6 +79,10 @@ aggregates, and provenance. Holdout cases add semantic test names, multiple
 requested tests and values, Unicode facts, timing, retry counts, and sequence
 requirements. Credential sentinels require zero requests. Fault cases also
 cover duplicate JSON fields and response bodies that trickle past the deadline.
+
+Build the optimized synthetic hook with `cargo build --locked -p codex-decision --profile verification`. It retains assertions and the loopback endpoint while using optimized packing. Its binaries live under `target/verification/` (or your selected Cargo target directory). Use it for large concurrent pressure checks; an unoptimized debug build can reach the existing 45-second hook limit on a single CPU. Release packaging always builds a separate production profile with the test endpoint disabled.
+
+The [processing recovery audit](../docs/development/processing_recovery_2026-10-08.md) records the current skip causes, exact Lab command contract, privacy checks, and dummy-run results.
 
 ## Composer and panel quality checks
 

@@ -149,11 +149,12 @@ async function readHookHealth(directory) {
         ["last_success_ms", "last_error_ms", "last_skip_ms"].some((key) =>
           health[key] !== undefined && (!Number.isSafeInteger(health[key]) || health[key] < 0 ||
             health[key] > health.last_seen_ms)) ||
-        ["last_error", "last_skip"].some((key) =>
+        ["last_error", "last_skip", "last_skip_detail"].some((key) =>
           health[key] !== undefined && (typeof health[key] !== "string" || health[key].length > 80))) {
       throw new Error("Invalid Decision hook health");
     }
     if (health.skip_counts !== undefined) validateCounterMap(health.skip_counts, "skip counts");
+    if (health.skip_details !== undefined) validateCounterMap(health.skip_details, "skip details");
     return health;
   } catch (error) {
     if (error.code === "ENOENT") return null;
@@ -304,7 +305,7 @@ async function readInstallationStats(directory) {
     const stats = await readSessionActivity(path.join(directory, "sessions", entry.name));
     for (const key of Object.keys(totals)) {
       if (key === "averageMs") continue;
-      if (["skipCounts", "candidateReasons"].includes(key)) {
+      if (["skipCounts", "skipDetails", "candidateReasons"].includes(key)) {
         for (const [reason, count] of Object.entries(stats[key])) {
           totals[key][reason] = (Object.hasOwn(totals[key], reason) ? totals[key][reason] : 0) + count;
         }
@@ -334,7 +335,7 @@ async function readSessionActivity(directory) {
     errors: hookHealth?.errors ?? unknown, candidates: recorded?.candidates ?? unknown,
     kept: recorded?.kept ?? unknown, linesActuallyOmitted: recorded?.linesActuallyOmitted ?? unknown,
     classificationKeptFull: hookHealth?.skip_counts ? hookHealth.skip_counts.choice_kept_full_output ?? 0 : unknown,
-    skipCounts: { ...hookHealth?.skip_counts }, candidateReasons, hookHealth };
+    skipCounts: { ...hookHealth?.skip_counts }, skipDetails: { ...hookHealth?.skip_details }, candidateReasons, hookHealth };
 }
 
 async function readFileRange(file, length, position) {

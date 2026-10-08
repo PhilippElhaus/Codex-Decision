@@ -36,14 +36,11 @@
     return Number.isSafeInteger(value) && value >= 0 ? value.toLocaleString("en-US") : "—";
   }
 
-  function reasonTable(section, title, counts, emptyMessage) {
-    section.appendChild(node("h2", "totals-heading", title));
+  function reasonTable(section, title, counts, details = {}) {
     const entries = Object.entries(counts || {}).filter(([, value]) => Number.isSafeInteger(value) && value > 0)
       .sort(([a, countA], [b, countB]) => countB - countA || a.localeCompare(b));
-    if (!entries.length) {
-      section.appendChild(node("p", "totals-note", emptyMessage));
-      return;
-    }
+    if (!entries.length) return;
+    section.appendChild(node("h2", "totals-heading", title));
     const table = node("table", "totals-reasons");
     const head = node("thead");
     const heading = node("tr");
@@ -53,7 +50,9 @@
     head.appendChild(heading);
     const body = node("tbody");
     for (const [reason, value] of entries) {
-      const [label, detail] = reasons[reason] || [reason.replaceAll("_", " "), "The full output was kept."];
+      const [label, description] = reasons[reason] || [reason.replaceAll("_", " "), "The full output was kept."];
+      const detail = reason === "sensitive" && Object.values(details).some(value => value > 0) ?
+        `Protected markers in new records: output ${count(details.protected_output || 0)} · command ${count(details.protected_command || 0)} · other input ${count(details.protected_input || 0)}.` : description;
       const row = node("tr");
       row.dataset.reason = reason;
       row.append(node("td", "", label), node("td", "reason-count", count(value)), node("td", "reason-detail", detail));
@@ -85,14 +84,9 @@
       metric.append(node("dt", "", label), node("dd", "", count(value)));
       metrics.appendChild(metric);
     }
-    section.append(metrics, node("p", "totals-note",
-      "Totals cover this thread’s saved history. API requests include classification and relevance batches; skipped outputs may still use classification. Connection checks are separate. Older records can lack counters or a complete reason breakdown."));
-    reasonTable(section, "Why outputs were skipped", totals.skipCounts, !activity ?
-      "Select a chat thread to see its saved totals." : activity.skipped > 0 ?
-      "No skip-reason breakdown was saved for these outputs." : "No saved skip reasons yet.");
-    if (Object.keys(totals.candidateReasons || {}).length) {
-      reasonTable(section, "Why previews kept full output", totals.candidateReasons, "No saved preview reasons yet.");
-    }
+    section.appendChild(metrics);
+    reasonTable(section, "Why outputs were skipped", totals.skipCounts, totals.skipDetails);
+    reasonTable(section, "Why previews kept full output", totals.candidateReasons);
     return section;
   }
 

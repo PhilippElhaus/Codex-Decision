@@ -5,6 +5,7 @@ const crypto=require("node:crypto"),assert=require("node:assert/strict");
 const {fixture,response}=require("../tests/fixtures/pipeline-stress.cjs");
 const {start,invoke,stopOwned}=require("./pipeline-stress/process.cjs");
 const {readLatestPanelDecision}=require("../vscode-control/panel-state");
+const {requireProxyHook}=require("./two_stage_audit.cjs");
 const arg=(flag,fallback)=>process.argv.includes(flag)?process.argv[process.argv.indexOf(flag)+1]:fallback;
 const hash=text=>crypto.createHash("sha256").update(text).digest("hex");
 const json=async file=>JSON.parse(await fs.readFile(file,"utf8"));
@@ -75,7 +76,9 @@ async function verify(hook,provider) {
 
 async function main() {
   const hook=path.resolve(arg("--hook",path.join(os.homedir(),".cache/codex-decision/pipeline-candidate-20261007/debug/decision-hook")));
-  if(!hook.includes(`${path.sep}debug${path.sep}`))throw new Error("Use the debug hook; release hooks cannot use a loopback test endpoint");
+  const details=await fs.lstat(hook);
+  if(!details.isFile()||details.isSymbolicLink()||details.size>128*1024*1024)throw new Error("Invalid testing hook executable");
+  requireProxyHook(await fs.readFile(hook));
   const results=[];for(const provider of ["openai","typesafe"])results.push(await verify(hook,provider));
   const out=path.resolve(arg("--out",`.local/quality/pipeline-interrupt-${Date.now()}`));
   await fs.mkdir(out,{recursive:true,mode:0o700});await fs.writeFile(path.join(out,"summary.json"),JSON.stringify(results,null,2)+"\n");

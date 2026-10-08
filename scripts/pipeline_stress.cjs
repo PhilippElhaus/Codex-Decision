@@ -10,13 +10,16 @@ const {invoke,stopOwned}=require("./pipeline-stress/process.cjs");
 const {fixture,response,faultyResponse,faultMessages}=require("../tests/fixtures/pipeline-stress.cjs");
 const {readLatestPanelDecision}=require("../vscode-control/panel-state");
 const {Latencies}=require("./pipeline-stress/latency.cjs");
+const {requireProxyHook}=require("./two_stage_audit.cjs");
 const arg=(flag,fallback)=>process.argv.includes(flag)?process.argv[process.argv.indexOf(flag)+1]:fallback;
 const hash=text=>crypto.createHash("sha256").update(text).digest("hex");
 async function json(file){return JSON.parse(await fs.readFile(file,"utf8"));}
 
 async function main() {
   const hook=path.resolve(arg("--hook",path.join(os.homedir(),".cache/codex-decision/pipeline-candidate-20261007/debug/decision-hook")));
-  if(!hook.includes(`${path.sep}debug${path.sep}`))throw new Error("Use the debug hook; release hooks cannot use a loopback test endpoint");
+  const hookDetails=await fs.lstat(hook);
+  if(!hookDetails.isFile()||hookDetails.isSymbolicLink()||hookDetails.size>128*1024*1024)throw new Error("Invalid testing hook executable");
+  requireProxyHook(await fs.readFile(hook));
   const provider=arg("--provider","openai");if(!["openai","typesafe"].includes(provider))throw new Error("Invalid provider");
   const concurrency=Number(arg("--concurrency","4")),rounds=Number(arg("--rounds","32")),minutes=Number(arg("--minutes","0")),limitMb=Number(arg("--log-limit-mb","1"));
   const counts=arg("--lines","64,512,2000,10000").split(",").map(Number);
@@ -98,6 +101,8 @@ async function main() {
       if(lastCompletedRuns.length){assert.equal(panel.status,"replace");assert.ok(lastCompletedRuns.some(run=>panel.rows.length===run.projectedLines&&panel.rows.some(row=>row.excerpt.includes(run.id))));}
       else assert.equal(panel,null);
       const health=await json(path.join(scoped,"logs/hook-health.json"));assert.equal(health.seen,(group+1)*concurrency);
+      assert.equal(health.api_requests,requests,"Saved attempts must include successful and deliberately failed requests");
+      assert.equal(health.errors,failures+deadlineFallbacks,"Each failed invocation must record one error");
       const files=await fs.readdir(path.join(scoped,"logs"),{recursive:true});let managed=0;
       for(const name of files){assert.ok(!/\.pending$|\.tmp$/.test(name));if(/^(receipt|batch)-/.test(path.basename(name)))managed+=(await fs.stat(path.join(scoped,"logs",name))).size;}
       assert.ok(managed<=limitMb*1000000);

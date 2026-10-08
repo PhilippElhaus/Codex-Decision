@@ -2,6 +2,15 @@
 use super::*;
 
 pub(super) fn hook_health(data_dir: &Path, outcome: &str, reason: &str) -> Result<(), String> {
+    hook_health_detail(data_dir, outcome, reason, None)
+}
+
+fn hook_health_detail(
+    data_dir: &Path,
+    outcome: &str,
+    reason: &str,
+    detail: Option<&str>,
+) -> Result<(), String> {
     ensure_dir(data_dir)?;
     let logs = data_dir.join("logs");
     ensure_dir(&logs)?;
@@ -66,6 +75,18 @@ pub(super) fn hook_health(data_dir: &Path, outcome: &str, reason: &str) -> Resul
                 .unwrap_or(0)
                 .saturating_add(1);
             counts.insert(reason.into(), json!(count));
+            health.as_object_mut().unwrap().remove("last_skip_detail");
+            if let Some(detail) = detail {
+                health["last_skip_detail"] = json!(detail);
+                if health["skip_details"].is_null() {
+                    health["skip_details"] = json!({});
+                }
+                let details = health["skip_details"]
+                    .as_object_mut()
+                    .ok_or("invalid skip details")?;
+                let count = details.get(detail).and_then(Value::as_u64).unwrap_or(0);
+                details.insert(detail.into(), json!(count.saturating_add(1)));
+            }
         }
         "seen" => {
             health["seen"] = json!(health["seen"].as_u64().unwrap_or(0).saturating_add(1));
@@ -85,6 +106,21 @@ mod tests;
 
 pub(super) fn skip(data_dir: &Path, reason: &str) -> Result<Value, String> {
     hook_health(data_dir, "skip", reason)?;
+    Ok(json!({}))
+}
+
+pub(super) fn skip_with_detail(
+    data_dir: &Path,
+    reason: &str,
+    detail: &str,
+) -> Result<Value, String> {
+    if !matches!(
+        detail,
+        "protected_output" | "protected_command" | "protected_input"
+    ) {
+        return Err("invalid skip detail".into());
+    }
+    hook_health_detail(data_dir, "skip", reason, Some(detail))?;
     Ok(json!({}))
 }
 

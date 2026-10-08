@@ -17,16 +17,12 @@ jobs:
       - run: rustup toolchain install stable --profile minimal --component rustfmt --component clippy
       - run: cargo +stable fmt --all -- --check
       - run: cargo +stable test --locked -p codex-decision
-      - run: node scripts/two_stage_quality.cjs --hook target/debug/decision-hook --out .local/two-stage/offline
-      - run: node scripts/two_stage_quality.cjs --provider typesafe --hook target/debug/decision-hook --out .local/two-stage/typesafe
-      - run: node scripts/two_stage_quality.cjs --holdout --skip-faults --hook target/debug/decision-hook --out .local/two-stage/offline-holdout
-      - run: node scripts/two_stage_quality.cjs --batching --skip-faults --hook target/debug/decision-hook --out .local/two-stage/offline-batching
-      - run: node scripts/two_stage_quality.cjs --precision --skip-faults --hook target/debug/decision-hook --out .local/two-stage/offline-precision
-      - run: node scripts/two_stage_quality.cjs --precision-holdout --skip-faults --hook target/debug/decision-hook --out .local/two-stage/offline-precision-holdout
+      - run: node scripts/dummy_matrix.cjs --hook target/debug/decision-hook --jobs 2 --out .local/quality/dummy-ci
       - run: cargo +stable clippy --locked --all-targets -- -D warnings
-      - run: node scripts/pipeline_interrupt.cjs --hook target/debug/decision-hook --out .local/quality/pipeline-ci-interrupt
-      - run: node scripts/pipeline_stress.cjs --hook target/debug/decision-hook --provider openai --concurrency 4 --rounds 6 --lines 256,1024 --faults http,json,oversize,probability,model,timeout --jitter-ms 10 --out .local/quality/pipeline-ci-openai
-      - run: node scripts/pipeline_stress.cjs --hook target/debug/decision-hook --provider typesafe --concurrency 4 --rounds 6 --lines 256,1024 --faults http,json,oversize,probability,model,timeout --jitter-ms 10 --out .local/quality/pipeline-ci-typesafe
+      - run: cargo +stable build --locked -p codex-decision --profile verification
+      - run: node scripts/pipeline_interrupt.cjs --hook target/verification/decision-hook --out .local/quality/pipeline-ci-interrupt
+      - run: node scripts/pipeline_stress.cjs --hook target/verification/decision-hook --provider openai --concurrency 4 --rounds 6 --lines 256,1024 --faults http,json,oversize,probability,model,timeout --jitter-ms 10 --out .local/quality/pipeline-ci-openai
+      - run: node scripts/pipeline_stress.cjs --hook target/verification/decision-hook --provider typesafe --concurrency 4 --rounds 6 --lines 256,1024 --faults http,json,oversize,probability,model,timeout --jitter-ms 10 --out .local/quality/pipeline-ci-typesafe
       - run: npm test --prefix vscode-control
       - run: python3 -m unittest discover -s tests -p 'test_*.py'
       - run: ./scripts/build_submission.sh

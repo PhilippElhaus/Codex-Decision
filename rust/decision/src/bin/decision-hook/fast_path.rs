@@ -25,7 +25,7 @@ pub(super) fn format_decision(event: &Value, lines: &mut [SourceLine]) -> Format
     {
         return FormatDecision::Keep("exact_content");
     }
-    if route != "output" && shell_tool(tool) {
+    if route != "output" && command_tool(event) {
         if !apply_route_structure(route, tool, command(event), lines) {
             return FormatDecision::Keep("structure_guard");
         }
@@ -48,7 +48,7 @@ pub(super) fn format_decision(event: &Value, lines: &mut [SourceLine]) -> Format
     if !apply_route_structure("output", tool, command(event), lines) {
         return FormatDecision::Keep("structure_guard");
     }
-    if shell_tool(tool) && exact_read(command(event)) {
+    if command_tool(event) && exact_read(command(event)) {
         return FormatDecision::Keep("exact_content");
     }
     // Code-mode wrappers do not expose a trustworthy shell command. Validate
@@ -161,7 +161,7 @@ fn exact_source_command(words: &[String]) -> bool {
 }
 
 fn exact_file_tool(event: &Value, tool: &str) -> bool {
-    let action = tool.rsplit("__").next().unwrap_or(tool);
+    let action = tool_action(tool);
     if ![
         "read",
         "read_file",

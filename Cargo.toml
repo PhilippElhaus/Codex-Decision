@@ -6,3 +6,9 @@ resolver = "2"
 strip = "symbols"
 lto = true
 codegen-units = 1
+
+# Keep mock endpoints and assertions while exercising production-speed packing.
+# This profile is for synthetic verification and must never be packaged.
+[profile.verification]
+inherits = "release"
+debug-assertions = true

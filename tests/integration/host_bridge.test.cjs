@@ -17,6 +17,7 @@ async function hostBridge(executeCommand) {
   let delegated = 0;
   const context = {
     require(name) {
+      if (name === "node:crypto") return require(name);
       assert.equal(name, "vscode");
       return { commands: { executeCommand } };
     },
@@ -73,7 +74,7 @@ test("patched host carries the Decision toggle through the extension to session 
     let id = 0;
     const request = async (action, extra = {}) => {
       const message = { type: "codex-decision", id: ++id, action, viewId: "host-view",
-        sessionId: "host-session", expectsLocalSession: true, focused: true, ...extra };
+        sessionId: "host-session", sourceId: "host-source", visible: true, expectsLocalSession: true, focused: true, ...extra };
       const before = bridge.replies.length;
       await bridge.send(message);
       const deadline = Date.now() + 2000;
@@ -122,10 +123,27 @@ test("patched host replies when command lookup throws or execution rejects", asy
 test("patched host rejects malformed selections and leaves ordinary messages with Codex", async () => {
   let calls = 0;
   const bridge = await hostBridge(() => { calls += 1; return {}; });
-  for (const extra of [{ enabled: null }, { enabled: "true" }, { enabled: true, sessionId: "../other" }]) {
+  for (const extra of [{ enabled: null }, { enabled: "true" }, { enabled: true, sessionId: "../other" },
+    { enabled: true, sourceId: "../other" }, { enabled: true, visible: "true" }]) {
     await bridge.send({ type: "codex-decision", action: "setSelection", ...extra });
   }
   assert.equal(calls, 0);
   await bridge.send({ type: "chunked-message-ack" });
   assert.equal(bridge.delegated(), 1);
+});
+
+test("patched host forwards stable webview identity and visibility without inferring focus", async () => {
+  let received;
+  const bridge = await hostBridge(async (_command, request) => { received = request; return {}; });
+  await bridge.send({ type: "codex-decision", action: "status", id: 1,
+    viewId: "restored-route", sourceId: "selected-webview", visible: true, focused: false,
+    sessionId: "synthetic-restored-thread", expectsLocalSession: true });
+  const hostSource = received.sourceId;
+  assert.match(hostSource, /^[a-f0-9-]{36}$/);
+  assert.equal(received.visible, true);
+  assert.equal(received.focused, false);
+  await bridge.send({ type: "codex-decision", action: "status", id: 2,
+    viewId: "reloaded-route", sourceId: "new-renderer-identity", visible: true, focused: false,
+    sessionId: "synthetic-restored-thread", expectsLocalSession: true });
+  assert.equal(received.sourceId, hostSource, "HTML reloads retain the underlying host webview identity");
 });

@@ -15,6 +15,7 @@ const precisionHoldout = require("../tests/fixtures/precision-holdout.cjs");
 const { provider: providerSpec } = require("../vscode-control/providers");
 const { readApiKey, sessionDirectory } = require("../vscode-control/core");
 const { readLatestPanelDecision } = require("../vscode-control/panel-state");
+const { requireProxyHook, auditRun } = require("./two_stage_audit.cjs");
 const kinds = ["repetitive_log", "progress_output", "independent_matches", "independent_records", "exact_content", "prose", "structured_payload", "mixed_or_unknown"];
 const faults = ["choice-missing", "choice-extra", "choice-sum", "choice-argmax", "choice-class", "choice-confidence", "choice-type", "choice-model", "choice-json", "choice-http401", "choice-http429", "choice-http529", "choice-timeout", "line-missing", "line-extra", "line-type", "line-range", "line-confidence", "line-json", "line-http500", "line-timeout", "line-oversized"];
 faults.push("line-late-missing", "line-late-extra", "line-late-http422", "line-late-http500", "line-late-timeout");
@@ -27,8 +28,11 @@ async function main() {
   const spec = providerSpec(provider);
   const providerFaults = provider === "openai" ? ["line-refusal", "line-order", "line-name", "choice-duplicate-option"] : [];
   if (live && !process.argv.includes("--data-dir")) throw new Error("Live mode requires --data-dir; the saved key stays in memory.");
-  const key = live ? await readApiKey(arg("--data-dir"), provider) : null;
   const hook = path.resolve(arg("--hook", path.join(os.homedir(), ".cache/codex-decision/cargo-target/debug/decision-hook")));
+  const hookDetails = await fs.stat(hook);
+  if (!hookDetails.isFile() || hookDetails.size > 128 * 1024 * 1024) throw new Error("Invalid testing hook executable");
+  requireProxyHook(await fs.readFile(hook));
+  const key = live ? await readApiKey(arg("--data-dir"), provider) : null;
   const out = path.resolve(arg("--out", `.local/two-stage/${live ? "live" : "offline"}-${Date.now()}`));
   const maxCalls = Number(arg("--max-calls", "120"));
   const maxTokens = Number(arg("--max-tokens", "500000"));
@@ -38,12 +42,13 @@ async function main() {
   await fs.mkdir(out, { recursive: true, mode: 0o700 });
   const temporary = await fs.mkdtemp(path.join(os.tmpdir(), "decision-two-stage-"));
   if (temporary.startsWith("/mnt/d/")) throw new Error("Temporary work must be off D:");
-  let current, calls = 0, totalCalls = 0, inputTokens = 0, outputTokens = 0;
+  let current, calls = 0, totalCalls = 0, forwardedCalls = 0, inputTokens = 0, outputTokens = 0, abortReason = null;
   const reports = [];
   const remoteTimes = [];
   const qualityCases = [];
-  let judged = new Set(), requestBudgets = [], protocolFailures = [];
+  let judged = new Set(), requestBudgets = [], protocolFailures = [], stages = [];
   const server = http.createServer(async (req, res) => {
+    calls += 1; totalCalls += 1;
     try {
       const chunks = []; let bytes = 0;
       for await (const chunk of req) { bytes += chunk.length; if (bytes + 4096 > 64000) throw new Error("request limit"); chunks.push(chunk); }
@@ -60,8 +65,8 @@ async function main() {
             return {name,...a};
           }) };
       };
-      calls += 1; totalCalls += 1;
       const first = !!request.questions.output_kind;
+      stages.push(first ? "classification" : "relevance");
       const caseId=current.id;
       const stage=calls;
       const budget={state_longest_question_bound:Buffer.byteLength(JSON.stringify(wire.input ?? wire.state))+
@@ -81,6 +86,7 @@ async function main() {
       if (live) {
         if (totalCalls > maxCalls || inputTokens + outputTokens >= maxTokens) throw new Error("live evaluation budget");
         const remoteStarted = Date.now();
+        forwardedCalls += 1;
         const response = await fetch(spec.endpoint, { method: "POST",
           headers: {Authorization: `Bearer ${key}`, "Content-Type": "application/json"},
           body: JSON.stringify(wire), signal: AbortSignal.timeout(10000) });
@@ -148,20 +154,23 @@ async function main() {
   });
   try {
     await new Promise(resolve => server.listen(0,"127.0.0.1",resolve));
-    let selected = (process.argv.includes("--precision-holdout") ? precisionHoldout : process.argv.includes("--precision") ? precision : process.argv.includes("--batching") ? batching : process.argv.includes("--holdout") ? holdout : fixtures).filter(item => !process.argv.includes("--case") || arg("--case").split(",").includes(item.id));
-    if (!selected.length) throw new Error("No matching case");
-    if (!live && !process.argv.includes("--case") && !process.argv.includes("--skip-faults")) selected = [...selected,
+    let selected = process.argv.includes("--precision-holdout") ? precisionHoldout : process.argv.includes("--precision") ? precision : process.argv.includes("--batching") ? batching : process.argv.includes("--holdout") ? holdout : fixtures;
+    if (!live && !process.argv.includes("--skip-faults")) selected = [...selected,
       ...[...faults, ...providerFaults].map(fault => {
         const fixture=fixtures.find(item => item.id === "log-failure-240");
-        return {...fixture, id:fault, fault, expect_full:true,
+        return {...fixture, id:fault, fault, expect_full:true, expected_calls:fault.startsWith("line-late-") ? 3 : 1,
+          expected_classification_calls:Number(fault.startsWith("choice-")), expected_relevance_calls:fault.startsWith("choice-") ? 0 : fault.startsWith("line-late-") ? 3 : 1,
           lines:fault.startsWith("choice-") ? fixture.lines.map(line=>line.replace(/^INFO /,"Routine ")) : fixture.lines};
       })];
+    selected = selected.filter(item => !process.argv.includes("--case") || arg("--case").split(",").includes(item.id));
+    if (!selected.length) throw new Error("No matching case");
     for (const item of selected) {
-      current = item;calls = 0;judged = new Set();requestBudgets=[];protocolFailures=[];
+      current = item;calls = 0;judged = new Set();requestBudgets=[];protocolFailures=[];stages=[];
       const data = path.join(temporary,item.id);await fs.mkdir(data,{mode:0o700});
       await fs.writeFile(path.join(data,".env"),`${spec.keyName}=synthetic-proxy-key\n`,{mode:0o600});
       await fs.writeFile(path.join(data,"config.json"),item.config_raw || JSON.stringify({schema_version:5,provider,scope:"global",enabled:item.enabled !== false,
         mode:item.mode || "replace",model:spec.model,timeout_seconds:/timeout$|trickle$/.test(item.fault || "") ? .15 : 4,
+        allow_mcp_replacement:!!item.allow_mcp_replacement,
         relevance_policy:{relevant_max:relevantMax}}),{mode:0o600});
       const transcript=path.join(data,"transcript.jsonl");
       const userRecord = content => JSON.stringify({type:"response_item",payload:{role:"user",content}})+"\n";
@@ -169,12 +178,13 @@ async function main() {
         userRecord(item.latest_content || [{type:"input_text",text:item.task}]));
       const newline=item.newline || "\n";
       const source=item.lines.join(newline)+(item.terminated === false ? "" : newline);
-      const projectedSource=item.metadata ? 'Command result metadata: {"exit_code":1}\n'+source : source;
-      const requiredLines=item.required_lines.map(number=>number+Number(!!item.metadata));
+      const projectedSource=item.projection_factory ? item.projection_factory(source) : item.metadata ? 'Command result metadata: {"exit_code":1}\n'+source : source;
+      const requiredOffset=item.required_offset ?? Number(!!item.metadata);
+      const requiredLines=item.required_lines.map(number=>number+requiredOffset);
       current.sourceLines=projectedSource.split(/\r?\n/).filter((_,index,all)=>index!==all.length-1||all[index]!=="");
       current.requiredLines=requiredLines;
       const event={hook_event_name:"PostToolUse",tool_name:item.tool || "Bash",session_id:item.id,tool_use_id:"synthetic-call",transcript_path:transcript,
-        tool_input:item.tool_input || {command:item.command},tool_response:item.metadata ? {output:source,exit_code:1} : source};
+        tool_input:item.tool_input || {command:item.command},tool_response:item.response_factory ? item.response_factory(source) : item.metadata ? {output:source,exit_code:1} : source};
       if (item.no_transcript) delete event.transcript_path;
       const started=Date.now();
       const child=spawn(hook,[],{env:{...process.env,PLUGIN_DATA:data,CODEX_DECISION_TEST_ENDPOINT:`http://127.0.0.1:${server.address().port}/`},stdio:["pipe","pipe","pipe"]});
@@ -191,15 +201,18 @@ async function main() {
       const activity=eventPath ? (await fs.readFile(path.join(data,eventPath),"utf8")).trim().split("\n").map(JSON.parse).at(-1) : null;
       const healthPath=files.find(file=>path.basename(file)==="hook-health.json");
       const health=healthPath ? JSON.parse(await fs.readFile(path.join(data,healthPath),"utf8")) : null;
+      const statsPath=files.find(file=>path.basename(file)==="stats.json");
+      const stats=statsPath ? JSON.parse(await fs.readFile(path.join(data,statsPath),"utf8")) : null;
       const requiredLost=receipt?.decisions.filter(row=>row.action==="omit"&&requiredLines.includes(row.number)).map(row=>row.number) || [];
       const actualLost=reply.reason ? requiredLost : [];
-      const routine = new Set((item.routine_lines || []).map(number => number + Number(!!item.metadata)));
+      const routine = new Set((item.routine_lines || []).map(number => number + requiredOffset));
       const labeled = receipt?.decisions.filter(row => typeof row.p_task_relevant === "number" &&
         (routine.has(row.number) || requiredLines.includes(row.number))) || [];
       const routineKept = labeled.filter(row => routine.has(row.number) && row.action !== "omit").length;
       const originals=files.filter(file=>file.startsWith("outputs/")&&file.endsWith(".txt"));
       const originalExact=originals.length ? (await fs.readFile(path.join(data,originals[0]),"utf8"))===projectedSource : null;
-      const originalEnvelope=item.metadata&&originals.length ? JSON.parse(await fs.readFile(path.join(data,originals[0].replace(/\.txt$/,".json")),"utf8")) : null;
+      const typedEnvelope=typeof event.tool_response!=="string";
+      const originalEnvelope=typedEnvelope&&originals.length ? JSON.parse(await fs.readFile(path.join(data,originals[0].replace(/\.txt$/,".json")),"utf8")) : null;
       const envelopeExact=originalEnvelope ? isDeepStrictEqual(originalEnvelope,event.tool_response) : null;
       const report={id:item.id,expected_kind:item.kind,kind:receipt?.manifest.output_kind || activity?.output_kind || null,
         status:receipt?.manifest.status || health?.last_skip || (item.enabled === false ? "disabled" : "error"),lines:item.lines.length,required:item.required_lines.length,
@@ -209,9 +222,12 @@ async function main() {
         labeled_judgments:labeled.length,routine_kept:routineKept,
         panel_rows:panel?.rows.length || 0,panel_matches_receipt:receipt ? panel?.receipt_id===receipt.manifest.id &&
           panel.status===receipt.manifest.status && panel.totals.requests===receipt.manifest.requests : panel===null,
-        error:stderr ? health?.last_error || stderr.trim().slice(0,256) : null};
+        error:health?.last_error || (stderr ? stderr.trim().slice(0,256) : null)};
+      const audit = auditRun({ item, calls, stages, receipt, health, stats, activity, error:report.error, replaced:!!reply.reason, live });
+      Object.assign(report, { outcome:audit.outcome, recorded_requests:audit.recorded_requests,
+        classification_attempts:audit.classification_attempts, relevance_attempts:audit.relevance_attempts, audit_failures:audit.failures });
       const complete=receipt && receipt.decisions.filter(row=>row.batch_id!==undefined).length===judged.size && receipt.manifest.lines_unjudged===0;
-      if (!report.panel_matches_receipt || (item.fault && (!report.error || receipt || originals.length || files.some(file=>path.basename(file)==="latest-decision.json"))) || protocolFailures.length || (receipt&&!complete) || actualLost.length || (reply.reason&&(originalExact!==true || item.metadata&&envelopeExact!==true)) ||
+      if (audit.failures.length || !report.panel_matches_receipt || (item.fault && (!report.error || receipt || originals.length || files.some(file=>path.basename(file)==="latest-decision.json"))) || protocolFailures.length || (receipt&&!complete) || actualLost.length || (reply.reason&&(originalExact!==true || typedEnvelope&&envelopeExact!==true)) ||
           (!live&&item.min_batches&&(!receipt||report.relevance_batches<item.min_batches)) ||
           (item.expect_full&&reply.reason) || (item.expected_calls!==undefined&&calls!==item.expected_calls)) {
         report.failed=true;
@@ -219,17 +235,23 @@ async function main() {
       const dest=path.join(out,item.id);await fs.mkdir(dest,{recursive:true,mode:0o700});
       for (const file of files.filter(file=>/^(receipt|batch)-/.test(path.basename(file)))) await fs.copyFile(path.join(data,file),path.join(dest,path.basename(file)));
       if (activity) await fs.writeFile(path.join(dest,"activity.json"),JSON.stringify(activity,null,2)+"\n");
-      if (receipt) await fs.writeFile(path.join(dest,"reply.json"),JSON.stringify(reply)+"\n");
+      if (health) await fs.writeFile(path.join(dest,"hook-health.json"),JSON.stringify(health,null,2)+"\n");
+      if (stats) await fs.writeFile(path.join(dest,"stats.json"),JSON.stringify(stats,null,2)+"\n");
+      await fs.writeFile(path.join(dest,"reply.json"),JSON.stringify(reply)+"\n");
       if (panel) await fs.writeFile(path.join(dest,"panel.json"),JSON.stringify(panel)+"\n");
       if (receipt) qualityCases.push({id:item.id,split:process.argv.includes("--holdout") || process.argv.includes("--batching") || process.argv.includes("--precision-holdout") ? "holdout" : "train",
         receipt:`${item.id}/${path.basename(receiptPath)}`,required_lines:requiredLines});
       reports.push(report);console.log(JSON.stringify(report));
+      if (audit.abort) { abortReason = audit.abort; break; }
     }
     const times=reports.map(item=>item.elapsed_ms).sort((a,b)=>a-b);
     remoteTimes.sort((a,b)=>a-b);
     const calledTimes=reports.filter(item=>item.calls>0).map(item=>item.elapsed_ms).sort((a,b)=>a-b);
     const percentile=(values,p)=>values.length ? values[Math.min(values.length-1,Math.floor(values.length*p))] : null;
-    const summary={live,provider,model:spec.model,api_calls:remoteTimes.length,api_p50_ms:percentile(remoteTimes,.5),api_p95_ms:percentile(remoteTimes,.95),called_output_p50_ms:percentile(calledTimes,.5),called_output_p95_ms:percentile(calledTimes,.95),cases:reports.length,calls:totalCalls,input_tokens:inputTokens,output_tokens:outputTokens,
+    const summary={live,provider,model:spec.model,api_calls:forwardedCalls,completed_api_calls:remoteTimes.length,api_p50_ms:percentile(remoteTimes,.5),api_p95_ms:percentile(remoteTimes,.95),called_output_p50_ms:percentile(calledTimes,.5),called_output_p95_ms:percentile(calledTimes,.95),cases:reports.length,calls:totalCalls,input_tokens:inputTokens,output_tokens:outputTokens,
+      aborted:abortReason, recorded_requests:reports.reduce((sum,item)=>sum+item.recorded_requests,0),
+      classification_attempts:reports.reduce((sum,item)=>sum+item.classification_attempts,0), relevance_attempts:reports.reduce((sum,item)=>sum+item.relevance_attempts,0),
+      outcomes:reports.reduce((counts,item)=>{counts[item.outcome]=(counts[item.outcome] || 0)+1;return counts;},{}),
       replaced:reports.filter(item=>item.status==="replace").length,required_lines:reports.reduce((sum,item)=>sum+item.required,0),
       panel_decisions:reports.filter(item=>item.panel_rows>0).length,
       required_lost:reports.reduce((sum,item)=>sum+item.required_lost.length,0),

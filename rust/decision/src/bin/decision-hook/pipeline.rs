@@ -1,6 +1,10 @@
 //! Fail-open hook orchestration.
 use super::*;
 
+#[cfg(test)]
+#[path = "guard_attribution_tests.rs"]
+mod guard_attribution_tests;
+
 pub(super) fn execute() -> Result<Value, String> {
     HOOK_STARTED.with(|started| started.set(Some(Instant::now())));
     let data_dir = std::env::var_os("PLUGIN_DATA")
@@ -89,20 +93,8 @@ pub(super) fn process_event(
     if source.len() > config.max_chars {
         return skip(scoped, "large");
     }
-    if sensitive(&source) || sensitive(command(event)) || sensitive_input(event) {
-        return skip(scoped, "sensitive");
-    }
     if !json_limit::within(&event["tool_input"], 256 * 1024)? {
         return skip(scoped, "tool_input_budget");
-    }
-    let user_task = match task_context(event) {
-        Ok(task) => task,
-        Err(()) => return skip(scoped, "unsafe_task_context"),
-    };
-    let has_user_task = user_task.is_some();
-    let task = user_task.unwrap_or_else(|| fallback_task(event));
-    if has_user_task && exhaustive_task(&task) {
-        return skip(scoped, "exhaustive_task");
     }
     let line_count =
         source.bytes().filter(|byte| *byte == b'\n').count() + usize::from(!source.ends_with('\n'));
@@ -112,6 +104,25 @@ pub(super) fn process_event(
     remaining()?;
     let mut lines = source_lines(&source);
     protect_response_metadata(&mut lines);
+    protect_lab_streams(event, &mut lines);
+    let format = format_decision(event, &mut lines);
+    // An exact source read already stays local. Do not mistake source syntax
+    // or an unrelated unreadable transcript for an evaluation opportunity.
+    if matches!(format, FormatDecision::Keep("exact_content")) {
+        return skip(scoped, "exact_content");
+    }
+    let privacy = if sensitive(&source) {
+        Some("protected_output")
+    } else if sensitive(command(event)) {
+        Some("protected_command")
+    } else if sensitive_input(event) {
+        Some("protected_input")
+    } else {
+        None
+    };
+    if let Some(detail) = privacy {
+        return skip_with_detail(scoped, "sensitive", detail);
+    }
     if lines.is_empty() {
         return skip(scoped, "structured_or_empty");
     }
@@ -122,11 +133,28 @@ pub(super) fn process_event(
     {
         return skip(scoped, "no_eligible_lines");
     }
-    let format = format_decision(event, &mut lines);
     if let FormatDecision::Keep(reason) = format {
         return skip(scoped, reason);
     }
+    let tool = event["tool_name"].as_str().unwrap_or("");
+    if config.mode == "replace"
+        && !config.allow_mcp_replacement
+        && tool.trim_start_matches("functions.").starts_with("mcp__")
+        && (lab_execute(event) || lab_poll(tool))
+        && !(matches!(format, FormatDecision::Direct(_)) && supported_lab_command(event))
+    {
+        return skip(scoped, "mcp_replacement_disabled");
+    }
     protect_neighbors(&mut lines);
+    let user_task = match task_context(event) {
+        Ok(task) => task,
+        Err(()) => return skip(scoped, "unsafe_task_context"),
+    };
+    let has_user_task = user_task.is_some();
+    let task = user_task.unwrap_or_else(|| fallback_task(event));
+    if has_user_task && exhaustive_task(&task) {
+        return skip(scoped, "exhaustive_task");
+    }
     if config.mode == "replace"
         && has_user_task
         && replacement_supported(event)

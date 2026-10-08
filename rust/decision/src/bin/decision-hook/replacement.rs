@@ -83,14 +83,16 @@ pub(super) fn replacement_blocker(
         return Some("missing_task_context");
     }
     let tool = event["tool_name"].as_str().unwrap_or("");
-    if preview_only(event) && !(direct && (shell_tool(tool) || orchestration_tool(tool))) {
+    if preview_only(event)
+        && !(direct && (command_tool(event) || orchestration_tool(tool) || polling_tool(event)))
+    {
         return Some("unsupported_command");
     }
-    if tool.starts_with("mcp__") && !config.allow_mcp_replacement {
+    if mcp_tool(tool) && !config.allow_mcp_replacement && !(direct && supported_lab_command(event))
+    {
         return Some("mcp_replacement_disabled");
     }
-    if !(replacement_supported(event) || tool.starts_with("mcp__") && config.allow_mcp_replacement)
-    {
+    if !(replacement_supported(event) || mcp_tool(tool) && config.allow_mcp_replacement) {
         return Some("unsupported_envelope");
     }
     if feedback.len() + 256 >= source.len() || feedback.len() * 5 >= source.len() * 4 {

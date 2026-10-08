@@ -75,7 +75,9 @@ test("composer bridge toggles Decision and restores thread activity without a st
     const rawBridge = commands.get("codexDecision.bridge");
     const sessionId = "fixture-session";
     const scoped = core.sessionDirectory(directory, sessionId);
-    const bridge = (request) => rawBridge({ sessionId, viewId: "view-one", focused: true, ...request });
+    const bridge = (request) => rawBridge({ sessionId, viewId: "view-one", sourceId: "main-source", visible: true, focused: true, ...request });
+    await rawBridge({ action: "status", viewId: "startup-home", sourceId: "main-source",
+      sessionId: null, visible: true, focused: true, expectsLocalSession: false });
     const initialReplies = await Promise.all(Array.from({ length: 12 },
       () => bridge({ action: "status", viewId: "view-one", focused: false })));
     const defaultView = initialReplies[0];
@@ -84,7 +86,13 @@ test("composer bridge toggles Decision and restores thread activity without a st
     assert.equal(defaultView.enabled, true);
     assert.equal(defaultView.needsKey, true);
     assert.equal(panel.dataDirectory(), scoped,
-      "a restored thread is available to the panel before the composer receives focus");
+      "a restored thread replaces the startup home route while focus remains in the terminal");
+    await rawBridge({ action: "status", viewId: "hidden-thread", sourceId: "background-source",
+      sessionId: "background-thread", visible: false, focused: false });
+    assert.equal(panel.dataDirectory(), scoped, "a hidden thread cannot take over the selected thread");
+    await rawBridge({ action: "status", viewId: "visible-background-thread", sourceId: "background-source",
+      sessionId: "background-thread", visible: true, focused: false });
+    assert.equal(panel.dataDirectory(), scoped, "an unfocused background webview cannot take over the selected thread");
     const panelMessages = [];
     panel.view = { visible: true, webview: { postMessage: async (message) => {
       panelMessages.push(message); return true;
@@ -312,6 +320,21 @@ test("composer bridge toggles Decision and restores thread activity without a st
       "a fresh controller restores attempts without observing old events");
     assert.equal((await bridge({ action: "settingsRead", viewId: "session-switch-view" })).settings.lifetime.calls, 6,
       "installation totals include the same API attempts as the selected session");
+    await rawBridge({ action: "status", viewId: "main-home", sourceId: "main-source",
+      sessionId: null, visible: true, focused: false, expectsLocalSession: false });
+    assert.equal(panel.dataDirectory(), null, "deliberate home navigation clears the selected thread without composer focus");
+    await rawBridge({ action: "status", viewId: "visible-background-thread", sourceId: "background-source",
+      sessionId: "background-thread", visible: true, focused: false });
+    assert.equal(panel.dataDirectory(), null, "background status cannot replace the selected home view");
+    await bridge({ action: "status", viewId: "restored-with-terminal-focus", focused: false });
+    assert.equal(panel.dataDirectory(), scoped, "returning from home restores the thread while terminal focus remains");
+    await bridge({ action: "status", viewId: "restored-with-terminal-focus", visible: false, focused: false });
+    await rawBridge({ action: "status", viewId: "visible-background-thread", sourceId: "background-source",
+      sessionId: "background-thread", visible: true, focused: false });
+    assert.equal(panel.dataDirectory(), core.sessionDirectory(directory, "background-thread"),
+      "a newly visible thread can replace a selected source that has become hidden");
+    await bridge({ action: "status", viewId: "restored-with-terminal-focus", focused: true });
+    assert.equal(panel.dataDirectory(), scoped);
 
     await fs.writeFile(path.join(scoped, "config.json"), '{"schema_version":1,"enabled":true}');
     const broken = await bridge({ action: "status", viewId: "view-five" });

@@ -7,7 +7,7 @@ pub(super) fn apply_route_structure(
     command: &str,
     lines: &mut [SourceLine],
 ) -> bool {
-    let words = if shell_tool(tool) {
+    let words = if shell_tool(tool) || tool_action(tool) == "lab_session_execute" {
         output_commands(command, 0).and_then(|commands| commands.into_iter().next())
     } else {
         None

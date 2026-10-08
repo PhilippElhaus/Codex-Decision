@@ -91,7 +91,8 @@ exports.run = async () => {
       await fs.writeFile(path.join(directory,"logs/latest-decision.json"), JSON.stringify(make(id)));
     }
     await vscode.extensions.getExtension("elhaus-labs.codex-decision-control").activate();
-    await vscode.commands.executeCommand("codexDecision.bridge", {action:"status",viewId:"native-view",sessionId:"native-one",focused:false});
+    await vscode.commands.executeCommand("codexDecision.bridge", {action:"status",viewId:"startup-home",sourceId:"native-source",visible:true,sessionId:null,focused:true,expectsLocalSession:false});
+    await vscode.commands.executeCommand("codexDecision.bridge", {action:"status",viewId:"native-view",sourceId:"native-source",visible:true,sessionId:"native-one",focused:false});
     await vscode.commands.executeCommand("codexDecision.showLatestDecision");
     await until(() => globalThis.__decisionPanelTestProvider?.view && !globalThis.__decisionPanelTestProvider.awaitingReady);
     const provider = globalThis.__decisionPanelTestProvider;
@@ -108,14 +109,29 @@ exports.run = async () => {
       await provider.refresh();
       await until(() => acknowledged?.id === id);
       assert.equal(acknowledged.rows, 2);
-      assert.match(acknowledged.activity, /0 API requests · 0 skipped outputs/);
+      assert.match(acknowledged.activity, /0 API requests \u00b7 0 skipped outputs/);
       assert.equal(acknowledged.title, "0 / 2 removed");
       assert.equal(acknowledged.layout, "grid", "the panel stylesheet must load under the CSP");
       assert.equal(acknowledged.tenCharacterBars, true);
       assert.equal(acknowledged.compactRows, true);
       result.checks.push(label);
     };
-    await check(firstId, "actual renderer loads under the webview CSP and restores an old saved decision without composer focus");
+    await check(firstId, "actual renderer loads under the webview CSP and restores a chat after the initial home route without composer focus");
+    for (const visible of [false, true]) {
+      await vscode.commands.executeCommand("codexDecision.bridge", {action:"status",viewId:"background-thread",sourceId:"background-source",visible,sessionId:"native-background",focused:false});
+      assert.equal(provider.dataDirectory(),one,"an unfocused background webview cannot change the selected chat");
+    }
+    acknowledged = null;
+    await vscode.commands.executeCommand("codexDecision.bridge", {action:"status",viewId:"selected-home",sourceId:"native-source",visible:true,sessionId:null,focused:false,expectsLocalSession:false});
+    await until(() => acknowledged?.rows === 0 && acknowledged.id === null);
+    assert.equal(provider.dataDirectory(),null,"deliberate home navigation clears the selected chat with terminal focus");
+    await vscode.commands.executeCommand("codexDecision.bridge", {action:"status",viewId:"native-view",sourceId:"native-source",visible:true,sessionId:"native-one",focused:false});
+    await check(firstId,"selected webview route follows home and chat navigation while focus stays in the terminal");
+    await vscode.commands.executeCommand("codexDecision.bridge", {action:"status",viewId:"native-view",sourceId:"native-source",visible:false,sessionId:"native-one",focused:false});
+    await vscode.commands.executeCommand("codexDecision.bridge", {action:"status",viewId:"newly-visible-thread",sourceId:"second-source",visible:true,sessionId:"native-two",focused:false});
+    await check(secondId,"a newly visible chat replaces a selected webview that became hidden");
+    await vscode.commands.executeCommand("codexDecision.bridge", {action:"status",viewId:"native-view",sourceId:"native-source",visible:true,sessionId:"native-one",focused:true});
+    await check(firstId,"composer focus selects the original chat after a visibility transition");
     const countTime = Date.now();
     await fs.writeFile(path.join(one,"logs/hook-health.json"),JSON.stringify({version:1,
       hook_version:"0.11.2",last_seen_ms:countTime,api_requests:9,skipped:341}));
@@ -183,8 +199,8 @@ exports.run = async () => {
     assert.equal(acknowledged.kept, 3);
     assert.equal(acknowledged.title, "69 / 72 proposed removals");
     assert.equal(acknowledged.unscored.length, 3);
-    assert(acknowledged.unscored.every(row => row.score === "—" && row.title.includes("no Decision relevance score")));
-    assert.equal(acknowledged.status, "Preview · full output kept");
+    assert(acknowledged.unscored.every(row => row.score === "\u2014" && row.title.includes("no Decision relevance score")));
+    assert.equal(acknowledged.status, "Preview \u00b7 full output kept");
     result.checks.push("version-6 requests, all 72 rows, protected keeps, and preview status render under the real webview CSP");
     const empty = core.sessionDirectory(root, "native-empty");
     await core.ensureSessionDefaults(empty);

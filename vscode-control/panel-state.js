@@ -141,6 +141,7 @@ async function readPanelActivity(directory) {
       choice_kept_full_output: "Decision classified the output and kept it complete. No line judgments were needed.",
       unsupported_route: "The hook skipped this tool or command format before calling Decision.",
       unsupported_result: "The hook kept this response format complete.",
+      mcp_replacement_disabled: "MCP filtering is disabled. This supported output was kept without an API request.",
       small: "The latest output was too short to evaluate.",
       sensitive: "The latest output was protected from sending to Decision.",
       unsafe_task_context: "The task context was protected from sending to Decision.",

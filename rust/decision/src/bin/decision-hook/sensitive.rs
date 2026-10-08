@@ -12,8 +12,6 @@ fn sensitive_markers(lower: &str) -> bool {
         "private key",
         "api_key=",
         "api-key:",
-        "access_token",
-        "client_secret",
         "authorization:",
         "password=",
         "passwd=",
@@ -26,6 +24,11 @@ fn sensitive_markers(lower: &str) -> bool {
     ]
     .iter()
     .any(|pattern| lower.contains(pattern))
+        || ["access_token", "client_secret"].iter().any(|name| {
+            lower
+                .match_indices(name)
+                .any(|(index, _)| !environment_read_reference(lower, index, name))
+        })
         || ["sk-", "ghp_"]
             .iter()
             .any(|prefix| credential_prefix(lower, prefix))
@@ -53,6 +56,39 @@ fn sensitive_markers(lower: &str) -> bool {
                 rest.starts_with([':', '=', '>'])
             })
         })
+}
+
+fn environment_read_reference(text: &str, index: usize, name: &str) -> bool {
+    let before = &text[..index];
+    let after = &text[index + name.len()..];
+    let rest =
+        if let Some(owner) = before.strip_suffix(".env.") {
+            if !expression_owner(owner, "process") {
+                return false;
+            }
+            after
+        } else {
+            let Some((owner, closing)) =
+                [(".env[\"", "\"]"), (".env['", "']")].into_iter().find_map(
+                    |(opening, closing)| before.strip_suffix(opening).map(|owner| (owner, closing)),
+                )
+            else {
+                return false;
+            };
+            if !expression_owner(owner, "process") {
+                return false;
+            }
+            let Some(rest) = after.strip_prefix(closing) else {
+                return false;
+            };
+            rest
+        };
+    // Permit only a complete member read. Assignment/value fields and arbitrary
+    // text after a credential marker remain guarded, even in command input.
+    rest.trim_start()
+        .chars()
+        .next()
+        .is_none_or(|next| matches!(next, ';' | ',' | ')' | ']' | '}'))
 }
 
 fn credential_prefix(text: &str, prefix: &str) -> bool {
@@ -114,26 +150,25 @@ pub(super) fn sensitive_input(event: &Value) -> bool {
     let Some(input) = event.get("tool_input") else {
         return false;
     };
-    serde_json::to_string(input)
-        .ok()
-        .is_some_and(|encoded| sensitive_markers(&encoded.to_ascii_lowercase()))
-        || environment_input(input, false)
+    sensitive_input_value(input, false)
 }
 
-fn environment_input(value: &Value, path: bool) -> bool {
+fn sensitive_input_value(value: &Value, path: bool) -> bool {
     match value {
         Value::String(text) => {
             let lower = text.to_ascii_lowercase();
-            if path {
-                lower.contains(".env")
-            } else {
-                environment_file(&lower)
-            }
+            sensitive_markers(&lower)
+                || if path {
+                    lower.contains(".env")
+                } else {
+                    environment_file(&lower)
+                }
         }
-        Value::Array(items) => items.iter().any(|item| environment_input(item, path)),
+        Value::Array(items) => items.iter().any(|item| sensitive_input_value(item, path)),
         Value::Object(object) => object.iter().any(|(name, value)| {
-            environment_file(&name.to_ascii_lowercase())
-                || environment_input(
+            sensitive_markers(&format!("{}:", name.to_ascii_lowercase()))
+                || environment_file(&name.to_ascii_lowercase())
+                || sensitive_input_value(
                     value,
                     path || matches!(
                         name.to_ascii_lowercase().as_str(),

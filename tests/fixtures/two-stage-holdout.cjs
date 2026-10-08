@@ -40,6 +40,6 @@ add("near-target-limit","progress_output","Confirm whether the build finished.",
   [...Array.from({length:248},(_,i)=>`[${i+1}/248] Compiling component_${i} ... done`),"Build successful"],[249],{command:"cargo build"});
 add("progress-253-lines","progress_output","Confirm whether the build finished.",
   [...Array.from({length:252},(_,i)=>`[${i+1}/252] Compiling component_${i} ... done`),"Build successful"],[253],{command:"cargo build",min_batches:2});
-add("no-transcript","repetitive_log","Find the failure.",[...noise(80),"ERROR: synthetic failure","Done"],[81,82],{no_transcript:true,expect_full:true});
-add("monitor-preview","repetitive_log","Find the failure.",[...noise(80),"ERROR: synthetic failure","Done"],[81,82],{mode:"observe",expect_full:true});
+add("no-transcript","repetitive_log","Find the failure.",[...noise(80),"ERROR: synthetic failure","Done"],[81,82],{no_transcript:true,expect_full:true,expected_decision:true});
+add("monitor-preview","repetitive_log","Find the failure.",[...noise(80),"ERROR: synthetic failure","Done"],[81,82],{mode:"observe",expect_full:true,expected_decision:true});
 module.exports=cases;

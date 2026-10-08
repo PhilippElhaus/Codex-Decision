@@ -42,3 +42,23 @@ fn existing_health_seeds_error_count_only_from_new_failures() {
     hook_health(&data, "error", "saturated synthetic failure").unwrap();
     assert_eq!(health(&data)["errors"], u64::MAX);
 }
+
+#[test]
+fn protection_details_record_only_bounded_codes_and_clear_stale_detail() {
+    let root = tempfile::tempdir().unwrap();
+    let data = root.path().join("data");
+    skip_with_detail(&data, "sensitive", "protected_output").unwrap();
+    skip_with_detail(&data, "sensitive", "protected_input").unwrap();
+    skip_with_detail(&data, "sensitive", "protected_output").unwrap();
+    let record = health(&data);
+    assert_eq!(record["skipped"], 3);
+    assert_eq!(record["skip_counts"]["sensitive"], 3);
+    assert_eq!(record["skip_details"]["protected_output"], 2);
+    assert_eq!(record["skip_details"]["protected_input"], 1);
+    assert_eq!(record["last_skip_detail"], "protected_output");
+    assert!(skip_with_detail(&data, "sensitive", "arbitrary payload").is_err());
+    skip(&data, "small").unwrap();
+    let record = health(&data);
+    assert!(record.get("last_skip_detail").is_none());
+    assert_eq!(record["skip_details"]["protected_output"], 2);
+}

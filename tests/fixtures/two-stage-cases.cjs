@@ -15,11 +15,15 @@ for (const size of [20, 60, 120, 240]) {
 add("identifier-suffix-log", "repetitive_log", "Find the failure in the task-state worker log.",
   [...routine(80, "INFO task-state heartbeat; disk-cache idle; risk-check unchanged"),
     "ERROR: synthetic worker failed to connect to example.invalid:8443", "Done"], [81, 82],
-  { command: "node task-state-worker.cjs", expected_calls: 1 });
+  { command: "node task-state-worker.cjs", expected_calls: 1, expected_classification_calls:0, expected_relevance_calls:1, expected_decision:true });
 add("cargo-success", "progress_output", "Did compilation finish successfully?",
   [...routine(120, "Compiling synthetic_module"), "Finished release profile in 1.23s"], [121], { command: "cargo build" });
 add("pytest-traceback", "repetitive_log", "Find the cause of the test failure.",
-  [...routine(100, "test_case ... ok"), "Traceback (most recent call last):", "  File synthetic_test.py, line 73", "    assert actual == expected", "AssertionError: actual 7, expected 9", "FAILED synthetic_test.py::test_example"], [101, 102, 103, 104, 105], { command: "pytest" });
+  [...routine(100, "test_case ... ok"), "Traceback (most recent call last):", "  File synthetic_test.py, line 73", "    assert actual == expected", "AssertionError: actual 7, expected 9", "FAILED synthetic_test.py::test_example"], [101, 102, 103, 104, 105],
+  { command: "pytest", expect_full:true, expected_calls:0, expected_skip:"structure_guard" });
+add("pytest-complete-traceback", "repetitive_log", "Find the cause of the test failure and confirm the final test totals.",
+  [...routine(100, "test_case ... ok"), "Traceback (most recent call last):", "  File synthetic_test.py, line 73", "    assert actual == expected", "AssertionError: actual 7, expected 9", "FAILED synthetic_test.py::test_example", "1 failed, 100 passed in 0.25s"], [101, 102, 103, 104, 105, 106],
+  { command:"pytest", min_batches:1, expected_classification_calls:0, expected_decision:true });
 const deepTrace = [...routine(40), "thread 'worker' panicked at synthetic.rs:73:",
   "assertion failed: expected 9, actual 7", "stack backtrace:",
   ...Array.from({length:100}, (_, i) => `  ${i}: synthetic::frame_${i} at synthetic.rs:${i + 1}`),
@@ -96,4 +100,4 @@ add("known-log-injection","repetitive_log","Report the observed network timeout 
 const counted=[...routine(80),"polling complete"];
 add("known-log-counts","repetitive_log","Inspect each numbered poll event to find missing or repeated event numbers. I need the complete event sequence.",counted,all(counted),{expect_full:true});
 
-module.exports = cases;
+module.exports = [...cases, ...require("./adapter-cases.cjs")];

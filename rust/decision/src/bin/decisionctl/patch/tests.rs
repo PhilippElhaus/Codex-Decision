@@ -164,8 +164,10 @@ fn bridge_fragments_publish_routes_and_validate_settings_messages() {
     for limit in [50, 0] {
         let message = json!({"type":"codex-decision","action":"settingsSave","key":"",
                 "mode":"replace","relevancePolicy":{"omit_min":95,"exact_max":5},
-                "logLimitMb":limit,"neverDeleteLogs":false,"choiceGateEnabled":true});
-        let script = format!("let captured=null,handler=null;let e={{onDidReceiveMessage(f){{handler=f;return {{}}}},postMessage(){{}}}},require=()=>({{commands:{{executeCommand(_,payload){{captured=payload;return Promise.resolve({{}})}}}}}}),s={{markMessageReceived(){{}}}};{host}{{}} }});handler({message});setTimeout(()=>process.stdout.write(JSON.stringify(captured)),0);");
+                "logLimitMb":limit,"neverDeleteLogs":false,"choiceGateEnabled":true,
+                "viewId":"first-route","sourceId":"first-renderer","visible":true,
+                "focused":false,"sessionId":"restored-thread","expectsLocalSession":true});
+        let script = format!("let captured=[],handler=null,identities=0;let e={{onDidReceiveMessage(f){{handler=f;return {{}}}},postMessage(){{}}}},require=name=>{{if(name==='node:crypto')return {{randomUUID(){{identities++;return 'canonical-host-source'}}}};if(name==='vscode')return {{commands:{{executeCommand(_,payload){{captured.push(payload);return Promise.resolve({{}})}}}}}};throw Error('unexpected module: '+name)}},s={{markMessageReceived(){{}}}};{host}{{}} }});let message={message};handler(message);handler({{...message,viewId:'reloaded-route',sourceId:'new-renderer'}});setTimeout(()=>process.stdout.write(JSON.stringify({{captured,identities}})),0);");
         let output = Command::new("node").arg("-e").arg(script).output().unwrap();
         assert!(
             output.status.success(),
@@ -173,11 +175,31 @@ fn bridge_fragments_publish_routes_and_validate_settings_messages() {
             String::from_utf8_lossy(&output.stderr)
         );
         let result: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(
+            result["identities"], 1,
+            "one host identity survives renderer reloads"
+        );
+        let captured = result["captured"].as_array().unwrap();
         if limit > 0 {
-            assert_eq!(result["logLimitMb"], limit);
-            assert_eq!(result["relevancePolicy"]["omit_min"], 95);
+            assert_eq!(captured.len(), 2);
+            for payload in captured {
+                assert_eq!(payload["logLimitMb"], limit);
+                assert_eq!(payload["relevancePolicy"]["omit_min"], 95);
+                assert_eq!(payload["neverDeleteLogs"], false);
+                assert_eq!(payload["mode"], "replace");
+                assert_eq!(payload["sourceId"], "canonical-host-source");
+                assert_eq!(payload["visible"], true);
+                assert_eq!(payload["focused"], false);
+                assert_eq!(payload["sessionId"], "restored-thread");
+                assert_eq!(payload["expectsLocalSession"], true);
+            }
+            assert_eq!(captured[0]["viewId"], "first-route");
+            assert_eq!(captured[1]["viewId"], "reloaded-route");
         } else {
-            assert!(result.is_null());
+            assert!(
+                captured.is_empty(),
+                "invalid storage limits never reach the extension"
+            );
         }
     }
 }

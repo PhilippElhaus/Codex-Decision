@@ -371,6 +371,8 @@ function createController(dataDirectory) {
 function activate(context) {
   const controllers = new Map();
   let active = null;
+  let activeSourceId = null;
+  let activeSourceVisible = null;
   const settings = () => vscode.workspace.getConfiguration("codexDecision");
   const dataDirectory = () => {
     const directory = settings().get("dataDirectory") || defaultDataDirectory();
@@ -400,14 +402,29 @@ function activate(context) {
     vscode.commands.executeCommand(`${VIEW_ID}.focus`)));
   context.subscriptions.push(vscode.commands.registerCommand("codexDecision.bridge", async (request) => {
     const controller = controllerFor(request?.viewId);
+    const sourceId = typeof request?.sourceId === "string" && /^[\w:-]{1,96}$/.test(request.sourceId)
+      ? request.sourceId : null;
     const previousController = active;
     const previousSession = active?.state.sessionId;
-    if (request?.focused === true || request?.action === "setSelection") {
+    if (sourceId !== null && sourceId === activeSourceId && typeof request.visible === "boolean") {
+      activeSourceVisible = request.visible;
+    }
+    // Route IDs change when Codex restores or navigates a chat. Keep following
+    // the selected visible webview even while keyboard focus is in Terminal.
+    const followsSelectedView = sourceId !== null && sourceId === activeSourceId && request.visible === true;
+    if (request?.focused === true || request?.action === "setSelection" || followsSelectedView) {
       active = controller;
+      activeSourceId = sourceId;
+      activeSourceVisible = request.visible ?? null;
     }
     const reply = await controller.bridge(request);
     // A restored Codex view can start while focus remains in the Decision panel.
-    if (!active && controller.state.sessionId) active = controller;
+    if ((!active || activeSourceVisible === false && request?.visible === true) &&
+        controller.state.sessionId && request?.visible !== false) {
+      active = controller;
+      activeSourceId = sourceId;
+      activeSourceVisible = request?.visible ?? null;
+    }
     if (active === controller && (active !== previousController ||
         active.state.sessionId !== previousSession)) void decisionPanel.refresh();
     const settingsSaved = request?.action === "settingsSave" && reply.settings?.action === "saved";
@@ -439,7 +456,7 @@ function activate(context) {
     const now = Date.now();
     for (const [id, entry] of controllers) {
       if (now - entry.lastSeen > 5 * 60_000) {
-        if (active === entry.controller) active = null;
+        if (active === entry.controller) { active = null; activeSourceId = null; activeSourceVisible = null; }
         controllers.delete(id);
       }
     }

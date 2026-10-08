@@ -36,6 +36,14 @@ pub(super) fn response_text(event: &Value) -> Option<Cow<'_, str>> {
     if let Some(text) = body.as_str() {
         return Some(Cow::Borrowed(text));
     }
+    if lab_execute(event) || lab_poll(event["tool_name"].as_str()?) {
+        return lab_projection(body).map(Cow::Owned);
+    }
+    if orchestration_tool(event["tool_name"].as_str()?) {
+        if let Some(source) = lab_projection(body) {
+            return Some(Cow::Owned(source));
+        }
+    }
     // Local function tools serialize their model-facing content items as an
     // array. These are distinct from MCP's text blocks and metadata objects.
     if let Some(items) = body.as_array() {
@@ -103,11 +111,14 @@ pub(super) fn orchestration_tool(tool: &str) -> bool {
 // Code-mode text(result) serializes command output with escaped newlines.
 // Decode only the known command envelope. Metadata remains an explicit,
 // protected source line, and replacement also saves the typed envelope.
-fn command_preview(text: &str) -> Cow<'_, str> {
+pub(super) fn command_preview(text: &str) -> Cow<'_, str> {
     let Ok(Value::Object(object)) = strict_json::parse(text.as_bytes()) else {
         return Cow::Borrowed(text);
     };
     if !known_command_fields(&object) {
+        if let Some(source) = lab_projection(&Value::Object(object)) {
+            return Cow::Owned(source);
+        }
         return Cow::Borrowed(text);
     }
     Cow::Owned(command_projection(&object))
@@ -134,7 +145,10 @@ pub(super) fn replacement_supported(event: &Value) -> bool {
         return true;
     }
     let tool = event["tool_name"].as_str().unwrap_or("");
-    if shell_tool(tool) {
+    if lab_execute(event) || lab_poll(tool) {
+        return lab_projection(body).is_some();
+    }
+    if shell_tool(tool) || polling_tool(event) {
         return known_command_result(body);
     }
     if !orchestration_tool(tool) {
@@ -153,7 +167,7 @@ pub(super) fn replacement_supported(event: &Value) -> bool {
                     return false;
                 };
                 match strict_json::parse(text.as_bytes()) {
-                    Ok(value) => known_command_result(&value),
+                    Ok(value) => known_command_result(&value) || lab_projection(&value).is_some(),
                     Err(error) => !error.is_data(),
                 }
             })
@@ -161,14 +175,47 @@ pub(super) fn replacement_supported(event: &Value) -> bool {
 }
 
 pub(super) fn protect_response_metadata(lines: &mut [SourceLine]) {
-    for line in lines {
-        if line.model_text.starts_with("Command result metadata:")
-            || line.model_text.starts_with("Script completed")
-            || line.model_text.starts_with("Script running with cell ID ")
-            || line.model_text.starts_with("Wall time ")
-            || line.model_text.starts_with("Output:")
+    let mut stream_start = None;
+    let mut stderr = false;
+    for index in 0..lines.len() {
+        if lines[index]
+            .model_text
+            .starts_with("Command result stream:")
         {
-            line.protected_reason = Some("tool_metadata".into());
+            if stream_start.is_some_and(|start| index > start + 1) && !stderr {
+                lines[index - 1]
+                    .protected_reason
+                    .get_or_insert_with(|| "stream_boundary".into());
+            }
+            stream_start = Some(index);
+            stderr = lines[index].model_text == "Command result stream: stderr";
+            lines[index].protected_reason = Some("tool_metadata".into());
+        } else if lines[index]
+            .model_text
+            .starts_with("Command result metadata:")
+            || lines[index].model_text.starts_with("Script completed")
+            || lines[index]
+                .model_text
+                .starts_with("Script running with cell ID ")
+            || lines[index].model_text.starts_with("Wall time ")
+            || lines[index].model_text.starts_with("Output:")
+        {
+            lines[index].protected_reason = Some("tool_metadata".into());
+        } else if stderr {
+            lines[index]
+                .protected_reason
+                .get_or_insert_with(|| "stderr_output".into());
+        } else if stream_start.is_some_and(|start| index == start + 1) {
+            lines[index]
+                .protected_reason
+                .get_or_insert_with(|| "stream_boundary".into());
         }
+    }
+    if stream_start.is_some_and(|start| lines.len() > start + 1) && !stderr {
+        lines
+            .last_mut()
+            .unwrap()
+            .protected_reason
+            .get_or_insert_with(|| "stream_boundary".into());
     }
 }

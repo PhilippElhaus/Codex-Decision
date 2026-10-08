@@ -2,11 +2,46 @@
 use super::*;
 
 pub(super) fn command(event: &Value) -> &str {
+    if lab_execute(event) {
+        return event
+            .pointer("/tool_input/script")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+    }
     event
         .pointer("/tool_input/command")
         .and_then(Value::as_str)
         .or_else(|| event.pointer("/tool_input/cmd").and_then(Value::as_str))
         .unwrap_or("")
+}
+
+pub(super) fn tool_action(tool: &str) -> &str {
+    tool.rsplit("__")
+        .next()
+        .unwrap_or(tool)
+        .rsplit('.')
+        .next()
+        .unwrap_or(tool)
+}
+
+pub(super) fn mcp_tool(tool: &str) -> bool {
+    tool.strip_prefix("functions.")
+        .unwrap_or(tool)
+        .starts_with("mcp__")
+}
+
+pub(super) fn command_tool(event: &Value) -> bool {
+    shell_tool(event["tool_name"].as_str().unwrap_or("")) || lab_execute(event)
+}
+
+pub(super) fn polling_tool(event: &Value) -> bool {
+    let tool = event["tool_name"].as_str().unwrap_or("");
+    (matches!(tool, "write_stdin" | "functions.write_stdin")
+        && event.get("tool_input").is_some_and(Value::is_object)
+        && event
+            .pointer("/tool_input/chars")
+            .is_none_or(|chars| chars == ""))
+        || lab_poll(tool)
 }
 
 pub(super) fn shell_tool(tool: &str) -> bool {
@@ -145,11 +180,7 @@ pub(super) fn tool_route(tool: &str) -> Option<&'static str> {
     ) {
         return None;
     }
-    let action = tool
-        .rsplit("__")
-        .next()
-        .unwrap_or(tool)
-        .to_ascii_lowercase();
+    let action = tool_action(tool).to_ascii_lowercase();
     if action.split('_').any(|part| {
         matches!(
             part,
@@ -204,7 +235,10 @@ pub(super) fn tool_route(tool: &str) -> Option<&'static str> {
 // Format recognition only preserves structured evidence. It does not select a filter.
 pub(super) fn output_format(event: &Value) -> Option<&'static str> {
     let tool = event.get("tool_name")?.as_str()?;
-    if shell_tool(tool) {
+    if matches!(tool, "write_stdin" | "functions.write_stdin") {
+        return polling_tool(event).then_some("output");
+    }
+    if command_tool(event) {
         bash_route(command(event))
     } else {
         tool_route(tool)
@@ -213,7 +247,8 @@ pub(super) fn output_format(event: &Value) -> Option<&'static str> {
 
 pub(super) fn route(event: &Value, config: &Config) -> Option<&'static str> {
     let tool = event.get("tool_name").and_then(Value::as_str).unwrap_or("");
-    (config.enabled && (shell_tool(tool) || output_format(event).is_some())).then_some("output")
+    (config.enabled && (shell_tool(tool) || lab_execute(event) || output_format(event).is_some()))
+        .then_some("output")
 }
 
 // The parser establishes when command-specific evidence rules are safe. It
@@ -221,5 +256,11 @@ pub(super) fn route(event: &Value, config: &Config) -> Option<&'static str> {
 // forms get line previews, while their complete tool result stays intact.
 pub(super) fn preview_only(event: &Value) -> bool {
     let tool = event.get("tool_name").and_then(Value::as_str).unwrap_or("");
-    orchestration_tool(tool) || shell_tool(tool) && output_format(event).is_none()
+    orchestration_tool(tool)
+        || polling_tool(event)
+        || command_tool(event) && output_format(event).is_none()
 }
+
+#[cfg(test)]
+#[path = "routing_tests.rs"]
+mod tests;
