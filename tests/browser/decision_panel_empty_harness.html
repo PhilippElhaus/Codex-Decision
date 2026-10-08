@@ -12,7 +12,9 @@
   <script src="../../vscode-control/webview/decision-panel.js"></script>
   <script>
     const app = document.getElementById("app");
-    const clean = () => app.textContent.trim() === "Decision" && !app.querySelector("h1,p,.empty-glyph");
+    const clean = () => app.querySelector(".batch-title").textContent === "Decision" &&
+      app.querySelector(".activity-counts").textContent === "— API requests · — skipped outputs" &&
+      !app.querySelector("h1,p,.empty-glyph");
     const first = clean();
     window.dispatchEvent(new MessageEvent("message", { data: {
       type: "decision", decision: null, error: "The latest Decision decision could not be read."

@@ -21,6 +21,8 @@ class LatestDecisionProvider {
     this.pending = null;
     this.cache = {};
     this.lastMessage = "";
+    this.lastActivity = "";
+    this.displayedDecision = null;
     this.lastDecisionId = null;
     this.nextDecisionAt = 0;
     this.directory = undefined;
@@ -33,6 +35,7 @@ class LatestDecisionProvider {
     this.generation += 1;
     this.awaitingReady = true;
     this.lastMessage = "";
+    this.lastActivity = "";
     const webview = view.webview;
     webview.options = { enableScripts: true, localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, "webview")] };
     const style = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "webview", "decision-panel.css"));
@@ -43,6 +46,7 @@ class LatestDecisionProvider {
         this.awaitingReady = false;
         this.generation += 1;
         this.lastMessage = "";
+        this.lastActivity = "";
         this.lastDecisionId = null;
         this.nextDecisionAt = 0;
         void this.refresh();
@@ -92,10 +96,11 @@ class LatestDecisionProvider {
       this.generation += 1;
       this.cache = {};
       this.lastMessage = "";
+      this.lastActivity = "";
+      this.displayedDecision = null;
       this.lastDecisionId = null;
       this.nextDecisionAt = 0;
     }
-    if (this.now() < this.nextDecisionAt) return;
     if (this.pending) return this.pending;
     const generation = this.generation;
     const view = this.view;
@@ -106,25 +111,38 @@ class LatestDecisionProvider {
     };
     const task = (async () => {
       let message;
+      let serialized;
+      let activitySerialized;
       try {
         if (directoryFault) throw new Error("Decision data directory is unavailable");
-        const decision = directory ? await readLatestPanelDecision(directory, this.cache) : null;
-        const activity = directory && !decision ? await readPanelActivity(directory) : null;
+        const refreshDecision = this.now() >= this.nextDecisionAt;
+        const [decision, activity] = await Promise.all([
+          directory ? refreshDecision ? readLatestPanelDecision(directory, this.cache) : this.displayedDecision : null,
+          directory ? readPanelActivity(directory) : null,
+        ]);
         if (!current()) return;
         this.onFault(null);
-        message = { type: "decision", decision, ...(activity ? { activity } : {}) };
+        serialized = refreshDecision ? JSON.stringify(decision) : this.lastMessage;
+        activitySerialized = JSON.stringify(activity);
+        if (serialized === this.lastMessage && activitySerialized === this.lastActivity) return;
+        message = serialized !== this.lastMessage ?
+          { type: "decision", decision, ...(activity ? { activity } : {}) } : { type: "activity", activity };
       } catch (error) {
         if (!current()) return;
         this.onFault("Latest Decision decision could not be read");
         message = { type: "decision", decision: null };
+        serialized = JSON.stringify(null);
+        activitySerialized = JSON.stringify(null);
       }
-      const serialized = JSON.stringify(message);
-      if (serialized !== this.lastMessage && view.visible) {
+      if ((serialized !== this.lastMessage || activitySerialized !== this.lastActivity) && view.visible) {
         let delivered;
         try { delivered = await view.webview.postMessage(message); }
         catch { return; }
         if (delivered === false || !current()) return;
         this.lastMessage = serialized;
+        this.lastActivity = activitySerialized;
+        if (message.type === "activity") return;
+        this.displayedDecision = message.decision;
         if (message.decision?.id !== undefined && message.decision.id !== this.lastDecisionId) {
           this.lastDecisionId = message.decision.id;
           this.nextDecisionAt = this.now() + MIN_DISPLAY_MS;

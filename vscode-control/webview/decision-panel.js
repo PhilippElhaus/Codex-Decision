@@ -11,6 +11,7 @@
   let cachedHeader = null;
   const cachedRows = [];
   let visibleRows = 0;
+  let currentActivity = null;
 
   function element(tag, className, label) {
     const node = document.createElement(tag);
@@ -31,18 +32,39 @@
     cachedRows.length = 0;
     visibleRows = 0;
     cancelAnimationFrame(animation);
-    const empty = append(element("section", "empty"), element("span", "empty-label", "Decision"));
+    currentActivity = activity || null;
+    const { header } = makeHeader("Decision");
+    const empty = element("section", "empty");
     if (activity && typeof activity.message === "string") {
-      append(empty, element("p", "empty-status", activity.message),
-        element("span", "empty-counts", `${activity.calls} API requests · ${activity.skipped} skipped outputs`));
+      append(empty, element("p", "empty-status", activity.message));
     }
-    app.replaceChildren(empty);
+    app.replaceChildren(header, empty);
+    updateActivity(currentActivity);
+  }
+
+  function makeHeader(label) {
+    const title = element("strong", "batch-title", label);
+    const counts = element("span", "activity-counts");
+    const status = element("span", "batch-status");
+    const meta = append(element("div", "batch-meta"), counts, status);
+    return { header: append(element("header", "batch-header"), title, meta), title, status, counts };
+  }
+
+  function updateActivity(activity) {
+    currentActivity = activity;
+    const counts = app.querySelector(".activity-counts");
+    if (!counts) return;
+    const calls = activity?.calls ?? "—";
+    const skipped = activity?.skipped ?? "—";
+    counts.textContent = `${calls} API request${calls === 1 ? "" : "s"} · ${skipped} skipped output${skipped === 1 ? "" : "s"}`;
+    counts.title = activity?.message || "Activity for the selected thread";
   }
 
   function batchTitle(decision) {
     const totals = decision.totals;
-    return decision.status === "processing" ?
-      `${totals.judged} / ${totals.seen} judged` : `${totals.kept} / ${totals.seen} kept`;
+    if (decision.status === "processing") return `${totals.judged} / ${totals.seen} judged`;
+    if (decision.status === "candidate") return `${totals.omitted} / ${totals.seen} proposed removals`;
+    return `${decision.status === "replace" ? totals.omitted : 0} / ${totals.seen} removed`;
   }
 
   function batchStatus(decision) {
@@ -61,9 +83,7 @@
     currentId = decision.id;
     cancelAnimationFrame(animation);
     if (!cachedLayout) {
-      const title = element("strong", "batch-title");
-      const status = element("span", "batch-status");
-      const header = append(element("header", "batch-header"), title, status);
+      const { title, status, header } = makeHeader();
       const list = element("div", "batch-list");
       cachedLayout = append(element("div", "batch-layout"), header, list);
       cachedHeader = { title, status, list };
@@ -139,9 +159,16 @@
   }
 
   window.addEventListener("message", (event) => {
+    if (event.data?.type === "activity") {
+      updateActivity(event.data.activity);
+      const emptyStatus = app.querySelector(".empty-status");
+      if (emptyStatus && event.data.activity?.message) emptyStatus.textContent = event.data.activity.message;
+      return;
+    }
     if (event.data?.type !== "decision") return;
     if (event.data.decision) renderBatchDecision(event.data.decision);
     else showEmpty(event.data.activity);
+    updateActivity(event.data.activity ?? currentActivity);
   });
   showEmpty();
   vscode.postMessage({ type: "ready" });

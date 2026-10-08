@@ -122,7 +122,15 @@ fn failed_publication_removes_only_owned_originals_and_allows_a_retry() {
                 response
             );
         }
+        let health: Value =
+            serde_json::from_slice(&fs::read(session.join("logs/hook-health.json")).unwrap())
+                .unwrap();
+        assert_eq!(
+            health["api_requests"], 2,
+            "count sent requests even when original publication fails"
+        );
     }
     stop.store(true, Ordering::Relaxed);
-    assert_eq!(server.join().unwrap(), 7);
+    // Corrupt legacy stats stop the first attempt before a request is sent.
+    assert_eq!(server.join().unwrap(), 6);
 }

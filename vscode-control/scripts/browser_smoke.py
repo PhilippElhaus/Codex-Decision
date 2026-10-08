@@ -38,7 +38,8 @@ def chromium_smoke() -> None:
                     report = json.loads(page.locator('body').get_attribute('data-report'))
                     for field in ('newBatchShown', 'minimalHeader', 'outputStatusClear', 'sameDecisionDidNotRestart',
                                   'positionsStable', 'parallelGrowth', 'fadeAfterGrowth', 'noNestedScroll',
-                                  'tenCharacterBars', 'fixedTrackWidths', 'compactRows', 'singleLineRows', 'keepReasonAvailable'):
+                                  'tenCharacterBars', 'fixedTrackWidths', 'compactRows', 'singleLineRows', 'keepReasonAvailable',
+                                  'activityUpdates', 'activityPreservesRows', 'stickyActivity'):
                         assert report[field], {'viewport': width, 'sample': sample, **report}
                     assert not report['horizontalOverflow'], report
                     reports.append({'panel': sample, 'requested_width': width, **report})
@@ -107,7 +108,8 @@ def main() -> None:
                 report = json.loads(match.group(1).replace('&quot;', '"'))
                 for field in ('newBatchShown', 'minimalHeader', 'outputStatusClear', 'sameDecisionDidNotRestart',
                               'positionsStable', 'parallelGrowth', 'fadeAfterGrowth', 'noNestedScroll',
-                              'tenCharacterBars', 'fixedTrackWidths', 'compactRows', 'singleLineRows', 'keepReasonAvailable'):
+                              'tenCharacterBars', 'fixedTrackWidths', 'compactRows', 'singleLineRows', 'keepReasonAvailable',
+                              'activityUpdates', 'activityPreservesRows', 'stickyActivity'):
                     assert report[field], {'viewport': width, 'sample': sample, **report}
                 assert not report['horizontalOverflow'], report
                 reports.append({'panel': sample, 'requested_width': width, **report})

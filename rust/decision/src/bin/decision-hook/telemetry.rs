@@ -34,6 +34,15 @@ pub(super) fn hook_health(data_dir: &Path, outcome: &str, reason: &str) -> Resul
     health["hook_version"] = json!(env!("CARGO_PKG_VERSION"));
     health["last_seen_ms"] = json!(now);
     match outcome {
+        "request" => {
+            let previous = match health["api_requests"].as_u64() {
+                Some(count) => count,
+                None => load_stats(&data_dir.join("stats.json"))?["calls"]
+                    .as_u64()
+                    .unwrap_or(0),
+            };
+            health["api_requests"] = json!(previous.saturating_add(1));
+        }
         "success" => health["last_success_ms"] = json!(now),
         "error" => {
             health["last_error_ms"] = json!(now);

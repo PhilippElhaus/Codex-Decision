@@ -1,6 +1,24 @@
 use super::*;
 
 #[test]
+fn request_attempts_survive_failure_without_publishing_completion_stats() {
+    let root = tempfile::tempdir().unwrap();
+    fs::write(root.path().join("stats.json"), r#"{"calls":7}"#).unwrap();
+    hook_health(root.path(), "request", "").unwrap();
+    hook_health(root.path(), "error", "Decision request failed").unwrap();
+    hook_health(root.path(), "request", "").unwrap();
+    let health: Value =
+        serde_json::from_slice(&fs::read(root.path().join("logs/hook-health.json")).unwrap())
+            .unwrap();
+    assert_eq!(health["api_requests"], 9);
+    assert_eq!(
+        load_stats(&root.path().join("stats.json")).unwrap()["calls"],
+        7
+    );
+    assert!(!root.path().join("logs/latest-decision.json").exists());
+}
+
+#[test]
 fn delimited_credential_fields_are_sensitive_before_any_request() {
     for text in [
         "password: synthetic-sentinel",

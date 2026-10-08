@@ -12,7 +12,9 @@ function decision(id) {
 function fixture(readDecision, postMessage = async () => true) {
   const originalLoad = Module._load;
   const originalRead = panelState.readLatestPanelDecision;
+  const originalActivity = panelState.readPanelActivity;
   panelState.readLatestPanelDecision = readDecision;
+  panelState.readPanelActivity = async () => ({ calls: 3, skipped: 7, message: "Synthetic activity" });
   Module._load = function (request, parent, isMain) {
     if (request === "vscode") return { Uri: { joinPath: (_root, ...parts) => parts.join("/") } };
     return originalLoad.call(this, request, parent, isMain);
@@ -24,6 +26,7 @@ function fixture(readDecision, postMessage = async () => true) {
   } finally {
     Module._load = originalLoad;
     panelState.readLatestPanelDecision = originalRead;
+    panelState.readPanelActivity = originalActivity;
   }
   const messages = [];
   const faults = [];

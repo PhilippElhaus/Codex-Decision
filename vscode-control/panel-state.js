@@ -150,7 +150,7 @@ async function readPanelActivity(directory) {
     };
     message = reasons[health.last_skip] || `Hook ran; latest output skipped: ${health.last_skip.replaceAll("_", " ")}.`;
   } else message = "Waiting for the next line decision.";
-  return { message, calls: stats.calls, skipped: health?.skipped || 0 };
+  return { message, calls: health?.api_requests ?? stats.calls, skipped: health?.skipped || 0 };
 }
 
 module.exports = { parsePanelDecision, readLatestPanelDecision, readPanelActivity };

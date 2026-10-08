@@ -2,6 +2,7 @@
 use super::*;
 
 pub(super) fn evaluate(
+    scoped: &Path,
     agent: &ureq::Agent,
     request: &Value,
     key: &str,
@@ -19,6 +20,9 @@ pub(super) fn evaluate(
         .unwrap_or_else(|| provider.endpoint().into());
     #[cfg(not(debug_assertions))]
     let endpoint = provider.endpoint().to_owned();
+    // Count attempts before sending, including requests whose answers fail.
+    // Completion statistics still roll back with an unsuccessful result.
+    hook_health(scoped, "request", "")?;
     let response = agent
         .post(&endpoint)
         .timeout(Duration::from_secs_f64(timeout))

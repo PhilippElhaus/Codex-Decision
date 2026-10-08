@@ -4,7 +4,7 @@
 
 Codex Decision removes repetitive lines from local tool output before Codex reads them. Errors and useful evidence stay visible. Every shortened result links to the complete original.
 
-**Codex Decision 0.11.1 · VS Code control 0.10.6** — [Download the latest release](https://github.com/PhilippElhaus/Codex-Decision/releases/tag/v0.11.1).
+**Codex Decision 0.11.2 · VS Code control 0.10.7** — [Download the latest release](https://github.com/PhilippElhaus/Codex-Decision/releases/latest).
 
 ## Get started
 
@@ -39,10 +39,10 @@ Open **Codex settings → Decision** to choose **Monitor** (keep full output) or
 
 Open the **Decision** panel beside **Terminal** and **Output**. Blue rows mark proposed omissions; gold rows mark kept lines. Bars show relevance. Hover for excerpts and reasons. Before the first decision, the panel shows hook activity and skip reasons.
 
-<img src="docs/images/decision-panel.png" width="1000" alt="Decision panel showing 3 kept lines and 47 proposed omissions from a synthetic 50-line result">
+<img src="docs/images/decision-panel.png" width="1000" alt="Decision panel showing 47 of 50 lines removed and persistent thread activity counts">
 
 Screenshots use synthetic data. For a missing decision or failed connection, see [troubleshooting](docs/setup/setup_installation.md).
 
 ## Documentation
 
-[API key](docs/setup/setup_credentials.md) · [Filtering rules](docs/architecture/design_integrations.md) · [Privacy and safeguards](docs/architecture/design_data.md) · [Tests](tests/README.md) · [Usage verification](docs/development/usage_optimization_2026-10-05.md) · [Provider benchmarks](docs/development/provider_benchmarks_2026-10-07.md)
+[API key](docs/setup/setup_credentials.md) · [Filtering rules](docs/architecture/design_integrations.md) · [Privacy and safeguards](docs/architecture/design_data.md) · [Tests](tests/README.md) · [Panel and skip investigation](docs/development/panel_activity_2026-10-08.md) · [Usage verification](docs/development/usage_optimization_2026-10-05.md) · [Provider benchmarks](docs/development/provider_benchmarks_2026-10-07.md)

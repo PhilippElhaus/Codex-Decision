@@ -76,12 +76,13 @@
       }
     }
     const send = (value) => window.dispatchEvent(new MessageEvent("message", {
-      data: { type: "decision", decision: value },
+      data: { type: "decision", decision: value, activity: {calls:2,skipped:14,message:"Synthetic activity"} },
     }));
     const positions = () => [".batch-header", ".batch-row:first-child"].map((selector) => {
       const box = document.querySelector(selector).getBoundingClientRect();
       return [box.x, box.y, box.width, box.height].map(Math.round).join(",");
     }).join("|");
+    if (query.has("capture") && query.has("fifty")) decision.status = "replace";
     send(decision);
     const report = {};
     report.viewport = innerWidth;
@@ -127,10 +128,26 @@
       report.newBatchShown = document.querySelector(".batch-line-number").textContent === String(nextDecision.rows[0].line);
       report.minimalHeader = document.querySelector(".batch-header").children.length === 2 &&
         document.querySelectorAll(".card-kicker,.batch-summary,.batch-legend").length === 0 &&
-        document.querySelector(".batch-title").textContent.includes("kept");
+        document.querySelector(".batch-title").textContent === `0 / ${nextDecision.totals.seen} removed` &&
+        document.querySelector(".activity-counts") !== null;
       report.outputStatusClear = document.querySelector(".batch-status").textContent === "Full output kept";
       report.keepReasonAvailable = [...document.querySelectorAll(".batch-action")].some((node) => node.title.includes("task"));
       report.positionsStable = report.positions === positions();
+      const existingRow = document.querySelector(".batch-row");
+      const existingFill = document.querySelector(".batch-bar-fill");
+      const fillWidth = existingFill.style.width;
+      window.dispatchEvent(new MessageEvent("message", {data:{type:"activity",
+        activity:{calls:17,skipped:203,message:"Synthetic skip explanation"}}}));
+      report.activityUpdates = document.querySelector(".activity-counts").textContent ===
+        "17 API requests · 203 skipped outputs";
+      report.activityPreservesRows = existingRow === document.querySelector(".batch-row") &&
+        existingFill.style.width === fillWidth;
+      window.scrollTo(0, 200);
+      const headerBox = document.querySelector(".batch-header").getBoundingClientRect();
+      report.stickyActivity = headerBox.bottom > 0 && headerBox.bottom < innerHeight &&
+        document.querySelector(".activity-counts").getBoundingClientRect().right <= innerWidth &&
+        document.querySelector(".activity-counts").getBoundingClientRect().top >= 0;
+      window.scrollTo(0, 0);
       report.fullBlockBars = [...document.querySelectorAll(".batch-bar-fill")].every((node) => node.textContent.includes("█"));
       report.parallelGrowth = report.initialWidth === 0 && report.midWidth > 0 && report.midWidth < report.finalWidth &&
         report.midKeepWidth > 0 && report.midKeepWidth < report.finalKeepWidth;

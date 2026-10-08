@@ -29,7 +29,8 @@
     const report = {
       allLines:document.querySelectorAll(".batch-row").length === 72,
       allKeeps:document.querySelectorAll(".batch-row.keep").length === 3,
-      countsMatch:document.querySelector(".batch-title").textContent === "3 / 72 kept",
+      countsMatch:document.querySelector(".batch-title").textContent === "69 / 72 proposed removals",
+      activityAlwaysVisible:document.querySelector(".activity-counts") !== null,
       sourceOrder:[...document.querySelectorAll(".batch-line-number")].every((node,index) => Number(node.textContent) === index+1),
       noInventedScores:[...document.querySelectorAll(".batch-row.keep")].every(row =>
         row.querySelector(".batch-value").textContent === "—" && row.title.includes("no Decision relevance score") &&
@@ -67,6 +68,8 @@
       [...document.querySelectorAll(".batch-row.unscored")].every(node =>
         node.querySelector(".batch-value").textContent === "—" &&
         Number(getComputedStyle(node.querySelector(".batch-value")).opacity) === 1);
+    send({...complete,id:"1".repeat(32),status:"replace"});
+    report.actualRemovals = document.querySelector(".batch-title").textContent === "69 / 72 removed";
     document.body.dataset.result = JSON.stringify(report);
     document.title = Object.values(report).every(Boolean) ? "DECISION_PROTECTED_READY" : "DECISION_PROTECTED_FAILED";
   </script>

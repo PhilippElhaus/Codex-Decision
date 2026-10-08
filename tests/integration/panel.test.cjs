@@ -24,6 +24,10 @@ test("empty panel explains real API requests and skipped outputs for its selecte
     assert.equal(activity.calls, 11);
     assert.equal(activity.skipped, 341);
     assert.match(activity.message, /Decision classified.*No line judgments/);
+    health.api_requests = 14;
+    await fs.writeFile(path.join(directory, "logs", "hook-health.json"), JSON.stringify(health));
+    assert.equal((await readPanelActivity(directory)).calls, 14,
+      "in-flight and failed API attempts are included independently of completed decisions");
     health.last_skip = "unsupported_route";
     await fs.writeFile(path.join(directory, "logs", "hook-health.json"), JSON.stringify(health));
     assert.match((await readPanelActivity(directory)).message, /before calling Decision/);
@@ -95,6 +99,17 @@ test("panel keeps each decision visible through its animation and a one second r
     await provider.refresh();
     assert.equal(messages.at(-1).decision.id, oldId,
       "the current session's latest decision survives a VS Code reload");
+    assert.equal(messages.at(-1).activity.calls, 0,
+      "activity remains available alongside a saved decision");
+    const health = { version: 1, hook_version: "0.11.2", last_seen_ms: Date.now(),
+      skipped: 9, last_skip: "small", last_skip_ms: Date.now() };
+    health.last_skip_ms = health.last_seen_ms;
+    await fs.writeFile(path.join(logs, "hook-health.json"), JSON.stringify(health));
+    await provider.refresh();
+    assert.deepEqual(messages.at(-1), { type: "activity", activity: {
+      calls: 0, skipped: 9, message: "Decision is off for this thread." } });
+    assert.equal(provider.displayedDecision.id, oldId,
+      "counters refresh during the animation rest without changing the displayed result");
     now += MIN_DISPLAY_MS;
     const newAt = new Date(now).toISOString();
     await fs.writeFile(filename, JSON.stringify(make("a".repeat(32), "keep", newAt)));

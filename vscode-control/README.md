@@ -8,7 +8,7 @@ From this directory in WSL:
 
 ```bash
 ../scripts/build_control.sh
-code --install-extension "$(wslpath -w ../.local/submission/codex-decision-control-0.10.6.vsix)" --force
+code --install-extension "$(wslpath -w ../.local/submission/codex-decision-control-0.10.7.vsix)" --force
 ```
 
 The composer and Codex settings page require the separate local patch for Codex VS Code extensions `26.928.31416`, `26.930.21537`, `26.930.31730`, `26.930.41038`, `26.930.51102`, `26.930.61225`, and `26.1002.51308`. It checks exact host hashes and keeps rollback files outside this repository:
@@ -33,7 +33,7 @@ When enabled, the indicator is green after a small successful Decision API reque
 
 Open **Codex settings → Decision** from any screen to choose Monitor or Filter, adjust the shared relevance cutoff, test or replace the key, and open the plugin data directory. These settings apply to every session. Monitor records decisions but leaves full output visible. Filter can shorten only eligible text after the local evidence checks pass; every shortened result links to its exact original.
 
-The **Decision** panel sits beside Output and Terminal. Reopen it through **View → Open View… → Decision: Latest decision**. It shows every line from the latest result in the active session, including protected lines and cumulative judgments from all batches. The header shows the kept/total line count; classification calls do not appear. Blue rows were cut and gold rows were kept. The selected thread's latest decision remains available after reloading VS Code. Switching threads refreshes the panel immediately. Line rows appear after the first relevance batch; a classification that keeps the full output produces no line rows. Check the composer tooltip for the latest skip reason and hook health. Judged rows show the actual Decision task-relevance probability. Protected and pending rows show an em dash and explain why they are kept. Historical rows use a visual retention index; hover for their recorded probabilities. The panel snapshot contains bounded excerpts, not the full output.
+The **Decision** panel sits beside Output and Terminal. Reopen it through **View → Open View… → Decision: Latest decision**. It shows every line from the latest result in the active session, including protected lines and cumulative judgments from all batches. The sticky header shows removed/total lines after filtering, or proposed removals for a preview. Its upper-right corner always shows this thread’s API request and skipped-output counts. The counts refresh while a decision is displayed, without restarting the line animation. Blue rows were cut and gold rows were kept. The selected thread's latest decision remains available after reloading VS Code. Switching threads refreshes the panel immediately. Line rows appear after the first relevance batch; a classification that keeps the full output produces no line rows. Check the composer tooltip for the latest skip reason and hook health. Judged rows show the actual Decision task-relevance probability. Protected and pending rows show an em dash and explain why they are kept. Historical rows use a visual retention index; hover for their recorded probabilities. The panel snapshot contains bounded excerpts, not the full output.
 
 ## Verify
 
@@ -47,7 +47,7 @@ python3 scripts/browser_smoke.py
 
 The browser harnesses use the real composer, settings, and panel code with synthetic, key-free data. The Codex patch must be revalidated against each new Codex extension build.
 
-The empty panel shows this thread's API request count, skipped-output count, and latest skip or hook error. A classification that keeps full output is reported explicitly. The tooltip also shows the latest skip reason. A skipped result confirms hook activity; it does not confirm an API request. After a Codex extension update, apply the patch to the new extension directory. Each supported build has its own checked hashes and rollback directory.
+The header keeps this thread's API request and skipped-output counts visible before and after line decisions. API requests count hook attempts, including pending or failed requests, and exclude the separate connection check. Older sessions retain their recorded count at upgrade. The empty panel explains the latest skip or hook error. A classification that keeps full output is reported explicitly. The tooltip also shows the latest skip reason. A skipped result confirms hook activity; it does not confirm an API request. After a Codex extension update, apply the patch to the new extension directory. Each supported build has its own checked hashes and rollback directory.
 
 The composer briefly glows blue once at the start of output evaluation. Relevance calls, batch completions, and API connection checks do not flash. Each start is consumed once per view, so repeated status replies cannot restart the pulse.
 

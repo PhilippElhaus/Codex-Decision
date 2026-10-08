@@ -1,5 +1,24 @@
 use super::*;
 
+#[test]
+fn timestamped_logs_use_the_local_contract_without_classification() {
+    for stamp in ["2026-10-08T12:00:00Z", "2026-10-08T14:00:00.123+02:00"] {
+        let source = format!("{stamp} INFO heartbeat idle\n").repeat(20)
+            + &format!("{stamp} ERROR synthetic connection refused\n{stamp} INFO run complete\n");
+        assert!(matches!(
+            decide("synthetic-worker", &source),
+            FormatDecision::Direct("repetitive_log")
+        ));
+    }
+    for text in [
+        "2026-10-08T12:00:00Z source text",
+        "2026-99-99T99:99:99Z INFO idle",
+        "prefix INFO idle",
+    ] {
+        assert!(!log_line(text));
+    }
+}
+
 fn decide(command: &str, source: &str) -> FormatDecision {
     let mut lines = source_lines(source);
     protect_neighbors(&mut lines);

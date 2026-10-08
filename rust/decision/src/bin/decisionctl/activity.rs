@@ -55,7 +55,7 @@ pub(super) fn summarize(data: &Path, session: &str) -> Result<Value, String> {
     Ok(
         json!({"version":1,"session_hash":hash,"hook_version":health.get("hook_version"),
         "observed_results":health.get("seen"),"skipped_results":health.get("skipped"),
-        "skip_counts_since_upgrade":counts,"recorded_api_requests":stats.get("calls"),
+        "skip_counts_since_upgrade":counts,"recorded_api_requests":health.get("api_requests").or_else(|| stats.get("calls")),
         "line_decision_results":stats.get("completed"),"replaced_results":stats.get("replaced"),
         "candidate_results_since_upgrade":stats.get("candidates"),"candidate_reasons_since_upgrade":candidate_reasons,
         "kept_results_since_upgrade":stats.get("kept"),

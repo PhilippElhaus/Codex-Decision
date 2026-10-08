@@ -160,6 +160,7 @@ pub(super) fn process_event(
         validate_request_budget(&request)?;
         let before = Instant::now();
         let response = evaluate(
+            scoped,
             &agent,
             &request,
             &api_key,
@@ -229,6 +230,7 @@ pub(super) fn process_event(
         remaining()?;
         let before = Instant::now();
         let response = evaluate(
+            scoped,
             &agent,
             &batch.request,
             &api_key,

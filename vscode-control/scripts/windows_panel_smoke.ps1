@@ -44,10 +44,10 @@ try {
     [IO.File]::WriteAllText($providerPath, $source.Replace($needle, $needle + ' globalThis.__decisionPanelTestProvider = this;'), $utf8)
     $rendererPath = Join-Path $control 'webview\decision-panel.js'
     $source = [IO.File]::ReadAllText($rendererPath)
-    $needle = 'else showEmpty(event.data.activity);'
+    $needle = 'updateActivity(event.data.activity ?? currentActivity);'
     if ($source.IndexOf($needle) -ne $source.LastIndexOf($needle) -or -not $source.Contains($needle)) { throw 'Renderer instrumentation anchor changed.' }
-    $ack = ' vscode.postMessage({type:"decision-test-rendered", id:event.data.decision?.id || null, rows:document.querySelectorAll(".batch-row").length, kept:document.querySelectorAll(".batch-row.keep").length, unscored:[...document.querySelectorAll(".batch-row.unscored")].map(row => ({score:row.querySelector(".batch-value").textContent, title:row.title})), title:document.querySelector(".batch-title")?.textContent || "Decision", status:document.querySelector(".batch-status")?.textContent || null, activity:document.querySelector(".empty")?.textContent || null, layout:document.querySelector(".batch-list") ? getComputedStyle(document.querySelector(".batch-list")).display : null, tenCharacterBars:[...document.querySelectorAll(".batch-bar-fill,.batch-bar-empty")].every(node => [...node.textContent].length === 10), compactRows:[...document.querySelectorAll(".batch-row")].every(node => node.getBoundingClientRect().height <= 28)});'
-    [IO.File]::WriteAllText($rendererPath, $source.Replace($needle, $needle + $ack), $utf8)
+    $ack = ' vscode.postMessage({type:"decision-test-rendered", id:event.data.decision?.id || null, rows:document.querySelectorAll(".batch-row").length, kept:document.querySelectorAll(".batch-row.keep").length, unscored:[...document.querySelectorAll(".batch-row.unscored")].map(row => ({score:row.querySelector(".batch-value").textContent, title:row.title})), title:document.querySelector(".batch-title")?.textContent || "Decision", status:document.querySelector(".batch-status")?.textContent || null, activity:(document.querySelector(".activity-counts")?.textContent || "") + " " + (document.querySelector(".empty")?.textContent || ""), layout:document.querySelector(".batch-list") ? getComputedStyle(document.querySelector(".batch-list")).display : null, tenCharacterBars:[...document.querySelectorAll(".batch-bar-fill,.batch-bar-empty")].every(node => [...node.textContent].length === 10), compactRows:[...document.querySelectorAll(".batch-row")].every(node => node.getBoundingClientRect().height <= 28)});'
+    [IO.File]::WriteAllText($rendererPath, $source.Replace($needle, $needle + $ack).Replace("updateActivity(event.data.activity);", "updateActivity(event.data.activity);" + $ack), $utf8)
     [IO.File]::WriteAllText((Join-Path $profile 'User\settings.json'), (@{
         'telemetry.telemetryLevel' = 'off'; 'update.mode' = 'none'; 'extensions.autoUpdate' = $false;
         'workbench.startupEditor' = 'none'; 'workbench.enableExperiments' = $false;
@@ -103,13 +103,24 @@ exports.run = async () => {
       await provider.refresh();
       await until(() => acknowledged?.id === id);
       assert.equal(acknowledged.rows, 2);
-      assert.equal(acknowledged.title, "1 / 2 kept");
+      assert.match(acknowledged.activity, /0 API requests · 0 skipped outputs/);
+      assert.equal(acknowledged.title, "0 / 2 removed");
       assert.equal(acknowledged.layout, "grid", "the panel stylesheet must load under the CSP");
       assert.equal(acknowledged.tenCharacterBars, true);
       assert.equal(acknowledged.compactRows, true);
       result.checks.push(label);
     };
     await check(firstId, "actual renderer loads under the webview CSP and restores an old saved decision without composer focus");
+    const countTime = Date.now();
+    await fs.writeFile(path.join(one,"logs/hook-health.json"),JSON.stringify({version:1,
+      hook_version:"0.11.2",last_seen_ms:countTime,api_requests:9,skipped:341}));
+    acknowledged = null;
+    await provider.refresh();
+    await until(() => acknowledged?.activity?.includes("9 API requests"));
+    assert.match(acknowledged.activity, /341 skipped outputs/);
+    assert.equal(acknowledged.rows,2);
+    result.checks.push("live counters update while saved result rows remain visible");
+    await fs.rm(path.join(one,"logs/hook-health.json"));
     for (let index = 0; index < 3; index++) {
       const generation = provider.generation;
       provider.view.webview.html = provider.view.webview.html + `<!-- native reload ${index} -->`;
@@ -136,7 +147,7 @@ exports.run = async () => {
     await until(() => acknowledged?.id === protectedId);
     assert.equal(acknowledged.rows, 72);
     assert.equal(acknowledged.kept, 3);
-    assert.equal(acknowledged.title, "3 / 72 kept");
+    assert.equal(acknowledged.title, "69 / 72 proposed removals");
     assert.equal(acknowledged.unscored.length, 3);
     assert(acknowledged.unscored.every(row => row.score === "—" && row.title.includes("no Decision relevance score")));
     assert.equal(acknowledged.status, "Preview · full output kept");

@@ -63,9 +63,9 @@ def chromium_capture() -> None:
                     settings.crop(box).save(IMAGES / name, optimize=True)
             (IMAGES / 'decision-settings.png').unlink()
             for state, name, height, count, expected in (
-                ('fifty', 'decision-panel.png', 900, 50, ('3 / 50 kept',)),
+                ('fifty', 'decision-panel.png', 900, 50, ('47 / 50 removed',)),
                 ('reviewed', 'decision-demo-tests.png', 520, 20,
-                 ('5 / 124 kept', 'actual: 6000')),
+                 ('119 / 124 removed', 'actual: 6000')),
             ):
                 page = browser.new_page(viewport={'width': 1200, 'height': height})
                 page.goto((ROOT.parent / 'tests/browser/decision_panel_harness.html').as_uri() + f'?{state}&capture')
@@ -144,9 +144,9 @@ def main() -> None:
             print(f'{name}: {box}')
         panel_address = 'file:///' + quote(windows_path(ROOT.parent / 'tests/browser/decision_panel_harness.html').replace('\\', '/'), safe='/:')
         for state, name, height, row_count, expected in (
-            ('fifty', 'decision-panel.png', 900, 50, ('3 / 50 kept',)),
+            ('fifty', 'decision-panel.png', 900, 50, ('47 / 50 removed',)),
             ('reviewed', 'decision-demo-tests.png', 520, 20,
-             ('5 / 124 kept', 'actual: 6000')),
+             ('119 / 124 removed', 'actual: 6000')),
         ):
             panel = IMAGES / name
             result = subprocess.run([

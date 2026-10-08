@@ -244,6 +244,12 @@ fn final_status(text: &str) -> bool {
 
 fn log_line(text: &str) -> bool {
     let text = text.trim_start();
+    let text = text
+        .split_once(char::is_whitespace)
+        .filter(|(timestamp, _)| {
+            timestamp.len() <= 40 && chrono::DateTime::parse_from_rfc3339(timestamp).is_ok()
+        })
+        .map_or(text, |(_, rest)| rest.trim_start());
     [
         "INFO ",
         "INFO:",
