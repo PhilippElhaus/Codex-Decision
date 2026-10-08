@@ -135,7 +135,21 @@
       }
       const anchor = document.querySelector(".access").getBoundingClientRect();
       const button = document.getElementById("codex-decision-button").getBoundingClientRect();
-      document.body.dataset.layout = JSON.stringify({ anchorTop: anchor.top, buttonTop: button.top, screenshotOffset: Math.max(0, outerHeight - innerHeight) });
+      const layout = { anchorTop: anchor.top, buttonTop: button.top, screenshotOffset: Math.max(0, outerHeight - innerHeight) };
+      if (demo === "settings") {
+        const recordSettings = () => {
+          const thresholds = document.getElementById("codex-decision-settings-thresholds");
+          const actions = document.querySelector("#codex-decision-settings-panel .save-actions");
+          if (!thresholds || !actions) return setTimeout(recordSettings, 20);
+          layout.settingsSplit = Math.floor(thresholds.getBoundingClientRect().top - 8);
+          layout.settingsBottom = Math.ceil(actions.getBoundingClientRect().bottom + 12);
+          document.body.dataset.layout = JSON.stringify(layout);
+          document.title = "DECISION_VISUAL_READY";
+        };
+        recordSettings();
+        return;
+      }
+      document.body.dataset.layout = JSON.stringify(layout);
       document.title = "DECISION_VISUAL_READY";
     }, 350);
   </script>

@@ -17,6 +17,20 @@ ROOT = Path(__file__).resolve().parents[1]
 IMAGES = ROOT.parent / 'docs' / 'images'
 
 
+def crop_settings(path: Path, layout: dict) -> None:
+    """Split at section boundaries so both browser captures keep complete rows."""
+    with Image.open(path) as settings:
+        split = layout['settingsSplit'] * 2
+        bottom = layout['settingsBottom'] * 2
+        if not 0 < split < bottom <= settings.height:
+            raise RuntimeError(f'Settings sections exceed the capture: {layout}')
+        for name, box in (
+            ('decision-settings-overview.png', (0, 0, settings.width, split)),
+            ('decision-settings-filters.png', (0, split, settings.width, bottom)),
+        ):
+            settings.crop(box).save(IMAGES / name, optimize=True)
+
+
 def chromium_capture() -> None:
     from playwright.sync_api import sync_playwright
 
@@ -53,14 +67,10 @@ def chromium_capture() -> None:
                     assert page.locator('#codex-decision-settings-output-relevant_max').input_value() == '5%'
                     assert page.locator('#codex-decision-settings-relevance-guard').count() == 0
                 page.screenshot(path=str(IMAGES / name))
+                if state == 'settings':
+                    crop_settings(IMAGES / name, json.loads(page.locator('body').get_attribute('data-layout')))
                 print(name)
                 page.close()
-            with Image.open(IMAGES / 'decision-settings.png') as settings:
-                for name, box in (
-                    ('decision-settings-overview.png', (0, 0, 2080, 1550)),
-                    ('decision-settings-filters.png', (0, 1540, 2080, 2110)),
-                ):
-                    settings.crop(box).save(IMAGES / name, optimize=True)
             (IMAGES / 'decision-settings.png').unlink()
             for state, name, height, count, expected in (
                 ('fifty', 'decision-panel.png', 900, 50, ('47 / 50 removed',)),
@@ -134,15 +144,7 @@ def main() -> None:
                                         '>Filter</option>' not in result.stdout):
                 raise RuntimeError('Decision settings were not rendered in Codex settings')
             print(f'{name}: {output.stat().st_size} bytes; layout={layout}')
-        settings = Image.open(profile / 'decision-settings.png')
-        if settings.size != (2080, 2160):
-            raise RuntimeError(f'Unexpected settings capture size: {settings.size}')
-        for name, box in (
-            ('decision-settings-overview.png', (0, 0, 2080, 1550)),
-            ('decision-settings-filters.png', (0, 1540, 2080, 2110)),
-        ):
-            settings.crop(box).save(IMAGES / name, optimize=True)
-            print(f'{name}: {box}')
+        crop_settings(profile / 'decision-settings.png', layout)
         panel_address = 'file:///' + quote(windows_path(ROOT.parent / 'tests/browser/decision_panel_harness.html').replace('\\', '/'), safe='/:')
         for state, name, height, row_count, expected in (
             ('fifty', 'decision-panel.png', 900, 50, ('47 / 50 removed',)),

@@ -8,7 +8,7 @@ From this directory in WSL:
 
 ```bash
 ../scripts/build_control.sh
-code --install-extension "$(wslpath -w ../.local/submission/codex-decision-control-0.10.9.vsix)" --force
+code --install-extension "$(wslpath -w ../.local/submission/codex-decision-control-0.10.10.vsix)" --force
 ```
 
 The composer and Codex settings page require the separate local patch for Codex VS Code extensions `26.928.31416`, `26.930.21537`, `26.930.31730`, `26.930.41038`, `26.930.51102`, `26.930.61225`, and `26.1002.51308`. It checks exact host hashes and keeps rollback files outside this repository:

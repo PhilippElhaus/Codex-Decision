@@ -3,19 +3,17 @@ use super::*;
 #[test]
 fn request_attempts_survive_failure_without_publishing_completion_stats() {
     let root = tempfile::tempdir().unwrap();
-    fs::write(root.path().join("stats.json"), r#"{"calls":7}"#).unwrap();
-    hook_health(root.path(), "request", "").unwrap();
-    hook_health(root.path(), "error", "Decision request failed").unwrap();
-    hook_health(root.path(), "request", "").unwrap();
+    let data = root.path().join("data");
+    ensure_dir(&data).unwrap();
+    fs::write(data.join("stats.json"), r#"{"calls":7}"#).unwrap();
+    hook_health(&data, "request", "").unwrap();
+    hook_health(&data, "error", "Decision request failed").unwrap();
+    hook_health(&data, "request", "").unwrap();
     let health: Value =
-        serde_json::from_slice(&fs::read(root.path().join("logs/hook-health.json")).unwrap())
-            .unwrap();
+        serde_json::from_slice(&fs::read(data.join("logs/hook-health.json")).unwrap()).unwrap();
     assert_eq!(health["api_requests"], 9);
-    assert_eq!(
-        load_stats(&root.path().join("stats.json")).unwrap()["calls"],
-        7
-    );
-    assert!(!root.path().join("logs/latest-decision.json").exists());
+    assert_eq!(load_stats(&data.join("stats.json")).unwrap()["calls"], 7);
+    assert!(!data.join("logs/latest-decision.json").exists());
 }
 
 #[test]

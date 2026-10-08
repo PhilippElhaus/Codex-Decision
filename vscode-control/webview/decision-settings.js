@@ -4,7 +4,7 @@
     ["relevant_max", "Relevance, maximum for omission", "Remove a line only when its probability of being needed is at or below this cutoff."],
   ]]];
   const sectionDescriptions = {
-    output: "Decision first classifies an excerpt. Only confidently excerptable output receives line relevance judgments. Diagnostics, completion evidence, and structured records stay protected.",
+    output: "Validated logs receive line relevance judgments directly. Unknown formats first pass an excerptability check. Diagnostics, completion evidence, and structured records stay protected.",
   };
   let active = false;
   let openingVoice = false;

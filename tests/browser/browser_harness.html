@@ -554,7 +554,10 @@
         getComputedStyle(routineSlider).backgroundImage.includes("linear-gradient"),
         "percent sign moves into the field and slider track is painted");
       const descriptions = [...settingsScreen.querySelectorAll("#codex-decision-settings-thresholds .section-description")];
-      check(descriptions.length === 1 && descriptions[0].textContent.includes("classifies an excerpt"), "settings explain one shared policy");
+      check(descriptions.length === 1 &&
+        descriptions[0].textContent.includes("Validated logs receive line relevance judgments directly") &&
+        descriptions[0].textContent.includes("Unknown formats first pass an excerptability check"),
+        "settings explain direct log relevance and the unknown-format gate");
       check(!settingsScreen.querySelector("#codex-decision-settings-relevance-guard") &&
         !settingsScreen.querySelector("#codex-decision-settings-test_build-exact_max") &&
         !settingsScreen.querySelector("#codex-decision-settings-search_listing-exact_max"), "category controls are absent");

@@ -2,9 +2,9 @@
 
 <img src="assets/logo.png" width="56" alt="Codex Decision logo">
 
-Codex Decision removes repetitive lines from local tool output before Codex reads them. Errors and useful evidence stay visible. Every shortened result links to the complete original.
+Codex Decision selects repetitive lines for removal from supported local tool output. Errors and useful evidence stay visible. Every shortened result links to the complete original.
 
-**Codex Decision 0.11.4 · VS Code control 0.10.9** — [Download the latest release](https://github.com/PhilippElhaus/Codex-Decision/releases/latest).
+**Codex Decision 0.11.4 · VS Code control 0.10.10** — [Download the latest release](https://github.com/PhilippElhaus/Codex-Decision/releases/latest).
 
 ## Get started
 
@@ -45,7 +45,7 @@ Select **Latest** for the current result or **Totals** for the selected thread�
 
 <img src="docs/images/decision-totals.png" width="1000" alt="Decision Totals view with saved session counts and reasons outputs stayed complete">
 
-Screenshots use synthetic data. For a missing decision or failed connection, see [troubleshooting](docs/setup/setup_installation.md).
+Screenshots use synthetic data. Code-mode scripts can still serialize the original tool result after a hook records a replacement, so the panel’s removal counts do not establish downstream token savings. See the [processing investigation](docs/development/processing_recovery_2026-10-08.md) and [troubleshooting](docs/setup/setup_installation.md).
 
 ## Documentation
 
