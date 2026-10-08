@@ -144,6 +144,8 @@ async function readHookHealth(directory) {
         health.last_seen_ms > Date.now() + 300_000 ||
         (health.skipped !== undefined && (!Number.isSafeInteger(health.skipped) || health.skipped < 0)) ||
         (health.api_requests !== undefined && (!Number.isSafeInteger(health.api_requests) || health.api_requests < 0)) ||
+        ["seen", "errors"].some((key) => health[key] !== undefined &&
+          (!Number.isSafeInteger(health[key]) || health[key] < 0)) ||
         ["last_success_ms", "last_error_ms", "last_skip_ms"].some((key) =>
           health[key] !== undefined && (!Number.isSafeInteger(health[key]) || health[key] < 0 ||
             health[key] > health.last_seen_ms)) ||
@@ -151,11 +153,21 @@ async function readHookHealth(directory) {
           health[key] !== undefined && (typeof health[key] !== "string" || health[key].length > 80))) {
       throw new Error("Invalid Decision hook health");
     }
+    if (health.skip_counts !== undefined) validateCounterMap(health.skip_counts, "skip counts");
     return health;
   } catch (error) {
     if (error.code === "ENOENT") return null;
     throw error;
   }
+}
+
+function validateCounterMap(value, name) {
+  if (!value || typeof value !== "object" || Array.isArray(value) ||
+      Object.keys(value).length > 80 || Object.entries(value).some(([key, count]) =>
+        !/^[a-z][a-z0-9_]{0,79}$/.test(key) || !Number.isSafeInteger(count) || count < 0)) {
+    throw new Error(`Invalid Decision ${name}`);
+  }
+  return value;
 }
 
 async function readConfig(directory) {
@@ -274,7 +286,7 @@ async function writeGlobalSettings(directory, changes, fallback = {}) {
 }
 
 async function readInstallationStats(directory) {
-  const totals = await readLifetimeStats(directory);
+  const { hookHealth: _health, ...totals } = await readSessionActivity(directory);
   let entries;
   try {
     const parent = await fs.lstat(path.join(directory, "sessions"));
@@ -289,14 +301,96 @@ async function readInstallationStats(directory) {
   for (const entry of entries) {
     if (!/^[a-f0-9]{64}$/.test(entry.name)) continue;
     if (!entry.isDirectory() || entry.isSymbolicLink()) throw new Error("Unsafe Decision session directory");
-    const stats = await readLifetimeStats(path.join(directory, "sessions", entry.name));
+    const stats = await readSessionActivity(path.join(directory, "sessions", entry.name));
     for (const key of Object.keys(totals)) {
       if (key === "averageMs") continue;
-      totals[key] += stats[key];
+      if (["skipCounts", "candidateReasons"].includes(key)) {
+        for (const [reason, count] of Object.entries(stats[key])) {
+          totals[key][reason] = (Object.hasOwn(totals[key], reason) ? totals[key][reason] : 0) + count;
+        }
+      } else totals[key] = totals[key] === null || stats[key] === null ? null : totals[key] + stats[key];
     }
   }
   totals.averageMs = totals.timed ? Math.round(totals.elapsedMs / totals.timed) : 0;
   return totals;
+}
+
+// Request attempts and completion totals have different commit points. The
+// hook health counter includes pending and failed API requests; completion
+// stats contain only results that published all required artifacts.
+async function readSessionActivity(directory) {
+  const [recorded, hookHealth] = await Promise.all([
+    readRecordedStats(directory), readHookHealth(directory),
+  ]);
+  const totals = await lifetimeStats(directory, recorded);
+  const hasActivity = hookHealth !== null || recorded !== null || totals.calls > 0 || totals.completed > 0;
+  const unknown = hasActivity ? null : 0;
+  const candidateReasons = Object.fromEntries(Object.entries(recorded || {})
+    .filter(([key]) => key.startsWith("candidate_")).map(([key, count]) => [key.slice(10), count]));
+  validateCounterMap(candidateReasons, "candidate reasons");
+  return { ...totals, calls: hookHealth?.api_requests ?? totals.calls,
+    linesRelevanceJudged: recorded?.linesRelevanceJudged ?? unknown,
+    seen: hookHealth?.seen ?? unknown, skipped: hookHealth?.skipped ?? unknown,
+    errors: hookHealth?.errors ?? unknown, candidates: recorded?.candidates ?? unknown,
+    kept: recorded?.kept ?? unknown, linesActuallyOmitted: recorded?.linesActuallyOmitted ?? unknown,
+    classificationKeptFull: hookHealth?.skip_counts ? hookHealth.skip_counts.choice_kept_full_output ?? 0 : unknown,
+    skipCounts: { ...hookHealth?.skip_counts }, candidateReasons, hookHealth };
+}
+
+async function readFileRange(file, length, position) {
+  const buffer = Buffer.alloc(length);
+  let offset = 0;
+  while (offset < length) {
+    const { bytesRead } = await file.read(buffer, offset, length - offset, position + offset);
+    if (!bytesRead) break;
+    offset += bytesRead;
+  }
+  return buffer.subarray(0, offset);
+}
+
+async function readRecordedStats(directory) {
+  let file;
+  try {
+    await validateSessionPath(directory);
+    const filename = path.join(directory, "stats.json");
+    const details = await fs.lstat(filename);
+    if (!details.isFile() || details.isSymbolicLink() || details.size > 8192) throw new Error("Unsafe Decision stats file");
+    file = await fs.open(filename, constants.O_RDONLY | (constants.O_NOFOLLOW || 0));
+    const opened = await file.stat();
+    if (!opened.isFile() || opened.size > 8192) throw new Error("Unsafe Decision stats file");
+    const bytes = await readFileRange(file, 8193, 0);
+    if (bytes.length > 8192) throw new Error("Unsafe Decision stats file");
+    const recorded = JSON.parse(bytes.toString("utf8"));
+    if (!recorded || typeof recorded !== "object" || Array.isArray(recorded) ||
+        Object.keys(recorded).length > 128 || Object.values(recorded).some((count) =>
+          !Number.isSafeInteger(count) || count < 0)) throw new Error("Invalid Decision stats file");
+    return recorded;
+  } catch (error) {
+    if (error.code === "ENOENT") return null;
+    throw error;
+  } finally { await file?.close(); }
+}
+
+// A bounded tail restores history without replaying classification pulses.
+// Retention can remove older outcomes while leaving cumulative totals intact.
+async function readRecentOutcomes(directory, limit = 3) {
+  if (!Number.isInteger(limit) || limit < 1 || limit > 3) throw new Error("Invalid Decision history limit");
+  let file;
+  try {
+    file = await fs.open(await activityLogPath(directory), constants.O_RDONLY | (constants.O_NOFOLLOW || 0));
+    const details = await file.stat();
+    if (!details.isFile() || !Number.isSafeInteger(details.size) || details.size < 0) throw new Error("Unsafe Decision decision log");
+    const start = Math.max(0, details.size - 262_144);
+    const bytes = await readFileRange(file, details.size - start, start);
+    let content = bytes.toString("utf8");
+    if (start > 0) content = content.slice(content.indexOf("\n") + 1);
+    content = content.slice(0, content.lastIndexOf("\n") + 1);
+    return content.split("\n").filter((line) => line.length <= 8192)
+      .map(parseLogLine).filter((event) => event && isDecisionOutcome(event)).slice(-limit).reverse();
+  } catch (error) {
+    if (error.code === "ENOENT") return [];
+    throw error;
+  } finally { await file?.close(); }
 }
 
 async function activityLogPath(directory) {
@@ -436,16 +530,15 @@ async function readEventsSince(directory, position) {
 }
 
 async function readLifetimeStats(directory) {
+  return lifetimeStats(directory, await readRecordedStats(directory));
+}
+
+async function lifetimeStats(directory, stats) {
   const totals = { calls: 0, completed: 0, replaced: 0, savedChars: 0,
     estimatedTokensSaved: 0, averageMs: 0, timed: 0, elapsedMs: 0, linesSeen: 0, linesJudged: 0,
     linesKept: 0, linesOmitted: 0, linesProtected: 0, linesUnjudged: 0,
     linesRelevanceJudged: 0, linesBelowOmitCutoff: 0, linesRelevanceKept: 0 };
-  const statsFile = path.join(directory, "stats.json");
-  try {
-    await validateSessionPath(directory);
-    const details = await fs.lstat(statsFile);
-    if (!details.isFile() || details.isSymbolicLink() || details.size > 8192) throw new Error("Unsafe Decision stats file");
-    const stats = JSON.parse(await fs.readFile(statsFile, "utf8"));
+  if (stats !== null) {
     for (const key of ["calls", "completed", "replaced", "timed", "elapsedMs"]) {
       if (!Number.isSafeInteger(stats[key]) || stats[key] < 0) throw new Error("Invalid Decision stats file");
     }
@@ -460,8 +553,6 @@ async function readLifetimeStats(directory) {
     return { calls: stats.calls, completed: stats.completed, replaced: stats.replaced,
       savedChars, estimatedTokensSaved: estimateTokensSaved(savedChars),
       averageMs: stats.timed ? Math.round(stats.elapsedMs / stats.timed) : 0, timed: stats.timed, elapsedMs: stats.elapsedMs, ...lineStats };
-  } catch (error) {
-    if (error.code !== "ENOENT") throw error;
   }
   const filename = await activityLogPath(directory);
   let file;
@@ -687,6 +778,7 @@ module.exports = {
   decisionSummary, defaultDataDirectory, estimateTokensSaved,
   isDecisionOutcome, outcomeLine, parseHealthOutput, readConfig,
   readApiKey, readEventOffset, readEventCursor, readEventsSince, readLifetimeStats,
+  readSessionActivity, readRecentOutcomes,
   savedCharacters, writeApiKey, writeSelection,
   ensureSessionDefaults,
   DEFAULT_SETTINGS, readGlobalSettings, writeGlobalSettings, readInstallationStats,

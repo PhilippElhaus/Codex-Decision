@@ -26,6 +26,7 @@
 <body>
   <script>if (location.search.includes("light")) document.body.classList.add("light");</script>
   <main id="app" aria-live="polite"></main>
+  <script src="../../vscode-control/webview/decision-totals.js"></script>
   <script src="../../vscode-control/webview/decision-panel.js"></script>
   <script src="../fixtures/reviewed-test-failure-panel.js"></script>
   <script>
@@ -76,7 +77,7 @@
       }
     }
     const send = (value) => window.dispatchEvent(new MessageEvent("message", {
-      data: { type: "decision", decision: value, activity: {calls:2,skipped:14,message:"Synthetic activity"} },
+      data: { type: "decision", decision: value, activity: {calls:2,skipped:14,message:"Synthetic activity",totals:{seen:16,completed:2,replaced:1,candidates:1,kept:0,errors:0,linesRelevanceJudged:125,linesActuallyOmitted:47,candidateReasons:{observe:1},skipCounts:{small:10,exact_content:4}}} },
     }));
     const positions = () => [".batch-header", ".batch-row:first-child"].map((selector) => {
       const box = document.querySelector(selector).getBoundingClientRect();
@@ -84,20 +85,21 @@
     }).join("|");
     if (query.has("capture") && query.has("fifty")) decision.status = "replace";
     send(decision);
+    if (query.has("totals")) document.querySelector("[data-panel-mode=totals]").click();
     const report = {};
     report.viewport = innerWidth;
     report.height = innerHeight;
     let nextDecision;
     report.initialRows = document.querySelectorAll(".batch-row").length;
-    report.actualExcerpt = document.querySelector(".batch-excerpt").textContent;
-    report.initialWidth = document.querySelector(".batch-bar-fill").getBoundingClientRect().width;
-    setTimeout(() => { report.midWidth = document.querySelector(".batch-bar-fill").getBoundingClientRect().width;
+    report.actualExcerpt = document.querySelector(".batch-excerpt")?.textContent || "";
+    report.initialWidth = document.querySelector(".batch-bar-fill")?.getBoundingClientRect().width || 0;
+    setTimeout(() => { if (query.has("totals")) return; report.midWidth = document.querySelector(".batch-bar-fill").getBoundingClientRect().width;
       report.midKeepWidth = document.querySelector(".batch-row.keep .batch-bar-fill").getBoundingClientRect().width;
       report.midPercentOpacity = getComputedStyle(document.querySelector(".batch-value")).opacity; }, 350);
     if (query.has("capture")) {
       setTimeout(() => {
         document.body.dataset.captureHeight = String(Math.ceil(
-          document.querySelector(".batch-layout").getBoundingClientRect().bottom +
+          document.querySelector(".batch-layout,.totals-layout").getBoundingClientRect().bottom +
           parseFloat(getComputedStyle(document.body).paddingBottom)));
         document.title = "DECISION_LINE_PANEL_READY";
       }, 1300);

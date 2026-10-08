@@ -106,8 +106,12 @@ test("panel keeps each decision visible through its animation and a one second r
     health.last_skip_ms = health.last_seen_ms;
     await fs.writeFile(path.join(logs, "hook-health.json"), JSON.stringify(health));
     await provider.refresh();
-    assert.deepEqual(messages.at(-1), { type: "activity", activity: {
-      calls: 0, skipped: 9, message: "Decision is off for this thread." } });
+    assert.equal(messages.at(-1).type, "activity");
+    assert.equal(messages.at(-1).activity.calls, 0);
+    assert.equal(messages.at(-1).activity.skipped, 9);
+    assert.equal(messages.at(-1).activity.message, "Decision is off for this thread.");
+    assert.equal(messages.at(-1).activity.totals.seen, null,
+      "legacy health without an observed-output counter stays unknown in Totals");
     assert.equal(provider.displayedDecision.id, oldId,
       "counters refresh during the animation rest without changing the displayed result");
     now += MIN_DISPLAY_MS;

@@ -34,6 +34,9 @@ use shell::*;
 #[path = "decision-hook/routing.rs"]
 mod routing;
 use routing::*;
+#[path = "decision-hook/sensitive.rs"]
+mod sensitivity;
+use sensitivity::*;
 #[path = "decision-hook/context.rs"]
 mod context;
 use context::*;

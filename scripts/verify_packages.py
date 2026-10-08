@@ -17,6 +17,7 @@ CONTROL_FILES = (
     "config-contract.json", "core.js", "extension.js", "icon.png", "package.json",
     "panel-state.js", "panel.js", "schema.js", "providers.js", "private-paths.js", "media/decision-panel.svg",
     "webview/decision-control.js", "webview/decision-panel.css", "webview/decision-panel.js",
+    "webview/decision-totals.js",
     "webview/decision-settings.js",
 )
 

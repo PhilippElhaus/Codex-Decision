@@ -12,6 +12,8 @@
   const cachedRows = [];
   let visibleRows = 0;
   let currentActivity = null;
+  let latestDecision = null;
+  let panelMode = vscode.getState?.()?.panelMode === "totals" ? "totals" : "latest";
 
   function element(tag, className, label) {
     const node = document.createElement(tag);
@@ -47,7 +49,17 @@
     const counts = element("span", "activity-counts");
     const status = element("span", "batch-status");
     const meta = append(element("div", "batch-meta"), counts, status);
-    return { header: append(element("header", "batch-header"), title, meta), title, status, counts };
+    const tabs = element("nav", "panel-tabs");
+    tabs.setAttribute("aria-label", "Decision view");
+    for (const [mode, name] of [["latest", "Latest"], ["totals", "Totals"]]) {
+      const button = element("button", "panel-tab", name);
+      button.type = "button";
+      button.dataset.panelMode = mode;
+      button.setAttribute("aria-pressed", String(panelMode === mode));
+      tabs.appendChild(button);
+    }
+    const heading = append(element("div", "batch-heading"), tabs, title);
+    return { header: append(element("header", "batch-header"), heading, meta), title, status, counts };
   }
 
   function updateActivity(activity) {
@@ -71,6 +83,33 @@
     return decision.status === "candidate" ? "Preview · full output kept" :
       decision.status === "replace" ? "Filtered" : decision.status === "processing" ? "Evaluating" : "Full output kept";
   }
+
+  function showTotals() {
+    currentId = null;
+    cancelAnimationFrame(animation);
+    const { header, status } = makeHeader(currentActivity ? "This thread" : "Decision");
+    status.textContent = currentActivity ? "Saved totals" : "No thread selected";
+    app.replaceChildren(header, window.DecisionTotals.render(currentActivity));
+    updateActivity(currentActivity);
+  }
+
+  function showSelectedView() {
+    if (panelMode === "totals") showTotals();
+    else if (latestDecision) renderBatchDecision(latestDecision);
+    else showEmpty(currentActivity);
+    updateActivity(currentActivity);
+    for (const button of app.querySelectorAll(".panel-tab")) {
+      button.setAttribute("aria-pressed", String(button.dataset.panelMode === panelMode));
+    }
+  }
+
+  app.addEventListener("click", (event) => {
+    const button = event.target.closest("button[data-panel-mode]");
+    if (!button || button.dataset.panelMode === panelMode) return;
+    panelMode = button.dataset.panelMode;
+    vscode.setState?.({ panelMode });
+    showSelectedView();
+  });
 
   function renderBatchDecision(decision) {
     if (decision.id === currentId) {
@@ -161,15 +200,16 @@
   window.addEventListener("message", (event) => {
     if (event.data?.type === "activity") {
       updateActivity(event.data.activity);
+      if (panelMode === "totals") { showTotals(); return; }
       const emptyStatus = app.querySelector(".empty-status");
       if (emptyStatus && event.data.activity?.message) emptyStatus.textContent = event.data.activity.message;
       return;
     }
     if (event.data?.type !== "decision") return;
-    if (event.data.decision) renderBatchDecision(event.data.decision);
-    else showEmpty(event.data.activity);
-    updateActivity(event.data.activity ?? currentActivity);
+    latestDecision = event.data.decision || null;
+    currentActivity = event.data.activity ?? (latestDecision ? currentActivity : null);
+    showSelectedView();
   });
-  showEmpty();
+  showSelectedView();
   vscode.postMessage({ type: "ready" });
 })();

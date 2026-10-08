@@ -3,7 +3,7 @@
 const fs = require("node:fs/promises");
 const { constants } = require("node:fs");
 const path = require("node:path");
-const { validateSessionPath, validateDirectoryPath, readHookHealth, readConfig, readLifetimeStats } = require("./core");
+const { validateSessionPath, validateDirectoryPath, readConfig, readSessionActivity } = require("./core");
 
 const FILTERS = new Set(["output", "test_build", "search_listing"]);
 const MAX_SNAPSHOT_BYTES = 8 * 1024 * 1024;
@@ -127,9 +127,10 @@ async function readLatestPanelDecision(directory, cache = null) {
 }
 
 async function readPanelActivity(directory) {
-  const [health, config, stats] = await Promise.all([
-    readHookHealth(directory), readConfig(directory), readLifetimeStats(directory),
+  const [stats, config] = await Promise.all([
+    readSessionActivity(directory), readConfig(directory),
   ]);
+  const { hookHealth: health, ...totals } = stats;
   let message;
   if (!config.enabled) message = "Decision is off for this thread.";
   else if (!health) message = "Waiting for tool output. If activity stays absent, check /hooks and start a new Codex thread.";
@@ -150,7 +151,7 @@ async function readPanelActivity(directory) {
     };
     message = reasons[health.last_skip] || `Hook ran; latest output skipped: ${health.last_skip.replaceAll("_", " ")}.`;
   } else message = "Waiting for the next line decision.";
-  return { message, calls: health?.api_requests ?? stats.calls, skipped: health?.skipped || 0 };
+  return { message, calls: stats.calls, skipped: stats.skipped, totals };
 }
 
 module.exports = { parsePanelDecision, readLatestPanelDecision, readPanelActivity };

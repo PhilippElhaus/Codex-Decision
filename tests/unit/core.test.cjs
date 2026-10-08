@@ -9,9 +9,150 @@ const {
   checkHealth, completeRelevancePolicy, decisionSummary, sessionDirectory, readHookHealth, estimateTokensSaved, outcomeLine, parseHealthOutput, readApiKey, readConfig,
   readEventOffset, readEventsSince, readLifetimeStats, writeApiKey, writeSelection, ensureSessionDefaults,
   readGlobalSettings, writeGlobalSettings, readInstallationStats,
+  readSessionActivity, readRecentOutcomes,
 } = require("../../vscode-control/core");
 const withV3 = (config) => require("../../vscode-control/schema").validate("config", {
   ...config, schema_version: 4, relevance_policy: completeRelevancePolicy(),
+});
+
+test("session and installation activity count API attempts and preserve unknown legacy metrics", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "decision-session-counters-"));
+  try {
+    const one = sessionDirectory(root, "one");
+    const two = sessionDirectory(root, "two");
+    const empty = sessionDirectory(root, "empty");
+    for (const directory of [one, two, empty]) await ensureSessionDefaults(directory);
+    const fresh = await readSessionActivity(empty);
+    assert.equal(fresh.calls, 0);
+    assert.equal(fresh.seen, 0);
+    assert.equal(fresh.skipped, 0);
+    assert.equal(fresh.linesActuallyOmitted, 0);
+    for (const [directory, calls] of [[one, 2], [two, 1]]) {
+      await fs.writeFile(path.join(directory, "stats.json"), JSON.stringify({
+        calls, completed: 1, replaced: 1, timed: calls, elapsedMs: calls * 100, savedChars: 40,
+        candidates: 0, kept: 0, linesActuallyOmitted: 4,
+      }));
+      await fs.mkdir(path.join(directory, "logs"), { mode: 0o700 });
+      await fs.writeFile(path.join(directory, "logs", "hook-health.json"), JSON.stringify({
+        version: 1, hook_version: "0.11.2", last_seen_ms: Date.now(),
+        api_requests: calls + 2, seen: 12, skipped: 8, errors: 1,
+        skip_counts: { small: 7, choice_kept_full_output: 1 },
+      }));
+    }
+    const selected = await readSessionActivity(one);
+    assert.equal(selected.calls, 4);
+    assert.equal(selected.skipped, 8);
+    assert.equal(selected.errors, 1);
+    assert.equal(selected.classificationKeptFull, 1);
+    assert.equal(selected.linesActuallyOmitted, 4);
+    assert.equal(selected.hookHealth.api_requests, 4);
+    const totals = await readInstallationStats(root);
+    assert.equal(totals.calls, 7, "pending and failed attempts count across sessions");
+    assert.equal(totals.completed, 2);
+    assert.equal(totals.skipped, 16);
+    assert.equal(totals.errors, 2);
+    assert.equal(totals.linesActuallyOmitted, 8);
+    assert.deepEqual(totals.skipCounts, { small: 14, choice_kept_full_output: 2 });
+    assert.equal(totals.averageMs, 100, "timing uses completed requests with recorded durations");
+    const legacy = sessionDirectory(root, "legacy");
+    await ensureSessionDefaults(legacy);
+    await fs.writeFile(path.join(legacy, "stats.json"), JSON.stringify({
+      calls: 3, completed: 1, replaced: 0, timed: 3, elapsedMs: 900,
+    }));
+    const old = await readSessionActivity(legacy);
+    assert.equal(old.calls, 3);
+    assert.equal(old.skipped, null);
+    assert.equal(old.errors, null);
+    assert.equal(old.candidates, null);
+    assert.equal(old.linesActuallyOmitted, null);
+    assert.equal(old.linesRelevanceJudged, null);
+    const withLegacy = await readInstallationStats(root);
+    assert.equal(withLegacy.calls, 10);
+    assert.equal(withLegacy.skipped, null, "unknown legacy skips do not become invented totals");
+    assert.equal(withLegacy.linesActuallyOmitted, null);
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
+});
+
+test("activity maps reject malformed counters and restore bounded retained history", async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "decision-safe-counters-"));
+  const logs = path.join(directory, "logs");
+  try {
+    await fs.mkdir(logs);
+    const health = { version: 1, hook_version: "0.11.2", last_seen_ms: Date.now() };
+    for (const skip_counts of [{ small: -1 }, { bad_reason: "1" }, { "arbitrary message": 1 }, []]) {
+      await fs.writeFile(path.join(logs, "hook-health.json"), JSON.stringify({ ...health, skip_counts }));
+      await assert.rejects(readSessionActivity(directory), /Invalid Decision skip counts/);
+    }
+    await fs.writeFile(path.join(logs, "hook-health.json"), JSON.stringify({ ...health, errors: -1 }));
+    await assert.rejects(readHookHealth(directory), /Invalid Decision hook health/);
+    await fs.writeFile(path.join(logs, "hook-health.json"), JSON.stringify(health));
+    await fs.writeFile(path.join(directory, "stats.json"), JSON.stringify({
+      calls: 2, completed: 2, replaced: 0, timed: 2, elapsedMs: 100,
+      candidates: 2, candidate_observe: 1, candidate_unsupported_command: 1,
+    }));
+    assert.deepEqual((await readSessionActivity(directory)).candidateReasons,
+      { observe: 1, unsupported_command: 1 });
+    const rows = [
+      { status: "replace", reason: "relevance_replace", tool: "Bash", original_chars: 1000, capsule_chars: 100 },
+      { status: "classifying", reason: "classification_start", requests: 0 },
+      { status: "candidate", reason: "observe", tool: "Bash", original_chars: 2000, capsule_chars: 200 },
+    ];
+    await fs.writeFile(path.join(logs, "events.jsonl"), "x".repeat(300_000) + "\n" +
+      rows.map((row) => JSON.stringify(row)).join("\n") + "\n" + JSON.stringify({ status: "keep", reason: "incomplete" }));
+    const history = await readRecentOutcomes(directory);
+    assert.deepEqual(history.map((event) => event.status), ["candidate", "replace"]);
+    await assert.rejects(readRecentOutcomes(directory, 4), /Invalid Decision history limit/);
+  } finally { await fs.rm(directory, { recursive: true, force: true }); }
+});
+
+test("one activity snapshot uses one atomic stats record and handles short file reads", async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "decision-atomic-counters-"));
+  const statsFile = path.join(directory, "stats.json");
+  const eventsFile = path.join(directory, "logs", "events.jsonl");
+  const originalOpen = fs.open;
+  let openedStats = 0;
+  let largestHistoryRead = 0;
+  const first = { calls: 2, completed: 2, replaced: 0, timed: 2, elapsedMs: 100,
+    candidates: 2, candidate_observe: 2, linesActuallyOmitted: 0 };
+  const second = { ...first, calls: 3, completed: 3, candidates: 3, candidate_observe: 3 };
+  try {
+    await fs.writeFile(statsFile, JSON.stringify(first));
+    await fs.mkdir(path.dirname(eventsFile));
+    await fs.writeFile(eventsFile, "x".repeat(300_000) + "\n" + JSON.stringify({
+      status: "replace", reason: "relevance_replace", tool: "Bash", original_chars: 1000, capsule_chars: 100,
+    }) + "\n");
+    fs.open = async (filename, ...args) => {
+      const handle = await originalOpen(filename, ...args);
+      if (filename === statsFile) {
+        openedStats += 1;
+        return { stat: () => handle.stat(), read: (...readArgs) => handle.read(...readArgs),
+          close: async () => {
+            await handle.close();
+            await fs.writeFile(`${statsFile}.next`, JSON.stringify(second));
+            await fs.rename(`${statsFile}.next`, statsFile);
+          } };
+      }
+      if (filename === eventsFile) {
+        return { stat: () => handle.stat(), close: () => handle.close(),
+          read: (buffer, offset, length, position) => {
+            largestHistoryRead = Math.max(largestHistoryRead, length);
+            return handle.read(buffer, offset, Math.min(length, 1024), position);
+          } };
+      }
+      return handle;
+    };
+    const snapshot = await readSessionActivity(directory);
+    assert.equal(openedStats, 1, "one snapshot opens stats exactly once");
+    assert.equal(snapshot.completed, 2);
+    assert.equal(snapshot.candidates, 2, "related counters come from the same record despite an atomic update");
+    assert.deepEqual(snapshot.candidateReasons, { observe: 2 });
+    const history = await readRecentOutcomes(directory);
+    assert.equal(history[0].status, "replace", "short reads continue until the bounded tail is read");
+    assert.ok(largestHistoryRead <= 262_144, "history reads stay bounded despite a large event index");
+  } finally {
+    fs.open = originalOpen;
+    await fs.rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("global settings stay independent of session switches and aggregate activity", async (t) => {

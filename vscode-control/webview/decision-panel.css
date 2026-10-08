@@ -6,6 +6,11 @@ body { margin: 0; padding: 8px 12px 12px; color: var(--vscode-foreground); backg
 body:is(.vscode-light, .light) .batch-layout { --batch-keep: #895900; --batch-cut: #1c67aa; }
 .batch-header { position: sticky; top: 0; z-index: 2; display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 4px 0 6px; background: var(--vscode-panel-background, var(--vscode-editor-background)); border-bottom: 1px solid var(--vscode-panel-border, #5556); }
 .batch-title { color: var(--batch-keep, var(--vscode-foreground)); font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.batch-heading { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.panel-tabs { display: flex; gap: 2px; }
+.panel-tab { border: 0; border-radius: 3px; padding: 4px 7px; color: var(--vscode-descriptionForeground, #aaa); background: transparent; font: inherit; font-size: 12px; cursor: pointer; }
+.panel-tab[aria-pressed="true"] { color: var(--vscode-foreground); background: var(--vscode-list-activeSelectionBackground, #5555); }
+.panel-tab:focus-visible { outline: 1px solid var(--vscode-focusBorder, #69aef0); outline-offset: 1px; }
 .batch-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; margin-left: auto; max-width: 100%; text-align: right; }
 .activity-counts { color: var(--vscode-foreground); font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .batch-status { color: var(--vscode-descriptionForeground, #888); font-size: 11px; white-space: nowrap; }
@@ -26,3 +31,16 @@ body:is(.vscode-light, .light) .batch-layout { --batch-keep: #895900; --batch-cu
 .batch-row.omit .batch-value { color: var(--batch-cut); }
 .empty { display: grid; min-height: 180px; place-content: center; text-align: center; }
 .empty-status { max-width: 480px; margin: 10px 0; font-size: 13px; line-height: 1.5; }
+.totals-layout { padding: 14px 0; max-width: 1180px; }
+.totals-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr)); gap: 12px; margin: 0; }
+.totals-metric { padding: 10px 12px; background: var(--vscode-list-hoverBackground, #5552); border-radius: 4px; }
+.totals-metric dt { color: var(--vscode-descriptionForeground, #aaa); font-size: 12px; }
+.totals-metric dd { margin: 4px 0 0; font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.totals-note { color: var(--vscode-descriptionForeground, #aaa); font-size: 12px; line-height: 1.5; }
+.totals-heading { margin: 20px 0 8px; font-size: 14px; }
+.totals-reasons { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 12px; line-height: 1.5; }
+.totals-reasons th, .totals-reasons td { padding: 8px 6px; text-align: left; vertical-align: top; overflow-wrap: anywhere; border-bottom: 1px solid var(--vscode-panel-border, #5553); }
+.totals-reasons th:nth-child(1) { width: 27%; }
+.totals-reasons th:nth-child(2) { width: 14%; }
+.totals-reasons .reason-count { font-variant-numeric: tabular-nums; }
+.totals-reasons .reason-detail { color: var(--vscode-descriptionForeground, #aaa); }

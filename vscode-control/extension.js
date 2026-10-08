@@ -7,10 +7,10 @@ const EXPECTED_HOOK_VERSION = require("./package.json").codexDecisionHookVersion
 const { LatestDecisionProvider, VIEW_ID } = require("./panel");
 const {
   checkHealth, decisionSummary, defaultDataDirectory, estimateTokensSaved,
-  isDecisionOutcome, outcomeLine, readConfig, readEventCursor, readEventsSince, savedCharacters,
+  outcomeLine, readConfig, readEventCursor, readEventsSince,
   readApiKey, writeApiKey, writeSelection,
   completeRelevancePolicy,
-  sessionDirectory, readHookHealth, ensureSessionDefaults,
+  sessionDirectory, readSessionActivity, readRecentOutcomes, ensureSessionDefaults,
   DEFAULT_SETTINGS, readGlobalSettings, writeGlobalSettings, readInstallationStats,
 } = require("./core");
 
@@ -54,6 +54,20 @@ function createController(dataDirectory) {
     state.recent = null;
     state.classificationPulse = 0;
     state.panelFault = null;
+  }
+
+  async function restoreActivity(directory, generation, refreshHistory = true) {
+    const [activity, history] = await Promise.all([
+      readSessionActivity(directory), refreshHistory ? readRecentOutcomes(directory) : null,
+    ]);
+    if (generation !== state.generation) return;
+    const { hookHealth, ...stats } = activity;
+    state.stats = { ...emptyStats(), ...stats };
+    state.hookHealth = hookHealth;
+    if (history !== null) {
+      state.history = history;
+      state.recent = history[0] || null;
+    }
   }
 
   async function enterView(viewId, sessionId, expectsLocalSession = false) {
@@ -105,6 +119,7 @@ function createController(dataDirectory) {
       try {
         const cursor = await readEventCursor(activeDirectory());
         if (state.generation === generation) { state.eventCursor = cursor; state.eventSize = cursor.offset; }
+        await restoreActivity(activeDirectory(), generation);
       } catch {
         if (state.generation === generation) state.eventSize = -1;
       }
@@ -202,8 +217,7 @@ function createController(dataDirectory) {
           if (generation !== state.generation) return;
           state.eventCursor = cursor;
           state.eventSize = cursor.offset;
-          const health = await readHookHealth(directory);
-          if (generation === state.generation) state.hookHealth = health;
+          await restoreActivity(directory, generation);
           return;
         }
         const batch = await readEventsSince(directory, state.eventCursor);
@@ -213,22 +227,6 @@ function createController(dataDirectory) {
         for (const event of batch.events) {
           if (event.status === "classifying") {
             if (state.enabled) state.classificationPulse += 1;
-          } else if (event.status === "calling") {
-            state.stats.calls += 1;
-          } else if (isDecisionOutcome(event)) {
-            state.stats.calls += event.requests;
-            state.stats.completed += 1;
-            state.stats.checkedChars += event.original_chars;
-            state.stats.savedChars += savedCharacters(event);
-            state.stats.elapsedMs += event.elapsed_ms;
-            if (event.status === "candidate") state.stats.candidates += 1;
-            else if (event.status === "replace") state.stats.replaced += 1;
-            else state.stats.kept += 1;
-            state.history.unshift(event);
-            state.history.length = Math.min(state.history.length, 3);
-            state.recent = event;
-          } else if (event.status === "skip" && event.reason === "choice_kept_full_output") {
-            state.stats.calls += event.requests;
           }
           if (!state.needsKey && (event.reason === "no_evaluator" ||
               event.reason === "evaluator_unavailable")) {
@@ -237,8 +235,8 @@ function createController(dataDirectory) {
             void probe();
           }
         }
-        const health = await readHookHealth(directory);
-        if (generation === state.generation) state.hookHealth = health;
+        await restoreActivity(directory, generation, batch.reset || batch.events.some((event) =>
+          ["candidate", "keep", "replace"].includes(event.status)));
       } catch (error) {
         if (generation !== state.generation) return;
         if (error.code !== "ENOENT") state.recent = null;

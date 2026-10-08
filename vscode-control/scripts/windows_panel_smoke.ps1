@@ -28,7 +28,7 @@ try {
     $data = '\\wsl.localhost\' + $Distro + $linuxRoot.Replace('/', '\')
     $files = @('package.json', 'config-contract.json', 'core.js', 'extension.js', 'panel.js', 'panel-state.js',
         'private-paths.js', 'schema.js', 'providers.js', 'icon.png', 'LICENSE', 'README.md', 'media\decision-panel.svg',
-        'webview\decision-control.js', 'webview\decision-settings.js', 'webview\decision-panel.js', 'webview\decision-panel.css')
+        'webview\decision-control.js', 'webview\decision-settings.js', 'webview\decision-totals.js', 'webview\decision-panel.js', 'webview\decision-panel.css')
     foreach ($file in $files) {
         $source = Join-Path $repository ('vscode-control\' + $file)
         if (((Get-Item -LiteralPath $source).Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'Linked test source.' }
@@ -44,10 +44,15 @@ try {
     [IO.File]::WriteAllText($providerPath, $source.Replace($needle, $needle + ' globalThis.__decisionPanelTestProvider = this;'), $utf8)
     $rendererPath = Join-Path $control 'webview\decision-panel.js'
     $source = [IO.File]::ReadAllText($rendererPath)
-    $needle = 'updateActivity(event.data.activity ?? currentActivity);'
-    if ($source.IndexOf($needle) -ne $source.LastIndexOf($needle) -or -not $source.Contains($needle)) { throw 'Renderer instrumentation anchor changed.' }
-    $ack = ' vscode.postMessage({type:"decision-test-rendered", id:event.data.decision?.id || null, rows:document.querySelectorAll(".batch-row").length, kept:document.querySelectorAll(".batch-row.keep").length, unscored:[...document.querySelectorAll(".batch-row.unscored")].map(row => ({score:row.querySelector(".batch-value").textContent, title:row.title})), title:document.querySelector(".batch-title")?.textContent || "Decision", status:document.querySelector(".batch-status")?.textContent || null, activity:(document.querySelector(".activity-counts")?.textContent || "") + " " + (document.querySelector(".empty")?.textContent || ""), layout:document.querySelector(".batch-list") ? getComputedStyle(document.querySelector(".batch-list")).display : null, tenCharacterBars:[...document.querySelectorAll(".batch-bar-fill,.batch-bar-empty")].every(node => [...node.textContent].length === 10), compactRows:[...document.querySelectorAll(".batch-row")].every(node => node.getBoundingClientRect().height <= 28)});'
-    [IO.File]::WriteAllText($rendererPath, $source.Replace($needle, $needle + $ack).Replace("updateActivity(event.data.activity);", "updateActivity(event.data.activity);" + $ack), $utf8)
+    $needle = '    showSelectedView();'
+    if (-not $source.Contains($needle)) { throw 'Renderer instrumentation anchor changed.' }
+    $ack = ' vscode.postMessage({type:"decision-test-rendered", id:event.data.decision?.id || null, rows:document.querySelectorAll(".batch-row").length, kept:document.querySelectorAll(".batch-row.keep").length, unscored:[...document.querySelectorAll(".batch-row.unscored")].map(row => ({score:row.querySelector(".batch-value").textContent, title:row.title})), title:document.querySelector(".batch-title")?.textContent || "Decision", status:document.querySelector(".batch-status")?.textContent || null, activity:(document.querySelector(".activity-counts")?.textContent || "") + " " + (document.querySelector(".empty")?.textContent || ""), layout:document.querySelector(".batch-list") ? getComputedStyle(document.querySelector(".batch-list")).display : null, tenCharacterBars:[...document.querySelectorAll(".batch-bar-fill,.batch-bar-empty")].every(node => [...node.textContent].length === 10), compactRows:[...document.querySelectorAll(".batch-row")].every(node => node.getBoundingClientRect().height <= 28), mode:document.querySelector(".panel-tab[aria-pressed=true]")?.dataset.panelMode, metrics:Object.fromEntries([...document.querySelectorAll("[data-metric]")].map(node => [node.dataset.metric,node.querySelector("dd").textContent]))});'
+    $source = $source.Insert($source.LastIndexOf($needle) + $needle.Length, $ack)
+    $source = $source.Replace('if (panelMode === "totals") { showTotals(); return; }', 'if (panelMode === "totals") { showTotals();' + $ack + ' return; }')
+    $source = $source.Replace('if (emptyStatus && event.data.activity?.message) emptyStatus.textContent = event.data.activity.message;', 'if (emptyStatus && event.data.activity?.message) emptyStatus.textContent = event.data.activity.message;' + $ack)
+    $readyNeedle = 'vscode.postMessage({ type: "ready" });'
+    $switchListener = 'window.addEventListener("message", (event) => { if (event.data?.type === "decision-test-switch") { app.querySelector("button[data-panel-mode=" + event.data.mode + "]").click();' + $ack + '} });'
+    [IO.File]::WriteAllText($rendererPath, $source.Replace($readyNeedle, $switchListener + $readyNeedle), $utf8)
     [IO.File]::WriteAllText((Join-Path $profile 'User\settings.json'), (@{
         'telemetry.telemetryLevel' = 'off'; 'update.mode' = 'none'; 'extensions.autoUpdate' = $false;
         'workbench.startupEditor' = 'none'; 'workbench.enableExperiments' = $false;
@@ -120,6 +125,35 @@ exports.run = async () => {
     assert.match(acknowledged.activity, /341 skipped outputs/);
     assert.equal(acknowledged.rows,2);
     result.checks.push("live counters update while saved result rows remain visible");
+    acknowledged = null;
+    await provider.view.webview.postMessage({type:"decision-test-switch",mode:"totals"});
+    await until(() => acknowledged?.mode === "totals");
+    assert.equal(acknowledged.metrics.calls,"9");
+    assert.equal(acknowledged.metrics.skipped,"341");
+    assert.equal(acknowledged.rows,0);
+    await vscode.commands.executeCommand("codexDecision.bridge", {action:"status",viewId:"native-view",sessionId:"native-two",focused:true});
+    await provider.pending;
+    acknowledged = null;
+    provider.lastMessage = "";
+    provider.nextDecisionAt = 0;
+    await provider.refresh();
+    await until(() => acknowledged?.mode === "totals" && acknowledged.metrics.calls === "0");
+    await vscode.commands.executeCommand("codexDecision.bridge", {action:"status",viewId:"native-view",sessionId:"native-one",focused:true});
+    await provider.pending;
+    acknowledged = null;
+    provider.lastMessage = "";
+    provider.nextDecisionAt = 0;
+    await provider.refresh();
+    await until(() => acknowledged?.mode === "totals" && acknowledged.metrics.calls === "9");
+    const totalsGeneration = provider.generation;
+    acknowledged = null;
+    provider.view.webview.html = provider.view.webview.html + "<!-- totals restoration -->";
+    await until(() => provider.generation > totalsGeneration && !provider.awaitingReady);
+    await until(() => acknowledged?.mode === "totals" && acknowledged.metrics.calls === "9");
+    result.checks.push("Totals remembers its view and follows durable counters across session switches and webview reload");
+    acknowledged = null;
+    await provider.view.webview.postMessage({type:"decision-test-switch",mode:"latest"});
+    await until(() => acknowledged?.mode === "latest" && acknowledged.rows === 2);
     await fs.rm(path.join(one,"logs/hook-health.json"));
     for (let index = 0; index < 3; index++) {
       const generation = provider.generation;

@@ -40,7 +40,8 @@ class LatestDecisionProvider {
     webview.options = { enableScripts: true, localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, "webview")] };
     const style = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "webview", "decision-panel.css"));
     const script = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "webview", "decision-panel.js"));
-    const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src ${webview.cspSource};"><link rel="stylesheet" href="${style}"></head><body><main id="app" aria-live="polite"></main><script src="${script}"></script></body></html>`;
+    const totalsScript = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "webview", "decision-totals.js"));
+    const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src ${webview.cspSource};"><link rel="stylesheet" href="${style}"></head><body><main id="app" aria-live="polite"></main><script src="${totalsScript}"></script><script src="${script}"></script></body></html>`;
     const ready = webview.onDidReceiveMessage((message) => {
       if (this.view === view && message?.type === "ready") {
         this.awaitingReady = false;

@@ -50,6 +50,15 @@ def chromium_smoke() -> None:
             assert json.loads(page.locator('body').get_attribute('data-result'))['activity']
             page.close()
             for width in (360, 1200):
+                for state in ('', '?restored'):
+                    page = browser.new_page(viewport={'width': width, 'height': 600})
+                    page.goto((ROOT.parent / 'tests/browser/decision_panel_totals_harness.html').as_uri() + state)
+                    page.wait_for_function('document.title === "DECISION_TOTALS_READY"')
+                    report = json.loads(page.locator('body').get_attribute('data-result'))
+                    assert all(report.values()), report
+                    reports.append({'totals_panel': True, 'requested_width': width, 'state': state, **report})
+                    page.close()
+            for width in (360, 1200):
                 page = browser.new_page(viewport={'width': width, 'height': 600})
                 page.goto((ROOT.parent / 'tests/browser/decision_panel_protected_harness.html').as_uri())
                 page.wait_for_function('document.title === "DECISION_PROTECTED_READY"')
@@ -123,6 +132,19 @@ def main() -> None:
         ], capture_output=True, text=True, timeout=30, check=False)
         if result.returncode != 0 or '<title>DECISION_EMPTY_READY</title>' not in result.stdout:
             raise RuntimeError('Decision empty panel activity check failed')
+        totals = windows_path(ROOT.parent / 'tests/browser/decision_panel_totals_harness.html').replace('\\', '/')
+        totals_address = 'file:///' + quote(totals, safe='/:')
+        for width in (360, 1200):
+            for state in ('', '?restored'):
+                result = subprocess.run([
+                    str(edge), '--headless', '--disable-gpu', '--no-first-run',
+                    '--no-default-browser-check', '--disable-extensions',
+                    f'--window-size={width},600',
+                    f'--user-data-dir={windows_path(profile / f"totals-{width}-{bool(state)}")}',
+                    '--dump-dom', totals_address + state,
+                ], capture_output=True, text=True, timeout=30, check=False)
+                if result.returncode != 0 or '<title>DECISION_TOTALS_READY</title>' not in result.stdout:
+                    raise RuntimeError(f'Decision totals panel check failed at {width}px: {result.stdout[-3500:]}')
         protected = windows_path(ROOT.parent / 'tests/browser/decision_panel_protected_harness.html').replace('\\', '/')
         protected_address = 'file:///' + quote(protected, safe='/:')
         for width in (360, 1200):

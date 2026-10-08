@@ -19,7 +19,7 @@ pub(super) fn hook_health(data_dir: &Path, outcome: &str, reason: &str) -> Resul
         serde_json::from_slice::<Value>(&read_bounded(&path, 4096).map_err(|_| "hook health read")?)
             .map_err(|_| "invalid hook health")?
     } else {
-        json!({})
+        json!({"errors":0})
     };
     if !health.is_object() {
         return Err("invalid hook health".into());
@@ -47,6 +47,7 @@ pub(super) fn hook_health(data_dir: &Path, outcome: &str, reason: &str) -> Resul
         "error" => {
             health["last_error_ms"] = json!(now);
             health["last_error"] = json!(reason);
+            health["errors"] = json!(health["errors"].as_u64().unwrap_or(0).saturating_add(1));
         }
         "skip" => {
             health["last_skip_ms"] = json!(now);
@@ -77,6 +78,10 @@ pub(super) fn hook_health(data_dir: &Path, outcome: &str, reason: &str) -> Resul
         true,
     )
 }
+
+#[cfg(test)]
+#[path = "telemetry_tests.rs"]
+mod tests;
 
 pub(super) fn skip(data_dir: &Path, reason: &str) -> Result<Value, String> {
     hook_health(data_dir, "skip", reason)?;

@@ -16,12 +16,13 @@ async function until(predicate, timeoutMs = 2000) {
   }
 }
 
-test("composer bridge toggles Decision and reports view-scoped activity without a status item", async () => {
+test("composer bridge toggles Decision and restores thread activity without a status item", async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "decision-control-test-"));
   const commands = new Map();
   let mode = "replace";
   let health = { ok: true, model: "jev-1.13.0" };
   let probes = 0;
+  let historyReads = 0;
   let suppliedKey;
   let openedExternal;
   let executedCommand;
@@ -49,7 +50,9 @@ test("composer bridge toggles Decision and reports view-scoped activity without 
   };
   const originalLoad = Module._load;
   const originalHealth = core.checkHealth;
+  const originalRecentOutcomes = core.readRecentOutcomes;
   core.checkHealth = async (_directory, _send, key) => { probes += 1; suppliedKey = key; return health; };
+  core.readRecentOutcomes = async (...args) => { historyReads += 1; return originalRecentOutcomes(...args); };
   Module._load = function (request, parent, isMain) {
     if (request === "vscode") return fake;
     return originalLoad.call(this, request, parent, isMain);
@@ -61,6 +64,7 @@ test("composer bridge toggles Decision and reports view-scoped activity without 
   } finally {
     Module._load = originalLoad;
     core.checkHealth = originalHealth;
+    core.readRecentOutcomes = originalRecentOutcomes;
   }
   const context = { subscriptions: [], extensionUri: {} };
   try {
@@ -140,6 +144,7 @@ test("composer bridge toggles Decision and reports view-scoped activity without 
     assert.equal(first.stats.savedChars, 10608);
     assert.equal(first.stats.estimatedTokensSaved, 2652);
     assert.equal(first.classificationPulse, 1, "relevance completion does not pulse");
+    const readsAfterOutcome = historyReads;
     await fs.appendFile(path.join(scoped, "logs", "events.jsonl"), JSON.stringify({
       status: "classifying", reason: "classification_start", requests: 0,
     }) + "\n" + JSON.stringify({
@@ -153,6 +158,8 @@ test("composer bridge toggles Decision and reports view-scoped activity without 
     assert.equal(gateSkip.classificationPulse, 2);
     assert.equal((await bridge({ action: "status" })).classificationPulse, 2,
       "repeated polls do not retrigger classification");
+    assert.equal(historyReads, readsAfterOutcome,
+      "unchanged history is cached during status polls and classification-only events");
     const beforeFailureProbe = probes;
     await fs.appendFile(path.join(scoped, "logs", "events.jsonl"), JSON.stringify({
       status: "keep", reason: "evaluator_unavailable", tool: "Bash",
@@ -174,9 +181,9 @@ test("composer bridge toggles Decision and reports view-scoped activity without 
     const newView = await bridge({ action: "status", viewId: "view-two" });
     assert.equal(panelRefreshes, beforeViewSwitch + 1,
       "a newly focused composer refreshes the panel immediately");
-    assert.equal(newView.stats.completed, 0);
-    assert.equal(newView.stats.estimatedTokensSaved, 0);
-    assert.deepEqual(newView.history, []);
+    assert.equal(newView.stats.completed, 2);
+    assert.equal(newView.stats.estimatedTokensSaved, 2652);
+    assert.equal(newView.history.length, 2);
     assert.equal(newView.classificationPulse, 0, "old start signals do not replay in a new view");
     assert.equal(panel.dataDirectory(), scoped);
     for (let index = 0; index < 8; index += 1) {
@@ -275,7 +282,36 @@ test("composer bridge toggles Decision and reports view-scoped activity without 
       "another thread view cannot change the first view's filters");
     const returned = await bridge({ action: "status", viewId: "view-four" });
     assert.equal(returned.enabled, false);
-    assert.equal(returned.stats.completed, 0, "old activity stays outside the new view");
+    assert.equal(returned.stats.completed, 2, "thread activity survives a new composer view");
+    const now = Date.now();
+    await fs.writeFile(path.join(scoped, "logs", "hook-health.json"), JSON.stringify({
+      version: 1, hook_version: "0.11.2", last_seen_ms: now,
+      api_requests: 5, seen: 10, skipped: 7, errors: 1, skip_counts: { small: 7 },
+    }));
+    const persisted = await bridge({ action: "status", viewId: "session-switch-view" });
+    assert.equal(persisted.stats.calls, 5, "API attempts include failed and pending requests");
+    assert.equal(persisted.stats.skipped, 7);
+    assert.equal(persisted.stats.completed, 2);
+    const cachedHistoryReads = historyReads;
+    await fs.writeFile(path.join(scoped, "logs", "hook-health.json"), JSON.stringify({
+      version: 1, hook_version: "0.11.2", last_seen_ms: Date.now(),
+      api_requests: 6, seen: 10, skipped: 7, errors: 1, skip_counts: { small: 7 },
+    }));
+    assert.equal((await bridge({ action: "status", viewId: "session-switch-view" })).stats.calls, 6,
+      "pending API counters refresh while the event cursor is unchanged");
+    assert.equal(historyReads, cachedHistoryReads, "health-only changes reuse retained history");
+    const switched = await bridge({ action: "status", viewId: "session-switch-view", sessionId: "other-window" });
+    assert.equal(switched.stats.calls, 0);
+    assert.equal(switched.stats.skipped, 0);
+    const restored = await bridge({ action: "status", viewId: "session-switch-view" });
+    assert.equal(restored.stats.calls, 6);
+    assert.equal(restored.stats.skipped, 7);
+    assert.equal(restored.stats.completed, 2, "returning to a session restores its persisted totals");
+    assert.equal(restored.classificationPulse, 0, "restoring outcomes does not replay classification");
+    assert.equal((await bridge({ action: "status", viewId: "fresh-extension-view" })).stats.calls, 6,
+      "a fresh controller restores attempts without observing old events");
+    assert.equal((await bridge({ action: "settingsRead", viewId: "session-switch-view" })).settings.lifetime.calls, 6,
+      "installation totals include the same API attempts as the selected session");
 
     await fs.writeFile(path.join(scoped, "config.json"), '{"schema_version":1,"enabled":true}');
     const broken = await bridge({ action: "status", viewId: "view-five" });

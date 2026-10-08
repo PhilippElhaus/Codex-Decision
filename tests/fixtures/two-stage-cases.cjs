@@ -12,6 +12,10 @@ for (const size of [20, 60, 120, 240]) {
   const lines = [...routine(size), "ERROR: synthetic connection refused at example.invalid:8443", "test result: FAILED. 1 failure"];
   add(`log-failure-${size}`, "repetitive_log", "Identify why the run failed.", lines, [size + 1, size + 2]);
 }
+add("identifier-suffix-log", "repetitive_log", "Find the failure in the task-state worker log.",
+  [...routine(80, "INFO task-state heartbeat; disk-cache idle; risk-check unchanged"),
+    "ERROR: synthetic worker failed to connect to example.invalid:8443", "Done"], [81, 82],
+  { command: "node task-state-worker.cjs", expected_calls: 1 });
 add("cargo-success", "progress_output", "Did compilation finish successfully?",
   [...routine(120, "Compiling synthetic_module"), "Finished release profile in 1.23s"], [121], { command: "cargo build" });
 add("pytest-traceback", "repetitive_log", "Find the cause of the test failure.",

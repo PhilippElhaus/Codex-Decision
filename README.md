@@ -4,7 +4,7 @@
 
 Codex Decision removes repetitive lines from local tool output before Codex reads them. Errors and useful evidence stay visible. Every shortened result links to the complete original.
 
-**Codex Decision 0.11.2 · VS Code control 0.10.7** — [Download the latest release](https://github.com/PhilippElhaus/Codex-Decision/releases/latest).
+**Codex Decision 0.11.3 · VS Code control 0.10.8** — [Download the latest release](https://github.com/PhilippElhaus/Codex-Decision/releases/latest).
 
 ## Get started
 
@@ -40,6 +40,10 @@ Open **Codex settings → Decision** to choose **Monitor** (keep full output) or
 Open the **Decision** panel beside **Terminal** and **Output**. Blue rows mark proposed omissions; gold rows mark kept lines. Bars show relevance. Hover for excerpts and reasons. Before the first decision, the panel shows hook activity and skip reasons.
 
 <img src="docs/images/decision-panel.png" width="1000" alt="Decision panel showing 47 of 50 lines removed and persistent thread activity counts">
+
+Select **Latest** for the current result or **Totals** for the selected thread’s saved requests, evaluations, removals, and skip reasons. Switching threads restores their own counters.
+
+<img src="docs/images/decision-totals.png" width="1000" alt="Decision Totals view with saved session counts and reasons outputs stayed complete">
 
 Screenshots use synthetic data. For a missing decision or failed connection, see [troubleshooting](docs/setup/setup_installation.md).
 

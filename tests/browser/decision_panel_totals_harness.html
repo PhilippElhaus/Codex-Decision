@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Decision session totals</title>
+  <link rel="stylesheet" href="../../vscode-control/webview/decision-panel.css">
+  <script>
+    let saved = location.search.includes("restored") ? {panelMode:"totals"} : null;
+    window.acquireVsCodeApi = () => ({postMessage(){},getState:()=>saved,setState:value=>{saved=value;}});
+  </script>
+</head>
+<body>
+  <main id="app"></main>
+  <script src="../../vscode-control/webview/decision-totals.js"></script>
+  <script src="../../vscode-control/webview/decision-panel.js"></script>
+  <script>
+    const initialRestored = !location.search.includes("restored") || document.querySelector(".totals-layout") !== null;
+    const activityA = {calls:9,skipped:144,message:"Synthetic thread A",totals:{seen:147,completed:3,
+      replaced:2,candidates:1,kept:0,linesRelevanceJudged:80,linesActuallyOmitted:70,errors:0,candidateReasons:{observe:1},
+      skipCounts:{small:80,unsupported_result:40,sensitive:20,choice_kept_full_output:4}}};
+    const activityB = {calls:2,skipped:30,message:"Synthetic thread B",totals:{seen:31,completed:1,
+      replaced:1,candidates:0,kept:0,linesRelevanceJudged:18,linesActuallyOmitted:16,errors:0,candidateReasons:{},
+      skipCounts:{small:29,choice_kept_full_output:1}}};
+    const make = id => ({id,version:6,status:"replace",rows:[{line:1,excerpt:"Synthetic diagnostic",
+      action:"keep",reason:"protected",protected_reason:"diagnostic_or_completion",
+      can_omit:null,exact_needed:null,task_relevant:null,retention_index:null}],
+      totals:{seen:1,judged:0,kept:1,omitted:0,protected:1,unjudged:0,requests:1}});
+    const send = (decision,activity) => window.dispatchEvent(new MessageEvent("message",{data:{type:"decision",decision,activity}}));
+    const select = mode => document.querySelector(`[data-panel-mode="${mode}"]`).click();
+    const metric = name => document.querySelector(`[data-metric="${name}"] dd`)?.textContent;
+    send(make("a".repeat(32)),activityA);
+    select("totals");
+    const report = {initialRestored,
+      persistedMode:saved.panelMode === "totals",
+      totalsForA:metric("calls") === "9" && metric("seen") === "147" && metric("linesActuallyOmitted") === "70",
+      reasonsForA:document.querySelector('[data-reason="unsupported_result"] .reason-count')?.textContent === "40",
+      previewReasonsForA:document.querySelector('[data-reason="observe"] .reason-count')?.textContent === "1",
+      headerForA:document.querySelector(".activity-counts").textContent === "9 API requests · 144 skipped outputs"};
+    send(make("b".repeat(32)),activityB);
+    report.switchToB = metric("calls") === "2" && metric("skipped") === "30" &&
+      document.querySelector('[data-reason="unsupported_result"]') === null && document.querySelector('[data-reason="observe"]') === null;
+    select("latest");
+    report.latestForB = document.querySelector(".batch-row")?.textContent.includes("Synthetic diagnostic") &&
+      document.querySelector(".activity-counts").textContent === "2 API requests · 30 skipped outputs";
+    select("totals");
+    send(make("a".repeat(32)),activityA);
+    report.returnToA = metric("calls") === "9" && metric("seen") === "147";
+    window.dispatchEvent(new MessageEvent("message",{data:{type:"activity",activity:{...activityA,calls:10}}}));
+    report.pendingRequestUpdates = metric("calls") === "10" && metric("completed") === "3";
+    report.noOverflow = document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1;
+    window.scrollTo(0,200);
+    report.stickyCounts = document.querySelector(".activity-counts").getBoundingClientRect().top >= 0;
+    window.scrollTo(0,0);
+    send(null,{calls:4,skipped:null,message:"Legacy synthetic thread",totals:{seen:null,errors:null,skipCounts:{}}});
+    report.unknownLegacyCounters = metric("seen") === "—" && metric("skipped") === "—" && metric("errors") === "—";
+    send(null,null);
+    report.noThreadClearsCounters = metric("calls") === "—" && document.querySelector(".activity-counts").textContent.includes("— API requests");
+    document.body.dataset.result=JSON.stringify(report);
+    document.title=Object.values(report).every(Boolean) ? "DECISION_TOTALS_READY" : "DECISION_TOTALS_FAILED";
+  </script>
+</body>
+</html>

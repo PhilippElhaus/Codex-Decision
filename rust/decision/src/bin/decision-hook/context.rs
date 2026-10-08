@@ -1,66 +1,7 @@
-//! Sensitive input detection and safe plain-text responses.
+//! Safe task cues and plain-text response envelopes.
 use super::projection::command_projection;
 use super::*;
 use std::borrow::Cow;
-
-pub(super) fn sensitive(text: &str) -> bool {
-    let lower = text.to_ascii_lowercase();
-    [
-        "-----begin",
-        "private key",
-        "api_key=",
-        "api-key:",
-        "access_token",
-        "client_secret",
-        "authorization:",
-        "password=",
-        "passwd=",
-        "secret=",
-        "token=",
-        "api key",
-        "bearer ",
-        "sk-",
-        "ghp_",
-        ".env",
-        "id_rsa",
-        "credentials.json",
-        "/.env",
-        "\\.env",
-    ]
-    .iter()
-    .any(|pattern| lower.contains(pattern))
-        || [
-            "password",
-            "passwd",
-            "api_key",
-            "api-key",
-            "apikey",
-            "secret",
-            "token",
-            "authorization",
-        ]
-        .iter()
-        .any(|name| {
-            lower.match_indices(name).any(|(index, _)| {
-                let rest = lower[index + name.len()..]
-                    .trim_start()
-                    .trim_start_matches('\\');
-                let rest = rest
-                    .strip_prefix('"')
-                    .or_else(|| rest.strip_prefix('\''))
-                    .unwrap_or(rest)
-                    .trim_start();
-                rest.starts_with([':', '=', '>'])
-            })
-        })
-}
-
-pub(super) fn sensitive_input(event: &Value) -> bool {
-    event
-        .get("tool_input")
-        .and_then(|input| serde_json::to_string(input).ok())
-        .is_some_and(|encoded| sensitive(&encoded))
-}
 
 pub(super) fn fallback_task(event: &Value) -> String {
     let input = event.get("tool_input");

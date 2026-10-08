@@ -64,6 +64,7 @@ def chromium_capture() -> None:
             (IMAGES / 'decision-settings.png').unlink()
             for state, name, height, count, expected in (
                 ('fifty', 'decision-panel.png', 900, 50, ('47 / 50 removed',)),
+                ('fifty&totals', 'decision-totals.png', 900, 0, ('This thread', 'Why outputs were skipped', 'Observed outputs')),
                 ('reviewed', 'decision-demo-tests.png', 520, 20,
                  ('119 / 124 removed', 'actual: 6000')),
             ):
@@ -145,6 +146,7 @@ def main() -> None:
         panel_address = 'file:///' + quote(windows_path(ROOT.parent / 'tests/browser/decision_panel_harness.html').replace('\\', '/'), safe='/:')
         for state, name, height, row_count, expected in (
             ('fifty', 'decision-panel.png', 900, 50, ('47 / 50 removed',)),
+                ('fifty&totals', 'decision-totals.png', 900, 0, ('This thread', 'Why outputs were skipped', 'Observed outputs')),
             ('reviewed', 'decision-demo-tests.png', 520, 20,
              ('119 / 124 removed', 'actual: 6000')),
         ):
