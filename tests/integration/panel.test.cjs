@@ -176,11 +176,17 @@ test("panel is empty without a thread and reports corrupt session data outside t
     await fs.mkdir(path.join(directory, "logs"));
     await fs.writeFile(path.join(directory, "logs", "latest-decision.json"), "{broken");
     await provider.refresh();
-    assert.deepEqual(messages.at(-1), { type: "decision", decision: null });
+    assert.deepEqual(messages.at(-1), { type: "decision", decision: null,
+      activity: { unavailable: true, calls: null, skipped: null,
+        message: "Saved activity could not be read for this thread." } });
     assert.equal(faults.at(-1), "Latest Decision decision could not be read");
     await fs.rm(path.join(directory, "logs", "latest-decision.json"));
+    await fs.writeFile(path.join(directory, "stats.json"), JSON.stringify({
+      calls: 3, completed: 1, replaced: 0, timed: 3, elapsedMs: 90 }));
     await provider.refresh();
     assert.equal(faults.at(-1), null);
+    assert.equal(messages.at(-1).activity.unavailable, undefined);
+    assert.equal(messages.at(-1).activity.calls, 3, "a repaired file restores selected-thread counts");
   } finally {
     provider.dispose();
     await fs.rm(directory, { recursive: true, force: true });

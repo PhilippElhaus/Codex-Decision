@@ -8,6 +8,34 @@ fn user(text: &str) -> String {
 }
 
 #[test]
+fn task_privacy_checks_encoded_and_final_normalized_model_text() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("transcript.jsonl");
+    for text in [
+        r"Find failure API\u005fKEY=synthetic-sentinel",
+        "Find failure Bearer\tsynthetic-sentinel",
+        "Find failure API_\x1b[31mKEY=synthetic-sentinel\x1b[0m",
+    ] {
+        fs::write(&path, user("An older safe task") + &user(text)).unwrap();
+        assert!(
+            task_context(&json!({"transcript_path":path})).is_err(),
+            "unsafe latest task accepted: {text}"
+        );
+    }
+    for text in [
+        r"Find the failure and explain literal \u005f.",
+        r"Find the failure in C:\users\synthetic\safe.txt",
+        "Find the failure. const value = process.env.TOKEN;",
+    ] {
+        fs::write(&path, user(text)).unwrap();
+        assert_eq!(
+            task_context(&json!({"transcript_path":path})).unwrap(),
+            Some(text.into())
+        );
+    }
+}
+
+#[test]
 fn latest_task_survives_a_long_turn_and_large_tool_records() {
     let root = tempfile::tempdir().unwrap();
     let path = root.path().join("transcript.jsonl");
@@ -239,6 +267,10 @@ fn explicit_exhaustive_requests_keep_full_output_without_matching_all_warnings()
         "Identify failing install paths.",
         "Report the small values relevant to this setting.",
         "Recall paths from cache when investigating the failed lookup.",
+        "Identify failures in all filesystems and their mount points.",
+        "Find the failing every entrypoint handler.",
+        "Report the complete output_latency setting.",
+        "Find issues in every objectstore retry.",
     ] {
         assert!(!exhaustive_task(task), "{task}");
     }

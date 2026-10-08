@@ -1,9 +1,53 @@
 //! Atomic publication of receipts, batches, totals, and completion events.
 use super::*;
 
+#[path = "record/journal.rs"]
+pub(super) mod journal;
+pub(super) use journal::recover as recover_publication;
+
 #[path = "record/staging.rs"]
 mod staging;
 use staging::{cleanup_pending_batches, PreparedBatches};
+
+#[cfg(test)]
+#[path = "record/accounting_tests.rs"]
+mod accounting_tests;
+
+fn request_totals(
+    batches: &[BatchRecord],
+    gate: Option<&BatchRecord>,
+) -> Result<(u64, Value), String> {
+    let mut elapsed = 0_u64;
+    let mut input = 0_u64;
+    let mut output = 0_u64;
+    for record in gate.into_iter().chain(batches) {
+        elapsed = elapsed
+            .checked_add(record.elapsed_ms)
+            .ok_or("request timing overflow")?;
+        input = input
+            .checked_add(
+                record
+                    .response
+                    .pointer("/usage/input_tokens")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(0),
+            )
+            .ok_or("request usage overflow")?;
+        output = output
+            .checked_add(
+                record
+                    .response
+                    .pointer("/usage/output_tokens")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(0),
+            )
+            .ok_or("request usage overflow")?;
+    }
+    Ok((
+        elapsed,
+        json!({"input_tokens":input,"output_tokens":output}),
+    ))
+}
 
 #[allow(clippy::too_many_arguments)] // Keep event and decision evidence explicit at the write boundary.
 pub(super) fn record(
@@ -22,6 +66,7 @@ pub(super) fn record(
     receipt_id: &str,
     snapshot_id: &str,
 ) -> Result<(), String> {
+    let (elapsed_ms, api_usage) = request_totals(batches, gate_record)?;
     let gate_elapsed_ms = gate_record.map(|gate| gate.elapsed_ms);
     ensure_dir(data_dir)?;
     let logs = data_dir.join("logs");
@@ -75,8 +120,6 @@ pub(super) fn record(
         .count();
     let original_chars = source.chars().count();
     let visible_chars = visible.chars().count();
-    let elapsed_ms =
-        batches.iter().map(|batch| batch.elapsed_ms).sum::<u64>() + gate_elapsed_ms.unwrap_or(0);
     let session = event
         .get("session_id")
         .and_then(Value::as_str)
@@ -95,8 +138,7 @@ pub(super) fn record(
         "output_kind":gate_record.and_then(|record| record.response.pointer("/answers/output_kind/choice"))
             .or_else(|| batches.first().and_then(|record| record.request.pointer("/state/output_kind"))),
         "routing":if gate_record.is_some() {"classified"} else {"validated_format"},
-        "api_usage":{"input_tokens":gate_record.into_iter().chain(batches.iter()).filter_map(|record|record.response.pointer("/usage/input_tokens").and_then(Value::as_u64)).sum::<u64>(),
-            "output_tokens":gate_record.into_iter().chain(batches.iter()).filter_map(|record|record.response.pointer("/usage/output_tokens").and_then(Value::as_u64)).sum::<u64>()},
+        "api_usage":api_usage,
         "requests":batches.len()+usize::from(gate_elapsed_ms.is_some()),
         "choice_gate_ran":gate_elapsed_ms.is_some(),
         "original_chars":original_chars,"visible_chars":visible_chars});
@@ -123,18 +165,19 @@ pub(super) fn record(
     let timestamp = now.to_rfc3339();
     summary["at"] = json!(timestamp);
     let receipt_bytes = receipt.finish(&timestamp)?;
-    let artifacts = vec![(folder.join(format!("receipt-{id}.json")), receipt_bytes)];
+    let receipt_name = format!("receipt-{id}.json");
+    let receipt_image = journal::Image::of(&receipt_bytes);
+    let artifacts = vec![(folder.join(&receipt_name), receipt_bytes)];
     let mut event_file = open_event_log(&logs)?;
     let event_size = event_file.metadata().map_err(|_| "event log stat")?.len();
     let stats_path = data_dir.join("stats.json");
-    let mut stats = load_stats(&stats_path)?;
+    let mut stats = load_activity_stats(data_dir)?;
     if status == "candidate" {
         let key = format!("candidate_{reason}");
-        stats[&key] = json!(stats
-            .get(&key)
-            .and_then(Value::as_u64)
-            .unwrap_or(0)
-            .saturating_add(1));
+        stats[&key] = json!(checked_counter_add(
+            stats.get(&key).and_then(Value::as_u64).unwrap_or(0),
+            1
+        )?);
     }
     for (key, increment) in [
         (
@@ -176,17 +219,41 @@ pub(super) fn record(
         ("linesBelowOmitCutoff", below_omit_cutoff as u64),
         ("linesRelevanceKept", relevance_kept as u64),
     ] {
-        stats[key] = json!(stats
-            .get(key)
-            .and_then(Value::as_u64)
-            .unwrap_or(0)
-            .saturating_add(increment));
+        stats[key] = json!(checked_counter_add(
+            stats.get(key).and_then(Value::as_u64).unwrap_or(0),
+            increment
+        )?);
     }
     let snapshot_path = logs.join("latest-decision.json");
     let snapshot_bytes = snapshot.finish(&Utc::now().to_rfc3339())?;
     let stats_bytes = serde_json::to_vec(&stats).map_err(|_| "stats encoding")?;
+    if stats_bytes.len() > 8192 {
+        return Err("stats too large".into());
+    }
     let previous_stats = private_backup(&stats_path, 8192)?;
     let previous_snapshot = private_backup(&snapshot_path, PANEL_SNAPSHOT_MAX_BYTES)?;
+    let mut event_bytes = serde_json::to_vec(&summary).map_err(|_| "event encoding")?;
+    event_bytes.push(b'\n');
+    let mut descriptions = prepared.artifacts(id);
+    descriptions.push(journal::Artifact {
+        name: receipt_name,
+        bytes: receipt_image.bytes,
+        sha256: receipt_image.sha256,
+    });
+    let publication = journal::Publication::begin(
+        data_dir,
+        folder
+            .file_name()
+            .and_then(|s| s.to_str())
+            .ok_or("invalid publication folder")?,
+        id,
+        previous_stats,
+        &stats_bytes,
+        Some((previous_snapshot, &snapshot_bytes)),
+        descriptions,
+        event_size,
+        &event_bytes,
+    )?;
     let mut created = Vec::new();
     let result = (|| -> Result<(), String> {
         remaining()?;
@@ -200,23 +267,21 @@ pub(super) fn record(
         write_private(&stats_path, &stats_bytes, true)?;
         remaining()?;
         write_private(&snapshot_path, &snapshot_bytes, true)?;
-        // Append the completion event only after every required artifact exists.
-        // No fallible operation may cancel the output after this commit point.
+        // Append and sync the event before the final durable commit marker.
         remaining()?;
-        writeln!(event_file, "{}", summary).map_err(|_| "event log write")?;
+        event_file
+            .write_all(&event_bytes)
+            .map_err(|_| "event log write")?;
         event_file.sync_all().map_err(|_| "event log sync")?;
+        publication.commit()?;
         Ok(())
     })();
     if let Err(error) = result {
-        let _ = event_file.set_len(event_size);
-        restore_private(&stats_path, previous_stats);
-        restore_private(&snapshot_path, previous_snapshot);
-        for path in created {
-            let _ = fs::remove_file(path);
-        }
+        publication.rollback()?;
         return Err(error);
     }
-    if !config.never_delete_logs {
+    let finalized = publication.committed();
+    if finalized && !config.never_delete_logs {
         prune(&logs, config.log_limit_mb * 1_000_000);
     }
     Ok(())

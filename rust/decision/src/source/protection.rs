@@ -48,3 +48,7 @@ pub fn protect_neighbors(lines: &mut [SourceLine]) {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "protection_tests.rs"]
+mod tests;

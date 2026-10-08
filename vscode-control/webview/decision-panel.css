@@ -35,7 +35,7 @@ body:is(.vscode-light, .light) .batch-layout { --batch-keep: #895900; --batch-cu
 .totals-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr)); gap: 12px; margin: 0; }
 .totals-metric { padding: 10px 12px; background: var(--vscode-list-hoverBackground, #5552); border-radius: 4px; }
 .totals-metric dt { color: var(--vscode-descriptionForeground, #aaa); font-size: 12px; }
-.totals-metric dd { margin: 4px 0 0; font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.totals-metric dd { margin: 4px 0 0; font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .totals-note { color: var(--vscode-descriptionForeground, #aaa); font-size: 12px; line-height: 1.5; }
 .totals-heading { margin: 20px 0 8px; font-size: 14px; }
 .totals-reasons { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 12px; line-height: 1.5; }

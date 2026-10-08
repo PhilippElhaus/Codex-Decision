@@ -15,7 +15,7 @@ PLUGIN_FILES = (
 )
 CONTROL_FILES = (
     "config-contract.json", "core.js", "extension.js", "icon.png", "package.json",
-    "panel-state.js", "panel.js", "schema.js", "providers.js", "private-paths.js", "media/decision-panel.svg",
+    "panel-state.js", "panel.js", "schema.js", "providers.js", "private-paths.js", "private-records.js", "publication-journal.js", "media/decision-panel.svg",
     "webview/decision-control.js", "webview/decision-panel.css", "webview/decision-panel.js",
     "webview/decision-totals.js",
     "webview/decision-settings.js",
@@ -53,7 +53,10 @@ def verify_plugin(path, root=ROOT):
             raise ValueError("Plugin and control hook versions differ")
         for binary in ("decision-hook", "decisionctl"):
             name = f"codex-decision/hooks/bin/linux-x86_64/{binary}"
-            check_elf(archive.read(name))
+            data = archive.read(name)
+            check_elf(data)
+            if binary == "decision-hook" and b"CODEX_DECISION_TEST_ENDPOINT" in data:
+                raise ValueError("Production package contains a verification hook")
             if not (archive.getinfo(name).external_attr >> 16) & 0o111:
                 raise ValueError(f"Packaged binary is not executable: {binary}")
 

@@ -3,9 +3,9 @@ const {spawn}=require("node:child_process");
 const assert=require("node:assert/strict");
 const children=new Set();
 
-function start(hook,data,endpoint,event) {
+function start(hook,data,endpoint,event,extra={}) {
   const started=process.hrtime.bigint();
-  const child=spawn(hook,[],{env:{...process.env,PLUGIN_DATA:data,CODEX_DECISION_TEST_ENDPOINT:endpoint},stdio:["pipe","pipe","pipe"]});
+  const child=spawn(hook,[],{env:{...process.env,PLUGIN_DATA:data,CODEX_DECISION_TEST_ENDPOINT:endpoint,...extra},stdio:["pipe","pipe","pipe"]});
   children.add(child);
   const done=new Promise((resolve,reject)=>{
     let stdout="",stderr="";
@@ -32,4 +32,4 @@ async function stopOwned() {
   await Promise.all([...children].map(child=>new Promise(resolve=>{child.once("close",resolve);child.kill("SIGKILL");})));
 }
 
-module.exports={start,invoke,stopOwned};
+module.exports={start,invoke,stopOwned,ownedPids:()=>[...children].map(child=>child.pid)};

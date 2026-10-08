@@ -71,7 +71,8 @@
           expectedHookVersion: "0.8.1",
           viewStartedAt: Date.now() - 1000,
           classificationPulse: demo === "classification" ? 1 : 0, mode: "replace", recent: history[0], history: disabled ? [] : history,
-          stats: disabled ? {} : { calls: 1, candidates: 1, kept: 0, replaced: 1, checkedChars: 6367, savedChars: 6058, estimatedTokensSaved: 1515, elapsedMs: 1263, completed: 1 },
+          stats: disabled ? {} : { calls: 1, candidates: 1, kept: 0, replaced: 1, checkedChars: 6367, savedChars: 6058,
+            estimatedTokensSaved: 1515, elapsedMs: 1263, timed: 1, averageMs: 1263, completed: 1 },
           settings,
         },
       } })));

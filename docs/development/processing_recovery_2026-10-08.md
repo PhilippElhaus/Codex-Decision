@@ -1,6 +1,6 @@
 # Processing recovery — 8 October 2026
 
-Plugin 0.11.4 and control 0.10.9 recover validated command logs, improve skip attribution, and remove the empty explanatory sections from Totals. A restored chat also stays selected when focus remains in Terminal.
+Plugin 0.11.4 and control 0.10.10 recover validated command logs, improve skip attribution, and remove the empty explanatory sections from Totals. A restored chat also stays selected when focus remains in Terminal.
 
 ## Skip audit
 

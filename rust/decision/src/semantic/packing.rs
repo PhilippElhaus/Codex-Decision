@@ -6,6 +6,9 @@ mod window;
 use sizes::WindowSizes;
 use window::window_request;
 
+#[cfg(test)]
+mod anchor_tests;
+
 pub fn relevance_requests(
     task: &str,
     command: &str,
@@ -28,7 +31,14 @@ pub fn relevance_requests(
         .filter(|(_, line)| {
             matches!(
                 line.protected_reason.as_deref(),
-                Some("diagnostic_or_completion" | "completion" | "unrecognized_log_context")
+                Some(
+                    "diagnostic_or_completion"
+                        | "completion"
+                        | "unrecognized_log_context"
+                        | "stderr_output"
+                        | "diagnostic_json"
+                        | "benchmark_result"
+                )
             )
         })
         .map(|(index, _)| index)

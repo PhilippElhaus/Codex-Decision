@@ -72,10 +72,3 @@ pub(super) fn read_private_tail(path: &Path, limit: usize) -> std::io::Result<Op
 #[cfg(test)]
 #[path = "private_file_tests.rs"]
 mod tests;
-pub(super) fn restore_private(path: &Path, previous: Option<Vec<u8>>) {
-    if let Some(bytes) = previous {
-        let _ = write_private(path, &bytes, true);
-    } else {
-        let _ = fs::remove_file(path);
-    }
-}

@@ -17,7 +17,8 @@
   <script>
     const initialRestored = !location.search.includes("restored") || document.querySelector(".totals-layout") !== null;
     const activityA = {calls:9,skipped:144,message:"Synthetic thread A",totals:{seen:147,completed:3,
-      replaced:2,candidates:1,kept:0,linesRelevanceJudged:80,linesActuallyOmitted:70,errors:0,candidateReasons:{observe:1},
+      replaced:2,candidates:1,kept:0,responsesReceived:8,responsesValidated:7,requestFailures:1,requestCancelled:1,
+      linesRelevanceJudged:80,linesActuallyOmitted:70,errors:0,candidateReasons:{observe:1},
       skipDetails:{protected_output:3,protected_command:4,protected_input:2},
       skipCounts:{small:80,unsupported_result:40,sensitive:20,choice_kept_full_output:4}}};
     const activityB = {calls:2,skipped:30,message:"Synthetic thread B",totals:{seen:31,completed:1,
@@ -35,6 +36,10 @@
     const report = {initialRestored,
       persistedMode:saved.panelMode === "totals",
       totalsForA:metric("calls") === "9" && metric("seen") === "147" && metric("linesActuallyOmitted") === "70",
+      requestStages:metric("responsesReceived") === "8" && metric("responsesValidated") === "7" &&
+        metric("requestFailures") === "1" && metric("requestCancelled") === "1",
+      recordedSkipDefinition:document.querySelector('[data-metric="skipped"]').title.includes("Named skip entries persisted in the health ledger.") &&
+        document.querySelector('[data-metric="skipped"]').title.includes("Termination before the health write leaves no recorded skip entry."),
       reasonsForA:document.querySelector('[data-reason="unsupported_result"] .reason-count')?.textContent === "40",
       privacyDetails:document.querySelector('[data-reason="sensitive"] .reason-detail')?.textContent.includes("output 3 · command 4 · other input 2"),
       previewReasonsForA:document.querySelector('[data-reason="observe"] .reason-count')?.textContent === "1",
@@ -51,18 +56,47 @@
     select("totals");
     send(make("a".repeat(32)),activityA);
     report.returnToA = metric("calls") === "9" && metric("seen") === "147";
-    window.dispatchEvent(new MessageEvent("message",{data:{type:"activity",activity:{...activityA,calls:10}}}));
-    report.pendingRequestUpdates = metric("calls") === "10" && metric("completed") === "3";
+    const pendingActivity = {...activityA,calls:10,totals:{...activityA.totals,
+      partialCounters:["responsesReceived","responsesValidated","requestFailures","requestCancelled"]}};
+    window.dispatchEvent(new MessageEvent("message",{data:{type:"activity",activity:pendingActivity}}));
+    report.pendingRequestUpdates = metric("calls") === "10" && metric("completed") === "3" &&
+      metric("responsesReceived") === "≥8" && metric("responsesValidated") === "≥7" &&
+      metric("requestFailures") === "≥1" && metric("requestCancelled") === "≥1";
     report.noOverflow = document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1;
     window.scrollTo(0,200);
     report.stickyCounts = document.querySelector(".activity-counts").getBoundingClientRect().top >= 0;
     window.scrollTo(0,0);
-    send(null,{calls:4,skipped:null,message:"Legacy synthetic thread",totals:{seen:null,errors:null,skipCounts:{}}});
+    const app = document.getElementById("app"), previousMaxWidth = app.style.maxWidth;
+    app.style.maxWidth = "360px";
+    send(make("a".repeat(32)),{...pendingActivity,calls:Number.MAX_SAFE_INTEGER,
+      totals:{...pendingActivity.totals,seen:Number.MAX_SAFE_INTEGER}});
+    report.maxSafeCountersExact = metric("calls") === "9,007,199,254,740,991" &&
+      metric("seen") === "9,007,199,254,740,991";
+    report.maxSafeCountersNoOverflowAt360 = app.getBoundingClientRect().width <= 360 &&
+      app.scrollWidth <= app.clientWidth + 1 &&
+      document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1;
+    app.style.maxWidth = previousMaxWidth;
+    send(make("a".repeat(32)),pendingActivity);
+    send(null,{calls:4,skipped:null,message:"Legacy synthetic thread",totals:{seen:null,errors:null,
+      partialCounters:["calls"],skipCounts:{}}});
     report.unknownLegacyCounters = metric("seen") === "—" && metric("skipped") === "—" && metric("errors") === "—";
+    report.partialHistoryVisible = metric("calls") === "≥4" &&
+      document.querySelector(".activity-counts").textContent === "≥4 API requests · — skipped outputs";
+    report.unknownLegacyRequestStages = metric("responsesReceived") === "—" && metric("responsesValidated") === "—";
     report.emptyReasonsHidden = document.querySelector(".totals-heading,.totals-reasons,.totals-note") === null;
+    send(null,{calls:4,skipped:2,message:"Partial protection history",totals:{
+      skipCounts:{sensitive:2},skipDetails:{protected_output:1,protected_command:1,protected_input:0},
+      skipReasonsPartial:true,skipDetailsPartial:true}});
+    report.partialProtectionDetails = document.querySelector('[data-reason="sensitive"] .reason-count')?.textContent === "≥2" &&
+      document.querySelector('[data-reason="sensitive"] .reason-detail')?.textContent ===
+        "Recorded protection: output ≥1 · command ≥1 · other input ≥0.";
+    send(null,{calls:null,skipped:null,unavailable:true,message:"Saved activity could not be read for this thread."});
+    report.failedReadRetainsScope = document.querySelector(".batch-status").textContent === "Saved activity unavailable" && metric("calls") === "—";
+    send(null,activityB);
+    report.failedReadRecovers = document.querySelector(".batch-status").textContent === "Saved totals" && metric("calls") === "2";
     send(null,null);
     report.noThreadClearsCounters = metric("calls") === "—" && document.querySelector(".activity-counts").textContent.includes("— API requests");
-    report.noThreadIsConcise = document.querySelectorAll(".totals-metric").length === 10 &&
+    report.noThreadIsConcise = document.querySelectorAll(".totals-metric").length === 14 &&
       document.querySelector(".totals-heading,.totals-reasons,.totals-note") === null;
     document.body.dataset.result=JSON.stringify(report);
     document.title=Object.values(report).every(Boolean) ? "DECISION_TOTALS_READY" : "DECISION_TOTALS_FAILED";

@@ -93,3 +93,69 @@ fn event_compaction_keeps_only_complete_tail_records_and_ignores_links() {
         assert_eq!(fs::read(outside).unwrap(), actual);
     }
 }
+
+#[test]
+fn event_compaction_reserves_the_incoming_row_and_drops_interrupted_rows() {
+    let root = tempfile::tempdir().unwrap();
+    let index = root.path().join("events.jsonl");
+    let rows: String = (0..80_000)
+        .map(|sequence| format!("{{\"event\":{sequence}}}\n"))
+        .collect();
+    let broken = format!("{rows}{{\"interrupted\":");
+    write_private(&index, broken.as_bytes(), false).unwrap();
+    let incoming = 900_000;
+    compact_events_before_append(root.path(), incoming, false).unwrap();
+    let actual = fs::read(&index).unwrap();
+    assert!(actual.len() + incoming <= EVENT_LOG_LIMIT);
+    assert!(actual.ends_with(b"\n"));
+    for row in std::str::from_utf8(&actual).unwrap().lines() {
+        assert!(serde_json::from_str::<Value>(row).is_ok());
+    }
+    let previous = actual.clone();
+    assert!(compact_events_before_append(root.path(), EVENT_LOG_LIMIT + 1, false).is_err());
+    assert_eq!(
+        fs::read(&index).unwrap(),
+        previous,
+        "an oversized event cannot silently exceed the cap"
+    );
+    compact_events_before_append(root.path(), EVENT_LOG_LIMIT + 1, true).unwrap();
+    assert_eq!(
+        fs::read(&index).unwrap(),
+        previous,
+        "explicit never-delete skips compaction"
+    );
+}
+
+#[test]
+fn small_interrupted_tail_preserves_complete_prefix_and_isolates_the_new_event() {
+    let prefix = b"{\"synthetic\":1}\n";
+    let partial = b"{\"interrupted\":";
+    let incoming = b"{\"new_event\":2}\n";
+    for never_delete in [false, true] {
+        let root = tempfile::tempdir().unwrap();
+        let index = root.path().join("events.jsonl");
+        let previous = [prefix.as_slice(), partial.as_slice()].concat();
+        write_private(&index, &previous, false).unwrap();
+        compact_events_before_append(root.path(), incoming.len(), never_delete).unwrap();
+        open_event_log(root.path())
+            .unwrap()
+            .write_all(incoming)
+            .unwrap();
+        let actual = fs::read(&index).unwrap();
+        assert!(actual.starts_with(prefix));
+        assert_eq!(
+            std::str::from_utf8(&actual)
+                .unwrap()
+                .lines()
+                .last()
+                .unwrap(),
+            "{\"new_event\":2}"
+        );
+        let expected = if never_delete {
+            [previous.as_slice(), b"\n", incoming.as_slice()].concat()
+        } else {
+            [prefix.as_slice(), incoming.as_slice()].concat()
+        };
+        assert_eq!(actual,expected,"never-delete preserves every existing byte; normal retention removes only the interrupted suffix");
+    }
+}

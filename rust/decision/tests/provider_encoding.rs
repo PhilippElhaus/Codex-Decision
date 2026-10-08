@@ -59,3 +59,30 @@ fn borrowed_wire_encoding_preserves_validation_errors() {
         compare(&request);
     }
 }
+
+#[test]
+fn streamed_strings_preserve_control_unicode_and_merged_instruction_boundaries() {
+    let controls: String = (0..=31).map(char::from).collect();
+    for instructions in [controls.as_str(), "", "λ🌍状态", "\"", "\\", "ends in \\\""] {
+        for criteria in [
+            Value::Null,
+            json!(controls),
+            json!(["\\", "\"", "λ🌍状态", 42, false]),
+            json!({"true":controls,"false":"\\\"\r\n"}),
+        ] {
+            let request = json!({"model":"gpt-6-luna","state":{
+                "controls":controls,"nested":[criteria, instructions,"λ🌍状態"]},
+                "questions":{"q\\\"🌍":{"type":"noul","instructions":instructions,"criteria":criteria}}});
+            compare(&request);
+            let wire: Value = serde_json::from_slice(&encode_request(&request).unwrap()).unwrap();
+            assert_eq!(
+                serde_json::from_str::<Value>(wire["input"].as_str().unwrap()).unwrap(),
+                request["state"]
+            );
+            assert_eq!(
+                wire["questions"][0]["instructions"],
+                format!("{instructions}\nPredicate criteria: {criteria}")
+            );
+        }
+    }
+}

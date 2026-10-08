@@ -27,7 +27,7 @@ try {
     if ($LASTEXITCODE -ne 0 -or $linuxRoot -notmatch '^/tmp/decision-vscode-panel-[A-Za-z0-9]{8}$') { throw 'Unexpected Linux fixture root.' }
     $data = '\\wsl.localhost\' + $Distro + $linuxRoot.Replace('/', '\')
     $files = @('package.json', 'config-contract.json', 'core.js', 'extension.js', 'panel.js', 'panel-state.js',
-        'private-paths.js', 'schema.js', 'providers.js', 'icon.png', 'LICENSE', 'README.md', 'media\decision-panel.svg',
+        'private-paths.js', 'private-records.js', 'publication-journal.js', 'schema.js', 'providers.js', 'icon.png', 'LICENSE', 'README.md', 'media\decision-panel.svg',
         'webview\decision-control.js', 'webview\decision-settings.js', 'webview\decision-totals.js', 'webview\decision-panel.js', 'webview\decision-panel.css')
     foreach ($file in $files) {
         $source = Join-Path $repository ('vscode-control\' + $file)
@@ -134,7 +134,9 @@ exports.run = async () => {
     await check(firstId,"composer focus selects the original chat after a visibility transition");
     const countTime = Date.now();
     await fs.writeFile(path.join(one,"logs/hook-health.json"),JSON.stringify({version:1,
-      hook_version:"0.11.2",last_seen_ms:countTime,api_requests:9,skipped:341}));
+      hook_version:"0.11.5",last_seen_ms:countTime,counter_scheme:1,partial_counters:[],
+      seen:350,api_requests:9,skipped:341,errors:0,responses_received:8,responses_validated:8,
+      request_cancelled:0,request_failures:1,skip_reasons_partial:false,skip_details_partial:false}));
     acknowledged = null;
     await provider.refresh();
     await until(() => acknowledged?.activity?.includes("9 API requests"));
@@ -146,6 +148,9 @@ exports.run = async () => {
     await until(() => acknowledged?.mode === "totals");
     assert.equal(acknowledged.metrics.calls,"9");
     assert.equal(acknowledged.metrics.skipped,"341");
+    assert.equal(acknowledged.metrics.responsesReceived,"8");
+    assert.equal(acknowledged.metrics.responsesValidated,"8");
+    assert.equal(acknowledged.metrics.requestFailures,"1");
     assert.equal(acknowledged.rows,0);
     await vscode.commands.executeCommand("codexDecision.bridge", {action:"status",viewId:"native-view",sessionId:"native-two",focused:true});
     await provider.pending;
@@ -167,6 +172,17 @@ exports.run = async () => {
     await until(() => provider.generation > totalsGeneration && !provider.awaitingReady);
     await until(() => acknowledged?.mode === "totals" && acknowledged.metrics.calls === "9");
     result.checks.push("Totals remembers its view and follows durable counters across session switches and webview reload");
+    await fs.writeFile(path.join(one,"stats.json"), '{"calls":"corrupt"}');
+    acknowledged = null;
+    await provider.refresh();
+    await until(() => acknowledged?.status === "Saved activity unavailable");
+    assert.equal(acknowledged.metrics.calls,"\u2014");
+    assert.equal(provider.dataDirectory(),one);
+    await fs.rm(path.join(one,"stats.json"));
+    acknowledged = null;
+    await provider.refresh();
+    await until(() => acknowledged?.status === "Saved totals" && acknowledged.metrics.calls === "9");
+    result.checks.push("unreadable activity retains the selected thread and recovers after repair");
     acknowledged = null;
     await provider.view.webview.postMessage({type:"decision-test-switch",mode:"latest"});
     await until(() => acknowledged?.mode === "latest" && acknowledged.rows === 2);
@@ -219,6 +235,12 @@ exports.run = async () => {
     assert.equal(acknowledged.rows, 0);
     assert.match(acknowledged.activity, /341 skipped outputs/);
     assert.match(acknowledged.activity, /No line judgments were needed/);
+    assert.match(acknowledged.activity, /\u226511 API requests/);
+    await provider.view.webview.postMessage({type:"decision-test-switch",mode:"totals"});
+    await until(() => acknowledged?.mode === "totals");
+    assert.equal(acknowledged.metrics.calls,"\u226511");
+    assert.equal(acknowledged.metrics.responsesReceived,"\u2014");
+    assert.equal(acknowledged.metrics.linesActuallyOmitted,"\u2014");
     result.checks.push("empty panel explains classification requests and skipped outputs under the real webview CSP");
     result.ok = true;
   } catch(error) {

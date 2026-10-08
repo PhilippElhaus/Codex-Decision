@@ -50,7 +50,9 @@ async function verify(hook,provider) {
       assert.equal(running.child.kill("SIGKILL"),true);
       const killed=await running.done;assert.equal(killed.signal,"SIGKILL");assert.equal(killed.stdout,"");
     }finally{clearTimeout(timer);release();}
-    await assert.rejects(fs.stat(path.join(scoped,"stats.json")),{code:"ENOENT"});
+    // Coverage metadata may bootstrap a zero ledger before a completion.
+    const uncommittedStats=await json(path.join(scoped,"stats.json")).catch(error=>{if(error.code==="ENOENT")return null;throw error;});
+    if(uncommittedStats)for(const name of ["completed","replaced","calls","savedChars","linesActuallyOmitted"])assert.equal(uncommittedStats[name]??0,0);
     await assert.rejects(fs.stat(path.join(data,"outputs")),{code:"ENOENT"});
     assert.equal((await fs.readdir(logs,{recursive:true})).some(file=>/^(receipt|batch)-|\.pending$|\.tmp$/.test(path.basename(file))),false);
     assert.equal((await fs.readFile(path.join(logs,"events.jsonl"),"utf8")).includes('"status":"replace"'),false);

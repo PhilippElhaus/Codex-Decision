@@ -5,7 +5,7 @@ use super::*;
 // Publication links the same verified bytes while the existing transaction owns
 // the lock. Dropping the preparation removes only its own pending paths.
 pub(super) struct PreparedBatches {
-    files: Vec<(usize, PathBuf)>,
+    files: Vec<(usize, PathBuf, journal::Image)>,
 }
 
 impl PreparedBatches {
@@ -21,7 +21,9 @@ impl PreparedBatches {
             let bytes = encode_batch(receipt_id, batch)?;
             let path = logs.join(format!(".jev-batch-{receipt_id}-{}.pending", batch.id));
             write_private(&path, &bytes, false)?;
-            prepared.files.push((batch.id, path));
+            prepared
+                .files
+                .push((batch.id, path, journal::Image::of(&bytes)));
         }
         Ok(prepared)
     }
@@ -32,7 +34,7 @@ impl PreparedBatches {
         receipt_id: &str,
         created: &mut Vec<PathBuf>,
     ) -> Result<(), String> {
-        for (batch_id, source) in &self.files {
+        for (batch_id, source, _) in &self.files {
             remaining()?;
             let target = folder.join(format!("batch-{receipt_id}-{batch_id}.json"));
             if source.is_symlink() || target.is_symlink() {
@@ -74,11 +76,22 @@ impl PreparedBatches {
         }
         Ok(())
     }
+
+    pub(super) fn artifacts(&self, receipt_id: &str) -> Vec<journal::Artifact> {
+        self.files
+            .iter()
+            .map(|(number, _, image)| journal::Artifact {
+                name: format!("batch-{receipt_id}-{number}.json"),
+                bytes: image.bytes,
+                sha256: image.sha256.clone(),
+            })
+            .collect()
+    }
 }
 
 impl Drop for PreparedBatches {
     fn drop(&mut self) {
-        for (_, path) in &self.files {
+        for (_, path, _) in &self.files {
             let _ = fs::remove_file(path);
         }
     }

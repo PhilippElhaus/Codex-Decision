@@ -131,9 +131,11 @@ class LatestDecisionProvider {
       } catch (error) {
         if (!current()) return;
         this.onFault("Latest Decision decision could not be read");
-        message = { type: "decision", decision: null };
+        const activity = directory ? { unavailable: true, calls: null, skipped: null,
+          message: "Saved activity could not be read for this thread." } : null;
+        message = { type: "decision", decision: null, ...(activity ? { activity } : {}) };
         serialized = JSON.stringify(null);
-        activitySerialized = JSON.stringify(null);
+        activitySerialized = JSON.stringify(activity);
       }
       if ((serialized !== this.lastMessage || activitySerialized !== this.lastActivity) && view.visible) {
         let delivered;

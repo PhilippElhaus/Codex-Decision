@@ -596,7 +596,7 @@ fn completion_and_jsonl_structure_are_protected() {
     assert_eq!(build[1].protected_reason.as_deref(), Some("completion"));
     let source = concat!(
         "{\"type\":\"begin\",\"data\":{}}\n",
-        "{\"type\":\"match\",\"data\":{\"path\":{\"text\":\"src/a.rs\"},\"lines\":{\"text\":\"needle\"}}}\n",
+        "{\"type\":\"match\",\"data\":{\"path\":{\"text\":\"src/a.rs\"},\"lines\":{\"text\":\"needle\"},\"line_number\":1}}\n",
         "{\"type\":\"end\",\"data\":{}}\n");
     let mut search = source_lines(source);
     assert!(apply_route_structure(

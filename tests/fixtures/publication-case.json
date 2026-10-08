@@ -1,0 +1,37 @@
+{
+  "stats_before": "{\"calls\":1,\"completed\":1,\"replaced\":0,\"timed\":1,\"elapsedMs\":10,\"savedChars\":0,\"candidates\":0,\"kept\":1,\"linesSeen\":1,\"linesJudged\":1,\"linesKept\":1,\"linesOmitted\":0,\"linesProtected\":0,\"linesUnjudged\":0,\"linesRelevanceJudged\":1,\"linesBelowOmitCutoff\":0,\"linesRelevanceKept\":1,\"linesActuallyOmitted\":0,\"counter_scheme\":1}",
+  "stats_after": "{\"calls\":2,\"completed\":2,\"replaced\":1,\"timed\":2,\"elapsedMs\":20,\"savedChars\":100,\"candidates\":0,\"kept\":1,\"linesSeen\":3,\"linesJudged\":3,\"linesKept\":2,\"linesOmitted\":1,\"linesProtected\":0,\"linesUnjudged\":0,\"linesRelevanceJudged\":3,\"linesBelowOmitCutoff\":1,\"linesRelevanceKept\":2,\"linesActuallyOmitted\":1,\"counter_scheme\":1}",
+  "snapshot_before": "{\"version\":6,\"id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"receipt_id\":\"ffffffffffffffffffffffffffffffff\",\"at\":\"2026-10-08T12:00:00Z\",\"filter\":\"output\",\"status\":\"processing\",\"batch\":{\"number\":1,\"count\":1,\"target_count\":1},\"rows\":[{\"line\":1,\"excerpt\":\"Synthetic pending evaluation\",\"action\":\"keep\",\"reason\":\"task_relevant\",\"task_relevant\":0.9}],\"totals\":{\"seen\":1,\"judged\":1,\"kept\":1,\"omitted\":0,\"protected\":0,\"unjudged\":0,\"requests\":1,\"classification_requests\":0},\"batch_elapsed_ms\":10}",
+  "snapshot_after": "{\"version\":6,\"id\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"receipt_id\":\"cccccccccccccccccccccccccccccccc\",\"at\":\"2026-10-08T12:00:00Z\",\"filter\":\"output\",\"status\":\"replace\",\"batch\":{\"number\":1,\"count\":1,\"target_count\":2},\"rows\":[{\"line\":1,\"excerpt\":\"Synthetic routine output\",\"action\":\"omit\",\"reason\":\"irrelevant\",\"task_relevant\":0.01},{\"line\":2,\"excerpt\":\"Synthetic retained diagnostic\",\"action\":\"keep\",\"reason\":\"task_relevant\",\"task_relevant\":0.99}],\"totals\":{\"seen\":2,\"judged\":2,\"kept\":1,\"omitted\":1,\"protected\":0,\"unjudged\":0,\"requests\":1,\"classification_requests\":0},\"batch_elapsed_ms\":10}",
+  "events_before": "{\"version\":3,\"id\":\"ffffffffffffffffffffffffffffffff\",\"status\":\"keep\",\"reason\":\"relevance_keep\",\"tool\":\"Bash\",\"requests\":1,\"elapsed_ms\":10,\"original_chars\":100,\"capsule_chars\":100}\n",
+  "event": "{\"version\":3,\"id\":\"cccccccccccccccccccccccccccccccc\",\"status\":\"replace\",\"reason\":\"relevance_replace\",\"tool\":\"Bash\",\"requests\":1,\"elapsed_ms\":10,\"original_chars\":200,\"capsule_chars\":100}\n",
+  "prepared": {
+    "version": 1,
+    "state": "prepared",
+    "receipt_id": "cccccccccccccccccccccccccccccccc",
+    "folder": "2026-10-08-0123456789",
+    "event_offset": 180,
+    "commit_event": "{\"version\":3,\"id\":\"cccccccccccccccccccccccccccccccc\",\"status\":\"replace\",\"reason\":\"relevance_replace\",\"tool\":\"Bash\",\"requests\":1,\"elapsed_ms\":10,\"original_chars\":200,\"capsule_chars\":100}\n",
+    "commit_sha256": "2705f060628882b9826b464918e695fd4e6a172b8290ed01475ff1a693502aeb",
+    "prior_stats": "{\"calls\":1,\"completed\":1,\"replaced\":0,\"timed\":1,\"elapsedMs\":10,\"savedChars\":0,\"candidates\":0,\"kept\":1,\"linesSeen\":1,\"linesJudged\":1,\"linesKept\":1,\"linesOmitted\":0,\"linesProtected\":0,\"linesUnjudged\":0,\"linesRelevanceJudged\":1,\"linesBelowOmitCutoff\":0,\"linesRelevanceKept\":1,\"linesActuallyOmitted\":0,\"counter_scheme\":1}",
+    "next_stats": {
+      "bytes": 319,
+      "sha256": "a2886a23da856644cdfd906fc9d492f0743b82e06a26992767048d06d2735cb2"
+    },
+    "prior_snapshot": {
+      "bytes": 481,
+      "sha256": "e8398aeb5eebeafca66cfcce67f443bb74b56c91e7bd1e2061f1099dee936121"
+    },
+    "next_snapshot": {
+      "bytes": 587,
+      "sha256": "dffceb8e98f7fdfe6b72d76c385cbf5f1c19ecad7e7d31c697057ff6dc90416d"
+    },
+    "artifacts": [
+      {
+        "name": "receipt-cccccccccccccccccccccccccccccccc.json",
+        "bytes": 17,
+        "sha256": "019dd5f1692d0ae6bd8913b504a30c4706ef8c8c53cf75462156e2b5029943de"
+      }
+    ]
+  }
+}

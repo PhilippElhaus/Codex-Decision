@@ -383,11 +383,15 @@
     retry.disabled = Boolean(retryRequestId);
     retry.textContent = needsSetup ? "Connect" : retryRequestId ? "Checking…" : "Retry";
     const stats = state.stats || {};
-    const completed = Number(stats.completed) || 0;
-    const average = completed ? formatDuration((Number(stats.elapsedMs) || 0) / completed) : "—";
-    const totals = `${completed} checked · ${Number(stats.replaced) || 0} replaced · ${average} avg`;
+    const partial = new Set(stats.partialCounters || []);
+    const recordedCount = (name) => Number.isSafeInteger(stats[name]) && stats[name] >= 0 ?
+      `${partial.has(name) ? "≥" : ""}${stats[name]}` : "—";
+    const average = Number(stats.timed) > 0 && Number.isSafeInteger(stats.averageMs) &&
+      !["averageMs","elapsedMs","timed"].some(name=>partial.has(name)) ? formatDuration(stats.averageMs) : "—";
+    const totals = `${recordedCount("completed")} checked · ${recordedCount("replaced")} replaced · ${average} avg request`;
     root.querySelector("#codex-decision-stats").textContent = state.enabled ? totals : "";
-    const tokens = `Tokens saved: ~${(Number(stats.estimatedTokensSaved) || 0).toLocaleString("en-US")}`;
+    const tokens = stats.estimatedTokensSaved === null ? "Tokens saved: —" :
+      `Tokens saved: ~${(Number(stats.estimatedTokensSaved) || 0).toLocaleString("en-US")}${partial.has("estimatedTokensSaved") ? " (partial history)" : ""}`;
     root.querySelector("#codex-decision-tokens").textContent = state.enabled ? tokens : "";
     root.querySelector("#codex-decision-session-heading").style.display = state.enabled ? "block" : "none";
     root.querySelector("#codex-decision-history-heading").style.display = state.enabled ? "block" : "none";
@@ -415,7 +419,7 @@
         : "No hook decision in this session. Short or protected results may be skipped."
       : "Decision is off for this session. Click to turn it on.";
     const activity = state.enabled
-      ? `This session: ${totals}. ${tokens}. ${history.join(". ") || state.recent}.`
+      ? `This session: ${recordedCount("calls")} API attempts. ${totals}. ${tokens}. ${history.join(". ") || state.recent}.`
       : empty.textContent;
     button.setAttribute("aria-label", noSession ? `${status}. Open a local Codex thread to turn Decision on or off` :
       `${status}${unavailable ? `: ${reason.textContent}` : ""}. ${activity} ${saving ? "Saving." : state.enabled ? "Turn Decision off." : "Turn Decision on."}`);

@@ -21,6 +21,9 @@ jobs:
       - run: cargo +stable clippy --locked --all-targets -- -D warnings
       - run: cargo +stable build --locked -p codex-decision --profile verification
       - run: node scripts/pipeline_interrupt.cjs --hook target/verification/decision-hook --out .local/quality/pipeline-ci-interrupt
+      - run: node scripts/pipeline_stage_interrupt.cjs --hook target/verification/decision-hook --require-recovered --out .local/quality/pipeline-ci-staged-retry
+      - run: node scripts/pipeline_stage_interrupt.cjs --hook target/verification/decision-hook --concurrent-rollback --out .local/quality/pipeline-ci-staged-rollback
+      - run: node scripts/pipeline_commit_interrupt.cjs --hook target/verification/decision-hook --out .local/quality/pipeline-ci-publication
       - run: node scripts/pipeline_stress.cjs --hook target/verification/decision-hook --provider openai --concurrency 4 --rounds 6 --lines 256,1024 --faults http,json,oversize,probability,model,timeout --jitter-ms 10 --out .local/quality/pipeline-ci-openai
       - run: node scripts/pipeline_stress.cjs --hook target/verification/decision-hook --provider typesafe --concurrency 4 --rounds 6 --lines 256,1024 --faults http,json,oversize,probability,model,timeout --jitter-ms 10 --out .local/quality/pipeline-ci-typesafe
       - run: npm test --prefix vscode-control

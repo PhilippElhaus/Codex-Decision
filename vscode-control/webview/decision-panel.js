@@ -68,8 +68,11 @@
     if (!counts) return;
     const calls = activity?.calls ?? "—";
     const skipped = activity?.skipped ?? "—";
-    counts.textContent = `${calls} API request${calls === 1 ? "" : "s"} · ${skipped} skipped output${skipped === 1 ? "" : "s"}`;
-    counts.title = activity?.message || "Activity for the selected thread";
+    const partial = activity?.totals?.partialCounters || [];
+    const callLabel = Number.isSafeInteger(calls) && partial.includes("calls") ? `≥${calls}` : calls;
+    const skipLabel = Number.isSafeInteger(skipped) && partial.includes("skipped") ? `≥${skipped}` : skipped;
+    counts.textContent = `${callLabel} API request${calls === 1 ? "" : "s"} · ${skipLabel} skipped output${skipped === 1 ? "" : "s"}`;
+    counts.title = `${activity?.message || "Activity for the selected thread"} API requests are recorded attempts; they do not establish provider receipt. ≥ marks an incomplete historical baseline.`;
   }
 
   function batchTitle(decision) {
@@ -88,7 +91,8 @@
     currentId = null;
     cancelAnimationFrame(animation);
     const { header, status } = makeHeader(currentActivity ? "This thread" : "Decision");
-    status.textContent = currentActivity ? "Saved totals" : "No thread selected";
+    status.textContent = currentActivity?.unavailable ? "Saved activity unavailable" :
+      currentActivity ? "Saved totals" : "No thread selected";
     app.replaceChildren(header, window.DecisionTotals.render(currentActivity));
     updateActivity(currentActivity);
   }

@@ -53,6 +53,32 @@ const cases = [
     response_factory:source=>[{type:"input_text",text:JSON.stringify(observation(source))}],projection_factory:source=>projected(observation(source)),expected_decision:true},
   {...labBase,id:"lab-source-read",tool_input:{script:"cat Config",...ids},expect_full:true,expected_calls:0,expected_skip:"exact_content"},
 ];
+const ninjaLines=[...Array.from({length:80},(_,index)=>`[${index+1}/80] Building CXX object C:\\users\\synthetic\\component_${index}.o`),"Build successful"];
+const ninjaBase={...labBase,lines:ninjaLines,required_lines:[81],task:"Report the final build status."};
+cases.push({...ninjaBase,id:"lab-wait-ninja-progress",tool:"mcp__lab_control__lab_process_wait",tool_input:ids,
+  response_factory:source=>envelope(observation(source)),projection_factory:source=>projected(observation(source)),expected_decision:true});
+cases.push({...ninjaBase,id:"lab-wrapped-wait-ninja-progress",tool:"wait",tool_input:{cell_id:"synthetic"},
+  response_factory:source=>[{type:"input_text",text:JSON.stringify(observation(source))}],projection_factory:source=>projected(observation(source)),expected_decision:true});
+cases.push({...ninjaBase,id:"lab-wait-ninja-invalid-status",tool:"mcp__lab_control__lab_process_wait",tool_input:ids,
+  response_factory:source=>envelope({...observation(source),running:true,exit_code:7,terminal:true}),
+  expect_full:true,expected_calls:0,expected_skip:"unsupported_result"});
+cases.push({...ninjaBase,id:"lab-wait-ninja-mixed-prose",tool:"mcp__lab_control__lab_process_wait",tool_input:ids,
+  lines:[...ninjaLines,"This paragraph qualifies the ordering of these build observations.","Its ordering is needed to explain these observations.","The final interpretation requires preserving the preceding qualifications."],required_lines:[81,82,83,84],
+  response_factory:source=>envelope(observation(source)),projection_factory:source=>projected(observation(source)),
+  expect_full:true,expected_calls:0,expected_skip:"mcp_replacement_disabled"});
+cases.push({...base,id:"generic-mcp-ninja-disabled",tool:"mcp__synthetic__read_log",tool_input:{},command:"",lines:ninjaLines,
+  task:"Report the final build status.",required_lines:[81],expect_full:true,expected_calls:0,expected_skip:"mcp_replacement_disabled"});
+for (const [id, state, valid] of [
+  ["lab-wait-running",{running:true,exit_code:-1,terminal:false,wait_timed_out:true},true],
+  ["lab-wait-unknown",{running:false,exit_code:-1,terminal:false,wait_timed_out:false},true],
+  ["lab-wait-contradictory",{running:true,exit_code:7,terminal:true,wait_timed_out:false},false],
+  ["lab-wait-terminal-timeout",{running:false,exit_code:7,terminal:true,wait_timed_out:true},false],
+]) {
+  const payload=source=>({...observation(source),...state});
+  cases.push({...labBase,id,tool:"mcp__lab_control__lab_process_wait",tool_input:ids,
+    response_factory:source=>envelope(payload(source)),projection_factory:source=>projected(payload(source)),
+    ...(valid?{expected_decision:true}:{expect_full:true,expected_calls:0,expected_skip:"unsupported_result"})});
+}
 for (const [id, change] of [
   ["lab-mixed-media",body=>{body.content.push({type:"image",data:"synthetic"});}],
   ["lab-unknown-envelope",body=>{body.structuredContent.unknown="required";body.content[0].text=JSON.stringify(body.structuredContent);}],

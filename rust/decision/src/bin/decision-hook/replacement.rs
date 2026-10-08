@@ -1,38 +1,9 @@
 //! Explicit reasons distinguish previews from actual reductions.
 use super::*;
 
-/// Originals belong to this invocation until its receipt commits. A failed
-/// pair write or publication must neither strand files nor block a retry.
-pub(super) struct SavedOriginals(Vec<PathBuf>);
-
-impl SavedOriginals {
-    pub(super) fn save(path: &Path, source: &str, envelope: &Value) -> Result<Self, String> {
-        let mut saved = Self(Vec::with_capacity(2));
-        remaining()?;
-        write_private(path, source.as_bytes(), false)?;
-        saved.0.push(path.to_owned());
-        if !envelope.is_string() {
-            let bytes = serde_json::to_vec(envelope).map_err(|_| "original envelope encoding")?;
-            remaining()?;
-            let path = path.with_extension("json");
-            write_private(&path, &bytes, false)?;
-            saved.0.push(path);
-        }
-        Ok(saved)
-    }
-
-    pub(super) fn commit(mut self) {
-        self.0.clear();
-    }
-}
-
-impl Drop for SavedOriginals {
-    fn drop(&mut self) {
-        for path in &self.0 {
-            let _ = fs::remove_file(path);
-        }
-    }
-}
+#[path = "replacement/originals.rs"]
+mod originals;
+pub(super) use originals::SavedOriginals;
 
 pub(super) fn savings_possible(
     source: &str,

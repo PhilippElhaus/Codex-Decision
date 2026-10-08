@@ -56,17 +56,19 @@ fn task_from_file(mut file: File) -> Result<Option<String>, ()> {
     {
         return Ok(None);
     }
-    let tail = String::from_utf8_lossy(&bytes);
     // A tail window can begin inside a screenshot record, whose trailing
     // role/type fields still look like a user message. Rescan complete records
     // instead of treating that partial JSON fragment as an unsafe new task.
     let tail = if metadata.len() > 65_536 {
-        tail.split_once('\n').map_or("", |(_, rest)| rest)
+        bytes
+            .iter()
+            .position(|byte| *byte == b'\n')
+            .map_or(&[][..], |index| &bytes[index + 1..])
     } else {
-        &tail
+        &bytes
     };
-    for raw in tail.lines().rev() {
-        if let Some(task) = user_task(raw)? {
+    for raw in tail.split(|byte| *byte == b'\n').rev() {
+        if let Some(task) = user_task_bytes(raw)? {
             return Ok(Some(task));
         }
     }
@@ -119,7 +121,7 @@ fn task_from_file(mut file: File) -> Result<Option<String>, ()> {
             }
             continue;
         }
-        match user_task(&String::from_utf8_lossy(&row)) {
+        match user_task_bytes(&row) {
             Ok(Some(task)) => latest = Ok(Some(task)),
             Err(()) => latest = Err(()),
             Ok(None) => {}
@@ -181,8 +183,18 @@ pub(super) fn exhaustive_task(task: &str) -> bool {
                 .chars()
                 .next_back()
                 .is_some_and(|character| character.is_alphanumeric() || character == '_')
+                && !task[index + phrase.len()..]
+                    .chars()
+                    .next()
+                    .is_some_and(|character| character.is_alphanumeric() || character == '_')
         })
     })
+}
+
+fn user_task_bytes(raw: &[u8]) -> Result<Option<String>, ()> {
+    // A malformed record cannot supply an invented task or justify falling
+    // back to an older one. Discard the partial tail row before this check.
+    user_task(std::str::from_utf8(raw).map_err(|_| ())?)
 }
 
 fn user_task(raw: &str) -> Result<Option<String>, ()> {
@@ -211,10 +223,13 @@ fn user_task(raw: &str) -> Result<Option<String>, ()> {
         .collect::<Option<Vec<_>>>()
         .ok_or(())?
         .join(" ");
-    if message.len() > MAX_TASK_TEXT_BYTES || sensitive(&message) {
+    if message.len() > MAX_TASK_TEXT_BYTES || sensitive_context(&message) {
         return Err(());
     }
     let text = message.split_whitespace().collect::<Vec<_>>().join(" ");
+    if sensitive_context(&text) {
+        return Err(());
+    }
     if !text.is_empty() {
         return Ok(Some(text));
     }
@@ -224,3 +239,7 @@ fn user_task(raw: &str) -> Result<Option<String>, ()> {
 #[cfg(test)]
 #[path = "task_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "task_encoding_tests.rs"]
+mod encoding_tests;

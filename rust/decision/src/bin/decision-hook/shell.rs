@@ -4,6 +4,60 @@ pub(super) fn basename(word: &str) -> &str {
     word.rsplit(['/', '\\']).next().unwrap_or(word)
 }
 
+// Cargo accepts separated, repeated, and comma-separated message formats.
+// Rendered diagnostics are a different carrier and do not claim this JSONL
+// contract. Arguments after `--` belong to the invoked program/test runner.
+pub(super) fn cargo_json_messages(words: &[String]) -> bool {
+    let mut json = false;
+    let mut index = 1;
+    while let Some(word) = words.get(index) {
+        index += 1;
+        if word == "--" {
+            break;
+        }
+        let value = if word == "--message-format" {
+            let Some(value) = words.get(index) else {
+                return false;
+            };
+            index += 1;
+            Some(value.as_str())
+        } else {
+            word.strip_prefix("--message-format=")
+        };
+        if let Some(value) = value {
+            for format in value.split(',') {
+                match format {
+                    "json" => json = true,
+                    "json-diagnostic-short" | "json-diagnostic-rendered-ansi" => {}
+                    _ => return false,
+                }
+            }
+        } else if matches!(
+            word.as_str(),
+            "--features"
+                | "-F"
+                | "--package"
+                | "-p"
+                | "--target"
+                | "--profile"
+                | "--manifest-path"
+                | "--target-dir"
+                | "--artifact-dir"
+                | "--config"
+                | "--jobs"
+                | "-j"
+                | "--bin"
+                | "--example"
+                | "--test"
+                | "--bench"
+                | "--exclude"
+        ) {
+            index += 1;
+        }
+    }
+    json
+}
+
 // Split only simple command lists and pipelines. Do not execute shell text.
 pub(super) fn output_groups(command: &str) -> Option<Vec<Vec<&str>>> {
     let command = command.trim();

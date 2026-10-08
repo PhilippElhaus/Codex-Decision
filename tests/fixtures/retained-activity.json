@@ -1,0 +1,18 @@
+[
+  {"id":"valid-replacement","source":"{\"status\":\"replace\",\"reason\":\"filtered\",\"requests\":2,\"original_chars\":200,\"capsule_chars\":100,\"elapsed_ms\":100}\n","expected":{"calls":2,"completed":1,"replaced":1,"savedChars":100,"timed":2,"elapsedMs":100}},
+  {"id":"legacy-pair","source":"{\"status\":\"calling\",\"reason\":\"request\"}\n{\"status\":\"replace\",\"reason\":\"filtered\",\"original_chars\":100,\"capsule_chars\":10,\"elapsed_ms\":10}\n","expected":{"calls":1,"completed":1,"replaced":1,"savedChars":90,"timed":1,"elapsedMs":10}},
+  {"id":"duplicate-requests","source":"{\"status\":\"replace\",\"reason\":\"filtered\",\"requests\":1,\"requests\":9,\"original_chars\":100,\"capsule_chars\":10}\n"},
+  {"id":"exponent-requests","source":"{\"status\":\"replace\",\"reason\":\"filtered\",\"requests\":1e0}\n"},
+  {"id":"fractional-requests","source":"{\"status\":\"replace\",\"reason\":\"filtered\",\"requests\":1.0}\n"},
+  {"id":"negative-zero","source":"{\"status\":\"replace\",\"reason\":\"filtered\",\"requests\":-0}\n"},
+  {"id":"fractional-chars","source":"{\"status\":\"replace\",\"reason\":\"filtered\",\"requests\":1,\"original_chars\":100.5,\"capsule_chars\":10.5}\n"},
+  {"id":"invalid-utf8","source":"{\"status\":\"replace\",\"reason\":\"synthetic\",\"requests\":1}\n","invalid_utf8":true},
+  {"id":"lone-surrogate-value","source":"{\"status\":\"replace\",\"reason\":\"\\ud800\",\"requests\":1}\n","journal_valid":false},
+  {"id":"lone-surrogate-key","source":"{\"status\":\"replace\",\"reason\":\"filtered\",\"\\udc00\":1,\"requests\":1}\n","journal_valid":false},
+  {"id":"valid-surrogate-pair","source":"{\"status\":\"keep\",\"reason\":\"\\ud83d\\ude00\",\"requests\":1}\n","journal_valid":true,"expected":{"calls":1,"completed":1,"replaced":0,"savedChars":0,"timed":0,"elapsedMs":0}},
+  {"id":"no-final-newline","source":"{\"status\":\"replace\",\"reason\":\"filtered\",\"requests\":3}"},
+  {"id":"trailing-partial","source":"{\"status\":\"keep\",\"reason\":\"kept\",\"requests\":1}\n{\"status\":\"replace\"","expected":{"calls":1,"completed":1,"replaced":0,"savedChars":0,"timed":0,"elapsedMs":0}},
+  {"id":"utf8-byte-row-limit","repeat_reason":4500},
+  {"id":"bounded-tail","prefix_repeat":40000,"source":"{\"status\":\"replace\",\"reason\":\"filtered\",\"requests\":2,\"original_chars\":200,\"capsule_chars\":100,\"elapsed_ms\":100}\n","expected":{"calls":22309,"completed":22308,"replaced":1,"savedChars":100,"timed":2,"elapsedMs":100}},
+  {"id":"valid-u64-outside-js-range","source":"{\"status\":\"replace\",\"reason\":\"filtered\",\"requests\":1,\"original_chars\":9007199254740992,\"capsule_chars\":0}\n","node_error":"exact numeric range","expected":{"calls":1,"completed":1,"replaced":1,"savedChars":9007199254740992,"timed":0,"elapsedMs":0}}
+]

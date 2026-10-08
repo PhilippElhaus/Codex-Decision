@@ -4,7 +4,7 @@
 
 Codex Decision selects repetitive lines for removal from supported local tool output. Errors and useful evidence stay visible. Every shortened result links to the complete original.
 
-**Codex Decision 0.11.4 · VS Code control 0.10.10** — [Download the latest release](https://github.com/PhilippElhaus/Codex-Decision/releases/latest).
+**Codex Decision 0.11.5 · VS Code control 0.10.11** — [Download the latest release](https://github.com/PhilippElhaus/Codex-Decision/releases/latest).
 
 ## Get started
 
@@ -41,7 +41,7 @@ Open the **Decision** panel beside **Terminal** and **Output**. Blue rows mark p
 
 <img src="docs/images/decision-panel.png" width="1000" alt="Decision panel showing 47 of 50 lines removed and persistent thread activity counts">
 
-Select **Latest** for the current result or **Totals** for the selected thread’s saved requests, evaluations, removals, and skip reasons. Switching threads restores their own counters.
+Select **Latest** for the current result or **Totals** for the selected thread’s saved request attempts, validated responses, evaluations, removals, and skip reasons. Switching threads restores their own counters. Incomplete older history shows a lower bound (`≥`) or an unknown count (`—`).
 
 <img src="docs/images/decision-totals.png" width="1000" alt="Decision Totals view with saved session counts and reasons outputs stayed complete">
 
@@ -49,4 +49,4 @@ Screenshots use synthetic data. Code-mode scripts can still serialize the origin
 
 ## Documentation
 
-[API key](docs/setup/setup_credentials.md) · [Filtering rules](docs/architecture/design_integrations.md) · [Privacy and safeguards](docs/architecture/design_data.md) · [Tests](tests/README.md) · [Panel and skip investigation](docs/development/panel_activity_2026-10-08.md) · [Usage verification](docs/development/usage_optimization_2026-10-05.md) · [Provider benchmarks](docs/development/provider_benchmarks_2026-10-07.md)
+[API key](docs/setup/setup_credentials.md) · [Filtering rules](docs/architecture/design_integrations.md) · [Privacy and safeguards](docs/architecture/design_data.md) · [Tests](tests/README.md) · [Request reliability audit](docs/development/reliability_audit_2026-10-08.md) · [Panel and skip investigation](docs/development/panel_activity_2026-10-08.md) · [Usage verification](docs/development/usage_optimization_2026-10-05.md) · [Provider benchmarks](docs/development/provider_benchmarks_2026-10-07.md)

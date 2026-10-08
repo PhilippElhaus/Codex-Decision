@@ -45,7 +45,7 @@ function createController(dataDirectory) {
     mode: state.mode,
     recent: decisionSummary(state.recent),
     history: state.history.map(outcomeLine),
-    stats: { ...state.stats, estimatedTokensSaved: estimateTokensSaved(state.stats.savedChars) },
+    stats: { ...state.stats, estimatedTokensSaved: state.stats.savedChars === null ? null : estimateTokensSaved(state.stats.savedChars) },
   });
 
   function clearActivity() {
@@ -54,6 +54,13 @@ function createController(dataDirectory) {
     state.recent = null;
     state.classificationPulse = 0;
     state.panelFault = null;
+  }
+
+  function activityUnavailable() {
+    state.stats = Object.fromEntries(Object.keys(emptyStats()).map((key) => [key, null]));
+    state.stats.timed = null;
+    state.stats.averageMs = null;
+    state.hookHealth = { fault: "Hook status could not be read" };
   }
 
   async function restoreActivity(directory, generation, refreshHistory = true) {
@@ -66,8 +73,8 @@ function createController(dataDirectory) {
     state.hookHealth = hookHealth;
     if (history !== null) {
       state.history = history;
-      state.recent = history[0] || null;
     }
+    state.recent = state.history[0] || null;
   }
 
   async function enterView(viewId, sessionId, expectsLocalSession = false) {
@@ -121,7 +128,10 @@ function createController(dataDirectory) {
         if (state.generation === generation) { state.eventCursor = cursor; state.eventSize = cursor.offset; }
         await restoreActivity(activeDirectory(), generation);
       } catch {
-        if (state.generation === generation) state.eventSize = -1;
+        if (state.generation === generation) {
+          state.eventSize = -1;
+          activityUnavailable();
+        }
       }
     })();
     entering = viewBaseline.then(() => {
@@ -240,7 +250,7 @@ function createController(dataDirectory) {
       } catch (error) {
         if (generation !== state.generation) return;
         if (error.code !== "ENOENT") state.recent = null;
-        state.hookHealth = { fault: "Hook status could not be read" };
+        activityUnavailable();
       }
     })();
     state.polling = task;

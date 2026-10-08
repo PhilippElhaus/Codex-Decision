@@ -38,8 +38,8 @@ fn run(command: &str, source: &str, extra: Value) -> Value {
     );
     let health: Value =
         serde_json::from_slice(&fs::read(scoped.join("logs/hook-health.json")).unwrap()).unwrap();
-    assert!(
-        health.get("api_requests").is_none(),
+    assert_eq!(
+        health["api_requests"], 0,
         "Local guards must never need a provider"
     );
     health

@@ -100,4 +100,4 @@ add("known-log-injection","repetitive_log","Report the observed network timeout 
 const counted=[...routine(80),"polling complete"];
 add("known-log-counts","repetitive_log","Inspect each numbered poll event to find missing or repeated event numbers. I need the complete event sequence.",counted,all(counted),{expect_full:true});
 
-module.exports = [...cases, ...require("./adapter-cases.cjs")];
+module.exports = [...cases, ...require("./adapter-cases.cjs"), ...require("./structure-cases.cjs"), ...require("./escaped-privacy-cases.cjs"), ...require("./mcp-policy-cases.cjs"), ...require("./context-privacy-cases.cjs")];

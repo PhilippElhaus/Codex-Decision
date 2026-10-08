@@ -20,6 +20,16 @@ function auditRun({ item, calls, stages, receipt, health, stats, activity, error
   if (classified + relevant !== calls || classified > 1 || classified && stages[0] !== "classification") {
     failures.push("invalid_request_stage_sequence");
   }
+  if (health?.counter_scheme === 1) {
+    const counts = [health.responses_received, health.responses_validated, health.request_failures, health.request_cancelled];
+    const [received, validated, failed, cancelled] = counts;
+    if (counts.some(value => !Number.isSafeInteger(value) || value < 0) ||
+        validated > received || received > calls - cancelled ||
+        validated + failed + cancelled !== calls || receipt && validated !== calls ||
+        classificationKeep && validated !== calls) {
+      failures.push("request_outcome_counts_not_reconciled");
+    }
+  }
   if (item.expected_calls !== undefined && calls !== item.expected_calls) failures.push("unexpected_request_count");
   if (item.expected_classification_calls !== undefined && classified !== item.expected_classification_calls) failures.push("unexpected_classification_count");
   if (item.expected_relevance_calls !== undefined && relevant !== item.expected_relevance_calls) failures.push("unexpected_relevance_count");
@@ -49,6 +59,7 @@ function auditRun({ item, calls, stages, receipt, health, stats, activity, error
   else if (classificationKeep) outcome = "classification_keep";
   else outcome = item.expect_full || item.expected_skip || item.expected_calls === 0 ? "intended_local_skip" : "unexpected_skip";
   const abort = recorded !== calls ? "Hook bypassed the testing proxy or failed before the proxy recorded its request." :
+    live && failures.includes("request_outcome_counts_not_reconciled") ? "Saved request outcomes do not reconcile; stop live requests before spending more." :
     live && error && !expectedError ? "Unexpected hook error; stop live requests before repeating the failure." : null;
   return { failures, abort, outcome, recorded_requests: recorded, classification_attempts: classified, relevance_attempts: relevant };
 }

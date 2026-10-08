@@ -69,6 +69,27 @@ test("request stages and error counters cannot hide failed or duplicated evaluat
   assert.ok(auditRun(run).failures.includes("error_count_differs_from_observed_error"));
 });
 
+test("current request outcomes reconcile validated completions and stop live work after a lost outcome", () => {
+  const run = successful();
+  Object.assign(run.health, { counter_scheme: 1, responses_received: 2, responses_validated: 2,
+    request_failures: 0, request_cancelled: 0 });
+  assert.deepEqual(auditRun(run).failures, []);
+  run.health.responses_validated = 1;
+  run.live = true;
+  assert.ok(auditRun(run).failures.includes("request_outcome_counts_not_reconciled"));
+  assert.ok(auditRun(run).abort);
+  run.health.request_failures = 1;
+  assert.ok(auditRun(run).failures.includes("request_outcome_counts_not_reconciled"), "a committed completion cannot hide a failed request");
+  run.receipt = null;
+  run.error = "Decision request failed";
+  run.item.fault = "line-late-http500";
+  run.stats = { calls: 0, completed: 0, replaced: 0 };
+  run.activity = { requests: 0 };
+  run.health.errors = 1;
+  run.replaced = false;
+  assert.deepEqual(auditRun(run).failures, []);
+});
+
 test("monitor and missing-context previews must still publish their evaluated decision", () => {
   const run = successful();run.item = { kind: "repetitive_log", expect_full: true, expected_decision: true };
   run.receipt.manifest.status = "candidate";run.replaced = false;run.stats.replaced = 0;

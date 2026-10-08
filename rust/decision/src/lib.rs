@@ -1,9 +1,13 @@
 //! Exact-line Decision decisions and shared input validation. Network and hook I/O live in the binaries.
 
+pub mod activity_counters;
 pub mod contract;
 pub mod provider;
+pub mod publication_contract;
 pub mod semantic;
 mod source;
+#[path = "bin/decision-hook/strict_json.rs"]
+pub(crate) mod strict_json;
 pub use source::{protect_neighbors, source_lines, strip_ansi};
 
 use serde::{Deserialize, Serialize};

@@ -66,9 +66,8 @@ fn structure_key(words: &[String]) -> (&str, &str, bool, bool, bool) {
     (
         executable,
         subcommand(words, executable),
-        words
-            .iter()
-            .any(|word| word == "--json" || word == "-json" || word == "--message-format=json"),
+        words.iter().any(|word| word == "--json" || word == "-json")
+            || executable == "cargo" && cargo_json_messages(words),
         words
             .iter()
             .any(|word| word == "-n" || word == "--line-number"),

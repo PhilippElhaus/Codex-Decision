@@ -65,6 +65,55 @@ fn known_lab_results_preserve_each_stream_and_every_status_or_cursor_field() {
 }
 
 #[test]
+fn lab_observation_flags_match_the_actual_reader_contract() {
+    for (running, exit, terminal, timed_out) in [
+        (false, 0, true, false),
+        (false, 255, true, false),
+        (false, -1, false, false),
+        (false, -1, false, true),
+        (true, -1, false, false),
+        (true, -1, false, true),
+    ] {
+        let mut payload = observation("INFO routine\n", "");
+        payload["running"] = json!(running);
+        payload["exit_code"] = json!(exit);
+        payload["terminal"] = json!(terminal);
+        payload["wait_timed_out"] = json!(timed_out);
+        assert!(
+            lab_projection(&payload).is_some(),
+            "valid state rejected: {payload}"
+        );
+        assert!(
+            lab_projection(&envelope(&payload)).is_some(),
+            "valid wrapped state rejected: {payload}"
+        );
+    }
+    for (running, exit, terminal, timed_out) in [
+        (true, 0, false, false),
+        (true, 7, true, false),
+        (false, 0, false, false),
+        (false, -1, true, false),
+        (false, 7, true, true),
+        (false, 256, true, false),
+        (false, -2, false, false),
+    ] {
+        let mut payload = observation("INFO routine\n", "");
+        payload["running"] = json!(running);
+        payload["exit_code"] = json!(exit);
+        payload["terminal"] = json!(terminal);
+        payload["wait_timed_out"] = json!(timed_out);
+        assert!(
+            lab_projection(&payload).is_none(),
+            "contradictory state accepted: {payload}"
+        );
+        assert!(
+            lab_projection(&envelope(&payload)).is_none(),
+            "contradictory wrapped state accepted: {payload}"
+        );
+    }
+}
+
+#[test]
 fn lab_results_reject_unknown_fields_media_annotations_mismatches_and_truncation() {
     let payload = foreground("INFO routine\n", "ERROR failure\n");
     let valid = envelope(&payload);

@@ -1,6 +1,31 @@
 use super::*;
 
 #[test]
+fn known_counter_progress_uses_the_whole_log_contract_without_command_provenance() {
+    let progress = "[1/80] Building CXX object C:\\users\\synthetic\\component.o\n".repeat(80)
+        + "Build successful\n";
+    assert!(matches!(
+        decide("synthetic-worker", &progress),
+        FormatDecision::Direct("repetitive_log")
+    ));
+    let mixed = progress + "This paragraph qualifies the ordering of these build observations.\nIts ordering is needed to explain these observations.\nThe final interpretation requires preserving the preceding qualifications.\n";
+    assert!(matches!(
+        decide("synthetic-worker", &mixed),
+        FormatDecision::Classify
+    ));
+    for text in [
+        "[1/80] {\"path\":42}",
+        "[1/80] explanation",
+        "[x/80] Building component",
+    ] {
+        assert!(
+            !log_line(text),
+            "unrecognized counter record acquired a log contract: {text}"
+        );
+    }
+}
+
+#[test]
 fn timestamped_logs_use_the_local_contract_without_classification() {
     for stamp in ["2026-10-08T12:00:00Z", "2026-10-08T14:00:00.123+02:00"] {
         let source = format!("{stamp} INFO heartbeat idle\n").repeat(20)

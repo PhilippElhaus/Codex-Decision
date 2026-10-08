@@ -61,7 +61,11 @@ fn invalid_session_configuration_records_an_actionable_hook_error() {
         serde_json::from_slice(&fs::read(session.join("logs/hook-health.json")).unwrap()).unwrap();
     assert_eq!(health["last_error"], "invalid config");
     assert_eq!(health["last_error_ms"], health["last_seen_ms"]);
-    assert!(!session.join("stats.json").exists());
+    let stats: Value =
+        serde_json::from_slice(&fs::read(session.join("stats.json")).unwrap()).unwrap();
+    assert_eq!(stats["counter_scheme"], 1);
+    assert_eq!(stats["completed"], 0);
+    assert_eq!(stats["calls"], 0);
 }
 
 #[test]
@@ -495,6 +499,14 @@ fn writes_one_original_and_line_receipt_for_valid_batches() {
     let originals = fs::read_dir(data_dir.join("outputs"))
         .unwrap()
         .flat_map(|entry| fs::read_dir(entry.unwrap().path()).unwrap())
+        .filter(|entry| {
+            entry
+                .as_ref()
+                .unwrap()
+                .path()
+                .extension()
+                .is_some_and(|ext| ext == "txt")
+        })
         .collect::<Vec<_>>();
     assert_eq!(originals.len(), 1);
     let saved = fs::read_to_string(originals[0].as_ref().unwrap().path()).unwrap();
@@ -525,7 +537,14 @@ fn later_batch_failure_rolls_back_progress_and_keeps_the_entire_original() {
     let data = root.path().join("data");
     let session = scoped(&data, "fixture-session");
     assert!(!session.join("logs/latest-decision.json").exists());
-    assert!(!session.join("stats.json").exists());
+    let stats: Value =
+        serde_json::from_slice(&fs::read(session.join("stats.json")).unwrap()).unwrap();
+    assert_eq!(stats["completed"], 0);
+    assert_eq!(stats["replaced"], 0);
+    assert_eq!(
+        stats["calls"], 0,
+        "failed attempts belong to hook health, not committed results"
+    );
     assert!(!data.join("outputs").exists());
     let health: Value =
         serde_json::from_slice(&fs::read(session.join("logs/hook-health.json")).unwrap()).unwrap();
@@ -764,6 +783,15 @@ fn plain_local_read_and_text_search_results_share_one_policy() {
     .iter()
     .enumerate()
     {
+        let health_path = scoped(&data, "local-tool-routing").join("logs/hook-health.json");
+        let attempts_before = fs::read(&health_path)
+            .ok()
+            .map(|bytes| {
+                serde_json::from_slice::<Value>(&bytes).unwrap()["api_requests"]
+                    .as_u64()
+                    .unwrap_or(0)
+            })
+            .unwrap_or(0);
         let result = if index == 4 {
             json!([{"type":"input_text","text":source}])
         } else if *tool == "exec_command" {
@@ -819,8 +847,13 @@ fn plain_local_read_and_text_search_results_share_one_policy() {
             fs::read_to_string(scoped(&data, "local-tool-routing").join("logs/events.jsonl"))
                 .unwrap();
         let last: Value = serde_json::from_str(events.lines().last().unwrap()).unwrap();
+        if index == 1 {
+            let health: Value = serde_json::from_slice(&fs::read(&health_path).unwrap()).unwrap();
+            assert_eq!(health["last_skip"], "mcp_replacement_disabled");
+            assert_eq!(health["api_requests"], attempts_before);
+            assert_eq!(last["status"], "replace");
+        }
         if let Some(reason) = match index {
-            1 => Some("mcp_replacement_disabled"),
             3 => Some("missing_task_context"),
             4 => Some("unsupported_envelope"),
             _ => None,
@@ -830,7 +863,13 @@ fn plain_local_read_and_text_search_results_share_one_policy() {
         }
     }
     stop.store(true, Ordering::Relaxed);
-    assert!(thread.join().unwrap() >= 7);
+    let received = thread.join().unwrap();
+    let health: Value = serde_json::from_slice(
+        &fs::read(scoped(&data, "local-tool-routing").join("logs/hook-health.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(received, 6, "Disabled generic MCP output must stay local");
+    assert_eq!(health["api_requests"], received);
 }
 
 #[test]
@@ -850,5 +889,10 @@ fn excessive_physical_lines_keep_full_output_before_any_api_request() {
     .unwrap();
     assert_eq!(health["last_skip"], "line_budget");
     assert!(health.get("last_error").is_none());
-    assert!(!scoped(data, "line-budget").join("stats.json").exists());
+    let stats: Value =
+        serde_json::from_slice(&fs::read(scoped(data, "line-budget").join("stats.json")).unwrap())
+            .unwrap();
+    assert_eq!(stats["counter_scheme"], 1);
+    assert_eq!(stats["completed"], 0);
+    assert_eq!(stats["calls"], 0);
 }

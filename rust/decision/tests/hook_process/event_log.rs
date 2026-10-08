@@ -5,7 +5,7 @@ use std::time::Instant;
 
 #[test]
 fn nonregular_event_logs_fail_open_before_any_network_request_or_write() {
-    verify_nonregular_log("events.jsonl", "event log");
+    verify_nonregular_log("events.jsonl", "event retention");
 }
 
 #[test]
@@ -128,7 +128,18 @@ fn verify_nonregular_log(filename: &str, message: &str) {
             assert!(bytes.is_empty(), "FIFO received event text");
         }
         drop(socket);
-        assert!(!session.join("stats.json").exists());
+        if filename == "events.jsonl" {
+            let stats: Value =
+                serde_json::from_slice(&fs::read(session.join("stats.json")).unwrap()).unwrap();
+            assert_eq!(stats["counter_scheme"], 1);
+            assert_eq!(stats["completed"], 0);
+            assert_eq!(stats["calls"], 0);
+        } else {
+            assert!(
+                !session.join("stats.json").exists(),
+                "unsafe log lock prevents initialization"
+            );
+        }
         assert!(!logs.join("latest-decision.json").exists());
         assert!(!data.join("outputs").exists());
     }

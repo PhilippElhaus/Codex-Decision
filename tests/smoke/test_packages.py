@@ -1,6 +1,7 @@
 """Reject stale, extra, duplicate, and wrongly targeted release files."""
 
 from pathlib import Path
+import os
 import subprocess
 import tempfile
 import unittest
@@ -46,16 +47,26 @@ class PackageTests(unittest.TestCase):
             # The source and archive agree, but both carry the wrong target.
             binary = root / "hooks/bin/linux-x86_64/decision-hook"
             data = binary.read_bytes()
+            binary.write_bytes(data + b"CODEX_DECISION_TEST_ENDPOINT")
+            with self.assertRaisesRegex(ValueError, "verification hook"):
+                verify_plugin(archive(), root)
             binary.write_bytes(data[:18] + b"\xb7\x00" + data[20:])
             with self.assertRaisesRegex(ValueError, "Linux x86_64"):
                 verify_plugin(archive(), root)
 
     def test_submission_rejects_unsupported_host_before_cargo(self):
-        with tempfile.TemporaryDirectory(prefix="jev-target-") as directory:
+        # Some Lab data mounts are noexec. Keep this executable fixture in an
+        # explicitly selected build cache there, without moving payload data.
+        with tempfile.TemporaryDirectory(prefix="jev-target-",
+                                         dir=os.environ.get("CODEX_DECISION_TEST_EXECUTABLE_TMP_ROOT")) as directory:
             tool = Path(directory) / "uname"
             tool.write_text('#!/bin/sh\ncase "$1" in -s) echo Darwin;; -m) echo arm64;; esac\n')
             tool.chmod(0o755)
-            import os
+            # Refuse a broken fixture before shell PATH lookup can silently
+            # fall back to the real uname and start a production build.
+            simulated = subprocess.run([str(tool), "-s"], capture_output=True, text=True)
+            self.assertEqual(simulated.returncode, 0)
+            self.assertEqual(simulated.stdout.strip(), "Darwin")
             environment = {**os.environ, "PATH": directory + os.pathsep + os.environ["PATH"]}
             result = subprocess.run([str(ROOT / "scripts/build_submission.sh")], env=environment,
                                     capture_output=True, text=True)

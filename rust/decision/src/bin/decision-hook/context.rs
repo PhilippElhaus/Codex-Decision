@@ -20,13 +20,18 @@ pub(super) fn fallback_task(event: &Value) -> String {
             .and_then(|value| value.get(*name))
             .and_then(Value::as_str)
     })
-    .find(|value| !value.trim().is_empty() && !sensitive(value));
+    .find(|value| !value.trim().is_empty() && !sensitive_context(value));
     let detail = cue
         .unwrap_or("this tool result")
         .split_whitespace()
         .take(60)
         .collect::<Vec<_>>()
         .join(" ");
+    let detail = if sensitive_context(&detail) {
+        "this tool result"
+    } else {
+        &detail
+    };
     format!("Review {detail}. Keep diagnostics, exact values, unique facts, and evidence needed to understand the result.")
 }
 

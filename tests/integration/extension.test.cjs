@@ -76,6 +76,12 @@ test("composer bridge toggles Decision and restores thread activity without a st
     const sessionId = "fixture-session";
     const scoped = core.sessionDirectory(directory, sessionId);
     const bridge = (request) => rawBridge({ sessionId, viewId: "view-one", sourceId: "main-source", visible: true, focused: true, ...request });
+    const statusAfterMetadataMutation = async (request) => {
+      // A timer poll may already have captured the previous file bytes. Drain
+      // that flight, then assert a status read begun after the mutation.
+      await bridge({ action: "status", ...request });
+      return bridge({ action: "status", ...request });
+    };
     await rawBridge({ action: "status", viewId: "startup-home", sourceId: "main-source",
       sessionId: null, visible: true, focused: true, expectsLocalSession: false });
     const initialReplies = await Promise.all(Array.from({ length: 12 },
@@ -305,7 +311,7 @@ test("composer bridge toggles Decision and restores thread activity without a st
       version: 1, hook_version: "0.11.2", last_seen_ms: Date.now(),
       api_requests: 6, seen: 10, skipped: 7, errors: 1, skip_counts: { small: 7 },
     }));
-    assert.equal((await bridge({ action: "status", viewId: "session-switch-view" })).stats.calls, 6,
+    assert.equal((await statusAfterMetadataMutation({ viewId: "session-switch-view" })).stats.calls, 6,
       "pending API counters refresh while the event cursor is unchanged");
     assert.equal(historyReads, cachedHistoryReads, "health-only changes reuse retained history");
     const switched = await bridge({ action: "status", viewId: "session-switch-view", sessionId: "other-window" });
@@ -320,6 +326,17 @@ test("composer bridge toggles Decision and restores thread activity without a st
       "a fresh controller restores attempts without observing old events");
     assert.equal((await bridge({ action: "settingsRead", viewId: "session-switch-view" })).settings.lifetime.calls, 6,
       "installation totals include the same API attempts as the selected session");
+    await fs.writeFile(path.join(scoped, "stats.json"), '{"calls":"corrupt"}');
+    const unavailableCounts = await statusAfterMetadataMutation({ viewId: "session-switch-view" });
+    assert.equal(unavailableCounts.stats.calls, null, "a failed current read cannot display stale counts as current");
+    assert.equal(unavailableCounts.stats.completed, null);
+    assert.equal(unavailableCounts.stats.estimatedTokensSaved, null);
+    assert.equal(unavailableCounts.hookHealth.fault, "Hook status could not be read");
+    await fs.rm(path.join(scoped, "stats.json"));
+    const recoveredCounts = await statusAfterMetadataMutation({ viewId: "session-switch-view" });
+    assert.equal(recoveredCounts.stats.calls, 6, "repairing the file restores the durable current session");
+    assert.equal(recoveredCounts.stats.completed, 2);
+    assert.equal(recoveredCounts.recent, restored.recent, "cached outcome status recovers with successful metadata reads");
     await rawBridge({ action: "status", viewId: "main-home", sourceId: "main-source",
       sessionId: null, visible: true, focused: false, expectsLocalSession: false });
     assert.equal(panel.dataDirectory(), null, "deliberate home navigation clears the selected thread without composer focus");

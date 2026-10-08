@@ -4,6 +4,8 @@ const fs = require("node:fs/promises");
 const { constants } = require("node:fs");
 const path = require("node:path");
 const { validateSessionPath, validateDirectoryPath, readConfig, readSessionActivity } = require("./core");
+const {readFileRecord,parseUniqueJson} = require("./private-records");
+const {readPublishedRecord} = require("./publication-journal");
 
 const FILTERS = new Set(["output", "test_build", "search_listing"]);
 const MAX_SNAPSHOT_BYTES = 8 * 1024 * 1024;
@@ -92,37 +94,30 @@ function parseBatchDecision(value) {
 
 async function readLatestPanelDecision(directory, cache = null) {
   const filename = path.join(directory, "logs", "latest-decision.json");
-  let file;
   try {
     await validateSessionPath(directory);
     await validateDirectoryPath(path.dirname(filename));
-    const details = await fs.lstat(filename);
-    if (!details.isFile() || details.isSymbolicLink() || details.size > MAX_SNAPSHOT_BYTES) {
-      throw new Error("Unsafe Decision panel decision file");
-    }
-    const fingerprint = `${filename}:${details.dev}:${details.ino}:${details.mtimeMs}:${details.ctimeMs}:${details.size}`;
-    if (cache?.fingerprint === fingerprint) return cache.value;
-    file = await fs.open(filename, constants.O_RDONLY | (constants.O_NOFOLLOW || 0));
-    const opened = await file.stat();
-    if (!opened.isFile() || opened.size > MAX_SNAPSHOT_BYTES) throw new Error("Unsafe Decision panel decision file");
-    // The writer can replace or grow the file after stat. Bound the read itself.
-    const bytes = Buffer.alloc(MAX_SNAPSHOT_BYTES + 1);
-    let length = 0;
-    while (length < bytes.length) {
-      const { bytesRead } = await file.read(bytes, length, bytes.length - length, null);
-      if (!bytesRead) break;
-      length += bytesRead;
-    }
-    if (length > MAX_SNAPSHOT_BYTES) throw new Error("Unsafe Decision panel decision file");
-    const value = JSON.parse(bytes.toString("utf8", 0, length));
+    const record = await readPublishedRecord(directory,"snapshot",async options => {
+      if (!options.strict) {
+        try {
+          const details = await fs.lstat(filename);
+          if (!details.isFile() || details.isSymbolicLink() || details.size > MAX_SNAPSHOT_BYTES) throw new Error("Unsafe Decision panel decision file");
+          const fingerprint = `${filename}:${details.dev}:${details.ino}:${details.mtimeMs}:${details.ctimeMs}:${details.size}`;
+          if (cache?.fingerprint === fingerprint) return {bytes:null,fingerprint,value:cache.value};
+        } catch(error) {if (error.code !== "ENOENT") throw error;}
+      }
+      return readFileRecord(filename,MAX_SNAPSHOT_BYTES,options);
+    });
+    if (record === null) {if (cache) cache.fingerprint = null;return null;}
+    if (record.bytes === null || cache?.fingerprint === record.fingerprint) return cache.value;
+    const value = parseUniqueJson(record.bytes);
     const parsed = parsePanelDecision(value);
-    if (cache) { cache.fingerprint = fingerprint; cache.value = parsed; }
+    if (cache) { cache.fingerprint = record.fingerprint; cache.value = parsed; }
     return parsed;
   } catch (error) {
     if (error.code === "ENOENT") { if (cache) cache.fingerprint = null; return null; }
+    if (error.message === "Unsafe Decision private record") throw new Error("Unsafe Decision panel decision file");
     throw error;
-  } finally {
-    await file?.close();
   }
 }
 

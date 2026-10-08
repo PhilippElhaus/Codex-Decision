@@ -38,7 +38,12 @@ pub(super) fn format_decision(event: &Value, lines: &mut [SourceLine]) -> Format
             } else {
                 "repetitive_log"
             }
-        } else if lines.iter().any(|line| numbered_match(&line.model_text)) {
+        } else if lines.iter().any(|line| {
+            numbered_match(&line.model_text)
+                || line.model_text.starts_with('{')
+                    && strict_json::parse(line.model_text.as_bytes())
+                        .is_ok_and(|row| row.get("type").is_some_and(|kind| kind == "match"))
+        }) {
             "independent_matches"
         } else {
             "independent_records"
@@ -250,25 +255,26 @@ fn log_line(text: &str) -> bool {
             timestamp.len() <= 40 && chrono::DateTime::parse_from_rfc3339(timestamp).is_ok()
         })
         .map_or(text, |(_, rest)| rest.trim_start());
-    [
-        "INFO ",
-        "INFO:",
-        "DEBUG ",
-        "DEBUG:",
-        "TRACE ",
-        "TRACE:",
-        "WARN ",
-        "WARN:",
-        "WARNING ",
-        "ERROR ",
-        "ERROR:",
-        "Compiling ",
-        "Checking ",
-        "Downloading ",
-        "Building ",
-        "Finished ",
-    ]
-    .iter()
-    .any(|prefix| text.starts_with(prefix))
+    known_build_progress(text)
+        || [
+            "INFO ",
+            "INFO:",
+            "DEBUG ",
+            "DEBUG:",
+            "TRACE ",
+            "TRACE:",
+            "WARN ",
+            "WARN:",
+            "WARNING ",
+            "ERROR ",
+            "ERROR:",
+            "Compiling ",
+            "Checking ",
+            "Downloading ",
+            "Building ",
+            "Finished ",
+        ]
+        .iter()
+        .any(|prefix| text.starts_with(prefix))
         || text.starts_with("test ") && text.contains(" ... ")
 }

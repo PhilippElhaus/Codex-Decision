@@ -24,7 +24,8 @@
     let outputEnabled = false, needsKey = false, health = { ok: true, model: "jev-1.13.0" }, classificationPulse = 0, mode = "replace";
     const viewStartedAt = Date.now() - 1000;
     let hookHealth = { version: 1, hook_version: "0.8.1", last_seen_ms: Date.now(), last_success_ms: Date.now() };
-    const stats = { calls: 7, candidates: 4, kept: 2, replaced: 1, checkedChars: 90640, savedChars: 6058, estimatedTokensSaved: 1515, elapsedMs: 8120, completed: 7 };
+    const stats = { calls: 7, candidates: 4, kept: 2, replaced: 1, checkedChars: 90640, savedChars: 6058,
+      estimatedTokensSaved: 1515, elapsedMs: 8120, timed: 7, averageMs: 1160, completed: 7 };
     const history = [
       "replaced · test/build · 6,367 chars · -95%",
       "kept · mcp__demo__logs · 14,000 chars",
@@ -372,6 +373,19 @@
         !tooltip.textContent.includes("Decision connected") && !tooltip.textContent.includes("output +") &&
         document.getElementById("codex-decision-health-row").hidden,
         "session labels and estimated token savings");
+      stats.timed = 14; stats.calls = 14; stats.averageMs = 580;
+      await until(() => tooltip.textContent.includes("580 ms avg request"), "request average follows persisted request timing");
+      stats.partialCounters = ["calls","completed","replaced","averageMs","estimatedTokensSaved"];
+      await until(() => tooltip.textContent.includes("≥7 checked · ≥1 replaced · — avg request") &&
+        button.getAttribute("aria-label").includes("≥14 API attempts") && tooltip.textContent.includes("partial history"),
+        "incomplete history stays visible in composer counts and estimates");
+      stats.calls = null; stats.completed = null; stats.replaced = null; stats.timed = null;
+      stats.averageMs = null; stats.estimatedTokensSaved = null;
+      await until(() => tooltip.textContent.includes("— checked · — replaced · — avg request") &&
+        tooltip.textContent.includes("Tokens saved: —") && button.getAttribute("aria-label").includes("— API attempts"),
+        "unavailable composer metrics remain unknown");
+      Object.assign(stats,{calls:7,completed:7,replaced:1,timed:7,averageMs:1160,estimatedTokensSaved:1515,partialCounters:[]});
+      await until(() => tooltip.textContent.includes("7 checked · 1 replaced · 1,1s avg request"), "composer metrics recover after a successful read");
       check(tooltip.querySelector("li strong")?.textContent === "-95%" &&
         !tooltip.querySelector("li")?.textContent.includes("1,2s"), "bold reductions without action timings");
       check(tooltip.querySelectorAll("li").length === 3 && tooltip.textContent.includes("mcp__demo__logs"), "three cross-tool outcomes");

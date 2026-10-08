@@ -135,12 +135,21 @@
   }
 
   function showLifetime(stats = {}) {
-    const count = (value) => (Number.isSafeInteger(value) && value >= 0 ? value : 0).toLocaleString("en-US");
-    panel.querySelector("#codex-decision-settings-lifetime-tokens").textContent = count(stats.linesJudged);
-    panel.querySelector("#codex-decision-settings-lifetime-replaced").textContent = count(stats.linesOmitted);
-    panel.querySelector("#codex-decision-settings-lifetime-calls").textContent = count(stats.calls);
-    panel.querySelector("#codex-decision-settings-lifetime-time").textContent = formatDuration(stats.averageMs);
-    panel.querySelector("#codex-decision-settings-lifetime-protected").textContent = count(stats.linesProtected);
+    const partial = new Set(stats.partialCounters || []);
+    const count = (name) => Number.isSafeInteger(stats[name]) && stats[name] >= 0 ?
+      `${partial.has(name) ? "≥" : ""}${stats[name].toLocaleString("en-US")}` : "—";
+    panel.querySelector("#codex-decision-settings-lifetime-tokens").textContent = count("linesJudged");
+    panel.querySelector("#codex-decision-settings-lifetime-replaced").textContent = count("linesOmitted");
+    panel.querySelector("#codex-decision-settings-lifetime-calls").textContent = count("calls");
+    panel.querySelector("#codex-decision-settings-lifetime-time").textContent =
+      ["averageMs","elapsedMs","timed"].some(name=>partial.has(name)) ? "—" : formatDuration(stats.averageMs);
+    panel.querySelector("#codex-decision-settings-lifetime-protected").textContent = count("linesProtected");
+    for (const [field, name] of [["tokens", "linesJudged"], ["replaced", "linesOmitted"],
+      ["calls", "calls"], ["time", "averageMs"], ["protected", "linesProtected"]]) {
+      panel.querySelector(`#codex-decision-settings-lifetime-${field}`).title = stats.overflowCounters?.includes(name) ?
+        "This aggregate exceeds the exact numeric range and is unavailable." : partial.has(name) ?
+          "The historical baseline is incomplete." : "Recorded activity across all sessions.";
+    }
   }
 
   function parsePercentage(value) {

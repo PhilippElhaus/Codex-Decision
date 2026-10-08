@@ -77,7 +77,9 @@
       }
     }
     const send = (value) => window.dispatchEvent(new MessageEvent("message", {
-      data: { type: "decision", decision: value, activity: {calls:2,skipped:14,message:"Synthetic activity",totals:{seen:16,completed:2,replaced:1,candidates:1,kept:0,errors:0,linesRelevanceJudged:125,linesActuallyOmitted:47,candidateReasons:{observe:1},skipCounts:{small:10,exact_content:4}}} },
+      data: { type: "decision", decision: value, activity: {calls:2,skipped:14,message:"Synthetic activity",totals:{seen:16,completed:2,replaced:1,candidates:1,kept:0,errors:0,
+        responsesReceived:2,responsesValidated:2,requestFailures:0,requestCancelled:0,
+        linesRelevanceJudged:125,linesActuallyOmitted:47,candidateReasons:{observe:1},skipCounts:{small:10,exact_content:4}}} },
     }));
     const positions = () => [".batch-header", ".batch-row:first-child"].map((selector) => {
       const box = document.querySelector(selector).getBoundingClientRect();

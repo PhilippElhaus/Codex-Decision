@@ -15,6 +15,99 @@ const withV3 = (config) => require("../../vscode-control/schema").validate("conf
   ...config, schema_version: 4, relevance_policy: completeRelevancePolicy(),
 });
 
+test("shared CLI and control fixtures preserve exact and incomplete historical accounting", async () => {
+  const cases = require("../fixtures/activity-accounting.json");
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "decision-accounting-parity-"));
+  try {
+    await fs.mkdir(path.join(directory, "logs"));
+    for (const row of cases) {
+      for (const [file, value] of [["stats.json", row.stats], ["logs/hook-health.json", row.health]]) {
+        const target = path.join(directory, file);
+        if (value === null) await fs.rm(target, { force: true });
+        else await fs.writeFile(target, JSON.stringify(value));
+      }
+      const actual = await readSessionActivity(directory);
+      for (const [key, expected] of Object.entries(row.expected)) assert.deepEqual(actual[key], expected, `${row.name}: ${key}`);
+    }
+  } finally { await fs.rm(directory, { recursive: true, force: true }); }
+});
+
+test("incomplete timing totals never claim a lower-bound average",async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(),"decision-partial-average-"));
+  try {
+    const directory = sessionDirectory(root,"synthetic");
+    await ensureSessionDefaults(directory);
+    // One retained 1000ms request can coexist with nine missing 1ms requests:
+    // 1000ms is above the true 100.9ms average, not a minimum.
+    await fs.writeFile(path.join(directory,"stats.json"),JSON.stringify({counter_scheme:1,
+      calls:1,completed:1,replaced:0,timed:1,elapsedMs:1000,partial_timed:1,partial_elapsedMs:1}));
+    assert.equal((await readLifetimeStats(directory)).averageMs,null);
+    assert.equal((await readSessionActivity(directory)).averageMs,null);
+    assert.equal((await readInstallationStats(root)).averageMs,null);
+  } finally {await fs.rm(root,{recursive:true,force:true});}
+});
+
+test("events-only legacy sessions preserve retained lower bounds without exact zero history",async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(),"decision-retained-only-"));
+  try {
+    await fs.mkdir(path.join(directory,"logs"));
+    await fs.writeFile(path.join(directory,"logs/events.jsonl"),JSON.stringify({status:"keep",reason:"kept",
+      requests:2,elapsed_ms:1000,original_chars:40,capsule_chars:40})+"\n");
+    const actual = await readSessionActivity(directory);
+    assert.equal(actual.calls,2);assert.equal(actual.completed,1);assert.equal(actual.seen,null);
+    assert.ok(actual.partialCounters.includes("calls"));assert.equal(actual.averageMs,null);
+    await fs.writeFile(path.join(directory,"logs/events.jsonl"),'{"status":"classifying","reason":"classification_start","requests":0}\n');
+    const onlyStarted = await readSessionActivity(directory);
+    assert.equal(onlyStarted.seen,null);assert.ok(onlyStarted.partialCounters.includes("completed"));
+  } finally {await fs.rm(directory,{recursive:true,force:true});}
+});
+
+test("corrupted legacy counter metadata cannot publish rounded overflow estimates",async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(),"decision-retained-overflow-"));
+  try {
+    await fs.mkdir(path.join(directory,"logs"));
+    const filename = path.join(directory,"logs/events.jsonl");
+    const row = {status:"replace",reason:"filtered",original_chars:Number.MAX_SAFE_INTEGER,
+      capsule_chars:0,requests:1,elapsed_ms:1};
+    const bytes = JSON.stringify(row)+"\n"+JSON.stringify(row)+"\n";
+    await fs.writeFile(filename,bytes);
+    await assert.rejects(readSessionActivity(directory),/retained activity exceeds the exact numeric range/);
+    assert.equal(await fs.readFile(filename,"utf8"),bytes);
+    for (const original_chars of [-1,1.5,"123"]) {
+      await fs.writeFile(filename,JSON.stringify({...row,original_chars})+"\n");
+      const result = await readSessionActivity(directory);
+      assert.equal(result.completed,0,"malformed rows supply no retained completion evidence");
+      assert.equal(result.savedChars,null,"missing valid history cannot invent savings");
+    }
+    await fs.writeFile(filename,JSON.stringify({...row,original_chars:Number.MAX_SAFE_INTEGER+1})+"\n");
+    await assert.rejects(readSessionActivity(directory),/exact numeric range/,"valid u64 outside JavaScript range is unavailable");
+    await fs.writeFile(filename,JSON.stringify({...row,original_chars:10,elapsed_ms:Number.MAX_SAFE_INTEGER})+"\n"+
+      JSON.stringify({...row,original_chars:10,elapsed_ms:1})+"\n");
+    await assert.rejects(readLifetimeStats(directory),/exact numeric range/);
+  } finally {await fs.rm(directory,{recursive:true,force:true});}
+});
+
+test("ambiguous and incomplete exact counter snapshots are rejected", async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "decision-unique-counters-"));
+  try {
+    await fs.mkdir(path.join(directory, "logs"));
+    const healthFile = path.join(directory, "logs", "hook-health.json");
+    const health = { version: 1, hook_version: "0.11.4", last_seen_ms: 1 };
+    for (const duplicate of ['"seen":1,"seen":2', '"seen":1,"\\u0073een":2',
+      '"skip_counts":{"small":1,"small":2}']) {
+      await fs.writeFile(healthFile, `${JSON.stringify(health).slice(0,-1)},${duplicate}}`);
+      await assert.rejects(readHookHealth(directory), /Duplicate Decision counter field/);
+    }
+    await fs.writeFile(healthFile, JSON.stringify({...health,last_error:'literal {"seen":1,"seen":2}'}));
+    assert.equal((await readHookHealth(directory)).last_error, 'literal {"seen":1,"seen":2}');
+    await fs.writeFile(healthFile, JSON.stringify({...health,counter_scheme:1,partial_counters:[]}));
+    await assert.rejects(readHookHealth(directory), /Missing Decision activity counter/);
+    await fs.rm(healthFile);
+    await fs.writeFile(path.join(directory,"stats.json"), '{"calls":1,"\\u0063alls":2,"completed":0,"replaced":0,"timed":0,"elapsedMs":0}');
+    await assert.rejects(readSessionActivity(directory), /Duplicate Decision counter field/);
+  } finally { await fs.rm(directory, { recursive: true, force: true }); }
+});
+
 test("session and installation activity count API attempts and preserve unknown legacy metrics", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "decision-session-counters-"));
   try {
@@ -55,7 +148,7 @@ test("session and installation activity count API attempts and preserve unknown 
     assert.equal(totals.linesActuallyOmitted, 8);
     assert.deepEqual(totals.skipCounts, { small: 14, choice_kept_full_output: 2 });
     assert.deepEqual(totals.skipDetails, { protected_command: 4 });
-    assert.equal(totals.averageMs, 100, "timing uses completed requests with recorded durations");
+    assert.equal(totals.averageMs, null, "unlabelled timing records cannot establish a request average");
     const legacy = sessionDirectory(root, "legacy");
     await ensureSessionDefaults(legacy);
     await fs.writeFile(path.join(legacy, "stats.json"), JSON.stringify({
@@ -83,10 +176,11 @@ test("activity maps reject malformed counters and restore bounded retained histo
     const health = { version: 1, hook_version: "0.11.2", last_seen_ms: Date.now() };
     for (const skip_counts of [{ small: -1 }, { bad_reason: "1" }, { "arbitrary message": 1 }, []]) {
       await fs.writeFile(path.join(logs, "hook-health.json"), JSON.stringify({ ...health, skip_counts }));
-      await assert.rejects(readSessionActivity(directory), /Invalid Decision skip counts/);
+      await assert.rejects(readSessionActivity(directory), skip_counts.small === -1 ?
+        /Invalid Decision unsigned counter token/ : /Invalid Decision skip counts/);
     }
     await fs.writeFile(path.join(logs, "hook-health.json"), JSON.stringify({ ...health, errors: -1 }));
-    await assert.rejects(readHookHealth(directory), /Invalid Decision hook health/);
+    await assert.rejects(readHookHealth(directory), /Invalid Decision unsigned counter token/);
     await fs.writeFile(path.join(logs, "hook-health.json"), JSON.stringify(health));
     await fs.writeFile(path.join(directory, "stats.json"), JSON.stringify({
       calls: 2, completed: 2, replaced: 0, timed: 2, elapsedMs: 100,
@@ -157,6 +251,165 @@ test("one activity snapshot uses one atomic stats record and handles short file 
   }
 });
 
+test("activity snapshots never report fewer attempts than concurrently completed requests", async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "decision-torn-counters-"));
+  const statsFile = path.join(directory, "stats.json");
+  const healthFile = path.join(directory, "logs", "hook-health.json");
+  const originalOpen = fs.open;
+  let releaseStats;
+  const healthRead = new Promise((resolve) => { releaseStats = resolve; });
+  const stats = { counter_scheme: 1, calls: 2, completed: 2, replaced: 0, timed: 2, elapsedMs: 100 };
+  const health = { version: 1, hook_version: "0.11.4", last_seen_ms: Date.now(), api_requests: 2,
+    responses_received: 2, responses_validated: 2 };
+  try {
+    await fs.mkdir(path.dirname(healthFile));
+    await fs.writeFile(statsFile, JSON.stringify(stats));
+    await fs.writeFile(healthFile, JSON.stringify(health));
+    fs.open = async (filename, ...args) => {
+      if (filename === statsFile) await healthRead;
+      const handle = await originalOpen(filename, ...args);
+      if (filename === healthFile) {
+        return { stat: () => handle.stat(), read: (...readArgs) => handle.read(...readArgs),
+          close: async () => {
+            await handle.close();
+            // The attempt is published before completion, while this reader
+            // has already captured the previous atomic health record.
+            await fs.writeFile(`${healthFile}.next`, JSON.stringify({ ...health, api_requests: 3,
+              responses_received: 3, responses_validated: 3 }));
+            await fs.rename(`${healthFile}.next`, healthFile);
+            await fs.writeFile(`${statsFile}.next`, JSON.stringify({ ...stats, calls: 3, completed: 3 }));
+            await fs.rename(`${statsFile}.next`, statsFile);
+            releaseStats();
+          } };
+      }
+      return handle;
+    };
+    const snapshot = await readSessionActivity(directory);
+    assert.equal(snapshot.hookHealth.api_requests, 2);
+    assert.equal(snapshot.completed, 3);
+    assert.equal(snapshot.calls, 3, "the completed request total clamps an older health read");
+    assert.equal(snapshot.responsesReceived, 3);
+    assert.equal(snapshot.responsesValidated, 3);
+  } finally {
+    releaseStats();
+    fs.open = originalOpen;
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("a torn exact request ledger is re-read once without inventing attempts from legacy totals", async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(),"decision-stage-consistency-"));
+  const statsFile=path.join(directory,"stats.json"),healthFile=path.join(directory,"logs/hook-health.json");
+  const fixture=require("../fixtures/activity-accounting.json").find(row=>row.name==="current_exact");
+  const oldHealth={...fixture.health,api_requests:6,responses_received:4,responses_validated:3,request_failures:1,request_cancelled:2};
+  const newHealth={...oldHealth,api_requests:11,responses_received:9,responses_validated:8};
+  const newStats={...fixture.stats,calls:8,timed:8,elapsedMs:800,completed:4};
+  const originalOpen=fs.open;
+  let releaseStats,healthOpens=0;
+  const barrier=new Promise(resolve=>{releaseStats=resolve;});
+  try {
+    await fs.mkdir(path.dirname(healthFile));
+    await fs.writeFile(statsFile,JSON.stringify({...fixture.stats,calls:3}));
+    await fs.writeFile(healthFile,JSON.stringify(oldHealth));
+    fs.open=async(filename,...args)=>{
+      if(filename===statsFile) await barrier;
+      const handle=await originalOpen(filename,...args);
+      if(filename!==healthFile) return handle;
+      const number=++healthOpens;
+      return {stat:()=>handle.stat(),read:(...readArgs)=>handle.read(...readArgs),close:async()=>{
+        await handle.close();
+        if(number===1) {
+          await fs.writeFile(`${healthFile}.next`,JSON.stringify(newHealth));await fs.rename(`${healthFile}.next`,healthFile);
+          await fs.writeFile(`${statsFile}.next`,JSON.stringify(newStats));await fs.rename(`${statsFile}.next`,statsFile);
+          releaseStats();
+        }
+      }};
+    };
+    const consistent=await readSessionActivity(directory);
+    assert.equal(healthOpens,2,"an older health record cannot contradict disjoint terminal outcomes");
+    assert.equal(consistent.calls,11);assert.equal(consistent.responsesValidated,8);
+    assert.deepEqual(consistent.partialCounters,[]);
+    fs.open=originalOpen;
+    await fs.writeFile(healthFile,JSON.stringify(oldHealth));
+    healthOpens=0;
+    fs.open=async(filename,...args)=>{if(filename===healthFile) healthOpens+=1;return originalOpen(filename,...args);};
+    await assert.rejects(readSessionActivity(directory),/Inconsistent Decision activity counters/);
+    assert.equal(healthOpens,2,"persistent inconsistency becomes unavailable after one bounded retry");
+    await fs.writeFile(healthFile,JSON.stringify({...oldHealth,hook_version:"0.11.4"}));
+    healthOpens=0;
+    await assert.rejects(readSessionActivity(directory),/Inconsistent Decision activity counters/);
+    assert.equal(healthOpens,2,"an old writer's exact attempts still cannot lag known completions");
+    const legacy={...oldHealth};delete legacy.counter_scheme;delete legacy.partial_counters;
+    await fs.writeFile(healthFile,JSON.stringify(legacy));
+    healthOpens=0;
+    const partial=await readSessionActivity(directory);
+    assert.equal(healthOpens,1);
+    assert.equal(partial.calls,8,"uncertain legacy counters are not summed into invented historical attempts");
+    assert.ok(partial.partialCounters.includes("calls"));
+  } finally {releaseStats();fs.open=originalOpen;await fs.rm(directory,{recursive:true,force:true});}
+});
+
+test("installation totals recompute estimates and preserve exact integer limits", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "decision-total-precision-"));
+  try {
+    for (const session of ["one", "two", "three"]) {
+      const directory = sessionDirectory(root, session);
+      await ensureSessionDefaults(directory);
+      await fs.writeFile(path.join(directory, "stats.json"), JSON.stringify({
+        counter_scheme: 1, calls: 1, completed: 1, replaced: 1, timed: 1, elapsedMs: 10,
+        savedChars: 2, candidates: 0, kept: 0, linesActuallyOmitted: 1, linesRelevanceJudged: 1,
+      }));
+    }
+    let total = await readInstallationStats(root);
+    assert.equal(total.savedChars, 6);
+    assert.equal(total.estimatedTokensSaved, 2, "round the combined character estimate once");
+    for (const session of ["one", "two"]) {
+      const directory = sessionDirectory(root, session);
+      await fs.writeFile(path.join(directory, "stats.json"), JSON.stringify({
+        counter_scheme: 1, calls: Number.MAX_SAFE_INTEGER, completed: 1, replaced: 1,
+        timed: 1, elapsedMs: Number.MAX_SAFE_INTEGER, savedChars: Number.MAX_SAFE_INTEGER,
+        candidates: 0, kept: 0, linesActuallyOmitted: 1, linesRelevanceJudged: 1,
+      }));
+    }
+    total = await readInstallationStats(root);
+    for (const name of ["calls", "elapsedMs", "savedChars", "estimatedTokensSaved", "averageMs"]) {
+      assert.equal(total[name], null, `${name} cannot silently return a rounded total`);
+      assert.ok(total.overflowCounters.includes(name));
+    }
+    assert.equal(total.completed, 3, "unaffected exact counters remain available");
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
+});
+
+test("aggregate reads stay bounded and await opened counter files before rejecting", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "decision-counter-workers-"));
+  const originalOpen = fs.open;
+  let openHandles = 0, peakHandles = 0;
+  const row = require("../fixtures/activity-accounting.json").find(row => row.name === "current_exact");
+  try {
+    for (let index = 0; index < 20; index += 1) {
+      const directory = sessionDirectory(root, `thread-${index}`);
+      await fs.mkdir(path.join(directory,"logs"), {recursive:true,mode:0o700});
+      await fs.writeFile(path.join(directory,"stats.json"),JSON.stringify(row.stats));
+      await fs.writeFile(path.join(directory,"logs/hook-health.json"),JSON.stringify(row.health));
+    }
+    fs.open = async (filename,...args) => {
+      const handle = await originalOpen(filename,...args);
+      openHandles += 1; peakHandles = Math.max(peakHandles,openHandles);
+      return {stat:()=>handle.stat(),read:(...readArgs)=>handle.read(...readArgs),close:async()=>{
+        await new Promise(resolve=>setTimeout(resolve,2));
+        try {await handle.close();} finally {openHandles -= 1;}
+      }};
+    };
+    assert.equal((await readInstallationStats(root)).calls,120);
+    assert.ok(peakHandles > 1 && peakHandles <= 8, `four workers open at most two metadata files each: ${peakHandles}`);
+    assert.equal(openHandles,0);
+    const selected = sessionDirectory(root,"thread-0");
+    await fs.writeFile(path.join(selected,"logs/hook-health.json"),'{"version":"corrupt"}');
+    await assert.rejects(readInstallationStats(root), /Invalid Decision hook health/);
+    assert.equal(openHandles,0,"failed independent reads are joined and closed before returning");
+  } finally {fs.open=originalOpen; await fs.rm(root,{recursive:true,force:true});}
+});
+
 test("global settings stay independent of session switches and aggregate activity", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "jev-global-settings-"));
   try {
@@ -173,13 +426,16 @@ test("global settings stay independent of session switches and aggregate activit
     assert.equal((await readConfig(one)).mode, "replace");
     for (const [directory, calls, completed, elapsedMs] of [[one, 2, 2, 200], [two, 1, 1, 300]]) {
       await fs.writeFile(path.join(directory, "stats.json"), JSON.stringify({
+        counter_scheme: directory === one ? 1 : undefined,
         calls, completed, replaced: 1, savedChars: 40, timed: completed, elapsedMs,
       }));
     }
     const totals = await readInstallationStats(root);
     assert.equal(totals.calls, 3);
     assert.equal(totals.replaced, 2);
-    assert.equal(totals.averageMs, 167);
+    assert.equal(totals.averageMs, null, "legacy timing scope cannot become a request average in installation totals");
+    assert.equal(totals.timed, 3);
+    assert.equal(totals.elapsedMs, 500, "raw legacy timing counters are preserved");
     await assert.rejects(writeGlobalSettings(root, { log_limit_mb: 0 }), /Invalid Decision settings/);
     assert.equal((await readGlobalSettings(root)).log_limit_mb, 72);
     await fs.rm(path.join(root, "settings.json"));
@@ -267,7 +523,7 @@ test("session activity index and cumulative stats use only current paths", async
     assert.equal((await readEventsSince(directory, 0)).events.at(-1).status, "replace");
     assert.equal((await readEventOffset(directory)), (await fs.stat(path.join(directory, "logs", "events.jsonl"))).size);
     assert.deepEqual(await readLifetimeStats(directory), {
-      calls: 3, completed: 3, replaced: 1, savedChars: 900, estimatedTokensSaved: 225, averageMs: 200, timed: 2, elapsedMs: 400,
+      calls: 3, completed: 3, replaced: 1, savedChars: 900, estimatedTokensSaved: 225, averageMs: null, timed: 2, elapsedMs: 400,
       linesSeen: 0, linesJudged: 0, linesKept: 0, linesOmitted: 0, linesProtected: 0, linesUnjudged: 0,
       linesRelevanceJudged: 0, linesBelowOmitCutoff: 0, linesRelevanceKept: 0,
     });
@@ -349,9 +605,9 @@ test("hook health is private, bounded, and rejects corrupt or linked data", asyn
     await fs.writeFile(file, JSON.stringify(valid));
     assert.deepEqual(await readHookHealth(directory), valid);
     await fs.writeFile(file, JSON.stringify({ ...valid, skipped: -1 }));
-    await assert.rejects(readHookHealth(directory), /Invalid Decision hook health/);
+    await assert.rejects(readHookHealth(directory), /Invalid Decision unsigned counter token/);
     await fs.writeFile(file, JSON.stringify({ ...valid, last_error_ms: -1 }));
-    await assert.rejects(readHookHealth(directory), /Invalid Decision hook health/);
+    await assert.rejects(readHookHealth(directory), /Invalid Decision unsigned counter token/);
     await fs.writeFile(file, JSON.stringify({ ...valid, last_seen_ms: Date.now() + 600_000 }));
     await assert.rejects(readHookHealth(directory), /Invalid Decision hook health/);
     await fs.writeFile(file, "x".repeat(5000));
@@ -401,7 +657,7 @@ test("session totals scan retained decisions within one session", async () => {
     await fs.mkdir(path.join(directory, "logs"), { recursive: true });
     await fs.writeFile(path.join(directory, "logs", "events.jsonl"), rows.map((row) => JSON.stringify(row)).join("\n") + "\nnot-json\n");
     assert.deepEqual(await readLifetimeStats(directory), { calls: 2, completed: 4, replaced: 2,
-      savedChars: 8000, estimatedTokensSaved: 2000, averageMs: 325, timed: 4, elapsedMs: 1300,
+      savedChars: 8000, estimatedTokensSaved: 2000, averageMs: null, timed: 4, elapsedMs: 1300,
       linesSeen: 0, linesJudged: 0, linesKept: 0, linesOmitted: 0, linesProtected: 0, linesUnjudged: 0,
       linesRelevanceJudged: 0, linesBelowOmitCutoff: 0, linesRelevanceKept: 0 });
   } finally { await fs.rm(directory, { recursive: true, force: true }); }
@@ -539,6 +795,7 @@ test("health check reads the private .env and keeps the key out of status", asyn
       assert.equal(url, "https://api.openai.com/v1/decisions");
       assert.equal(options.headers.Authorization, "Bearer test-key-only");
       assert.equal(JSON.parse(options.body).questions[0].type, "predicate");
+      assert.equal(options.redirect, "error");
       return { ok: true, text: async () => response };
     });
     assert.deepEqual(healthy, { ok: true, model: "gpt-6-luna" });

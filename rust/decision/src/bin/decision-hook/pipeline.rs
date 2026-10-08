@@ -111,9 +111,9 @@ pub(super) fn process_event(
     if matches!(format, FormatDecision::Keep("exact_content")) {
         return skip(scoped, "exact_content");
     }
-    let privacy = if sensitive(&source) {
+    let privacy = if sensitive_source(&source) {
         Some("protected_output")
-    } else if sensitive(command(event)) {
+    } else if sensitive_context(command(event)) {
         Some("protected_command")
     } else if sensitive_input(event) {
         Some("protected_input")
@@ -139,13 +139,11 @@ pub(super) fn process_event(
     let tool = event["tool_name"].as_str().unwrap_or("");
     if config.mode == "replace"
         && !config.allow_mcp_replacement
-        && tool.trim_start_matches("functions.").starts_with("mcp__")
-        && (lab_execute(event) || lab_poll(tool))
+        && mcp_tool(tool)
         && !(matches!(format, FormatDecision::Direct(_)) && supported_lab_command(event))
     {
         return skip(scoped, "mcp_replacement_disabled");
     }
-    protect_neighbors(&mut lines);
     let user_task = match task_context(event) {
         Ok(task) => task,
         Err(()) => return skip(scoped, "unsafe_task_context"),
@@ -169,8 +167,8 @@ pub(super) fn process_event(
         return skip(scoped, "insufficient_savings");
     }
     let api_key = key(data_dir, config.provider)?;
-    let agent = ureq::AgentBuilder::new().build();
-    classification_start(scoped)?;
+    let agent = decision_agent();
+    classification_start(scoped, config.never_delete_logs)?;
     let (kind, gate_record) = if let FormatDecision::Direct(kind) = format {
         (kind.to_owned(), None)
     } else {
@@ -187,15 +185,15 @@ pub(super) fn process_event(
         );
         validate_request_budget(&request)?;
         let before = Instant::now();
-        let response = evaluate(
+        let (response, (kind, excerptable)) = evaluate(
             scoped,
             &agent,
             &request,
             &api_key,
             config.timeout.min(remaining()?.as_secs_f64()),
+            classification,
         )?;
         let elapsed_ms = before.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
-        let (kind, excerptable) = classification(&response)?;
         let gate_record = BatchRecord {
             id: 0,
             target_numbers: vec![],
@@ -211,6 +209,7 @@ pub(super) fn process_event(
                 &gate_record,
                 &kind,
                 "choice_kept_full_output",
+                config.never_delete_logs,
             )?;
             return skip(scoped, "choice_kept_full_output");
         }
@@ -228,6 +227,7 @@ pub(super) fn process_event(
                 gate_record,
                 &kind,
                 "no_eligible_lines",
+                config.never_delete_logs,
             )?;
         }
         return skip(scoped, "no_eligible_lines");
@@ -243,6 +243,7 @@ pub(super) fn process_event(
                     gate_record,
                     &kind,
                     "relevance_budget",
+                    config.never_delete_logs,
                 )?;
             }
             return skip(scoped, "relevance_budget");
@@ -257,14 +258,15 @@ pub(super) fn process_event(
     for batch in batches {
         remaining()?;
         let before = Instant::now();
-        let response = evaluate(
+        let (response, answers) = evaluate(
             scoped,
             &agent,
             &batch.request,
             &api_key,
             config.timeout.min(remaining()?.as_secs_f64()),
+            |response| relevance_answers(&batch, response),
         )?;
-        for (number, p) in relevance_answers(&batch, &response)? {
+        for (number, p) in answers {
             if probabilities.insert(number, (p, batch.id)).is_some() {
                 return Err("duplicate relevance target".into());
             }

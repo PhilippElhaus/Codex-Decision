@@ -86,7 +86,7 @@ test("the shared config contract accepts explicit global scope", async () => {
   try {
     for (const [id, timed, completed, elapsedMs] of [["one", 4, 1, 400], ["two", 1, 1, 300]]) {
       const directory = core.sessionDirectory(root, id); await core.ensureSessionDefaults(directory);
-      await fs.writeFile(path.join(directory, "stats.json"), JSON.stringify({ calls: timed, timed, completed, elapsedMs, replaced: 0, savedChars: 0 }));
+      await fs.writeFile(path.join(directory, "stats.json"), JSON.stringify({ counter_scheme: 1, calls: timed, timed, completed, elapsedMs, replaced: 0, savedChars: 0 }));
     }
     const stats = await core.readInstallationStats(root); assert.equal(stats.averageMs, 140);
   } finally { await fs.rm(root, { recursive: true, force: true }); }

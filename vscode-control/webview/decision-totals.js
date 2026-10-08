@@ -2,7 +2,7 @@
 
 (() => {
   const reasons = {
-    sensitive: ["Protected text or input", "A credential marker prevented sending this output or command to the provider."],
+    sensitive: ["Protected text or input", "Credential markers or ambiguous structured text prevented safe forwarding."],
     unsafe_task_context: ["Task context unavailable", "The latest task could not be safely read. Earlier skips stay in the saved totals."],
     unsupported_result: ["Response format kept full", "Structured or mixed-media responses have no supported text projection."],
     unsupported_route: ["Tool format kept full", "This tool or command has no supported filtering route."],
@@ -32,15 +32,17 @@
     return result;
   }
 
-  function count(value) {
-    return Number.isSafeInteger(value) && value >= 0 ? value.toLocaleString("en-US") : "—";
+  function count(value, partial = false) {
+    return Number.isSafeInteger(value) && value >= 0 ? `${partial ? "≥" : ""}${value.toLocaleString("en-US")}` : "—";
   }
 
-  function reasonTable(section, title, counts, details = {}) {
+  function reasonTable(section, title, counts, details = {}, partial = false, detailsPartial = false) {
     const entries = Object.entries(counts || {}).filter(([, value]) => Number.isSafeInteger(value) && value > 0)
       .sort(([a, countA], [b, countB]) => countB - countA || a.localeCompare(b));
     if (!entries.length) return;
-    section.appendChild(node("h2", "totals-heading", title));
+    const headingLabel = node("h2", "totals-heading", title);
+    if (partial) headingLabel.title = "This breakdown has an incomplete historical baseline.";
+    section.appendChild(headingLabel);
     const table = node("table", "totals-reasons");
     const head = node("thead");
     const heading = node("tr");
@@ -52,10 +54,10 @@
     for (const [reason, value] of entries) {
       const [label, description] = reasons[reason] || [reason.replaceAll("_", " "), "The full output was kept."];
       const detail = reason === "sensitive" && Object.values(details).some(value => value > 0) ?
-        `Protected markers in new records: output ${count(details.protected_output || 0)} · command ${count(details.protected_command || 0)} · other input ${count(details.protected_input || 0)}.` : description;
+        `Recorded protection: output ${count(details.protected_output || 0, detailsPartial)} · command ${count(details.protected_command || 0, detailsPartial)} · other input ${count(details.protected_input || 0, detailsPartial)}.` : description;
       const row = node("tr");
       row.dataset.reason = reason;
-      row.append(node("td", "", label), node("td", "reason-count", count(value)), node("td", "reason-detail", detail));
+      row.append(node("td", "", label), node("td", "reason-count", count(value, partial)), node("td", "reason-detail", detail));
       body.appendChild(row);
     }
     table.append(head, body); section.appendChild(table);
@@ -69,8 +71,12 @@
     const values = [
       ["seen", "Observed outputs", totals.seen],
       ["skipped", "Skipped outputs", activity?.skipped],
-      ["calls", "API requests", activity?.calls],
-      ["completed", "Outputs evaluated", totals.completed],
+      ["calls", "API attempts", activity?.calls],
+      ["responsesReceived", "HTTP responses received", totals.responsesReceived],
+      ["responsesValidated", "Responses validated", totals.responsesValidated],
+      ["requestFailures", "Requests failed", totals.requestFailures],
+      ["requestCancelled", "Attempts cancelled locally", totals.requestCancelled],
+      ["completed", "Completed line evaluations", totals.completed],
       ["replaced", "Outputs filtered", totals.replaced],
       ["candidates", "Previews", totals.candidates],
       ["kept", "Evaluated and kept full", totals.kept],
@@ -78,15 +84,33 @@
       ["linesActuallyOmitted", "Lines removed", totals.linesActuallyOmitted],
       ["errors", "Recorded hook errors", totals.errors],
     ];
+    const meanings = {
+      seen: "Enabled hook invocations recorded before output guards. Retries count again.",
+      skipped: "Named skip entries persisted in the health ledger. These gates keep the full output; classification may use an API request. Termination before the health write leaves no recorded skip entry.",
+      calls: "Durable request attempts registered before transport. Registration does not confirm provider receipt.",
+      responsesReceived: "HTTP response headers received, including failed HTTP responses.",
+      responsesValidated: "Complete response bodies and typed answers passed validation. Publication can still fail afterward.",
+      requestFailures: "Attempts with a known transport, HTTP, response-body, or answer-validation failure.",
+      requestCancelled: "Registered attempts whose deadline expired before transport started.",
+      completed: "Line evaluations whose artifacts, totals, and completion event reached the committed publication marker.",
+      replaced: "Committed shortened output payloads. Consumer delivery cannot be acknowledged by the hook.",
+      candidates: "Committed previews that keep the full output.",
+      kept: "Committed line evaluations that keep the full output.",
+      linesRelevanceJudged: "Lines in committed evaluations with validated relevance answers.",
+      linesActuallyOmitted: "Lines omitted from committed replacement payloads. This count does not confirm downstream token savings.",
+      errors: "Persisted hook errors. A process terminated before recording an outcome may leave an unresolved attempt.",
+    };
     for (const [name, label, value] of values) {
       const metric = node("div", "totals-metric");
       metric.dataset.metric = name;
-      metric.append(node("dt", "", label), node("dd", "", count(value)));
+      const partial = totals.partialCounters?.includes(name) || false;
+      metric.title = meanings[name] + (partial ? " Incomplete coverage: known counts are lower bounds; unresolved attempts can still change stage totals." : "");
+      metric.append(node("dt", "", label), node("dd", "", count(value, partial)));
       metrics.appendChild(metric);
     }
     section.appendChild(metrics);
-    reasonTable(section, "Why outputs were skipped", totals.skipCounts, totals.skipDetails);
-    reasonTable(section, "Why previews kept full output", totals.candidateReasons);
+    reasonTable(section, "Why outputs were skipped", totals.skipCounts, totals.skipDetails, totals.skipReasonsPartial, totals.skipDetailsPartial);
+    reasonTable(section, "Why previews kept full output", totals.candidateReasons, {}, totals.partialCounters?.includes("candidates"));
     return section;
   }
 

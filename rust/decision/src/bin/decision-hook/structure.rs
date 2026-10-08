@@ -1,6 +1,13 @@
 //! Structured route validation and protected evidence.
 use super::*;
 
+#[path = "go_json.rs"]
+mod go_json;
+
+#[cfg(test)]
+#[path = "structure_tests.rs"]
+mod tests;
+
 pub(super) fn apply_route_structure(
     route: &str,
     tool: &str,
@@ -26,16 +33,16 @@ pub(super) fn apply_route_structure(
             .as_ref()
             .is_some_and(|words| words.iter().any(|word| word == needle))
     };
+    let go_json = executable == "go" && action == "test" && flag("-json");
+    let cargo_json = executable == "cargo"
+        && words
+            .as_ref()
+            .is_some_and(|words| cargo_json_messages(words));
     let explicit_json = route == "search_listing" && executable == "rg" && flag("--json")
-        || route == "test_build"
-            && (executable == "go" && action == "test" && flag("-json")
-                || executable == "cargo" && flag("--message-format=json"));
+        || route == "test_build" && (go_json || cargo_json);
     let looks_structured = lines
         .iter()
-        .find(|line| {
-            !line.model_text.trim().is_empty()
-                && line.protected_reason.as_deref() != Some("tool_metadata")
-        })
+        .find(|line| !line.model_text.trim().is_empty() && !metadata_or_stderr(line))
         .is_some_and(|line| {
             let first = line.model_text.trim();
             matches!(first, "{" | "[") || serde_json::from_str::<Value>(first).is_ok()
@@ -43,10 +50,21 @@ pub(super) fn apply_route_structure(
     if looks_structured && !explicit_json {
         return false;
     }
+    // A build header does not turn a following multiline object/array into
+    // independent records. Complete JSONL rows remain atomic source lines.
+    if route == "test_build"
+        && !explicit_json
+        && lines
+            .iter()
+            .any(|line| !metadata_or_stderr(line) && multiline_json_start(&line.model_text))
+    {
+        return false;
+    }
     if route == "test_build" {
         let mut complete = false;
+        let mut go_events = go_json::GoEvents::default();
         for line in lines.iter_mut() {
-            if line.protected_reason.as_deref() == Some("tool_metadata") {
+            if metadata_or_stderr(line) {
                 continue;
             }
             let text = line.model_text.trim().to_ascii_lowercase();
@@ -72,39 +90,14 @@ pub(super) fn apply_route_structure(
                 line.protected_reason = Some("completion".into());
                 complete = true;
             }
-            if executable == "go" && action == "test" && flag("-json") {
-                let Ok(row) = serde_json::from_str::<Value>(&line.model_text) else {
+            if go_json {
+                let Some(package_complete) = go_events.apply(line) else {
                     return false;
                 };
-                let action = row.get("Action").and_then(Value::as_str).unwrap_or("");
-                if !matches!(
-                    action,
-                    "start" | "run" | "pause" | "cont" | "pass" | "fail" | "skip" | "output"
-                ) || row.get("Package").and_then(Value::as_str).is_none()
-                {
-                    return false;
-                }
-                if matches!(action, "fail" | "skip")
-                    || action == "output"
-                        && row
-                            .get("Output")
-                            .and_then(Value::as_str)
-                            .is_some_and(|output| {
-                                sensitive(output)
-                                    || ["error", "panic", "failed", "assert"]
-                                        .iter()
-                                        .any(|word| output.to_ascii_lowercase().contains(word))
-                            })
-                {
-                    line.protected_reason = Some("diagnostic_json".into());
-                }
-                if matches!(action, "pass" | "fail") && row.get("Test").is_none() {
-                    line.protected_reason = Some("completion".into());
-                    complete = true;
-                }
+                complete |= package_complete;
             }
-            if executable == "cargo" && flag("--message-format=json") {
-                let Ok(row) = serde_json::from_str::<Value>(&line.model_text) else {
+            if cargo_json {
+                let Ok(row) = strict_json::parse(line.model_text.as_bytes()) else {
                     return false;
                 };
                 match row.get("reason").and_then(Value::as_str).unwrap_or("") {
@@ -112,14 +105,22 @@ pub(super) fn apply_route_structure(
                         if row
                             .pointer("/message/level")
                             .and_then(Value::as_str)
-                            .is_some_and(|level| {
-                                matches!(level, "error" | "warning" | "failure-note")
-                            })
+                            .is_none()
+                            || row
+                                .pointer("/message/message")
+                                .and_then(Value::as_str)
+                                .is_none()
                         {
-                            line.protected_reason = Some("diagnostic_json".into());
+                            return false;
                         }
+                        // Notes, help, and future severity strings are still
+                        // diagnostic carriers with attached source evidence.
+                        line.protected_reason = Some("diagnostic_json".into());
                     }
                     "build-finished" => {
+                        if row.get("success").and_then(Value::as_bool).is_none() {
+                            return false;
+                        }
                         line.protected_reason = Some("completion".into());
                         complete = true;
                     }
@@ -140,11 +141,11 @@ pub(super) fn apply_route_structure(
             || matches!(executable, "find" | "fd" | "ls");
 
         for line in lines {
-            if line.protected_reason.as_deref() == Some("tool_metadata") {
+            if metadata_or_stderr(line) {
                 continue;
             }
             if jsonl {
-                let Ok(row) = serde_json::from_str::<Value>(&line.model_text) else {
+                let Ok(row) = strict_json::parse(line.model_text.as_bytes()) else {
                     return false;
                 };
                 let Some(kind) = row.get("type").and_then(Value::as_str) else {
@@ -157,18 +158,30 @@ pub(super) fn apply_route_structure(
                     line.eligible = false;
                     line.protected_reason = Some("jsonl_structure".into());
                 } else {
-                    let Some(path) = row.pointer("/data/path/text").and_then(Value::as_str) else {
+                    let Some(path) = row.pointer("/data/path").and_then(Value::as_object) else {
                         return false;
                     };
-                    let Some(text) = row.pointer("/data/lines/text").and_then(Value::as_str) else {
+                    let Some(text) = row.pointer("/data/lines").and_then(Value::as_object) else {
                         return false;
                     };
                     let number = row
                         .pointer("/data/line_number")
                         .and_then(Value::as_u64)
                         .unwrap_or(0);
-                    line.model_text =
-                        format!("{path}:{number}:{}", text.trim_end_matches(['\r', '\n']));
+                    if path.len() != 1
+                        || text.len() != 1
+                        || number == 0
+                        || path
+                            .get("text")
+                            .and_then(Value::as_str)
+                            .is_none_or(str::is_empty)
+                        || text.get("text").and_then(Value::as_str).is_none()
+                    {
+                        return false;
+                    }
+                    // A match is one independent record. Keep its complete
+                    // model evidence, including absolute/submatch byte offsets.
+                    // Normalizing to path:line:text hid distinct match facts.
                 }
             } else if paths {
                 if line.model_text.is_empty() || line.model_text.chars().any(char::is_control) {
@@ -184,6 +197,67 @@ pub(super) fn apply_route_structure(
         }
     }
     true
+}
+
+fn metadata_or_stderr(line: &SourceLine) -> bool {
+    matches!(
+        line.protected_reason.as_deref(),
+        Some("tool_metadata" | "stderr_output")
+    )
+}
+
+fn multiline_json_start(text: &str) -> bool {
+    let text = text.trim();
+    if known_build_progress(text) {
+        return false;
+    }
+    if !text.starts_with(['{', '[']) {
+        return false;
+    }
+    if strict_json::parse(text.as_bytes()).is_ok() {
+        return false;
+    }
+    if let Some(rest) = text.strip_prefix('{') {
+        let rest = rest.trim_start();
+        return rest.is_empty() || rest.starts_with(['"', '}']);
+    }
+    let Some(rest) = text.strip_prefix('[') else {
+        return false;
+    };
+    let rest = rest.trim_start();
+    rest.is_empty()
+        || rest.starts_with(['"', '{', '[', ']', '-'])
+        || rest.starts_with(|c: char| c.is_ascii_digit())
+        || ["true", "false", "null"]
+            .iter()
+            .any(|prefix| rest.starts_with(prefix))
+}
+
+// CMake percentage and Ninja step counters precede a known build record, not
+// JSON. Reuse this exact grammar when deciding whether JSON decoding applies.
+pub(super) fn known_build_progress(text: &str) -> bool {
+    let clean = if text.contains('\x1b') {
+        std::borrow::Cow::Owned(codex_decision::strip_ansi(text))
+    } else {
+        std::borrow::Cow::Borrowed(text)
+    };
+    let Some(rest) = clean.trim_start().strip_prefix('[') else {
+        return false;
+    };
+    let Some((counter, record)) = rest.split_once(']') else {
+        return false;
+    };
+    let number = |value: &str| {
+        !value.trim().is_empty() && value.trim().bytes().all(|byte| byte.is_ascii_digit())
+    };
+    let counter = counter.trim();
+    (counter.strip_suffix('%').is_some_and(number)
+        || counter
+            .split_once('/')
+            .is_some_and(|(step, total)| number(step) && number(total)))
+        && ["Building ", "Compiling ", "Checking ", "Linking ", "Built "]
+            .iter()
+            .any(|prefix| record.trim_start().starts_with(prefix))
 }
 
 pub(super) fn numbered_match(text: &str) -> bool {

@@ -70,7 +70,20 @@ providers. CI also runs a short concurrent mixed-fault check for each provider.
 ```bash
 node scripts/pipeline_interrupt.cjs --hook target/debug/decision-hook \
   --out .local/quality/pipeline-interrupt
+node scripts/pipeline_stage_interrupt.cjs --hook target/verification/decision-hook \
+  --require-recovered --out .local/quality/pipeline-staged-retry
+node scripts/pipeline_stage_interrupt.cjs --hook target/verification/decision-hook \
+  --concurrent-rollback --out .local/quality/pipeline-staged-rollback
+node scripts/pipeline_commit_interrupt.cjs --hook target/verification/decision-hook \
+  --out .local/quality/pipeline-publication
 ```
+
+The staged checks verify identical retry and an overlapping original-file lease.
+The publication check uses exact process-kill barriers for both providers before
+and after stats, snapshot, event fsync, and the committed marker, including
+rollback failure and deferred cleanup. Prepared writes must roll back; committed
+writes must remain published. Readers must retain the prior committed view while
+preparation is pending.
 
 Precision cases cover late exhaustive requirements, extensionless and mixed
 source reads, file-reading tools, heredocs, summary-plus-patch output, stale
@@ -82,7 +95,7 @@ cover duplicate JSON fields and response bodies that trickle past the deadline.
 
 Build the optimized synthetic hook with `cargo build --locked -p codex-decision --profile verification`. It retains assertions and the loopback endpoint while using optimized packing. Its binaries live under `target/verification/` (or your selected Cargo target directory). Use it for large concurrent pressure checks; an unoptimized debug build can reach the existing 45-second hook limit on a single CPU. Release packaging always builds a separate production profile with the test endpoint disabled.
 
-The [processing recovery audit](../docs/development/processing_recovery_2026-10-08.md) records the current skip causes, exact Lab command contract, privacy checks, and dummy-run results.
+The [processing recovery audit](../docs/development/processing_recovery_2026-10-08.md) records the skip recovery pass. The [request accounting and reliability audit](../docs/development/reliability_audit_2026-10-08.md) records the current counter boundaries, publication recovery, exact reader fixtures, and final acceptance results.
 
 ## Composer and panel quality checks
 
@@ -105,11 +118,19 @@ python3 vscode-control/scripts/browser_quality.py --minutes 110 --seed 17 \
   --out .local/quality/browser-soak
 ```
 
-In Lab-Control, use an executable fixture directory because container `/tmp` is mounted `noexec`:
+In Lab-Control, keep executable test fixtures in an explicit user cache because
+container data mounts can be `noexec`. Ordinary disposable data remains in `/tmp`.
+The unsupported-host test preflights its fake executable before attempting the
+submission script, so a broken fixture cannot start an unintended production build:
 
 ```bash
-mkdir -p .local/test-tmp
-TMPDIR="$PWD/.local/test-tmp" python3 -m unittest discover -s tests -p 'test_*.py'
+mkdir -p "$HOME/.cache/codex-decision/test-executables"
+CODEX_DECISION_TEST_EXECUTABLE_TMP_ROOT="$HOME/.cache/codex-decision/test-executables" \
+  python3 -m unittest discover -s tests -p 'test_*.py'
+# Use the same executable root for the publication barrier shared library:
+node scripts/pipeline_commit_interrupt.cjs --hook <verification-hook> \
+  --barrier-build-root "$HOME/.cache/codex-decision/test-executables" \
+  --out .local/quality/pipeline-publication
 ```
 
 Node regressions cover restored threads without composer focus, persisted decisions after reload, readiness ordering, session changes during reads, stale failures, dropped or rejected deliveries, hidden or disposed views, configuration recovery, bounded snapshot reads after file growth, concurrent atomic snapshot replacement, and bounded Windows write retries. Linux checks exercise real file links and private inode permissions. Windows checks use directory junctions; file-link subtests report a skip when Developer Mode or elevation is unavailable.

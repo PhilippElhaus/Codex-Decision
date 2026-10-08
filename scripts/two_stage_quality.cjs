@@ -16,6 +16,7 @@ const { provider: providerSpec } = require("../vscode-control/providers");
 const { readApiKey, sessionDirectory } = require("../vscode-control/core");
 const { readLatestPanelDecision } = require("../vscode-control/panel-state");
 const { requireProxyHook, auditRun } = require("./two_stage_audit.cjs");
+const { LiveProxyError, postLive, observedUsage } = require("./two-stage/live_proxy.cjs");
 const kinds = ["repetitive_log", "progress_output", "independent_matches", "independent_records", "exact_content", "prose", "structured_payload", "mixed_or_unknown"];
 const faults = ["choice-missing", "choice-extra", "choice-sum", "choice-argmax", "choice-class", "choice-confidence", "choice-type", "choice-model", "choice-json", "choice-http401", "choice-http429", "choice-http529", "choice-timeout", "line-missing", "line-extra", "line-type", "line-range", "line-confidence", "line-json", "line-http500", "line-timeout", "line-oversized"];
 faults.push("line-late-missing", "line-late-extra", "line-late-http422", "line-late-http500", "line-late-timeout");
@@ -43,6 +44,8 @@ async function main() {
   const temporary = await fs.mkdtemp(path.join(os.tmpdir(), "decision-two-stage-"));
   if (temporary.startsWith("/mnt/d/")) throw new Error("Temporary work must be off D:");
   let current, calls = 0, totalCalls = 0, forwardedCalls = 0, inputTokens = 0, outputTokens = 0, abortReason = null;
+  let providerResponses = 0, caseProxyFailures = [], unknownUsageCalls = 0;
+  const proxyFailures = {};
   const reports = [];
   const remoteTimes = [];
   const qualityCases = [];
@@ -84,18 +87,23 @@ async function main() {
         judged.add(number);
       }
       if (live) {
-        if (totalCalls > maxCalls || inputTokens + outputTokens >= maxTokens) throw new Error("live evaluation budget");
         const remoteStarted = Date.now();
-        forwardedCalls += 1;
-        const response = await fetch(spec.endpoint, { method: "POST",
-          headers: {Authorization: `Bearer ${key}`, "Content-Type": "application/json"},
-          body: JSON.stringify(wire), signal: AbortSignal.timeout(10000) });
-        const text = await response.text();
+        const { response, text } = await postLive({ endpoint: spec.endpoint, key, wire,
+          calls: totalCalls, tokens: inputTokens + outputTokens, maxCalls, maxTokens, unknownUsage:unknownUsageCalls > 0,
+          onForward: () => { forwardedCalls += 1; }, onResponse: () => { providerResponses += 1; } });
         remoteTimes.push(Date.now() - remoteStarted);
         const dest = path.join(out,caseId);await fs.mkdir(dest,{recursive:true,mode:0o700});
-        await fs.writeFile(path.join(dest,`remote-call-${stage}.json`), JSON.stringify({request:wire,status:response.status,response:JSON.parse(text)},null,2)+"\n");
-        try { const body = JSON.parse(text); inputTokens += body.usage?.input_tokens || 0; outputTokens += body.usage?.output_tokens || 0;
-          if (body.usage?.input_tokens>budget.whole_request_bound) protocolFailures.push("reported usage exceeds conservative request bound"); } catch {}
+        await fs.writeFile(path.join(dest,`remote-call-${stage}.json`), JSON.stringify({request:wire,status:response.status,
+          response:response.ok ? JSON.parse(text) : {error:"provider_http_error"}},null,2)+"\n");
+        if (response.ok) {
+          const usage = observedUsage(JSON.parse(text));
+          inputTokens += usage.input; outputTokens += usage.output;
+          if (!usage.complete) {
+            unknownUsageCalls += 1;
+            abortReason = "Live provider usage unavailable; stop further requests.";
+          }
+          if (usage.input>budget.whole_request_bound) protocolFailures.push("reported usage exceeds conservative request bound");
+        }
         res.writeHead(response.status, {"Content-Type":"application/json"});res.end(text);return;
       }
       const relevant = new Set(current.requiredLines || current.required_lines);
@@ -150,7 +158,15 @@ async function main() {
         if (suffix === "argmax") {body.answers[id].choice = "prose";}
       }
       res.setHeader("Content-Type","application/json");res.end(JSON.stringify(encodeResponse(body)));
-    } catch { if (!res.headersSent) res.writeHead(502);res.end("{}"); }
+    } catch (error) {
+      if (live) {
+        const code = error instanceof LiveProxyError ? error.code : "proxy_error";
+        caseProxyFailures.push(code);
+        proxyFailures[code] = (proxyFailures[code] || 0) + 1;
+        if (code === "budget") abortReason = "Live evaluation budget exhausted; incomplete case kept full.";
+      }
+      if (!res.headersSent) res.writeHead(502);res.end("{}");
+    }
   });
   try {
     await new Promise(resolve => server.listen(0,"127.0.0.1",resolve));
@@ -165,7 +181,7 @@ async function main() {
     selected = selected.filter(item => !process.argv.includes("--case") || arg("--case").split(",").includes(item.id));
     if (!selected.length) throw new Error("No matching case");
     for (const item of selected) {
-      current = item;calls = 0;judged = new Set();requestBudgets=[];protocolFailures=[];stages=[];
+      current = item;calls = 0;judged = new Set();requestBudgets=[];protocolFailures=[];stages=[];caseProxyFailures=[];
       const data = path.join(temporary,item.id);await fs.mkdir(data,{mode:0o700});
       await fs.writeFile(path.join(data,".env"),`${spec.keyName}=synthetic-proxy-key\n`,{mode:0o600});
       await fs.writeFile(path.join(data,"config.json"),item.config_raw || JSON.stringify({schema_version:5,provider,scope:"global",enabled:item.enabled !== false,
@@ -180,7 +196,8 @@ async function main() {
       const source=item.lines.join(newline)+(item.terminated === false ? "" : newline);
       const projectedSource=item.projection_factory ? item.projection_factory(source) : item.metadata ? 'Command result metadata: {"exit_code":1}\n'+source : source;
       const requiredOffset=item.required_offset ?? Number(!!item.metadata);
-      const requiredLines=item.required_lines.map(number=>number+requiredOffset);
+      const requiredLines=[...item.required_lines.map(number=>number+requiredOffset),...(item.extra_required_projected_lines || [])];
+      const protectedLines=(item.expected_protected_lines || []).map(number=>number+requiredOffset);
       current.sourceLines=projectedSource.split(/\r?\n/).filter((_,index,all)=>index!==all.length-1||all[index]!=="");
       current.requiredLines=requiredLines;
       const event={hook_event_name:"PostToolUse",tool_name:item.tool || "Bash",session_id:item.id,tool_use_id:"synthetic-call",transcript_path:transcript,
@@ -215,19 +232,21 @@ async function main() {
       const originalEnvelope=typedEnvelope&&originals.length ? JSON.parse(await fs.readFile(path.join(data,originals[0].replace(/\.txt$/,".json")),"utf8")) : null;
       const envelopeExact=originalEnvelope ? isDeepStrictEqual(originalEnvelope,event.tool_response) : null;
       const report={id:item.id,expected_kind:item.kind,kind:receipt?.manifest.output_kind || activity?.output_kind || null,
-        status:receipt?.manifest.status || health?.last_skip || (item.enabled === false ? "disabled" : "error"),lines:item.lines.length,required:item.required_lines.length,
+        status:receipt?.manifest.status || health?.last_skip || (item.enabled === false ? "disabled" : "error"),lines:item.lines.length,required:requiredLines.length,
         calls,relevance_batches:receipt ? receipt.manifest.requests-Number(receipt.manifest.choice_gate_ran) : null,request_budgets:requestBudgets,protocol_failures:protocolFailures,
         elapsed_ms:Date.now()-started,saved_bytes:Buffer.byteLength(source)-Buffer.byteLength(visible),
         required_lost:actualLost,proposed_required_lost:requiredLost,original_exact:originalExact,envelope_exact:envelopeExact,
+        protected_targeted:protectedLines.filter(number=>judged.has(number)),
         labeled_judgments:labeled.length,routine_kept:routineKept,
         panel_rows:panel?.rows.length || 0,panel_matches_receipt:receipt ? panel?.receipt_id===receipt.manifest.id &&
           panel.status===receipt.manifest.status && panel.totals.requests===receipt.manifest.requests : panel===null,
+        proxy_failures:[...caseProxyFailures],
         error:health?.last_error || (stderr ? stderr.trim().slice(0,256) : null)};
       const audit = auditRun({ item, calls, stages, receipt, health, stats, activity, error:report.error, replaced:!!reply.reason, live });
       Object.assign(report, { outcome:audit.outcome, recorded_requests:audit.recorded_requests,
         classification_attempts:audit.classification_attempts, relevance_attempts:audit.relevance_attempts, audit_failures:audit.failures });
       const complete=receipt && receipt.decisions.filter(row=>row.batch_id!==undefined).length===judged.size && receipt.manifest.lines_unjudged===0;
-      if (audit.failures.length || !report.panel_matches_receipt || (item.fault && (!report.error || receipt || originals.length || files.some(file=>path.basename(file)==="latest-decision.json"))) || protocolFailures.length || (receipt&&!complete) || actualLost.length || (reply.reason&&(originalExact!==true || typedEnvelope&&envelopeExact!==true)) ||
+      if (audit.failures.length || report.protected_targeted.length || !report.panel_matches_receipt || (item.fault && (!report.error || receipt || originals.length || files.some(file=>path.basename(file)==="latest-decision.json"))) || protocolFailures.length || (receipt&&!complete) || actualLost.length || (reply.reason&&(originalExact!==true || typedEnvelope&&envelopeExact!==true)) ||
           (!live&&item.min_batches&&(!receipt||report.relevance_batches<item.min_batches)) ||
           (item.expect_full&&reply.reason) || (item.expected_calls!==undefined&&calls!==item.expected_calls)) {
         report.failed=true;
@@ -242,19 +261,26 @@ async function main() {
       if (receipt) qualityCases.push({id:item.id,split:process.argv.includes("--holdout") || process.argv.includes("--batching") || process.argv.includes("--precision-holdout") ? "holdout" : "train",
         receipt:`${item.id}/${path.basename(receiptPath)}`,required_lines:requiredLines});
       reports.push(report);console.log(JSON.stringify(report));
-      if (audit.abort) { abortReason = audit.abort; break; }
+      if (audit.abort || live && report.failed || abortReason) {
+        abortReason ||= audit.abort || "Live validation failed; stop further requests.";
+        break;
+      }
     }
     const times=reports.map(item=>item.elapsed_ms).sort((a,b)=>a-b);
     remoteTimes.sort((a,b)=>a-b);
     const calledTimes=reports.filter(item=>item.calls>0).map(item=>item.elapsed_ms).sort((a,b)=>a-b);
     const percentile=(values,p)=>values.length ? values[Math.min(values.length-1,Math.floor(values.length*p))] : null;
     const summary={live,provider,model:spec.model,api_calls:forwardedCalls,completed_api_calls:remoteTimes.length,api_p50_ms:percentile(remoteTimes,.5),api_p95_ms:percentile(remoteTimes,.95),called_output_p50_ms:percentile(calledTimes,.5),called_output_p95_ms:percentile(calledTimes,.95),cases:reports.length,calls:totalCalls,input_tokens:inputTokens,output_tokens:outputTokens,
-      aborted:abortReason, recorded_requests:reports.reduce((sum,item)=>sum+item.recorded_requests,0),
+      aborted:abortReason, provider_responses_received:providerResponses, proxy_failures:proxyFailures,
+      usage_unknown_calls:unknownUsageCalls,
+      incomplete_budget_cases:reports.filter(item=>item.proxy_failures.includes("budget")).map(item=>item.id),
+      recorded_requests:reports.reduce((sum,item)=>sum+item.recorded_requests,0),
       classification_attempts:reports.reduce((sum,item)=>sum+item.classification_attempts,0), relevance_attempts:reports.reduce((sum,item)=>sum+item.relevance_attempts,0),
       outcomes:reports.reduce((counts,item)=>{counts[item.outcome]=(counts[item.outcome] || 0)+1;return counts;},{}),
       replaced:reports.filter(item=>item.status==="replace").length,required_lines:reports.reduce((sum,item)=>sum+item.required,0),
       panel_decisions:reports.filter(item=>item.panel_rows>0).length,
       required_lost:reports.reduce((sum,item)=>sum+item.required_lost.length,0),
+      protected_targeted:reports.reduce((sum,item)=>sum+item.protected_targeted.length,0),
       labeled_judgments:reports.reduce((sum,item)=>sum+item.labeled_judgments,0),
       routine_kept:reports.reduce((sum,item)=>sum+item.routine_kept,0),
       failures:reports.filter(item=>item.failed).map(item=>item.id),

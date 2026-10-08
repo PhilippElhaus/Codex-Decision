@@ -88,9 +88,12 @@ fn failed_publication_removes_only_owned_originals_and_allows_a_retry() {
             }
         }
         assert!(!session.join("logs/latest-decision.json").exists());
-        assert!(!fs::read_to_string(session.join("logs/events.jsonl"))
-            .unwrap()
-            .contains("\"status\":\"replace\""));
+        let events =
+            fs::read_to_string(session.join("logs/events.jsonl")).unwrap_or_else(|error| {
+                assert_eq!(error.kind(), std::io::ErrorKind::NotFound);
+                String::new()
+            });
+        assert!(!events.contains("\"status\":\"replace\""));
         fs::remove_file(&blocker).unwrap();
         let reply = send_event(&data, &endpoint, &event);
         assert_eq!(reply["continue"], false, "retry after {failure}");
@@ -127,7 +130,7 @@ fn failed_publication_removes_only_owned_originals_and_allows_a_retry() {
                 .unwrap();
         assert_eq!(
             health["api_requests"], 2,
-            "count sent requests even when original publication fails"
+            "retain registered attempts even when original publication fails"
         );
     }
     stop.store(true, Ordering::Relaxed);

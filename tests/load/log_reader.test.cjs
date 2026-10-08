@@ -33,7 +33,9 @@ test("a large decision log is read in bounded batches without loss or duplicatio
     assert.equal(lifetime.calls, 1500);
     assert.equal(lifetime.completed, 4500);
     assert.equal(lifetime.replaced, 1500);
-    assert.equal(lifetime.averageMs, 10);
+    assert.equal(lifetime.timed, 4500);
+    assert.equal(lifetime.elapsedMs, 45000);
+    assert.equal(lifetime.averageMs, null, "retained history cannot establish a complete average");
 
   } finally { await fs.rm(directory, { recursive: true, force: true }); }
 });
@@ -71,7 +73,7 @@ test("activity cursors recover atomic compaction and copy truncation without dup
   } finally { await fs.rm(directory, { recursive: true, force: true }); }
 });
 
-test("fallback latency counts request timings across line batches and Choice skips", async () => {
+test("retained history counts request timings across line batches and Choice skips without inventing an average", async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-log-latency-"));
   try {
     await fs.mkdir(path.join(directory, "logs"));
@@ -85,6 +87,7 @@ test("fallback latency counts request timings across line batches and Choice ski
     assert.equal(totals.calls, 6);
     assert.equal(totals.completed, 2);
     assert.equal(totals.timed, 6);
-    assert.equal(totals.averageMs, 200);
+    assert.equal(totals.elapsedMs, 1200);
+    assert.equal(totals.averageMs, null, "missing requests could move the true average in either direction");
   } finally { await fs.rm(directory, { recursive: true, force: true }); }
 });

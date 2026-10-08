@@ -119,7 +119,7 @@ pub(super) fn open_event_log(logs: &Path) -> Result<File, String> {
 
 // Rollback and error reporting must still run after the invocation budget expires.
 pub(super) fn cleanup_log_lock(logs: &Path) -> Result<File, String> {
-    lock_logs_with_timeout(logs, Duration::from_millis(250))
+    lock_logs_with_timeout(logs, Duration::from_secs(2))
 }
 
 fn lock_logs_with_timeout(logs: &Path, timeout: Duration) -> Result<File, String> {
@@ -156,6 +156,8 @@ fn lock_logs_with_timeout(logs: &Path, timeout: Duration) -> Result<File, String
             std::thread::sleep(Duration::from_millis(10));
         }
     }
+    // The permanent log inode serializes recovery and every producer write.
+    recover_publication(logs)?;
     Ok(file)
 }
 

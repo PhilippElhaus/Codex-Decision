@@ -50,8 +50,9 @@ fn protect_view(view: &lab_result::LabView, offset: usize, lines: &mut [SourceLi
     }
     for index in view.stderr_start..view.stderr_end {
         if let Some(line) = lines.get_mut(offset + index) {
-            line.protected_reason
-                .get_or_insert_with(|| "stderr_output".into());
+            // Retain the typed stream identity even when its text resembles a
+            // diagnostic, completion row, JSON record, or spoofed header.
+            line.protected_reason = Some("stderr_output".into());
         }
     }
 }

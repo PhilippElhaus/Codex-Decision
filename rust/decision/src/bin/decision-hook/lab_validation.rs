@@ -59,6 +59,18 @@ pub(super) fn streams(object: &serde_json::Map<String, Value>) -> Option<(&str, 
     {
         return None;
     }
+    // The installed reader uses -1 while running/unknown, clamps completed
+    // exits to0..255, and derives terminal from that single observed state.
+    let running = object["running"].as_bool()?;
+    let exit = object["exit_code"].as_i64()?;
+    let terminal = object["terminal"].as_bool()?;
+    if !(-1..=255).contains(&exit)
+        || running && exit != -1
+        || terminal != (!running && exit >= 0)
+        || terminal && object["wait_timed_out"] == true
+    {
+        return None;
+    }
     Some((chunk(&object["stdout"])?, chunk(&object["stderr"])?))
 }
 
