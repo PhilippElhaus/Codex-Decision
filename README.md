@@ -4,18 +4,19 @@
 
 Codex Decision selects repetitive lines for removal from supported local tool output. Errors and useful evidence stay visible. Every shortened result links to the complete original.
 
-**Codex Decision 0.11.5 · VS Code control 0.10.11** — [Download the latest release](https://github.com/PhilippElhaus/Codex-Decision/releases/latest).
+**Codex Decision 0.11.6** — [Download the integrated VSIX](https://github.com/PhilippElhaus/Codex-Decision/releases/latest).
 
 ## Get started
 
-Install the plugin on Linux x86_64:
+Install the single VSIX in Windows VS Code with a Linux x86_64 WSL environment:
 
 ```bash
-codex plugin marketplace add https://github.com/PhilippElhaus/Codex-Decision
-codex plugin add codex-decision@codex-decision
+code --install-extension codex-decision-0.11.6.vsix --force
 ```
 
-Trust the Decision hook in `/hooks`. For the screens below, install the optional [VS Code control and composer patch](vscode-control/README.md#install). Run **Developer: Reload Window**, then start a new local Codex thread. See [installation and upgrades](docs/setup/setup_installation.md) for details.
+The package contains the hook, skill, session controls, settings, and verified Codex UI patch. On activation it installs or updates the local plugin and repairs supported Codex builds. Existing plugin data and thread choices remain in place. Run **Developer: Reload Window** after the integration repair, then open your Codex thread. Review the hook in `/hooks` if Codex requests trust. No second package or manual composer patch is needed.
+
+Use **Decision: Check Integration** for status and **Decision: Repair Integration** to restore the controls and reopen a hidden Decision panel. Unsupported Codex builds produce a visible diagnostic. See [installation and upgrades](docs/setup/setup_installation.md) for details and standalone CLI setup.
 
 ### 1. Connect Decision
 

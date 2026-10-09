@@ -1,6 +1,6 @@
 {
   "name": "codex-decision",
-  "version": "0.11.5",
+  "version": "0.11.6",
   "description": "One Decision switch for line-by-line filtering of supported local tool output.",
   "author": {
     "name": "Philipp Elhaus",
@@ -21,7 +21,7 @@
   "interface": {
     "displayName": "Codex Decision",
     "shortDescription": "Trim repetitive tool output",
-    "longDescription": "Codex Decision adds one local PostToolUse filter for supported plain-text tool results. One session switch controls all output. A Rust hook validates known output formats locally, then asks OpenAI Decisions or TypeSafe Jev for independent line relevance judgments in API-bounded batches. Unrecognized formats use a conservative sampled classification. Code protects diagnostics and exact evidence. Failed or unsupported results remain intact. Every shortened result points to a private, exact original. The standalone hook requires explicit enablement and the selected provider’s API key. The optional VS Code control enables Decision for new local threads and provides one on/off button. The control and version-pinned composer patch are installed separately. This package contains a Linux x86_64 hook binary; other execution environments need their own native binary.",
+    "longDescription": "Codex Decision adds one local PostToolUse filter for supported plain-text tool results. One session switch controls all output. A Rust hook validates known output formats locally, then asks OpenAI Decisions or TypeSafe Jev for independent line relevance judgments in API-bounded batches. Unrecognized formats use a conservative sampled classification. Code protects diagnostics and exact evidence. Failed or unsupported results remain intact. Every shortened result points to a private, exact original. The standalone hook requires explicit enablement and the selected provider\u2019s API key. The optional VS Code control enables Decision for new local threads and provides one on/off button. The integrated VS Code package bundles this hook, skill, control, and verified composer repair in one install. This package contains a Linux x86_64 hook binary; other execution environments need their own native binary.",
     "developerName": "Philipp Elhaus",
     "category": "Developer Tools",
     "capabilities": [

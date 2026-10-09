@@ -147,3 +147,36 @@ test("patched host forwards stable webview identity and visibility without infer
     sessionId: "synthetic-restored-thread", expectsLocalSession: true });
   assert.equal(received.sourceId, hostSource, "HTML reloads retain the underlying host webview identity");
 });
+
+test("patched host preserves each provider across key, settings, and external-link actions", async () => {
+  const received = [];
+  const bridge = await hostBridge(async (_command, request) => { received.push(request); return {}; });
+  let id = 0;
+  for (const provider of ["openai", "typesafe"]) {
+    for (const action of ["testApiKey", "saveApiKey", "settingsTest", "settingsSave", "openProvider", "openTypeSafe"]) {
+      const message = { type: "codex-decision", id: ++id, action, provider, key: "synthetic-key",
+        mode: "replace", relevancePolicy: { omit_min: 95, exact_max: 5 },
+        logLimitMb: 50, neverDeleteLogs: false };
+      const reply = await bridge.send(message);
+      assert.equal(reply.id, message.id, `${action} must receive an acknowledgement`);
+      assert.equal(received.at(-1).provider, provider, `${action} must retain ${provider}`);
+      assert.equal(received.at(-1).action, action);
+    }
+  }
+  await bridge.send({ type: "codex-decision", id: ++id, action: "testApiKey", key: "synthetic-key" });
+  assert.equal(received.at(-1).provider, undefined, "legacy requests retain the extension default");
+});
+
+test("patched host rejects invalid providers before forwarding keys or link requests", async () => {
+  let calls = 0;
+  const bridge = await hostBridge(() => { calls += 1; return {}; });
+  for (const provider of [null, false, 5, "other", "https://example.invalid", {}]) {
+    for (const action of ["testApiKey", "saveApiKey", "settingsTest", "settingsSave", "openProvider"]) {
+      await bridge.send({ type: "codex-decision", action, provider, key: "synthetic-key",
+        mode: "replace", relevancePolicy: { omit_min: 95, exact_max: 5 },
+        logLimitMb: 50, neverDeleteLogs: false });
+    }
+  }
+  assert.equal(calls, 0);
+  assert.equal(bridge.replies.length, 0);
+});

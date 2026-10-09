@@ -16,6 +16,58 @@ async function until(predicate, timeoutMs = 2000) {
   }
 }
 
+test("settings save replies reflect the persisted provider, model, and mode in threads and on home", async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "decision-settings-response-"));
+  const commands = new Map();
+  const context = { subscriptions: [], extensionUri: {} };
+  const fake = {
+    window: { registerWebviewViewProvider: () => ({ dispose() {} }) },
+    commands: {
+      registerCommand(name, action) { commands.set(name, action); return { dispose() {} }; },
+      executeCommand: async () => {},
+    },
+    workspace: {
+      getConfiguration: () => ({ get: () => directory }),
+      onDidChangeConfiguration: () => ({ dispose() {} }),
+    },
+  };
+  const originalLoad = Module._load;
+  const originalHealth = core.checkHealth;
+  core.checkHealth = async (_directory, _send, _key, provider) => ({ ok: true, provider,
+    model: provider === "typesafe" ? "jev-latest" : "gpt-6-luna" });
+  Module._load = function (request, parent, isMain) {
+    return request === "vscode" ? fake : originalLoad.call(this, request, parent, isMain);
+  };
+  try {
+    delete require.cache[require.resolve("../../vscode-control/extension")];
+    require("../../vscode-control/extension").activate(context);
+  } finally {
+    Module._load = originalLoad;
+    core.checkHealth = originalHealth;
+  }
+  try {
+    const bridge = commands.get("codexDecision.bridge");
+    for (const sessionId of ["settings-response-thread", null]) {
+      const route = { viewId: sessionId ? "settings-thread" : "settings-home", sessionId,
+        expectsLocalSession: sessionId !== null, sourceId: "settings-response-source", visible: true, focused: true };
+      await bridge({ ...route, action: "status" });
+      for (const [provider, model, mode] of [["typesafe", "jev-latest", "observe"], ["openai", "gpt-6-luna", "replace"]]) {
+        const reply = await bridge({ ...route, action: "settingsSave", provider, mode, key: "",
+          relevancePolicy: { relevant_max: 5 }, logLimitMb: 50, neverDeleteLogs: false });
+        assert.equal(reply.settings.action, "saved");
+        assert.deepEqual({ provider: reply.provider, model: reply.model, mode: reply.mode }, { provider, model, mode });
+        const stored = await core.readGlobalSettings(directory);
+        assert.deepEqual({ provider: stored.provider, model: stored.model, mode: stored.mode }, { provider, model, mode });
+        const read = await bridge({ ...route, action: "settingsRead" });
+        assert.deepEqual({ provider: read.provider, model: read.model, mode: read.mode }, { provider, model, mode });
+      }
+    }
+  } finally {
+    for (const subscription of context.subscriptions.reverse()) subscription.dispose();
+    await fs.rm(directory, { recursive: true });
+  }
+});
+
 test("composer bridge toggles Decision and restores thread activity without a status item", async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "decision-control-test-"));
   const commands = new Map();

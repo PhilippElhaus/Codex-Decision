@@ -75,9 +75,39 @@ const OCTOBER_7: Profile = Profile {
     route_anchor: "function UG(){return hG(HG(),`useLocation() may be used only in the context of a <Router> component.`),ZG.useContext(CK).location}",
 };
 
+const OCTOBER_9: Profile = Profile {
+    version: "26.1007.21434",
+    image: "webview/assets/app-initial-c014f9ee4429.js",
+    route: "webview/assets/app-initial-97d3534ad35f.js",
+    index_anchor: "<script type=\"module\" crossorigin src=\"./assets/index-6d5eb9bd4867.js\"></script>",
+    image_anchor: "let o=rw(e);if(o==null)return null;try{let e={path:o,hostId:t,conversationId:i,environmentId:a}",
+    route_anchor: "function Wq(){return gq(Uq(),`useLocation() may be used only in the context of a <Router> component.`),Qq.useContext(wJ).location}",
+};
+
 pub(super) fn spec(version: &str) -> Result<Spec, String> {
     let (profile, hashes) = match version {
         VERSION => (LEGACY, ORIGINAL),
+        "26.1007.21434" => (
+            OCTOBER_9,
+            [
+                (
+                    HOST,
+                    "a8069de80c8f8141481d033f94c3a95e1b59f399143cb2554d3f68469dfbe5b8",
+                ),
+                (
+                    INDEX,
+                    "0b6cd1d77fb1c374db06014ce82c829f5a58009d007188b1e742b34113d2db1f",
+                ),
+                (
+                    IMAGE,
+                    "aabbfa7c366706365a239b090ca1c657b6a0213d7287e54ef0a32d1b2e5ff6a0",
+                ),
+                (
+                    ROUTE,
+                    "47e9e488122cf37a6564ed57d11f499d9ac062b2e49db729091fe3c163a64b49",
+                ),
+            ],
+        ),
         "26.1002.51308" => (
             OCTOBER_7,
             [
@@ -222,7 +252,9 @@ pub(super) fn route_fragment(source: String, profile: Profile) -> String {
         return source;
     }
     // Rebind only the pinned fragment, never search and replace Codex source.
-    let (router, assert, in_router, react, context) = if profile.version == OCTOBER_7.version {
+    let (router, assert, in_router, react, context) = if profile.version == OCTOBER_9.version {
+        ("Wq", "gq", "Uq", "Qq", "wJ")
+    } else if profile.version == OCTOBER_7.version {
         ("UG", "hG", "HG", "ZG", "CK")
     } else if [OCTOBER_5.version, OCTOBER_6.version].contains(&profile.version) {
         ("nq", "OK", "tq", "lq", "Fq")

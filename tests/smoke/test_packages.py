@@ -1,19 +1,53 @@
 """Reject stale, extra, duplicate, and wrongly targeted release files."""
 
 from pathlib import Path
+import json
 import os
 import subprocess
 import tempfile
 import unittest
 import zipfile
 
-from scripts.verify_packages import PLUGIN_FILES, verify_plugin
+from scripts.verify_packages import CONTROL_FILES, PLUGIN_FILES, verify_control, verify_plugin
 
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
 class PackageTests(unittest.TestCase):
+    def test_integrated_control_requires_the_complete_matching_hook(self):
+        with tempfile.TemporaryDirectory(prefix="decision-integrated-package-") as directory:
+            root = Path(directory)
+            for source in [*("vscode-control/" + name for name in CONTROL_FILES),
+                           "vscode-control/LICENSE", "vscode-control/README.md", *PLUGIN_FILES]:
+                target = root / source
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes((ROOT / source).read_bytes())
+            package = json.loads((root / "vscode-control/package.json").read_text())
+            def archive(with_plugin=True):
+                output_path = root / "integrated.vsix"
+                with zipfile.ZipFile(output_path, "w") as output:
+                    for name in CONTROL_FILES:
+                        output.write(root / "vscode-control" / name, "extension/" + name)
+                    for source, target in [("LICENSE", "LICENSE.txt"), ("README.md", "readme.md")]:
+                        output.write(root / "vscode-control" / source, "extension/" + target)
+                    if with_plugin:
+                        for name in PLUGIN_FILES:
+                            output.write(root / name, "extension/plugin/" + name)
+                    output.writestr("[Content_Types].xml", "<Types/>")
+                    output.writestr("extension.vsixmanifest", '<Package><Identity Version="' +
+                                    package["version"] + '" Publisher="' + package["publisher"] + '"/></Package>')
+                return output_path
+            verify_control(archive(), root)
+            with self.assertRaisesRegex(ValueError, "allowlist"):
+                verify_control(archive(with_plugin=False), root)
+            manifest = root / ".codex-plugin/plugin.json"
+            value = json.loads(manifest.read_text())
+            value["version"] = "0.0.0"
+            manifest.write_text(json.dumps(value))
+            with self.assertRaisesRegex(ValueError, "versions differ"):
+                verify_control(archive(), root)
+
     def test_plugin_contents_target_and_source_bytes(self):
         with tempfile.TemporaryDirectory(prefix="jev-package-") as directory:
             root = Path(directory)

@@ -11,6 +11,7 @@ fn pinned_patch_applies_updates_rejects_tampering_and_restores() {
     patch_cycle(Spec::production("26.930.51102").unwrap().1);
     patch_cycle(Spec::production("26.930.61225").unwrap().1);
     patch_cycle(Spec::production("26.1002.51308").unwrap().1);
+    patch_cycle(Spec::production("26.1007.21434").unwrap().1);
 }
 
 fn patch_cycle(profile: profiles::Profile) {
@@ -94,6 +95,7 @@ fn bridge_source_keeps_settings_actions_and_exact_router_route() {
             && host.contains("settingsTest")
     );
     assert!(host.contains("relevancePolicy:u.relevancePolicy"));
+    assert!(host.contains("provider:u.provider") && host.contains("\"openProvider\""));
     assert!(
         !host.contains("feature:u.feature") && !host.contains("searchRelevance:u.searchRelevance")
     );
@@ -118,6 +120,7 @@ fn bridge_fragments_publish_routes_and_validate_settings_messages() {
         "26.930.51102",
         "26.930.61225",
         "26.1002.51308",
+        "26.1007.21434",
     ] {
         let fragment =
             profiles::route_fragment(route.clone(), Spec::production(version).unwrap().1);
@@ -135,6 +138,8 @@ fn bridge_fragments_publish_routes_and_validate_settings_messages() {
                 "let ZK={},TK={useContext:()=>({location:{pathname}})},WG=()=>{},_K=()=>true;"
             } else if version == "26.1002.51308" {
                 "let CK={},ZG={useContext:()=>({location:{pathname}})},hG=()=>{},HG=()=>true;"
+            } else if version == "26.1007.21434" {
+                "let wJ={},Qq={useContext:()=>({location:{pathname}})},gq=()=>{},Uq=()=>true;"
             } else if version == "26.930.21537" {
                 "let TK={},$G={useContext:()=>({location:{pathname}})},vG=()=>{},GG=()=>true;"
             } else if ["26.930.51102", "26.930.61225"].contains(&version) {
@@ -146,6 +151,7 @@ fn bridge_fragments_publish_routes_and_validate_settings_messages() {
                 VERSION => "vK",
                 "26.930.21537" => "KG",
                 "26.1002.51308" => "UG",
+                "26.1007.21434" => "Wq",
                 "26.930.51102" | "26.930.61225" => "nq",
                 _ => "JG",
             };
@@ -162,7 +168,7 @@ fn bridge_fragments_publish_routes_and_validate_settings_messages() {
         }
     }
     for limit in [50, 0] {
-        let message = json!({"type":"codex-decision","action":"settingsSave","key":"",
+        let message = json!({"type":"codex-decision","action":"settingsSave","key":"","provider":"typesafe",
                 "mode":"replace","relevancePolicy":{"omit_min":95,"exact_max":5},
                 "logLimitMb":limit,"neverDeleteLogs":false,"choiceGateEnabled":true,
                 "viewId":"first-route","sourceId":"first-renderer","visible":true,
@@ -187,6 +193,7 @@ fn bridge_fragments_publish_routes_and_validate_settings_messages() {
                 assert_eq!(payload["relevancePolicy"]["omit_min"], 95);
                 assert_eq!(payload["neverDeleteLogs"], false);
                 assert_eq!(payload["mode"], "replace");
+                assert_eq!(payload["provider"], "typesafe");
                 assert_eq!(payload["sourceId"], "canonical-host-source");
                 assert_eq!(payload["visible"], true);
                 assert_eq!(payload["focused"], false);
@@ -217,6 +224,18 @@ fn wsl_bridges_rewrite_only_owned_paths() {
         (
             format!("{home}/.codex/plugins/cache/personal/codex-chime/1/assets/icon.png"),
             true,
+        ),
+        (
+            format!("{home}/.codex/plugins/cache/codex-decision-integrated/codex-decision/1/assets/icon.png"),
+            true,
+        ),
+        (
+            format!("{home}/.local/share/codex-decision/plugins/codex-decision/assets/icon.png"),
+            true,
+        ),
+        (
+            format!("{home}/.codex/plugins/cache/codex-decision-integrated/unrelated/1/assets/icon.png"),
+            false,
         ),
         ("/tmp/other.png".to_owned(), false),
     ] {
@@ -284,4 +303,30 @@ fn invalid_bridge_paths_never_expand_rewrites() {
         None
     )
     .is_empty());
+}
+
+#[test]
+fn marketplace_alias_accepts_standard_dotted_wsl_distribution_names() {
+    let fragment = marketplace_bridge(
+        Path::new("/home/fixture/.agents/plugins/marketplace.json"),
+        br#"{"plugins":[{"name":"codex-decision"}]}"#,
+        r"C:\marketplace.json",
+        Some("Ubuntu-24.04"),
+    );
+    let message = json!({"type":"mcp-request","request":{"method":"plugin/read",
+        "params":{"marketplacePath":r"\\wsl.localhost\Ubuntu-24.04\home\fixture\.agents\plugins\marketplace.json",
+        "pluginName":"codex-decision"}}});
+    let script = format!(
+        "let u={message};{fragment}process.stdout.write(u.request.params.marketplacePath);"
+    );
+    let output = Command::new("node").arg("-e").arg(script).output().unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(output.stdout).unwrap(),
+        "/home/fixture/.agents/plugins/marketplace.json"
+    );
 }

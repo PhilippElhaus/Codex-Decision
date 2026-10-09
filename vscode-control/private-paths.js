@@ -5,7 +5,7 @@ const { promisify } = require("node:util");
 const runFile = promisify(execFile);
 
 function wslLocation(filename) {
-  const match = /^\\\\(?:wsl\.localhost|wsl\$)\\([A-Za-z0-9_-]+)\\(.+)$/i.exec(filename);
+  const match = /^\\\\(?:wsl\.localhost|wsl\$)\\([A-Za-z0-9_][A-Za-z0-9_.-]{0,63})\\(.+)$/i.exec(filename);
   return match ? { distro: match[1], filename: `/${match[2].replaceAll("\\", "/")}` } : null;
 }
 

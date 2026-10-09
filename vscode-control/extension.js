@@ -3,6 +3,8 @@
 const path = require("node:path");
 const fs = require("node:fs/promises");
 const vscode = require("vscode");
+const { ensureIntegratedInstall } = require("./integrated-install");
+const { activateIntegration } = require("./integration");
 const EXPECTED_HOOK_VERSION = require("./package.json").codexDecisionHookVersion;
 const { LatestDecisionProvider, VIEW_ID } = require("./panel");
 const {
@@ -31,7 +33,7 @@ function createController(dataDirectory) {
   const readSettings = () => readGlobalSettings(dataDirectory(), providerFallback());
   const writeSettings = (changes) => writeGlobalSettings(dataDirectory(), changes, providerFallback());
   const snapshot = () => ({
-    provider: state.provider || "openai",
+    ...providerFallback(),
     enabled: state.enabled,
     needsKey: state.needsKey,
     health: state.health,
@@ -314,8 +316,10 @@ function createController(dataDirectory) {
         const task = selectionQueue.then(async () => {
           await writeSettings({ provider: selected, model, mode: request.mode, relevance_policy: relevancePolicy,
             log_limit_mb: request.logLimitMb, never_delete_logs: request.neverDeleteLogs });
+          state.mode = request.mode;
           if (request.key) await writeApiKey(dataDirectory(), request.key, selected);
           if (state.sessionId) await sync();
+          if (probePromise) await probePromise;
           await probe();
         });
         selectionQueue = task.catch(() => {});
@@ -341,7 +345,8 @@ function createController(dataDirectory) {
       }
     }
     if (["settingsRead", "settingsTest", "settingsSave", "settingsSetNeverDeleteLogs", "settingsOpenLogs"].includes(request?.action)) {
-      return { ...snapshot(), settings: await settingsReply(request) };
+      const settings = await settingsReply(request);
+      return { ...snapshot(), settings };
     }
     if (request?.action === "testApiKey") {
       const keyTest = await checkHealth(dataDirectory(), globalThis.fetch,
@@ -484,6 +489,14 @@ function activate(context) {
   context.subscriptions.push({ dispose: () => {
     clearInterval(eventTimer); clearInterval(configTimer); clearInterval(healthTimer); clearInterval(retryTimer);
   } });
+  // Keep the panel available during installation and retry a failed bootstrap
+  // after configuration repair instead of caching a rejected startup promise.
+  activateIntegration(vscode, context, {
+    dataDirectory: () => settings().get("dataDirectory") || "",
+    ready: () => ensureIntegratedInstall(vscode, context, {
+      dataDirectory: () => settings().get("dataDirectory") || "",
+    }),
+  });
 }
 
 function deactivate() {}

@@ -1,48 +1,45 @@
 # Install and verify
 
-Codex Decision currently packages a Linux x86_64 hook. Install it from this repository's Codex marketplace:
+For Windows VS Code with Linux x86_64 WSL, install the integrated VSIX from the [latest release](https://github.com/PhilippElhaus/Codex-Decision/releases/latest):
+
+```bash
+code --install-extension codex-decision-0.11.6.vsix --force
+```
+
+This single package contains the hook, skill, session controls, settings, and verified composer patch. Activation updates an existing local plugin without changing its identity or data directory. A fresh install registers the bundled local marketplace. The installer preserves credentials, settings, session flags, saved originals, and Codex hook trust records. It rejects ambiguous plugin registrations instead of creating a duplicate hook.
+
+The extension repairs supported Codex builds at startup and after extension changes. Repairs verify the build's exact files and keep rollback copies outside the repository. Unknown or changed builds show a diagnostic. Run **Decision: Check Integration** to inspect the installation. Run **Decision: Repair Integration** to retry and reopen the panel. Run **Developer: Reload Window** after a repair.
+
+Open `/hooks` in the environment that runs your tools. Review **Codex Decision → PostToolUse** if Codex requires trust, then open a local thread. Codex binds trust to the hook definition; the integrated installer never edits its trust database. Verify the hook after an update:
+
+```bash
+decisionctl check-hook-trust --cwd /absolute/path/to/Codex-Decision
+```
+
+A successful API connection test does not establish hook activity. If the control is green but no decisions appear, check integration, hook trust, and the selected thread's enabled flag. Eligible local output produces a fresh hook-health record and decision. Small, exact-source, sensitive, and unsupported outputs can skip intentionally.
+
+A new local thread starts enabled. Each thread retains its later on/off choice and activity under `PLUGIN_DATA/sessions/<sha256-of-session-id>/`. Provider settings and credentials remain shared by the installation. Windows WSL directories use `700` and configuration files use `600`. After one minute without a receipt, the control reports missing hook activity.
+
+Build the integrated package with `./scripts/build_control.sh`. Generated packages stay in `.local/submission/`. See the [control guide](../../vscode-control/README.md) for supported builds, automatic repair, and rollback.
+
+## Standalone CLI
+
+Linux x86_64 CLI users can install the hook without VS Code:
 
 ```bash
 codex plugin marketplace add https://github.com/PhilippElhaus/Codex-Decision
 codex plugin add codex-decision@codex-decision
 ```
 
-To build the plugin ZIP from source instead, run `./scripts/build_submission.sh`. The archive is written under `.local/submission/`. A local marketplace uses its registered source directory: if that directory contains an extracted package, update it from the new ZIP before running `codex plugin add`, and preserve the old package for rollback. Updating another checkout does not update that source copy. `codex plugin marketplace upgrade` refreshes Git marketplaces.
+Build its ZIP with `./scripts/build_submission.sh`. A registered local marketplace uses its own source directory. Update that source from the package before running `codex plugin add`; preserve the previous package for rollback. `codex plugin marketplace upgrade` refreshes Git marketplaces.
 
-Open `/hooks` in the same Codex environment that runs your tools. Review and trust **Codex Decision → PostToolUse**, then start a new thread. Codex does not run a new or changed non-managed hook until it is trusted. The trust record is tied to the hook definition, so a successful API key test alone cannot verify an upgrade.
+Without the session control, enable the hook explicitly. To opt into installation-wide filtering, add `"scope": "global"` to schema-5 `PLUGIN_DATA/config.json` and set `"enabled": true`. A session config overrides this global choice. [config.example.json](../../config.example.json) shows the fields.
 
-For every plugin update, run this check before declaring the installation ready:
-
-```bash
-decisionctl check-hook-trust --cwd /absolute/path/to/Codex-Decision
-```
-
-A nonzero exit means the hook is absent, disabled, changed, or untrusted. Open `/hooks`, review the current definition, then rerun the check. Codex manages its trust records; Decision does not rewrite them or silently trust a changed command. The check is the upgrade gate that prevents an old trust record from being mistaken for a working hook.
-
-For the optional Windows VS Code control, build and install its VSIX from WSL:
-
-```bash
-cd vscode-control
-mkdir -p ../.local/submission
-../scripts/build_control.sh
-code --install-extension "$(wslpath -w ../.local/submission/codex-decision-control-0.10.10.vsix)" --force
-```
-
-Set `codexDecision.dataDirectory` to the installed plugin's absolute `PLUGIN_DATA` directory. Apply the [version-pinned Codex composer patch](../../vscode-control/README.md#install), then reload VS Code. The control needs the same data directory as the hook. Its pinned bridge reads the active thread from Codex's internal router, which can change while the webview URL stays fixed. The home screen has no thread yet; its indicator still checks API health and its settings page remains available. An unreadable local thread ID cannot change another session's state.
-
-A new local thread in the VS Code control starts with Decision enabled. Its enabled flag, decisions, statistics, and hook health live under `PLUGIN_DATA/sessions/<sha256-of-session-id>/`. Mode, cutoffs, and log retention live in `PLUGIN_DATA/settings.json` and apply to all sessions. The API key remains shared in `PLUGIN_DATA/.env`. The control creates the new session config once and preserves any later on/off changes; plugin-wide enable flags are not inherited. Without the VS Code control, the hook still requires explicit configuration.
-
-CLI users without the VS Code control can opt into installation-wide filtering by adding `"scope": "global"` to a schema-5 `PLUGIN_DATA/config.json`, then setting `"enabled": true`. [config.example.json](../../config.example.json) shows the fields. A session config, when present, overrides this global choice for that session. This global opt-in deliberately affects every session that has no override.
-
-If the indicator is red, test the key and API connection in settings. If the API is green but no decisions appear after eligible tool output, check `/hooks`, start a new thread, and confirm that Decision is enabled for that thread. A failed hook keeps the original tool result visible. [Verification](../development/development_verification.md) gives a repeatable test.
-
-Windows controls require `python3` in the selected WSL distribution and apply Linux permissions through WSL for UNC paths: directories use `700` and configuration files use `600`. Existing control-created session directories are repaired when opened. Otherwise, a directory created as `755` causes the hook to skip before it can record activity. The control reports missing hook activity after one minute without a receipt; run a local command to distinguish an idle thread from a hook that is not running. Invalid configuration and shared settings also produce a session hook error.
-
-Legacy schema-2/3/4 configs and schema-1/2/3 shared settings migrate when read. The next save writes the current version. Any enabled old switch enables Decision. The relevance cutoff starts at no more than 5% and preserves stricter legacy bounds.
+Legacy schema-2/3/4 configs and schema-1/2/3 shared settings migrate when read. Any enabled old switch enables Decision. Migration preserves stricter relevance bounds and starts at no more than 5%. The next save writes the current schema.
 
 ## Upgrade from Codex Jev
 
-The plugin ID is now `codex-decision`; the control ID is `elhaus-labs.codex-decision-control`. Keep the previous package, plugin data, and composer rollback files until the new installation is verified. Install the renamed plugin and control, then disable the old plugin and uninstall the old control to prevent duplicate hooks and panels.
+The plugin ID is now `codex-decision`; the control ID is `elhaus-labs.codex-decision-control`. Keep the previous package, plugin data, and composer rollback files until the new installation is verified. Install the integrated package, then disable the old plugin and uninstall the old control to prevent duplicate hooks and panels.
 
 Preserve session settings, logs, statistics, and saved originals when copying data to the new plugin data directory. Existing receipts can point to the old directory, so retain that directory. Add the OpenAI key with `decisionctl set-key`, then explicitly select OpenAI in shared settings. Legacy configurations retain TypeSafe by design. Set `codexDecision.dataDirectory` to the new installed directory.
 

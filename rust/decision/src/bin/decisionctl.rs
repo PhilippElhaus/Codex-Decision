@@ -659,7 +659,7 @@ fn run() -> Result<(), String> {
         );
     }
     if args.len() != 4 {
-        return Err("usage: decisionctl activity --data-dir <PLUGIN_DATA> --session <thread-id> | set-key --data-dir <PLUGIN_DATA> | package|check-release-versions|cachebust --root <repository> | check-hook-trust --cwd <repository> [--plugin-id <id>] | patch-webview <apply|update|restore> --root <repository> --extension <path> --backup <path> | evaluate-quality --cases <private JSON>".into());
+        return Err("usage: decisionctl activity --data-dir <PLUGIN_DATA> --session <thread-id> | set-key --data-dir <PLUGIN_DATA> | package|check-release-versions|cachebust --root <repository> | check-hook-trust --cwd <repository> [--plugin-id <id>] | patch-webview <apply|update|restore|status> --root <repository-or-control> --extension <path> --backup <path> | evaluate-quality --cases <private JSON>".into());
     }
     if args[2] == "--root" {
         let root = Path::new(&args[3]);

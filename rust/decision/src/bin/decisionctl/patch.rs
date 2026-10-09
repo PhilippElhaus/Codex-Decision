@@ -69,6 +69,7 @@ fn hash(bytes: &[u8]) -> String {
 
 fn exact(root: &Path, relative: &str) -> Result<Vec<u8>, String> {
     let path = root.join(relative);
+    locking::reject_links(&path)?;
     if path.is_symlink() || !path.is_file() {
         return Err(format!("missing or linked file: {relative}"));
     }
@@ -76,6 +77,7 @@ fn exact(root: &Path, relative: &str) -> Result<Vec<u8>, String> {
 }
 
 fn write_exact(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    locking::reject_links(path)?;
     let temp = path.with_file_name(format!(
         "{}.decision-temporary",
         path.file_name().unwrap().to_string_lossy()
@@ -106,6 +108,13 @@ fn as_text(bytes: &[u8]) -> Result<&str, String> {
 mod bridge;
 #[path = "patch/lifecycle.rs"]
 mod lifecycle;
+#[path = "patch/locking.rs"]
+mod locking;
+#[path = "patch/status.rs"]
+mod status;
+#[cfg(test)]
+#[path = "patch/status_tests.rs"]
+mod status_tests;
 #[cfg(test)]
 #[path = "patch/tests.rs"]
 mod tests;

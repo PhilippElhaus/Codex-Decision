@@ -1,24 +1,29 @@
 use super::*;
 
-fn originals(root: &Path, spec: &Spec) -> Result<BTreeMap<&'static str, Vec<u8>>, String> {
+pub(super) fn originals(
+    root: &Path,
+    spec: &Spec,
+) -> Result<BTreeMap<&'static str, Vec<u8>>, String> {
     [HOST, INDEX, IMAGE, ROUTE]
         .into_iter()
         .map(|path| exact(root, spec.physical(path)).map(|bytes| (path, bytes)))
         .collect()
 }
 
-fn manifest(backup: &Path, spec: &Spec) -> Result<Value, String> {
+pub(super) fn manifest(backup: &Path, spec: &Spec) -> Result<Value, String> {
     let value = crate::read_json(&backup.join("manifest.json"), 32_000)?;
     if value["version"] != spec.1.version
         || value["original"] != spec.manifest_original()
         || !value["patched"].is_object()
+        || (!value["originalImage"].is_null() && value["originalImage"] != spec.hash(IMAGE))
+        || (!value["originalRoute"].is_null() && value["originalRoute"] != spec.hash(ROUTE))
     {
         return Err("rollback metadata changed".into());
     }
     Ok(value)
 }
 
-fn validate_patched(root: &Path, metadata: &Value, spec: &Spec) -> Result<(), String> {
+pub(super) fn validate_patched(root: &Path, metadata: &Value, spec: &Spec) -> Result<(), String> {
     for (path, expected) in metadata["patched"].as_object().unwrap() {
         if ![
             HOST,
@@ -35,16 +40,27 @@ fn validate_patched(root: &Path, metadata: &Value, spec: &Spec) -> Result<(), St
             return Err(format!("patched file changed: {path}"));
         }
     }
+    for path in [HOST, INDEX, IMAGE, ROUTE] {
+        if metadata["patched"].get(spec.physical(path)).is_none()
+            && hash(&exact(root, spec.physical(path))?) != spec.hash(path)
+        {
+            return Err(format!(
+                "unmanaged Codex file changed: {}",
+                spec.physical(path)
+            ));
+        }
+    }
     Ok(())
 }
 
-fn validate_originals(backup: &Path, spec: &Spec) -> Result<(), String> {
+pub(super) fn validate_originals(backup: &Path, spec: &Spec) -> Result<(), String> {
     for path in [HOST, INDEX] {
         if hash(&exact(backup, spec.physical(path))?) != spec.hash(path) {
             return Err(format!("rollback file changed: {path}"));
         }
     }
     for path in [IMAGE, ROUTE] {
+        locking::reject_links(&backup.join(spec.physical(path)))?;
         if backup.join(spec.physical(path)).is_file()
             && hash(&exact(backup, spec.physical(path))?) != spec.hash(path)
         {
@@ -52,6 +68,24 @@ fn validate_originals(backup: &Path, spec: &Spec) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+pub(super) fn saved_originals(
+    root: &Path,
+    backup: &Path,
+    spec: &Spec,
+) -> Result<BTreeMap<&'static str, Vec<u8>>, String> {
+    [HOST, INDEX, IMAGE, ROUTE]
+        .into_iter()
+        .map(|path| {
+            let source = if backup.join(spec.physical(path)).is_file() {
+                backup
+            } else {
+                root
+            };
+            exact(source, spec.physical(path)).map(|bytes| (path, bytes))
+        })
+        .collect()
 }
 
 fn write_files(root: &Path, files: &BTreeMap<&'static str, Vec<u8>>) -> Result<(), String> {
@@ -140,15 +174,7 @@ pub(super) fn update(
     validate_patched(root, &metadata, spec)?;
     validate_originals(backup, spec)?;
     let old_manifest = exact(backup, "manifest.json")?;
-    let mut original = BTreeMap::new();
-    for path in [HOST, INDEX, IMAGE, ROUTE] {
-        let bytes = if backup.join(spec.physical(path)).is_file() {
-            exact(backup, spec.physical(path))?
-        } else {
-            exact(root, spec.physical(path))?
-        };
-        original.insert(path, bytes);
-    }
+    let original = saved_originals(root, backup, spec)?;
     let files = changed(repo, &original, spec, bridges)?;
     for asset in [CONTROL, SETTINGS, ICON] {
         if metadata["patched"].get(asset).is_none()
@@ -216,23 +242,21 @@ pub(super) fn restore(root: &Path, backup: &Path, spec: &Spec) -> Result<(), Str
 }
 
 pub fn run(action: &str, repo: &Path, extension: &Path, backup: &Path) -> Result<(), String> {
-    if !repo.is_dir()
-        || extension.is_symlink()
-        || backup.is_symlink()
-        || !extension.is_absolute()
-        || !backup.is_absolute()
-        || [extension, backup].iter().any(|path| {
-            let text = path.to_string_lossy().to_ascii_lowercase();
-            text == "/mnt/d" || text.starts_with("/mnt/d/") || text.starts_with("d:\\")
-        })
-    {
-        return Err("extension and rollback must be valid paths off D:".into());
-    }
+    locking::paths(repo, extension, backup)?;
     let package = crate::read_json(&extension.join("package.json"), 1_000_000)?;
     let version = package["version"]
         .as_str()
         .ok_or("Codex extension version missing")?;
     let spec = Spec::production(version)?;
+    if !["apply", "update", "restore", "status"].contains(&action) {
+        return Err("unknown patch action".into());
+    }
+    let _lock = locking::acquire(backup)?;
+    if action == "status" {
+        let state = status::read(repo, extension, backup, &spec, &bridge::bridges(repo)?)?;
+        println!("{}", json!({"status":state,"version":version}));
+        return Ok(());
+    }
     match action {
         "apply" => apply(repo, extension, backup, &spec, &bridge::bridges(repo)?),
         "update" => update(repo, extension, backup, &spec, &bridge::bridges(repo)?),

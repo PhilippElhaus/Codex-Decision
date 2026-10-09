@@ -28,9 +28,12 @@ pub(super) fn image_bridge(home: &str, windows_root: &str) -> Result<String, Str
     }
     let local = format!("{home}/plugins/codex-decision/");
     let cache = format!("{home}/.codex/plugins/cache/personal");
-    Ok(format!("if(o.startsWith({})||o.startsWith({})||o.startsWith({}))o={}+o.replaceAll(\"/\",\"\\\\\");",
+    let integrated =
+        format!("{home}/.codex/plugins/cache/codex-decision-integrated/codex-decision/");
+    let source = format!("{home}/.local/share/codex-decision/plugins/codex-decision/");
+    Ok(format!("if(o.startsWith({})||o.startsWith({})||o.startsWith({})||o.startsWith({})||o.startsWith({}))o={}+o.replaceAll(\"/\",\"\\\\\");",
         json!(local), json!(format!("{cache}/codex-decision/")),
-        json!(format!("{cache}/codex-chime/")), json!(root)))
+        json!(format!("{cache}/codex-chime/")), json!(integrated), json!(source), json!(root)))
 }
 
 pub(super) fn marketplace_bridge(
@@ -64,10 +67,14 @@ pub(super) fn marketplace_bridge(
     }
     let mut aliases = vec![lower];
     if let Some(distro) = distro {
-        if !distro.is_empty()
+        if distro.len() <= 64
             && distro
                 .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric() || b"_-".contains(&byte))
+                .next()
+                .is_some_and(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+            && distro
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || b"._-".contains(&byte))
         {
             aliases.push(
                 format!(
@@ -119,6 +126,11 @@ pub(super) fn changed(
     spec: &Spec,
     bridges: &Bridges,
 ) -> Result<BTreeMap<&'static str, Vec<u8>>, String> {
+    let assets = if repo.join("vscode-control").is_dir() {
+        repo.join("vscode-control")
+    } else {
+        repo.to_path_buf()
+    };
     for (path, bytes) in originals {
         if hash(bytes) != spec.hash(path) {
             return Err(format!("Codex extension file changed: {path}"));
@@ -128,22 +140,14 @@ pub(super) fn changed(
     let index = as_text(&originals[INDEX])?;
     let image = as_text(&originals[IMAGE])?;
     let route = as_text(&originals[ROUTE])?;
-    let fragment = as_text(&exact(
-        repo,
-        "vscode-control/patch-assets/host-bridge.jsfrag",
-    )?)?
-    .to_owned();
+    let fragment = as_text(&exact(&assets, "patch-assets/host-bridge.jsfrag")?)?.to_owned();
     let fragment = replace_once(
         &fragment,
         "if(s.markMessageReceived()",
         &format!("{}if(s.markMessageReceived()", bridges.marketplace),
     )?;
     let route_fragment = profiles::route_fragment(
-        as_text(&exact(
-            repo,
-            "vscode-control/patch-assets/route-bridge.jsfrag",
-        )?)?
-        .to_owned(),
+        as_text(&exact(&assets, "patch-assets/route-bridge.jsfrag")?)?.to_owned(),
         spec.1,
     );
     let mut result = BTreeMap::new();
@@ -169,14 +173,8 @@ pub(super) fn changed(
         spec.physical(ROUTE),
         replace_once(route, spec.1.route_anchor, &route_fragment)?.into_bytes(),
     );
-    result.insert(
-        CONTROL,
-        exact(repo, "vscode-control/webview/decision-control.js")?,
-    );
-    result.insert(
-        SETTINGS,
-        exact(repo, "vscode-control/webview/decision-settings.js")?,
-    );
-    result.insert(ICON, exact(repo, "vscode-control/icon.png")?);
+    result.insert(CONTROL, exact(&assets, "webview/decision-control.js")?);
+    result.insert(SETTINGS, exact(&assets, "webview/decision-settings.js")?);
+    result.insert(ICON, exact(&assets, "icon.png")?);
     Ok(result)
 }

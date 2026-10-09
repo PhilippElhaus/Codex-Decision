@@ -1,25 +1,27 @@
 # Codex Decision control for VS Code
 
-This optional extension adds one Decision on/off button to the Codex composer, detailed Decision settings, and a bottom-panel view of the latest decision. Set `codexDecision.dataDirectory` to the installed plugin's absolute `PLUGIN_DATA` path. Windows VS Code with WSL normally uses a `\\wsl.localhost\<distro>\...` path.
+This integrated extension contains the local Decision hook, skill, composer control, settings, and bottom-panel view. Windows VS Code uses a Linux x86_64 WSL environment for the hook. Existing Decision data and per-thread choices remain in place.
 
 ## Install
 
-From this directory in WSL:
+Build and install one package from WSL:
 
 ```bash
 ../scripts/build_control.sh
-code --install-extension "$(wslpath -w ../.local/submission/codex-decision-control-0.10.11.vsix)" --force
+code --install-extension "$(wslpath -w ../.local/submission/codex-decision-0.11.6.vsix)" --force
 ```
 
-The composer and Codex settings page require the separate local patch for Codex VS Code extensions `26.928.31416`, `26.930.21537`, `26.930.31730`, `26.930.41038`, `26.930.51102`, `26.930.61225`, and `26.1002.51308`. It checks exact host hashes and keeps rollback files outside this repository:
+On activation, the package installs or updates the bundled Codex plugin and checks the Codex UI integration. It uses the configured WSL data path or the default WSL distribution for a fresh installation. It sets `codexDecision.dataDirectory` when that setting is empty. Existing plugin identity, credentials, logs, and thread settings remain in place.
 
-```bash
-../hooks/bin/linux-x86_64/decisionctl patch-webview update --root .. \
-  --extension '/mnt/c/Users/<user>/.vscode/extensions/openai.chatgpt-26.1002.51308-win32-x64' \
-  --backup '/mnt/c/Users/<user>/AppData/Local/Codex/codex-decision/rollback/26.1002.51308'
-```
+The integrated patch supports Codex builds `26.928.31416`, `26.930.21537`, `26.930.31730`, `26.930.41038`, `26.930.51102`, `26.930.61225`, `26.1002.51308`, and `26.1007.21434`. It verifies exact host hashes, serializes repairs, and retains rollback files under the user's local Codex directory. Unknown or modified builds produce a diagnostic and remain unchanged. A healthy patch causes no rewrite.
 
-Use `apply` for the first installation, `update` after a control upgrade, or `restore` to remove the patch. Reload VS Code after installing both pieces. Start a new Codex thread after a plugin hook upgrade and review the hook in `/hooks` again if its definition changed.
+After the repair, run **Developer: Reload Window**. Open a local Codex thread. Review the hook in `/hooks` if its definition needs trust; the installer does not edit Codex trust records.
+
+Use **Decision: Check Integration** to inspect the installed build. Use **Decision: Repair Integration** to retry and reopen the Decision panel. Automatic repair runs at startup and after a Codex extension change. Set `codexDecision.autoRepairIntegration` to `false` to use manual repair only. No separate plugin ZIP or manual patch command is required.
+
+## Rollback
+
+Keep the previous integrated package and the per-build patch rollback directory. Reinstall the prior VSIX to restore its bundled hook and control. Before downgrading a patch, restore it with its matching `decisionctl patch-webview restore` and preserved rollback directory. Never discard plugin data or saved originals during rollback.
 
 ## Use
 
@@ -45,7 +47,7 @@ python3 scripts/browser_smoke.py
 ../hooks/bin/linux-x86_64/decisionctl check-hook-trust --cwd ..
 ```
 
-The browser harnesses use the real composer, settings, and panel code with synthetic, key-free data. The Codex patch must be revalidated against each new Codex extension build.
+The browser harnesses use the real composer, settings, and panel code with synthetic, key-free data. Each new Codex build requires a verified patch profile. Unsupported updates are reported instead of silently losing the integration.
 
 The header keeps this thread's API request and skipped-output counts visible before and after line decisions. API requests count hook attempts, including pending or failed requests, and exclude the separate connection check. Older sessions retain their recorded count at upgrade. The empty panel explains the latest skip or hook error. A classification that keeps full output is reported explicitly. The tooltip also shows the latest skip reason. A skipped result confirms hook activity; it does not confirm an API request. After a Codex extension update, apply the patch to the new extension directory. Each supported build has its own checked hashes and rollback directory.
 

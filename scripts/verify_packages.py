@@ -15,6 +15,8 @@ PLUGIN_FILES = (
 )
 CONTROL_FILES = (
     "config-contract.json", "core.js", "extension.js", "icon.png", "package.json",
+    "integration.js", "integrated-install.js", "install-plugin.py",
+    "patch-assets/host-bridge.jsfrag", "patch-assets/route-bridge.jsfrag",
     "panel-state.js", "panel.js", "schema.js", "providers.js", "private-paths.js", "private-records.js", "publication-journal.js", "media/decision-panel.svg",
     "webview/decision-control.js", "webview/decision-panel.css", "webview/decision-panel.js",
     "webview/decision-totals.js",
@@ -63,6 +65,7 @@ def verify_plugin(path, root=ROOT):
 
 def verify_control(path, root=ROOT):
     mapping = {f"extension/{name}": f"vscode-control/{name}" for name in CONTROL_FILES}
+    mapping.update({f"extension/plugin/{name}": name for name in PLUGIN_FILES})
     mapping.update({"extension/LICENSE.txt": "vscode-control/LICENSE",
                     "extension/readme.md": "vscode-control/README.md"})
     with zipfile.ZipFile(path) as archive:
@@ -72,6 +75,14 @@ def verify_control(path, root=ROOT):
         identity = ET.fromstring(archive.read("extension.vsixmanifest")).find(".//{*}Identity")
         if identity is None or identity.get("Version") != package["version"] or identity.get("Publisher") != package["publisher"]:
             raise ValueError("VSIX identity differs from the control package")
+        plugin = json.loads(archive.read("extension/plugin/.codex-plugin/plugin.json"))
+        if plugin["version"].split("+", 1)[0] != package["codexDecisionHookVersion"]:
+            raise ValueError("Bundled hook and integrated control versions differ")
+        for binary in ("decision-hook", "decisionctl"):
+            data = archive.read(f"extension/plugin/hooks/bin/linux-x86_64/{binary}")
+            check_elf(data)
+            if binary == "decision-hook" and b"CODEX_DECISION_TEST_ENDPOINT" in data:
+                raise ValueError("Integrated package contains a verification hook")
 
 
 def main():

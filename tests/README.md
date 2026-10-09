@@ -1,5 +1,18 @@
 # Tests
 
+The integrated VSIX must pass the native clean-install check before release:
+
+```powershell
+pwsh -NoProfile -File .\vscode-control\scripts\windows_integrated_smoke.ps1 `
+  -Vsix .\.local\submission\codex-decision-0.11.6.vsix -Distro Ubuntu
+```
+
+This check uses the actual packaged extension, a copied supported Codex host,
+an isolated Windows profile, and private Linux fixture state. It verifies fresh
+installation, the exact hook cache, one registration, automatic UI repair,
+restart idempotence, provider forwarding, session defaults, and native panel
+rendering. It preserves the user's installed extensions, credentials, and chats.
+
 Run the current release checks from the repository root. The offline tests use synthetic tool output and provider replies; they do not need an API key.
 
 Use `cargo bench --locked -p codex-decision --bench pipeline -- all` for offline CPU and allocation measurements. Use `equivalence` instead of `all` to print fingerprints for 1,000 seeded complete packing cases. Give before and after builds different `CARGO_TARGET_DIR` paths. Compare fingerprints before interpreting timing results.

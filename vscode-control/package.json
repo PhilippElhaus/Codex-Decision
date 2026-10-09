@@ -1,31 +1,65 @@
 {
   "name": "codex-decision-control",
-  "displayName": "Codex Decision Control",
-  "description": "Decision on/off control and live decision panel for VS Code",
-  "version": "0.10.11",
-  "codexDecisionHookVersion": "0.11.5",
+  "displayName": "Codex Decision",
+  "description": "Integrated Decision hook, session controls, and automatic Codex UI repair",
+  "version": "0.11.6",
+  "codexDecisionHookVersion": "0.11.6",
   "publisher": "elhaus-labs",
   "license": "MIT",
   "icon": "icon.png",
-  "repository": { "type": "git", "url": "https://github.com/PhilippElhaus/Codex-Decision.git" },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/PhilippElhaus/Codex-Decision.git"
+  },
   "private": true,
   "main": "./extension.js",
-  "engines": { "vscode": "^1.96.2" },
-  "extensionKind": ["ui"],
-  "activationEvents": ["onStartupFinished", "onCommand:codexDecision.bridge", "onView:codexDecisionDecision"],
+  "engines": {
+    "vscode": "^1.96.2"
+  },
+  "extensionKind": [
+    "ui"
+  ],
+  "activationEvents": [
+    "onStartupFinished",
+    "onCommand:codexDecision.bridge",
+    "onView:codexDecisionDecision"
+  ],
   "contributes": {
     "commands": [
-      { "command": "codexDecision.checkConnection", "title": "Decision: Check API and Key" },
-      { "command": "codexDecision.showLatestDecision", "title": "Decision: Show Latest Decision" }
+      {
+        "command": "codexDecision.checkConnection",
+        "title": "Decision: Check API and Key"
+      },
+      {
+        "command": "codexDecision.showLatestDecision",
+        "title": "Decision: Show Latest Decision"
+      },
+      {
+        "command": "codexDecision.checkIntegration",
+        "title": "Decision: Check Integration"
+      },
+      {
+        "command": "codexDecision.repairIntegration",
+        "title": "Decision: Repair Integration"
+      }
     ],
     "viewsContainers": {
       "panel": [
-        { "id": "codexDecisionDecisionPanel", "title": "Decision", "icon": "media/decision-panel.svg" }
+        {
+          "id": "codexDecisionDecisionPanel",
+          "title": "Decision",
+          "icon": "media/decision-panel.svg"
+        }
       ]
     },
     "views": {
       "codexDecisionDecisionPanel": [
-        { "id": "codexDecisionDecision", "name": "Latest decision", "type": "webview", "visibility": "visible" }
+        {
+          "id": "codexDecisionDecision",
+          "name": "Latest decision",
+          "type": "webview",
+          "visibility": "visible"
+        }
       ]
     },
     "configuration": {
@@ -35,9 +69,19 @@
           "type": "string",
           "default": "",
           "description": "Absolute PLUGIN_DATA directory for Codex Decision. Set this to the installed plugin data directory, or set CODEX_DECISION_DATA_DIRECTORY."
+        },
+        "codexDecision.autoRepairIntegration": {
+          "type": "boolean",
+          "default": true,
+          "description": "Repair the Decision UI automatically for supported Codex extension builds. Unsupported or modified builds remain unchanged."
         }
       }
     }
   },
-  "scripts": { "test": "node --test ../tests/unit/*.test.cjs ../tests/integration/*.test.cjs ../tests/edge/*.test.cjs ../tests/load/*.test.cjs" }
+  "scripts": {
+    "test": "node --test ../tests/unit/*.test.cjs ../tests/integration/*.test.cjs ../tests/edge/*.test.cjs ../tests/load/*.test.cjs"
+  },
+  "extensionDependencies": [
+    "openai.chatgpt"
+  ]
 }

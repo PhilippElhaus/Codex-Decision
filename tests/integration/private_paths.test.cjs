@@ -12,6 +12,11 @@ test("Windows UNC permission commands use the selected distro and report failure
   assert.deepEqual(wslLocation("\\\\wsl.localhost\\Ubuntu\\home\\fixture\\state"),
     { distro: "Ubuntu", filename: "/home/fixture/state" });
   assert.equal(wslLocation("D:\\workspace\\state"), null);
+  assert.deepEqual(wslLocation("\\\\wsl.localhost\\Ubuntu-24.04\\home\\fixture\\state"),
+    { distro: "Ubuntu-24.04", filename: "/home/fixture/state" });
+  for (const distro of ["..", "-distribution", "Ubuntu;command"]) {
+    assert.equal(wslLocation(`\\\\wsl.localhost\\${distro}\\home\\fixture`), null);
+  }
   let invocation;
   const run = async (...args) => { invocation = args; };
   await restrictWslPath("\\\\wsl$\\Ubuntu\\home\\fixture\\state", true, run, "win32");
