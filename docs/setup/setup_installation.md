@@ -3,7 +3,7 @@
 For Windows VS Code with Linux x86_64 WSL, install the integrated VSIX from the [latest release](https://github.com/PhilippElhaus/Codex-Decision/releases/latest):
 
 ```bash
-code --install-extension codex-decision-0.11.6.vsix --force
+code --install-extension codex-decision-0.11.7.vsix --force
 ```
 
 This single package contains the hook, skill, session controls, settings, and verified composer patch. Activation updates an existing local plugin without changing its identity or data directory. A fresh install registers the bundled local marketplace. The installer preserves credentials, settings, session flags, saved originals, and Codex hook trust records. It rejects ambiguous plugin registrations instead of creating a duplicate hook.

@@ -29,3 +29,11 @@ An installed-provider smoke check uses synthetic output. Hook trust, exact insta
 The final package passed both native launches, with seven checks in each launch. The complete Node suite passed 132 tests, with three platform or optional-binary checks skipped in WSL; the focused Windows checks passed. Fourteen Python checks passed. The Rust suite and Clippy passed, followed by the final patch regressions. Edge and Chromium rendered the real webview scripts. The separate native panel suite passed fourteen checks.
 
 The production hook's live synthetic check used OpenAI and validated two requests. It removed 119 of 122 lines, preserved the diagnostic and completion totals, and saved the exact readable original. The final native report records the tested VSIX SHA-256, so publication can be checked against the same artifact. Reports stay in ignored `.local/quality/`; rejected candidates remain separate from the final submission.
+
+## Upgrade panel follow-up
+
+The integrated 0.11.7 patch restores the Decision panel once per control version after successful verification. This also covers an operator who installed the hook and repaired Codex before reloading VS Code: both components are already ready, but the old panel tab can still be hidden. The extension records the migration through its own VS Code global state after the public focus command succeeds. Same-version reloads retain the user's later focus choice. Manual Repair Integration can always reopen the panel.
+
+Regressions cover missing and older migration records, an already verified hook and patch, a failed focus command, persistence across reload, and explicit reopening. The integrated package and bundled hook retain one version, 0.11.7.
+
+The 0.11.7 package passed both native launches against a safely restored temporary copy of the deployed Codex host. Its full Node suite passed 135 tests, with the same three expected WSL skips; all fourteen Python checks passed. The published 0.11.6 package remains available as a rollback.

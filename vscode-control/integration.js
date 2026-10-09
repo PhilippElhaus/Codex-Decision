@@ -6,6 +6,8 @@ const { execFile } = require("node:child_process");
 const { promisify } = require("node:util");
 const { wslLocation } = require("./private-paths");
 const runFile = promisify(execFile);
+const CONTROL_VERSION = require("./package.json").version;
+const PANEL_VERSION_KEY = "codexDecision.integration.panelControlVersion";
 
 function windowsPath(filename) {
   if (typeof filename !== "string" || !/^[A-Za-z]:[\\/]/.test(filename) ||
@@ -156,8 +158,8 @@ function activateIntegration(vscode, context, { dataDirectory, ready = Promise.r
       output.appendLine("Decision integration notification could not be displayed.");
     }
   }
-  const restorePanel = async () => {
-    if (!panelRestored) {
+  const restorePanel = async (force = false) => {
+    if (force || !panelRestored) {
       await vscode.commands.executeCommand("codexDecision.showLatestDecision");
       panelRestored = true;
     }
@@ -185,7 +187,12 @@ function activateIntegration(vscode, context, { dataDirectory, ready = Promise.r
         if (disposed || result.status === "unsupported-platform") return result;
         output.appendLine(`Codex ${result.version}: Decision integration ${result.status}${result.changed ? ` (${result.action})` : ""}.`);
         reportedFailure = null;
-        if (result.changed || manual || installation?.status === "installed") await restorePanel();
+        const migratePanel = result.status === "ready" && typeof context.globalState?.get === "function" &&
+          typeof context.globalState?.update === "function" && context.globalState.get(PANEL_VERSION_KEY) !== CONTROL_VERSION;
+        if (result.changed || manual || installation?.status === "installed" || migratePanel) {
+          await restorePanel(manual && repair);
+        }
+        if (migratePanel) await context.globalState.update(PANEL_VERSION_KEY, CONTROL_VERSION);
         if (result.changed) {
           notify("showInformationMessage",
             "Decision integration was repaired and verified. Reload VS Code to activate the composer and settings.",

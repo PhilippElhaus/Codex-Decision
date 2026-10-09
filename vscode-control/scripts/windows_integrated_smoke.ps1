@@ -1,6 +1,7 @@
 param(
     [string]$Vsix,
     [string]$HostExtension,
+    [string]$HostRollback,
     [ValidatePattern('^[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}$')][string]$Distro = 'Ubuntu',
     [string]$CodeExecutable = (Join-Path $env:LOCALAPPDATA 'Programs\Microsoft VS Code\Code.exe')
 )
@@ -13,6 +14,12 @@ if (-not $Vsix) {
 if (-not $HostExtension) { $HostExtension = Join-Path $env:USERPROFILE '.vscode\extensions\openai.chatgpt-26.1007.21434-win32-x64' }
 $Vsix = [IO.Path]::GetFullPath($Vsix)
 $HostExtension = [IO.Path]::GetFullPath($HostExtension)
+$hostVersion = (Get-Content -LiteralPath (Join-Path $HostExtension 'package.json') -Raw | ConvertFrom-Json).version
+$supportedHosts = @('26.928.31416', '26.930.21537', '26.930.31730', '26.930.41038',
+    '26.930.51102', '26.930.61225', '26.1002.51308', '26.1007.21434')
+if ($hostVersion -notin $supportedHosts) { throw 'Native smoke requires a version-pinned supported Codex host.' }
+if (-not $HostRollback) { $HostRollback = Join-Path $env:LOCALAPPDATA ('Codex\codex-decision\rollback\' + $hostVersion) }
+$HostRollback = [IO.Path]::GetFullPath($HostRollback)
 $temporary = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\')
 if ([IO.Path]::GetPathRoot($temporary) -ieq 'D:\') { throw 'Native test temporary root must be off D:.' }
 foreach ($filename in @($Vsix, $CodeExecutable)) {
@@ -41,6 +48,24 @@ function Replace-One([string]$Filename, [string]$Needle, [string]$Replacement) {
     [IO.File]::WriteAllText($Filename, $text.Replace($Needle, $Replacement), $utf8)
 }
 
+function Assert-PlainPath([string]$Filename) {
+    $current = [IO.Path]::GetFullPath($Filename)
+    while ($current) {
+        if (((Get-Item -LiteralPath $current -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw 'Native fixture input contains a link or reparse point.'
+        }
+        $current = [IO.Path]::GetDirectoryName($current)
+    }
+}
+
+function Linux-Path([string]$Filename) {
+    $converted = (& wsl.exe -d $Distro -e wslpath -u $Filename).Trim()
+    if ($LASTEXITCODE -ne 0 -or -not $converted.StartsWith('/') -or $converted -match '[\r\n\x00]') {
+        throw 'Native fixture path could not be converted for WSL.'
+    }
+    return $converted
+}
+
 try {
     New-Item -ItemType Directory -Path $taskRoot, (Join-Path $profile 'User'), $extensions, $localState -Force | Out-Null
     [IO.File]::WriteAllText((Join-Path $taskRoot 'owner.json'), (@{ runId = $runId; purpose = 'Codex Decision isolated integrated VSIX smoke' } | ConvertTo-Json), $utf8)
@@ -62,7 +87,47 @@ try {
     # The Codex host has thousands of small assets. Bounded parallel copies avoid a long setup delay.
     & robocopy.exe $HostExtension $hostCopy /E /COPY:DAT /DCOPY:DAT /R:0 /W:0 /MT:16 /NP /NJH /NJS /NFL /NDL | Out-Null
     if ($LASTEXITCODE -ge 8) { throw 'Native Codex host fixture copy failed.' }
-    if ([IO.File]::ReadAllText((Join-Path $hostCopy 'out\extension.js')).Contains('codexDecision.bridge')) { throw 'Native smoke requires a pristine Codex host copy.' }
+    if ([IO.File]::ReadAllText((Join-Path $hostCopy 'out\extension.js')).Contains('codexDecision.bridge')) {
+        # A deployed host can seed this test. Restore only its owned copy with an exact copied rollback.
+        Assert-PlainPath $HostRollback
+        if (Get-ChildItem -LiteralPath $HostRollback -Recurse -Force -Attributes ReparsePoint -ErrorAction SilentlyContinue) {
+            throw 'Native host rollback contains a link or reparse point.'
+        }
+        $copiedRollback = Join-Path $localState ('Codex\codex-decision\rollback\' + $hostVersion)
+        $sourceManifest = Join-Path $HostRollback 'manifest.json'
+        $metadata = Get-Content -LiteralPath $sourceManifest -Raw | ConvertFrom-Json
+        if ($metadata.version -ne $hostVersion -or -not $metadata.original -or -not $metadata.patched) {
+            throw 'Native host rollback metadata does not match the copied supported host.'
+        }
+        $liveHostHash = (Get-FileHash -LiteralPath (Join-Path $HostExtension 'out\extension.js') -Algorithm SHA256).Hash
+        & robocopy.exe $HostRollback $copiedRollback /E /COPY:DAT /DCOPY:DAT /R:0 /W:0 /MT:4 /NP /NJH /NJS /NFL /NDL | Out-Null
+        if ($LASTEXITCODE -ge 8) { throw 'Native host rollback fixture copy failed.' }
+        foreach ($owned in @($hostCopy, $copiedRollback)) {
+            if (-not [IO.Path]::GetFullPath($owned).StartsWith($taskRoot + '\', [StringComparison]::OrdinalIgnoreCase)) {
+                throw 'Native restore targets must remain within this owned fixture.'
+            }
+            Assert-PlainPath $owned
+        }
+        $binary = Linux-Path (Join-Path $control 'plugin\hooks\bin\linux-x86_64\decisionctl')
+        $source = Linux-Path $control
+        $target = Linux-Path $hostCopy
+        $rollback = Linux-Path $copiedRollback
+        & wsl.exe -d $Distro -e $binary patch-webview restore --root $source --extension $target --backup $rollback | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw 'Version-pinned restore of the copied native host failed.' }
+        $originalFiles = @(Get-ChildItem -LiteralPath $copiedRollback -Recurse -File | Where-Object { $_.Name -ne 'manifest.json' })
+        if ($originalFiles.Count -ne 4) { throw 'Native smoke requires all four exact original Codex rollback files.' }
+        foreach ($file in $originalFiles) {
+            $relative = [IO.Path]::GetRelativePath($copiedRollback, $file.FullName)
+            if ((Get-FileHash -LiteralPath (Join-Path $hostCopy $relative) -Algorithm SHA256).Hash -ne
+                (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash) {
+                throw 'Restored native fixture differs from its verified original rollback.'
+            }
+        }
+        if ((Get-FileHash -LiteralPath (Join-Path $HostExtension 'out\extension.js') -Algorithm SHA256).Hash -ne $liveHostHash) {
+            throw 'Live Codex host changed while preparing the isolated fixture.'
+        }
+    }
+    if ([IO.File]::ReadAllText((Join-Path $hostCopy 'out\extension.js')).Contains('codexDecision.bridge')) { throw 'Native Codex host fixture was not restored to pristine bytes.' }
     foreach ($file in @('windows_integrated_smoke_runner.cjs', 'windows_integrated_smoke_wsl.cjs')) {
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot $file) -Destination (Join-Path $taskRoot $file)
     }

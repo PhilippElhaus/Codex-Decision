@@ -116,14 +116,14 @@ test("concurrent windows retry busy checks and accept only a verified completed 
   await assert.rejects(runIntegration(foreign.options), /changed host/);
 });
 
-function extensionFixture(setup, bootstrap) {
+function extensionFixture(setup, bootstrap, globalState) {
   const commands = new Map();
   const notifications = [];
   const log = [];
   const executed = [];
   const listeners = {};
   const settings = { autoRepairIntegration: true };
-  const context = { extensionUri: { fsPath: setup.options.controlRoot }, subscriptions: [] };
+  const context = { extensionUri: { fsPath: setup.options.controlRoot }, subscriptions: [], globalState };
   const vscode = {
     window: {
       createOutputChannel: () => ({ appendLine: (line) => log.push(line), show: () => {}, dispose() {} }),
@@ -239,6 +239,71 @@ test("a bundled plugin upgrade restores a hidden panel once when the Codex patch
   } finally { extension.dispose(); }
 });
 
+function panelMigrationState(version) {
+  let stored = version;
+  const updates = [];
+  return { updates,
+    get: () => stored,
+    async update(key, value) { updates.push({ key, value }); stored = value; },
+  };
+}
+
+test("an already deployed hook and patch restore the hidden panel once per control version", async () => {
+  const controlVersion = require("../../vscode-control/package.json").version;
+  for (const previous of [undefined, "0.0.0"]) {
+    const state = panelMigrationState(previous);
+    const setup = fixture(["ready", "ready"]);
+    const extension = extensionFixture(setup, Promise.resolve({ status: "ready", distro: "Ubuntu" }), state);
+    try {
+      await extension.integration.inspect(true, false);
+      await extension.integration.inspect(true, false);
+      assert.deepEqual(extension.executed, ["codexDecision.showLatestDecision"]);
+      assert.equal(state.updates.length, 1);
+      assert.equal(state.updates[0].value, controlVersion);
+      assert.deepEqual(setup.actions(), ["status", "status"], "a panel migration must not rewrite the verified patch");
+    } finally { extension.dispose(); }
+    const reloaded = extensionFixture(fixture(["ready", "ready", "ready", "ready"]),
+      Promise.resolve({ status: "ready", distro: "Ubuntu" }), state);
+    try {
+      await reloaded.integration.inspect(true, false);
+      await reloaded.integration.inspect(true, false);
+      assert.deepEqual(reloaded.executed, [], "reloads of the migrated version must preserve the user's focus");
+      await reloaded.commands.get("codexDecision.repairIntegration")();
+      await reloaded.commands.get("codexDecision.repairIntegration")();
+      assert.deepEqual(reloaded.executed, ["codexDecision.showLatestDecision", "codexDecision.showLatestDecision"],
+        "manual repair must reopen a panel the user hid after an earlier repair");
+      assert.equal(state.updates.length, 1);
+    } finally { reloaded.dispose(); }
+  }
+});
+
+test("the panel migration is saved only after the public focus command succeeds", async () => {
+  const state = panelMigrationState();
+  const setup = fixture(["ready", "ready"]);
+  const extension = extensionFixture(setup, Promise.resolve({ status: "ready", distro: "Ubuntu" }), state);
+  const execute = extension.vscode.commands.executeCommand;
+  extension.vscode.commands.executeCommand = async () => { throw new Error("view unavailable"); };
+  try {
+    assert.equal((await extension.integration.inspect(true, false)).status, "failed");
+    assert.deepEqual(state.updates, []);
+    extension.vscode.commands.executeCommand = execute;
+    assert.equal((await extension.integration.inspect(true, false)).status, "ready");
+    assert.deepEqual(extension.executed, ["codexDecision.showLatestDecision"]);
+    assert.equal(state.updates.length, 1);
+  } finally { extension.dispose(); }
+});
+
+test("contexts without persistent state do not repeatedly focus a healthy panel automatically", async () => {
+  for (let reload = 0; reload < 2; reload += 1) {
+    const extension = extensionFixture(fixture(["ready", "ready"]), Promise.resolve({ status: "ready", distro: "Ubuntu" }));
+    try {
+      await extension.integration.inspect(true, false);
+      await extension.integration.inspect(true, false);
+      assert.deepEqual(extension.executed, []);
+    } finally { extension.dispose(); }
+  }
+});
+
 test("corrected configuration and manual repair retry a failed bootstrap without a window reload", async () => {
   const setup = fixture(["ready", "ready"]);
   let corrected = false;
@@ -281,7 +346,7 @@ test("concurrent manual checks serialize their bootstrap factories", async () =>
     await Promise.all(Array.from({ length: 3 }, () => extension.integration.inspect(true, true)));
     assert.equal(maximum, 1);
     assert.deepEqual(setup.actions(), ["status", "status", "status"]);
-    assert.deepEqual(extension.executed, ["codexDecision.showLatestDecision"]);
+    assert.deepEqual(extension.executed, Array(3).fill("codexDecision.showLatestDecision"));
   } finally { extension.dispose(); }
 });
 

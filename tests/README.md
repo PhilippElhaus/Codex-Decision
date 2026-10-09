@@ -4,7 +4,7 @@ The integrated VSIX must pass the native clean-install check before release:
 
 ```powershell
 pwsh -NoProfile -File .\vscode-control\scripts\windows_integrated_smoke.ps1 `
-  -Vsix .\.local\submission\codex-decision-0.11.6.vsix -Distro Ubuntu
+  -Vsix .\.local\submission\codex-decision-0.11.7.vsix -Distro Ubuntu
 ```
 
 This check uses the actual packaged extension, a copied supported Codex host,
