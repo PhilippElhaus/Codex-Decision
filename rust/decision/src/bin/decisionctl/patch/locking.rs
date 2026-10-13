@@ -1,6 +1,11 @@
 //! One kernel lock protects status and mutations without writing a lock file.
 use super::*;
 use std::fs::File;
+use std::time::Duration;
+
+#[cfg(all(test, unix))]
+#[path = "locking_tests.rs"]
+mod tests;
 
 pub(super) fn reject_links(path: &Path) -> Result<(), String> {
     for ancestor in path
@@ -32,6 +37,10 @@ fn is_reparse_point(_: &fs::Metadata) -> bool {
 }
 
 pub(super) fn acquire(backup: &Path) -> Result<File, String> {
+    acquire_with_timeout(backup, Duration::from_secs(10))
+}
+
+pub(super) fn acquire_with_timeout(backup: &Path, timeout: Duration) -> Result<File, String> {
     let parent = backup.parent().ok_or("rollback parent missing")?;
     reject_links(parent)?;
     if !parent.is_dir() {
@@ -41,21 +50,30 @@ pub(super) fn acquire(backup: &Path) -> Result<File, String> {
     #[cfg(unix)]
     {
         use std::os::unix::io::AsRawFd;
+        use std::time::Instant;
+        let deadline = Instant::now() + timeout;
         // The existing directory handle owns this nonblocking lock until drop.
         // No durable marker survives a crash, and status remains read-only.
-        if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
+        // Concurrent windows can spend seconds verifying assets on Windows drives.
+        // SAFETY: file owns the descriptor throughout every lock attempt.
+        while unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
             let error = std::io::Error::last_os_error();
-            return Err(if error.kind() == std::io::ErrorKind::WouldBlock {
-                "Decision patch is busy; retry later".into()
-            } else {
-                format!("Decision patch lock failed: {error}")
-            });
+            if error.kind() != std::io::ErrorKind::WouldBlock
+                && error.kind() != std::io::ErrorKind::Interrupted
+            {
+                return Err(format!("Decision patch lock failed: {error}"));
+            }
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                return Err("Decision patch is busy; retry later".into());
+            }
+            std::thread::sleep(remaining.min(Duration::from_millis(50)));
         }
         Ok(file)
     }
     #[cfg(not(unix))]
     {
-        let _ = file;
+        let _ = (file, timeout);
         Err("Decision patch requires the WSL or Unix executable".into())
     }
 }

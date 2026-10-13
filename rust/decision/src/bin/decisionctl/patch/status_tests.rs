@@ -169,7 +169,8 @@ fn status_refuses_host_rollback_and_metadata_tampering() {
 fn patch_lock_is_exclusive_released_on_drop_and_rejects_linked_ancestors() {
     let fixture = Fixture::new();
     let lock = locking::acquire(&fixture.backup).unwrap();
-    let error = locking::acquire(&fixture.backup).unwrap_err();
+    let error =
+        locking::acquire_with_timeout(&fixture.backup, std::time::Duration::ZERO).unwrap_err();
     assert_eq!(error, "Decision patch is busy; retry later");
     assert!(!fixture.backup.exists(), "locking creates no state");
     drop(lock);

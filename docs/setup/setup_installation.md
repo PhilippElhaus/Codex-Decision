@@ -3,12 +3,14 @@
 For Windows VS Code with Linux x86_64 WSL, install the integrated VSIX from the [latest release](https://github.com/PhilippElhaus/Codex-Decision/releases/latest):
 
 ```bash
-code --install-extension codex-decision-0.11.7.vsix --force
+code --install-extension codex-decision-0.11.8.vsix --force
 ```
 
 This single package contains the hook, skill, session controls, settings, and verified composer patch. Activation updates an existing local plugin without changing its identity or data directory. A fresh install registers the bundled local marketplace. The installer preserves credentials, settings, session flags, saved originals, and Codex hook trust records. It rejects ambiguous plugin registrations instead of creating a duplicate hook.
 
 The extension repairs supported Codex builds at startup and after extension changes. Repairs verify the build's exact files and keep rollback copies outside the repository. Unknown or changed builds show a diagnostic. Run **Decision: Check Integration** to inspect the installation. Run **Decision: Repair Integration** to retry and reopen the panel. Run **Developer: Reload Window** after a repair.
+
+Each patch command waits up to 10 seconds for another Decision check or repair to release its lock. This prevents concurrent VS Code windows from reporting a busy error during normal verification. The kernel releases the lock when its process exits. If contention continues, Decision reports the diagnostic before writing any Codex files. Run **Decision: Repair Integration** to retry.
 
 Open `/hooks` in the environment that runs your tools. Review **Codex Decision → PostToolUse** if Codex requires trust, then open a local thread. Codex binds trust to the hook definition; the integrated installer never edits its trust database. Verify the hook after an update:
 

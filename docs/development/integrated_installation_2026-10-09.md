@@ -37,3 +37,11 @@ The integrated 0.11.7 patch restores the Decision panel once per control version
 Regressions cover missing and older migration records, an already verified hook and patch, a failed focus command, persistence across reload, and explicit reopening. The integrated package and bundled hook retain one version, 0.11.7.
 
 The 0.11.7 package passed both native launches against a safely restored temporary copy of the deployed Codex host. Its full Node suite passed 135 tests, with the same three expected WSL skips; all fourteen Python checks passed. The published 0.11.6 package remains available as a rollback.
+
+## Concurrent startup checks, 2026-10-13
+
+Two Windows VS Code windows reported different states for the same Codex build `26.1007.21434`: one verified the integration, while the other reported `Decision patch is busy; retry later`. The patch was already valid, and hook trust remained enabled. Five concurrent status checks against the installed 0.11.7 package reproduced three busy failures after the control's four attempts over 1.75 seconds. One file verification took about one second.
+
+Version 0.11.8 keeps the existing kernel lock and waits up to 10 seconds per patch command, polling every 50 milliseconds. Status still writes no state. A persistent lock retains the existing diagnostic. Subprocess regressions verify delayed release beyond the former retry window, bounded timeout, recovery after the owner is killed, exclusivity, and unchanged rollback-directory contents and timestamp.
+
+The full Rust suite, Clippy, Node suite, and fourteen Python checks passed. Five concurrent checks against the new production binary all returned `ready`, with no host-file changes. The exact VSIX passed both isolated native Windows launches, including automatic repair, repeat-check idempotence, provider forwarding, and panel rendering. The package SHA-256 is `d88bfff81e9683d1507d3fa75629b54077c859128ddce44fd4aeeebea6222d98`.
