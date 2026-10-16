@@ -14,6 +14,8 @@ use std::time::Duration;
 
 #[path = "hook_process/event_log.rs"]
 mod event_log;
+#[path = "hook_process/fallback.rs"]
+mod fallback;
 #[path = "hook_process/orchestration.rs"]
 mod orchestration;
 #[path = "hook_process/publication.rs"]

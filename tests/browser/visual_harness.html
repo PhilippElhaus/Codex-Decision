@@ -51,11 +51,11 @@
     const disabled = demo === "disabled" || demo === "disabled-pending";
     const history = ["judged 42 lines · omitted 29 · Bash"];
     window.acquireVsCodeApi = () => ({ postMessage(request) {
-      const settings = request.action === "settingsRead" ? { action: "ready", hasKey: true, keyLength: 32,
+      const settings = request.action === "settingsRead" ? { action: "ready", hasKey: true, keyLength: 32, providerKeys: { openai: { hasKey: true }, typesafe: { hasKey: true } },
         lifetime: { calls: 126, completed: 124, replaced: 41, linesJudged: 87320, linesOmitted: 915,
           linesProtected: 1420, linesRelevanceJudged: 6200, averageMs: 487 },
-        defaults: { provider:"openai", model:"gpt-6-luna", mode: "replace", relevance_policy: { relevant_max: 5 } },
-        config: { provider:"openai", model:"gpt-6-luna", mode: "replace", log_limit_mb: 50, never_delete_logs: true,
+        defaults: { provider:"openai", model:"gpt-6-luna", fallback_enabled:false, mode: "replace", relevance_policy: { relevant_max: 5 } },
+        config: { provider:"openai", model:"gpt-6-luna", fallback_enabled:false, mode: "replace", log_limit_mb: 50, never_delete_logs: true,
           relevance_policy: { relevant_max: 5 } } } :
         request.action === "settingsTest" ? { action: "tested", result: { ok: true, model: "gpt-6-luna" } } : undefined;
       queueMicrotask(() => window.dispatchEvent(new MessageEvent("message", { data: {

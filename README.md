@@ -4,14 +4,14 @@
 
 Codex Decision selects repetitive lines for removal from supported local tool output. Errors and useful evidence stay visible. Every shortened result links to the complete original.
 
-**Codex Decision 0.11.8** — [Download the integrated VSIX](https://github.com/PhilippElhaus/Codex-Decision/releases/latest).
+**Codex Decision 0.12.0** — [Download the integrated VSIX](https://github.com/PhilippElhaus/Codex-Decision/releases/latest).
 
 ## Get started
 
 Install the single VSIX in Windows VS Code with a Linux x86_64 WSL environment:
 
 ```bash
-code --install-extension codex-decision-0.11.8.vsix --force
+code --install-extension codex-decision-0.12.0.vsix --force
 ```
 
 The package contains the hook, skill, session controls, settings, and verified Codex UI patch. On activation it installs or updates the local plugin and repairs supported Codex builds. Existing plugin data and thread choices remain in place. Run **Developer: Reload Window** after the integration repair, then open your Codex thread. Review the hook in `/hooks` if Codex requests trust. No second package or manual composer patch is needed.
@@ -21,6 +21,8 @@ Use **Decision: Check Integration** for status and **Decision: Repair Integratio
 ### 1. Connect Decision
 
 Sign in to Codex, select **OpenAI Decisions** or **TypeSafe Jev**, then enter and test that provider’s API key in **Connect Decision**. The key stays out of chat.
+
+Save a separate key for each provider and switch without entering it again. Decision settings show both saved-key states. Enable **Use the other provider if needed** for one automatic fallback when the primary key is missing or a provider request fails. Fallback is off by default; enabling it permits eligible output to reach either provider. Failed evaluations keep the full output.
 
 <img src="docs/images/decision-connect.png" width="760" alt="Connect Decision screen with an empty API key field">
 
@@ -47,6 +49,8 @@ Select **Latest** for the current result or **Totals** for the selected thread�
 <img src="docs/images/decision-totals.png" width="1000" alt="Decision Totals view with saved session counts and reasons outputs stayed complete">
 
 Screenshots use synthetic data. Code-mode scripts can still serialize the original tool result after a hook records a replacement, so the panel’s removal counts do not establish downstream token savings. See the [processing investigation](docs/development/processing_recovery_2026-10-08.md) and [troubleshooting](docs/setup/setup_installation.md).
+
+The [cross-session effectiveness audit](docs/development/usage_effectiveness_2026-10-16.md) separates API reliability, committed hook payloads, and observed delivery. The UI labels hook estimates and unverified delivery explicitly.
 
 ## Documentation
 

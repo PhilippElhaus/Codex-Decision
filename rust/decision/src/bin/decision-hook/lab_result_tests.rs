@@ -250,6 +250,8 @@ fn native_direct_lab_contracts_replace_without_widening_generic_mcp_policy() {
         max_chars: 2_000_000,
         model: "jev-latest".into(),
         provider: codex_decision::provider::Provider::TypeSafe,
+        fallback_enabled: false,
+        fallback_from: None,
         timeout: 3.0,
         allow_mcp_replacement: false,
         policy: RelevancePolicy::default(),

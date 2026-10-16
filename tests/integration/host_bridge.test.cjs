@@ -156,11 +156,12 @@ test("patched host preserves each provider across key, settings, and external-li
     for (const action of ["testApiKey", "saveApiKey", "settingsTest", "settingsSave", "openProvider", "openTypeSafe"]) {
       const message = { type: "codex-decision", id: ++id, action, provider, key: "synthetic-key",
         mode: "replace", relevancePolicy: { omit_min: 95, exact_max: 5 },
-        logLimitMb: 50, neverDeleteLogs: false };
+        logLimitMb: 50, neverDeleteLogs: false, fallbackEnabled: provider === "typesafe" };
       const reply = await bridge.send(message);
       assert.equal(reply.id, message.id, `${action} must receive an acknowledgement`);
       assert.equal(received.at(-1).provider, provider, `${action} must retain ${provider}`);
       assert.equal(received.at(-1).action, action);
+      assert.equal(received.at(-1).fallbackEnabled, provider === "typesafe");
     }
   }
   await bridge.send({ type: "codex-decision", id: ++id, action: "testApiKey", key: "synthetic-key" });
@@ -179,4 +180,17 @@ test("patched host rejects invalid providers before forwarding keys or link requ
   }
   assert.equal(calls, 0);
   assert.equal(bridge.replies.length, 0);
+});
+
+
+test("patched host rejects invalid fallback consent and forwards explicit false", async () => {
+  const received = [];
+  const bridge = await hostBridge(async (_command, request) => { received.push(request); return {}; });
+  const request = { type: "codex-decision", action: "settingsSave", key: "", provider: "openai",
+    mode: "replace", relevancePolicy: { relevant_max: 5 }, logLimitMb: 50, neverDeleteLogs: false };
+  for (const fallbackEnabled of [null, "true", 1, {}]) await bridge.send({ ...request, fallbackEnabled });
+  assert.equal(received.length, 0);
+  await bridge.send({ ...request, fallbackEnabled: false });
+  assert.equal(received.length, 1);
+  assert.equal(received[0].fallbackEnabled, false);
 });

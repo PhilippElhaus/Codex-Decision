@@ -4,7 +4,7 @@ The integrated VSIX must pass the native clean-install check before release:
 
 ```powershell
 pwsh -NoProfile -File .\vscode-control\scripts\windows_integrated_smoke.ps1 `
-  -Vsix .\.local\submission\codex-decision-0.11.8.vsix -Distro Ubuntu
+  -Vsix .\.local\submission\codex-decision-0.12.0.vsix -Distro Ubuntu
 ```
 
 This check uses the actual packaged extension, a copied supported Codex host,
@@ -14,6 +14,10 @@ restart idempotence, provider forwarding, session defaults, and native panel
 rendering. It preserves the user's installed extensions, credentials, and chats.
 
 Run the current release checks from the repository root. The offline tests use synthetic tool output and provider replies; they do not need an API key.
+
+Provider fallback tests exercise both directions, missing keys, malformed answers, failed later batches, and two maximum-length keys. They verify one complete-provider retry, exact originals, retained attempts, and no fallback across local safety checks. Fallback stays off for existing configurations.
+
+Run a read-only effectiveness audit with `node scripts/usage_effectiveness_audit.cjs --data-dir <PLUGIN_DATA> --codex-sessions <CODEX_HOME/sessions> --observation-date YYYY-MM-DD`. The report contains aggregate metadata and separates partial history, committed hook payloads, and observed omission headers. It does not read credentials, contact a provider, or establish delivered token savings from receipts alone. See the [2026-10-16 audit](../docs/development/usage_effectiveness_2026-10-16.md) for scope and limits.
 
 Use `cargo bench --locked -p codex-decision --bench pipeline -- all` for offline CPU and allocation measurements. Use `equivalence` instead of `all` to print fingerprints for 1,000 seeded complete packing cases. Give before and after builds different `CARGO_TARGET_DIR` paths. Compare fingerprints before interpreting timing results.
 
@@ -28,6 +32,8 @@ python3 vscode-control/scripts/browser_smoke.py
 # Linux CI and Lab-Control (requires Playwright with Chromium):
 python3 vscode-control/scripts/browser_smoke.py --browser chromium
 ```
+
+In Lab-Control, keep the default temporary directory for installer data. Set `CODEX_DECISION_TEST_EXECUTABLE_TMP_ROOT` to an ignored directory under `/workspace/.local/` for the Python executable fixture; the container's `/tmp` mount does not permit execution.
 
 Rust process tests launch the real hook against a local mock API. They cover routing, exact saved originals, incomplete and failed batches, Choice gate keep/filter/error paths, protected lines, malformed config, shared settings, private hook status, release versions, hook trust inspection, the pinned Codex webview patch, and two simultaneous session IDs with separate enabled flags and records. Node tests carry the pinned host bridge through the extension command to saved selections, cover synchronous command lookup failures and rejected commands, and cover the control bridge, shared settings without a thread, aggregated activity, one-time enabled defaults, preserved per-session choices, configuration and key validation, bounded log reads, panel validation, and connection errors. The browser smoke test renders the actual composer and settings scripts in Edge at four widths and checks internal thread changes without a URL change, plus healthy and failed API states, missing host replies, selection recovery, and home-screen settings. The panel harness renders the current version-6 cumulative relevance view, protected and pending rows, and historical version-3/4 snapshots. It checks result shrink and growth, changed source text and scores, animation restart, and clearing and restoring the panel. Python tests validate documentation links and default config values. The hardening regressions cover concurrent writes in separate processes, linked directory chains, oversized response streams, failed receipt publication, held log locks, physical-line limits, and focused-panel selection. [CI](../.github/workflows/verify.yml) runs the offline Rust, Node, and Python checks, builds and verifies both packages, and runs the real webview harnesses in Chromium. Edge remains a native Windows release check. Patch lifecycle tests use explicit fixture path conversion and run their assertions on Linux without WSL. Activity tests cover atomic log replacement, retained tails, and truncation. Settings tests drop replies, reject late replies, and throw from the transport to verify recovery.
 

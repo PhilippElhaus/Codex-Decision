@@ -9,6 +9,27 @@ pub enum Provider {
 }
 
 impl Provider {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::OpenAi => "openai",
+            Self::TypeSafe => "typesafe",
+        }
+    }
+
+    pub fn alternate(self) -> Self {
+        match self {
+            Self::OpenAi => Self::TypeSafe,
+            Self::TypeSafe => Self::OpenAi,
+        }
+    }
+
+    pub fn default_model(self) -> &'static str {
+        match self {
+            Self::OpenAi => "gpt-6-luna",
+            Self::TypeSafe => "jev-latest",
+        }
+    }
+
     pub fn parse(value: &str) -> Result<Self, String> {
         match value {
             "openai" => Ok(Self::OpenAi),

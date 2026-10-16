@@ -9,6 +9,36 @@ pub(super) fn decision_agent() -> ureq::Agent {
     ureq::AgentBuilder::new().redirects(0).build()
 }
 
+#[derive(Debug)]
+pub(super) struct EvaluationFailure {
+    pub(super) reason: String,
+    pub(super) provider_unavailable: bool,
+}
+
+impl From<String> for EvaluationFailure {
+    fn from(reason: String) -> Self {
+        Self {
+            reason,
+            provider_unavailable: false,
+        }
+    }
+}
+
+impl From<&str> for EvaluationFailure {
+    fn from(reason: &str) -> Self {
+        reason.to_owned().into()
+    }
+}
+
+impl EvaluationFailure {
+    fn provider(reason: String) -> Self {
+        Self {
+            reason,
+            provider_unavailable: true,
+        }
+    }
+}
+
 pub(super) fn evaluate<T>(
     scoped: &Path,
     agent: &ureq::Agent,
@@ -16,7 +46,7 @@ pub(super) fn evaluate<T>(
     key: &str,
     timeout: f64,
     validate: impl FnOnce(&Value) -> Result<T, String>,
-) -> Result<(Value, T), String> {
+) -> Result<(Value, T), EvaluationFailure> {
     validate_request_budget(request)?;
     let provider = codex_decision::provider::Provider::for_model(
         request["model"].as_str().ok_or("missing model")?,
@@ -26,12 +56,13 @@ pub(super) fn evaluate<T>(
         return Err("Decision context budget".into());
     }
     let endpoint = endpoint::endpoint(provider)?;
-    evaluate_prepared(
+    evaluate_prepared_inner(
         scoped, agent, request, &encoded, key, timeout, &endpoint, validate,
     )
 }
 
 #[allow(clippy::too_many_arguments)] // Keep the tested transport and typed-answer boundary explicit.
+#[cfg(test)]
 fn evaluate_prepared<T>(
     scoped: &Path,
     agent: &ureq::Agent,
@@ -42,15 +73,40 @@ fn evaluate_prepared<T>(
     endpoint: &str,
     validate: impl FnOnce(&Value) -> Result<T, String>,
 ) -> Result<(Value, T), String> {
+    evaluate_prepared_inner(
+        scoped, agent, request, encoded, key, timeout, endpoint, validate,
+    )
+    .map_err(|error| error.reason)
+}
+
+#[allow(clippy::too_many_arguments)] // Keep local durability errors separate from provider failures.
+fn evaluate_prepared_inner<T>(
+    scoped: &Path,
+    agent: &ureq::Agent,
+    request: &Value,
+    encoded: &[u8],
+    key: &str,
+    timeout: f64,
+    endpoint: &str,
+    validate: impl FnOnce(&Value) -> Result<T, String>,
+) -> Result<(Value, T), EvaluationFailure> {
     // Count attempts before sending, including requests whose answers fail.
     // Completion statistics still roll back with an unsuccessful result.
     hook_health(scoped, "request", "")?;
     let mut outcome = RequestOutcome::default();
     let result = (|| {
-        let body = send_request(scoped, agent, encoded, key, timeout, endpoint, &mut outcome)?;
-        let response = strict_json::parse(&body).map_err(|_| "invalid decision response")?;
-        let response = codex_decision::provider::normalize_response(request, response)?;
-        let judgment = validate(&response)?;
+        let body = send_request(scoped, agent, encoded, key, timeout, endpoint, &mut outcome)
+            .map_err(|error| match error.as_str() {
+                "Decision request failed"
+                | "Decision response read failed"
+                | "Decision response too large" => EvaluationFailure::provider(error),
+                _ => EvaluationFailure::from(error),
+            })?;
+        let response = strict_json::parse(&body)
+            .map_err(|_| EvaluationFailure::provider("invalid decision response".into()))?;
+        let response = codex_decision::provider::normalize_response(request, response)
+            .map_err(EvaluationFailure::provider)?;
+        let judgment = validate(&response).map_err(EvaluationFailure::provider)?;
         Ok((response, judgment))
     })();
     if !outcome.cancelled {

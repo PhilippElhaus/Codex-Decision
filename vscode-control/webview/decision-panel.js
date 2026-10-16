@@ -84,7 +84,7 @@
 
   function batchStatus(decision) {
     return decision.status === "candidate" ? "Preview · full output kept" :
-      decision.status === "replace" ? "Filtered" : decision.status === "processing" ? "Evaluating" : "Full output kept";
+      decision.status === "replace" ? "Hook replacement · delivery unverified" : decision.status === "processing" ? "Evaluating" : "Full output kept";
   }
 
   function showTotals() {
@@ -92,6 +92,7 @@
     cancelAnimationFrame(animation);
     const { header, status } = makeHeader(currentActivity ? "This thread" : "Decision");
     status.textContent = currentActivity?.unavailable ? "Saved activity unavailable" :
+      currentActivity?.totals?.replaced > 0 ? "Hook totals · delivery unverified" :
       currentActivity ? "Saved totals" : "No thread selected";
     app.replaceChildren(header, window.DecisionTotals.render(currentActivity));
     updateActivity(currentActivity);

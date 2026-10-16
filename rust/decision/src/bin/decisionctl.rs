@@ -13,6 +13,8 @@ use std::process::Command;
 
 #[path = "decisionctl/activity.rs"]
 mod activity;
+#[path = "decisionctl/credentials.rs"]
+mod credentials;
 #[path = "decisionctl/patch.rs"]
 mod patch;
 #[path = "decisionctl/release.rs"]
@@ -56,39 +58,13 @@ fn set_key(data_dir: &Path, provider: codex_decision::provider::Provider) -> Res
         .read_to_string(&mut input)
         .map_err(|error| error.to_string())?;
     let key = input.trim();
-    if !(8..=4096).contains(&key.len()) || key.chars().any(char::is_whitespace) {
+    if !(8..=4096).contains(&key.len())
+        || key.chars().any(char::is_whitespace)
+        || key.contains('\0')
+    {
         return Err("invalid key".into());
     }
-    let path = data_dir.join(".env");
-    let name = provider.key_name();
-    let old = match fs::symlink_metadata(&path) {
-        Err(error) if error.kind() == io::ErrorKind::NotFound => String::new(),
-        Err(_) => return Err("credential stat failed".into()),
-        Ok(metadata) => {
-            if !metadata.is_file() || metadata.file_type().is_symlink() || metadata.len() > 8192 {
-                return Err("unsafe credential".into());
-            }
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                if metadata.permissions().mode() & 0o077 != 0 {
-                    return Err("unsafe credential permissions".into());
-                }
-            }
-            fs::read_to_string(&path).map_err(|_| "credential read failed")?
-        }
-    };
-    let mut lines: Vec<_> = old
-        .lines()
-        .filter(|line| !line.trim().starts_with(&format!("{name}=")))
-        .map(str::to_owned)
-        .collect();
-    lines.push(format!("{name}={key}"));
-    let content = lines.join("\n") + "\n";
-    if content.len() > 8192 {
-        return Err("credential too large".into());
-    }
-    write_private(&path, content.as_bytes())
+    credentials::save(data_dir, provider, key)
 }
 
 fn package(root: &Path) -> Result<(), String> {

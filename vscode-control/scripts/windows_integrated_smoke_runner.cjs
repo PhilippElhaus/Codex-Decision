@@ -49,15 +49,17 @@ async function providerBridge(checks) {
     for (const action of ["testApiKey", "saveApiKey", "settingsTest", "settingsSave", "openProvider"]) {
       // Empty keys avoid test credentials and real connection requests.
       const message = { type: "codex-decision", id: ++id, action, provider, key: "",
-        mode: "replace", relevancePolicy: { relevant_max: 5 }, logLimitMb: 50, neverDeleteLogs: false };
+        mode: "replace", relevancePolicy: { relevant_max: 5 }, logLimitMb: 50, neverDeleteLogs: false,
+        fallbackEnabled: provider === "typesafe" };
       handler(message);
       await new Promise((resolve) => setImmediate(resolve));
       assert.equal(replies.at(-1).id, id);
       assert.equal(captured.provider, provider);
       assert.equal(captured.action, action);
+      assert.equal(captured.fallbackEnabled, provider === "typesafe");
     }
   }
-  checks.push("packaged host bridge retains OpenAI and TypeSafe across all provider actions");
+  checks.push("packaged host bridge retains OpenAI, TypeSafe, and fallback consent across all provider actions");
 }
 
 async function actualPanel(dataDirectory, checks) {
@@ -76,10 +78,12 @@ async function actualPanel(dataDirectory, checks) {
     const reply = await vscode.commands.executeCommand("codexDecision.bridge", {
       action: "settingsSave", viewId: "native-integrated-view", sessionId: session,
       provider: chosen, key: "", mode: "replace", relevancePolicy: { relevant_max: 5 },
-      logLimitMb: 50, neverDeleteLogs: false,
+      logLimitMb: 50, neverDeleteLogs: false, fallbackEnabled: chosen === "typesafe",
     });
     assert.equal(reply.settings.action, "saved");
     assert.equal(reply.provider, chosen);
+    assert.equal(reply.fallbackEnabled, chosen === "typesafe");
+    assert.equal((await core.readGlobalSettings(dataDirectory)).fallback_enabled, chosen === "typesafe");
     assert.equal((await core.readGlobalSettings(dataDirectory)).provider, chosen);
     assert.equal((await core.readGlobalSettings(dataDirectory)).model, chosen === "openai" ? "gpt-6-luna" : "jev-latest");
   }

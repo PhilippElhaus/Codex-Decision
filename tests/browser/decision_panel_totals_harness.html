@@ -36,6 +36,9 @@
     const report = {initialRestored,
       persistedMode:saved.panelMode === "totals",
       totalsForA:metric("calls") === "9" && metric("seen") === "147" && metric("linesActuallyOmitted") === "70",
+      deliveryStatusClear:document.querySelector(".batch-status").textContent === "Hook totals · delivery unverified" &&
+        document.querySelector('[data-metric="replaced"] dt').textContent === "Hook replacements" &&
+        document.querySelector('[data-metric="linesActuallyOmitted"] dt').textContent === "Lines omitted by hook",
       requestStages:metric("responsesReceived") === "8" && metric("responsesValidated") === "7" &&
         metric("requestFailures") === "1" && metric("requestCancelled") === "1",
       recordedSkipDefinition:document.querySelector('[data-metric="skipped"]').title.includes("Named skip entries persisted in the health ledger.") &&
@@ -93,7 +96,9 @@
     send(null,{calls:null,skipped:null,unavailable:true,message:"Saved activity could not be read for this thread."});
     report.failedReadRetainsScope = document.querySelector(".batch-status").textContent === "Saved activity unavailable" && metric("calls") === "—";
     send(null,activityB);
-    report.failedReadRecovers = document.querySelector(".batch-status").textContent === "Saved totals" && metric("calls") === "2";
+    report.failedReadRecovers = document.querySelector(".batch-status").textContent === "Hook totals · delivery unverified" && metric("calls") === "2";
+    send(null,{...activityB,totals:{...activityB.totals,replaced:0,linesActuallyOmitted:0}});
+    report.emptyReplacementsStayNeutral = document.querySelector(".batch-status").textContent === "Saved totals";
     send(null,null);
     report.noThreadClearsCounters = metric("calls") === "—" && document.querySelector(".activity-counts").textContent.includes("— API requests");
     report.noThreadIsConcise = document.querySelectorAll(".totals-metric").length === 14 &&

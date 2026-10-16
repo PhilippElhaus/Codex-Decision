@@ -77,11 +77,11 @@
       ["requestFailures", "Requests failed", totals.requestFailures],
       ["requestCancelled", "Attempts cancelled locally", totals.requestCancelled],
       ["completed", "Completed line evaluations", totals.completed],
-      ["replaced", "Outputs filtered", totals.replaced],
+      ["replaced", "Hook replacements", totals.replaced],
       ["candidates", "Previews", totals.candidates],
       ["kept", "Evaluated and kept full", totals.kept],
       ["linesRelevanceJudged", "Lines judged", totals.linesRelevanceJudged],
-      ["linesActuallyOmitted", "Lines removed", totals.linesActuallyOmitted],
+      ["linesActuallyOmitted", "Lines omitted by hook", totals.linesActuallyOmitted],
       ["errors", "Recorded hook errors", totals.errors],
     ];
     const meanings = {

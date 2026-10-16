@@ -119,7 +119,9 @@
 
   function healthReason(reason) {
     const known = {
-      DECISION_KEY_MISSING: "API key missing or unreadable",
+      DECISION_KEY_MISSING: "API key missing",
+      DECISION_KEY_INVALID: "Saved API key invalid",
+      DECISION_CREDENTIAL_UNSAFE: "Credential file is unreadable or unsafe",
       DECISION_HTTP_401: "API key rejected",
       DECISION_HTTP_403: "Access denied",
       DECISION_HTTP_429: "Rate limited",
@@ -138,6 +140,7 @@
   function keyResult(result) {
     if (result?.ok) return { text: "OK", ok: true };
     const labels = {
+      DECISION_KEY_INVALID: "Invalid", DECISION_CREDENTIAL_UNSAFE: "Credential file unavailable",
       DECISION_KEY_MISSING: "Enter a valid key", DECISION_HTTP_401: "Invalid", DECISION_KEY_EXPIRED: "Expired",
       DECISION_HTTP_403: "Access denied", DECISION_HTTP_429: "Rate limited", DECISION_TIMEOUT: "Timed out",
       DECISION_NETWORK_ERROR: "Network error", DECISION_INVALID_RESPONSE: "Invalid response",
@@ -151,10 +154,23 @@
     label.dataset.ok = String(ok);
   }
 
+  function showProviderKeys() {
+    if (!setup) return;
+    const selected = setup.querySelector("#codex-decision-provider").value;
+    const saved = Boolean(state.providerKeys?.[selected]?.hasKey);
+    setup.querySelector("#codex-decision-key").placeholder = saved ? "Saved key kept unless replaced" : "Enter API key";
+    setup.querySelector("#codex-decision-provider-keys").textContent = [
+      ["openai", "OpenAI Decisions"], ["typesafe", "TypeSafe Jev"],
+    ].map(([name, label]) => `${label}: ${state.providerKeys?.[name]?.hasKey ? "key saved" : "no saved key"}`).join(" · ");
+    setup.querySelector("#codex-decision-save-key").textContent = saved && !setup.querySelector("#codex-decision-key").value
+      ? "Use saved key" : "Save API key";
+  }
+
   function requestKey(action) {
     if (keyRequestId) return;
     const key = setup.querySelector("#codex-decision-key").value;
-    if (key.length < 8 || key.length > 4096 || /\s|\0/.test(key)) {
+    const selected = setup.querySelector("#codex-decision-provider").value;
+    if ((!key && !state.providerKeys?.[selected]?.hasKey) || (key && (key.length < 8 || key.length > 4096 || /\s|\0/.test(key)))) {
       showKeyStatus("Enter a valid key", false);
       return;
     }
@@ -263,12 +279,13 @@
     setup.setAttribute("role", "dialog");
     setup.setAttribute("aria-modal", "true");
     setup.setAttribute("aria-labelledby", "codex-decision-connect-title");
-    setup.innerHTML = `<div id="codex-decision-connect-art" aria-hidden="true"><pre></pre></div><div id="codex-decision-connect-card"><div id="codex-decision-connect-heading"><h1 id="codex-decision-connect-title">Connect Decision</h1><img id="codex-decision-connect-icon" src="./assets/decision-icon.png" alt=""></div><p>Choose a provider and enter its API key.</p><label for="codex-decision-provider">Provider</label><select id="codex-decision-provider"><option value="openai">OpenAI Decisions</option><option value="typesafe">TypeSafe Jev</option></select><label for="codex-decision-key">API key</label><input id="codex-decision-key" type="password" autocomplete="off" spellcheck="false" maxlength="4096"><div id="codex-decision-connect-actions"><button id="codex-decision-test-key" type="button">Test API key</button><span id="codex-decision-key-status" role="status" aria-live="polite"></span></div><div id="codex-decision-connect-footer"><button id="codex-decision-save-key" type="button">Save API key</button><button id="codex-decision-skip-key" type="button">Skip for now</button></div><p id="codex-decision-connect-link">Need a key? <a href="https://platform.openai.com/api-keys" rel="noopener noreferrer">Get a provider API key</a></p></div>`;
+    setup.innerHTML = `<div id="codex-decision-connect-art" aria-hidden="true"><pre></pre></div><div id="codex-decision-connect-card"><div id="codex-decision-connect-heading"><h1 id="codex-decision-connect-title">Connect Decision</h1><img id="codex-decision-connect-icon" src="./assets/decision-icon.png" alt=""></div><p>Choose a provider. Use its saved key or enter a new API key.</p><label for="codex-decision-provider">Provider</label><select id="codex-decision-provider"><option value="openai">OpenAI Decisions</option><option value="typesafe">TypeSafe Jev</option></select><p id="codex-decision-provider-keys"></p><label for="codex-decision-key">API key</label><input id="codex-decision-key" type="password" autocomplete="off" spellcheck="false" maxlength="4096"><div id="codex-decision-connect-actions"><button id="codex-decision-test-key" type="button">Test API key</button><span id="codex-decision-key-status" role="status" aria-live="polite"></span></div><div id="codex-decision-connect-footer"><button id="codex-decision-save-key" type="button">Save API key</button><button id="codex-decision-skip-key" type="button">Skip for now</button></div><p id="codex-decision-connect-link">Need a key? <a href="https://platform.openai.com/api-keys" rel="noopener noreferrer">Get a provider API key</a></p></div>`;
     document.body.appendChild(setup);
     setup.querySelector("#codex-decision-provider").addEventListener("change", () => {
       setup.querySelector("#codex-decision-key").value = "";
       const selected = setup.querySelector("#codex-decision-provider").value;
       setup.querySelector("#codex-decision-connect-link a").href = selected === "typesafe" ? "https://typesafe.ai/" : "https://platform.openai.com/api-keys";
+      showProviderKeys();
       showKeyStatus("", false);
     });
     setup.querySelector("#codex-decision-connect-art pre").textContent = Array.from({ length: 48 }, (_, row) =>
@@ -278,7 +295,7 @@
       }).join("")).join("\n");
     setup.addEventListener("click", (event) => event.stopPropagation());
     setup.addEventListener("keydown", (event) => event.stopPropagation());
-    setup.querySelector("#codex-decision-key").addEventListener("input", () => showKeyStatus("", false));
+    setup.querySelector("#codex-decision-key").addEventListener("input", () => { showProviderKeys(); showKeyStatus("", false); });
     setup.querySelector("#codex-decision-test-key").addEventListener("click", () => requestKey("testApiKey"));
     setup.querySelector("#codex-decision-save-key").addEventListener("click", () => requestKey("saveApiKey"));
     setup.querySelector("#codex-decision-connect-link a").addEventListener("click", (event) => {
@@ -325,6 +342,7 @@
       setup.querySelector("#codex-decision-provider").dispatchEvent(new Event("change"));
       queueMicrotask(() => setup.querySelector("#codex-decision-key").focus());
     }
+    showProviderKeys();
     const button = root.querySelector("#codex-decision-button");
     const noSession = state.sessionPending ||
       state.configurationError === "Codex session could not be identified";
@@ -358,13 +376,14 @@
       root.dataset.observe = observe;
       schedulePosition();
     }
-    const status = bridgeFault ? "Decision control unavailable" : state.health?.ok === false ? "Decision API unavailable" :
+    const providerLabel = state.health?.provider === "typesafe" ? "TypeSafe Jev" : "OpenAI Decisions";
+    const status = state.health?.fallback ? `${providerLabel} connected (fallback)` : bridgeFault ? "Decision control unavailable" : state.health?.ok === false ? "Decision API unavailable" :
       state.health?.ok === true ? "Decision API connected" : "Checking Decision API";
     const checking = !bridgeFault && state.health?.ok !== true && state.health?.ok !== false;
     root.querySelector("#codex-decision-tip").dataset.needsKey = String(needsSetup);
     const healthRow = root.querySelector("#codex-decision-health-row");
     healthRow.hidden = !failed && !checking && !needsSetup && !state.configurationError && !state.panelFault &&
-      !hookFailed && !versionMismatch && !choiceKeptFull && !hookWaiting;
+      !hookFailed && !versionMismatch && !choiceKeptFull && !hookWaiting && !state.health?.fallback;
     healthRow.querySelector("strong").textContent = healthRow.hidden ? "" :
       bridgeFault ? status : state.configurationError ? "Decision configuration error" : state.panelFault ? "Decision view unavailable" :
       versionMismatch ? "Decision hook version mismatch" : hookFailed ? "Decision hook failed" :
@@ -372,12 +391,12 @@
       needsSetup ? "Decision API key required" : status;
     const unavailable = failed || Boolean(state.configurationError || state.panelFault || hookFailed || versionMismatch);
     const reason = root.querySelector("#codex-decision-health-reason");
-    reason.textContent = (unavailable || choiceKeptFull || hookWaiting) && !needsSetup ? `${bridgeFault || state.configurationError || state.panelFault ||
+    reason.textContent = state.health?.fallback ? `Using the saved fallback provider: ${healthReason(state.health.primaryReason)}.` : (unavailable || choiceKeptFull || hookWaiting) && !needsSetup ? `${bridgeFault || state.configurationError || state.panelFault ||
       (versionMismatch ? "Update the Decision plugin and control together" :
         hookFailed ? (hook.fault || hook.last_error || "Tool output was left unchanged") :
         choiceKeptFull ? "Choice kept the latest output complete" :
           hookWaiting && !failed && !checking ? "Run a local command. If activity stays empty, check /hooks and reload VS Code." : healthReason(state.health?.reason))}` : "";
-    reason.style.display = (unavailable || choiceKeptFull || hookWaiting) && !needsSetup ? "block" : "none";
+    reason.style.display = (state.health?.fallback || unavailable || choiceKeptFull || hookWaiting) && !needsSetup ? "block" : "none";
     const retry = root.querySelector("#codex-decision-retry");
     retry.style.display = bridgeFault || (!state.configurationError && (needsSetup || state.health?.ok === false)) ? "inline-block" : "none";
     retry.disabled = Boolean(retryRequestId);
@@ -390,9 +409,11 @@
       !["averageMs","elapsedMs","timed"].some(name=>partial.has(name)) ? formatDuration(stats.averageMs) : "—";
     const totals = `${recordedCount("completed")} checked · ${recordedCount("replaced")} replaced · ${average} avg request`;
     root.querySelector("#codex-decision-stats").textContent = state.enabled ? totals : "";
-    const tokens = stats.estimatedTokensSaved === null ? "Tokens saved: —" :
-      `Tokens saved: ~${(Number(stats.estimatedTokensSaved) || 0).toLocaleString("en-US")}${partial.has("estimatedTokensSaved") ? " (partial history)" : ""}`;
-    root.querySelector("#codex-decision-tokens").textContent = state.enabled ? tokens : "";
+    const tokens = stats.estimatedTokensSaved === null ? "Hook payload estimate: —" :
+      `Hook payload estimate: ~${(Number(stats.estimatedTokensSaved) || 0).toLocaleString("en-US")} tokens${partial.has("estimatedTokensSaved") ? " (partial history)" : ""}`;
+    const delivery = Number(stats.replaced) > 0 || Number(stats.estimatedTokensSaved) > 0
+      ? " Delivery to Codex is unverified." : "";
+    root.querySelector("#codex-decision-tokens").textContent = state.enabled ? `${tokens}.${delivery}` : "";
     root.querySelector("#codex-decision-session-heading").style.display = state.enabled ? "block" : "none";
     root.querySelector("#codex-decision-history-heading").style.display = state.enabled ? "block" : "none";
     const history = Array.isArray(state.history) ? state.history.slice(0, 3) : [];
@@ -419,7 +440,7 @@
         : "No hook decision in this session. Short or protected results may be skipped."
       : "Decision is off for this session. Click to turn it on.";
     const activity = state.enabled
-      ? `This session: ${recordedCount("calls")} API attempts. ${totals}. ${tokens}. ${history.join(". ") || state.recent}.`
+      ? `This session: ${recordedCount("calls")} API attempts. ${totals}. ${tokens}.${delivery} ${history.join(". ") || state.recent}.`
       : empty.textContent;
     button.setAttribute("aria-label", noSession ? `${status}. Open a local Codex thread to turn Decision on or off` :
       `${status}${unavailable ? `: ${reason.textContent}` : ""}. ${activity} ${saving ? "Saving." : state.enabled ? "Turn Decision off." : "Turn Decision on."}`);

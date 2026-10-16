@@ -12,5 +12,6 @@
   "relevance_policy": {
     "relevant_max": 5
   },
-  "provider": "openai"
+  "provider": "openai",
+  "fallback_enabled": false
 }

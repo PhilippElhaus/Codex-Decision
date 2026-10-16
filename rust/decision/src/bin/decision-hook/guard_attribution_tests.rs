@@ -9,6 +9,8 @@ fn config() -> Config {
         max_chars: 2_000_000,
         model: "gpt-6-luna".into(),
         provider: codex_decision::provider::Provider::OpenAi,
+        fallback_enabled: true,
+        fallback_from: None,
         timeout: 1.0,
         allow_mcp_replacement: false,
         policy: RelevancePolicy::default(),

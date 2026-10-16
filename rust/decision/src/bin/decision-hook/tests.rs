@@ -157,6 +157,8 @@ fn enabled() -> Config {
         max_chars: 2_000_000,
         model: "jev-latest".into(),
         provider: codex_decision::provider::Provider::TypeSafe,
+        fallback_enabled: false,
+        fallback_from: None,
         timeout: 3.0,
         allow_mcp_replacement: false,
         policy: RelevancePolicy::default(),

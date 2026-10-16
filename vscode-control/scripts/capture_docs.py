@@ -42,7 +42,7 @@ def chromium_capture() -> None:
                 ('composer', 'decision-toggle.png', 620, 240),
                 ('classification', 'decision-classification.png', 620, 240),
                 ('onboarding', 'decision-connect.png', 950, 610),
-                ('settings', 'decision-settings.png', 1040, 1080),
+                ('settings', 'decision-settings.png', 1040, 1280),
             ):
                 page = browser.new_page(viewport={'width': width, 'height': height}, device_scale_factor=2)
                 page.goto((ROOT.parent / 'tests/browser/visual_harness.html').as_uri() + '?demo=' + state)
@@ -111,7 +111,7 @@ def main() -> None:
             ('composer', 'decision-toggle.png', 620, 240),
                 ('classification', 'decision-classification.png', 620, 240),
             ('onboarding', 'decision-connect.png', 950, 610),
-            ('settings', 'decision-settings.png', 1040, 1080),
+            ('settings', 'decision-settings.png', 1040, 1280),
         ]
         for state, name, width, height in captures:
             output = profile / name if state == 'settings' else IMAGES / name

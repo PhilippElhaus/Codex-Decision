@@ -54,6 +54,105 @@ fn key_cli_defaults_to_openai_and_preserves_the_typesafe_key() {
 }
 
 #[test]
+fn simultaneous_key_updates_preserve_both_maximum_length_credentials() {
+    use std::io::Write;
+    use std::process::Stdio;
+    let directory = tempfile::tempdir().unwrap();
+    // Hold the extension's shared directory lock so both CLI writers contend.
+    let lock = directory.path().join(".decision-write.lock");
+    fs::create_dir(&lock).unwrap();
+    let mut children = Vec::new();
+    for (provider, key) in [("openai", "a".repeat(4096)), ("typesafe", "j".repeat(4096))] {
+        let mut child = Command::new(env!("CARGO_BIN_EXE_decisionctl"))
+            .args(["set-key", "--data-dir"])
+            .arg(directory.path())
+            .args(["--provider", provider])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(format!("{key}\n").as_bytes())
+            .unwrap();
+        children.push(child);
+    }
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    for child in &mut children {
+        assert!(
+            child.try_wait().unwrap().is_none(),
+            "a writer bypassed the lock"
+        );
+    }
+    assert!(!directory.path().join(".env").exists());
+    fs::remove_dir(&lock).unwrap();
+    for child in children {
+        let output = child.wait_with_output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(output.stdout.is_empty());
+    }
+    let content = fs::read_to_string(directory.path().join(".env")).unwrap();
+    assert!(
+        content.len() > 8192,
+        "fixture must exceed the old one-key limit"
+    );
+    assert_eq!(content.lines().count(), 2);
+    assert!(content.contains(&format!("OPENAI_API_KEY={}\n", "a".repeat(4096))));
+    assert!(content.contains(&format!("JEV_API_KEY={}\n", "j".repeat(4096))));
+    assert!(!lock.exists());
+}
+
+#[test]
+fn key_cli_respects_the_extension_write_lock_and_rejects_unsafe_locks() {
+    use std::io::Write;
+    use std::os::unix::fs::PermissionsExt;
+    use std::process::Stdio;
+    for kind in ["held", "file", "link"] {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join(".env");
+        let original = "JEV_API_KEY=synthetic-preserved-key\n";
+        fs::write(&path, original).unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+        let lock = directory.path().join(".decision-write.lock");
+        match kind {
+            "held" => fs::create_dir(&lock).unwrap(),
+            "file" => fs::write(&lock, "synthetic lock owner").unwrap(),
+            "link" => std::os::unix::fs::symlink("absent", &lock).unwrap(),
+            _ => unreachable!(),
+        }
+        let mut child = Command::new(env!("CARGO_BIN_EXE_decisionctl"))
+            .args(["set-key", "--data-dir"])
+            .arg(directory.path())
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(b"synthetic-replacement-key\n")
+            .unwrap();
+        let output = child.wait_with_output().unwrap();
+        assert!(!output.status.success());
+        assert!(output.stdout.is_empty());
+        assert_eq!(fs::read_to_string(path).unwrap(), original);
+        assert!(
+            fs::symlink_metadata(lock).is_ok(),
+            "another owner's lock was removed"
+        );
+    }
+}
+
+#[test]
 fn shipped_commands_report_the_compiled_version() {
     for (name, binary) in [
         ("decisionctl", env!("CARGO_BIN_EXE_decisionctl")),

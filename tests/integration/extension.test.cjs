@@ -279,7 +279,7 @@ test("composer bridge toggles Decision and restores thread activity without a st
     assert.equal(ready.hasKey, false);
     assert.equal(ready.keyLength, 0);
     assert.equal(ready.config.relevance_policy.relevant_max, 5);
-    assert.deepEqual(ready.defaults, { provider:"openai", model:"gpt-6-luna", mode: "replace", relevance_policy: core.DEFAULT_RELEVANCE_POLICY,
+    assert.deepEqual(ready.defaults, { provider:"openai", model:"gpt-6-luna", fallback_enabled: false, mode: "replace", relevance_policy: core.DEFAULT_RELEVANCE_POLICY,
       log_limit_mb: 50, never_delete_logs: false });
     assert.equal(ready.config.log_limit_mb, 50);
     assert.equal(ready.lifetime.calls, 2);
@@ -451,5 +451,209 @@ test("composer bridge toggles Decision and restores thread activity without a st
   } finally {
     for (const disposable of context.subscriptions.reverse()) disposable.dispose();
     await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("saved provider switching retains credentials and fallback health requires explicit consent", async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "decision-provider-controls-"));
+  const commands = new Map();
+  const context = { subscriptions: [], extensionUri: {} };
+  const probes = [];
+  const fake = {
+    window: { registerWebviewViewProvider: () => ({ dispose() {} }) },
+    commands: {
+      registerCommand(name, action) { commands.set(name, action); return { dispose() {} }; },
+      executeCommand: async () => {},
+    },
+    workspace: {
+      getConfiguration: () => ({ get: () => directory }),
+      onDidChangeConfiguration: () => ({ dispose() {} }),
+    },
+  };
+  const originalLoad = Module._load;
+  const originalHealth = core.checkHealth;
+  let primaryFails = false;
+  let alternateFails = false;
+  core.checkHealth = async (folder, _send, supplied, provider) => {
+    probes.push({ provider, supplied });
+    try { if (!supplied) await core.readApiKey(folder, provider); }
+    catch (error) { return { ok: false, reason: error.decisionReason }; }
+    if (provider === "typesafe" && alternateFails) return { ok: false, reason: "DECISION_NETWORK_ERROR" };
+    return provider === "openai" && primaryFails ? { ok: false, reason: "DECISION_HTTP_429" } :
+      { ok: true, model: provider === "openai" ? "gpt-6-luna" : "jev-latest" };
+  };
+  Module._load = function (request, parent, isMain) {
+    return request === "vscode" ? fake : originalLoad.call(this, request, parent, isMain);
+  };
+  try {
+    delete require.cache[require.resolve("../../vscode-control/extension")];
+    require("../../vscode-control/extension").activate(context);
+  } finally {
+    Module._load = originalLoad;
+    core.checkHealth = originalHealth;
+  }
+  try {
+    const bridge = commands.get("codexDecision.bridge");
+    const route = { viewId: "provider-one", sessionId: "provider-session", focused: true };
+    const other = { viewId: "provider-two", sessionId: "provider-session" };
+    await core.writeApiKey(directory, "synthetic-jevv-key", "typesafe");
+    const scoped = core.sessionDirectory(directory, route.sessionId);
+    const sessionConfig = await core.ensureSessionDefaults(scoped);
+    await fs.writeFile(path.join(scoped, "config.json"), JSON.stringify({ ...sessionConfig, fallback_enabled: true }));
+    const inherited = await bridge({ ...route, action: "retryConnection" });
+    assert.equal(inherited.fallbackEnabled, true, "session config consent is honored before global settings exist");
+    assert.equal(inherited.health.provider, "typesafe");
+    await bridge({ ...other, action: "status" });
+    const save = (provider, fallbackEnabled, key = "") => bridge({ ...route, action: "settingsSave",
+      provider, fallbackEnabled, key, mode: "replace", relevancePolicy: { relevant_max: 5 },
+      logLimitMb: 50, neverDeleteLogs: false });
+    let saved = await save("openai", false);
+    assert.equal(saved.needsKey, true);
+    assert.equal(saved.settings.hasKey, false);
+    assert.deepEqual(saved.providerKeys, { openai: { hasKey: false }, typesafe: { hasKey: true } });
+    const previousProbes = probes.length;
+    await bridge({ ...route, action: "retryConnection" });
+    assert.ok(probes.slice(previousProbes).every(probe => probe.provider === "openai"),
+      "no alternate connection request without consent");
+    saved = await save("openai", true);
+    assert.equal(saved.provider, "openai", "configured primary stays selected");
+    assert.equal(saved.health.provider, "typesafe");
+    assert.equal(saved.health.fallback, true);
+    assert.equal(saved.needsKey, false);
+    const synchronized = await bridge({ ...other, action: "status" });
+    assert.equal(synchronized.provider, "openai");
+    assert.equal(synchronized.fallbackEnabled, true);
+    assert.equal(synchronized.needsKey, false);
+    alternateFails = true;
+    const unavailableFallback = await bridge({ ...route, action: "retryConnection" });
+    assert.equal(unavailableFallback.needsKey, false, "saved fallback connection failures do not request key reentry");
+    assert.equal(unavailableFallback.health.provider, "typesafe");
+    assert.equal(unavailableFallback.health.reason, "DECISION_NETWORK_ERROR");
+    alternateFails = false;
+    saved = await bridge({ ...route, action: "saveApiKey", provider: "typesafe", key: "" });
+    assert.equal(saved.keySaved, true, "connect dialog can activate a stored key");
+    assert.equal(saved.provider, "typesafe");
+    assert.equal(await core.readApiKey(directory, "typesafe"), "synthetic-jevv-key");
+    assert.equal((await bridge({ ...route, action: "testApiKey", provider: "typesafe", key: "" })).keyTest.ok, true);
+    assert.equal(probes.at(-1).supplied, null, "blank test reads the selected saved key");
+    saved = await save("openai", false, "synthetic-openai-key");
+    assert.equal(saved.health.provider, "openai");
+    assert.equal(saved.settings.providerKeys.typesafe.hasKey, true);
+    assert.equal((await bridge({ ...other, action: "status" })).provider, "openai");
+    primaryFails = true;
+    saved = await save("openai", true);
+    assert.equal(saved.health.provider, "typesafe");
+    assert.equal(saved.health.primaryReason, "DECISION_HTTP_429");
+    saved = await save("typesafe", false);
+    assert.equal(saved.provider, "typesafe");
+    assert.equal(saved.health.provider, "typesafe");
+    assert.equal(await core.readApiKey(directory, "openai"), "synthetic-openai-key");
+    assert.equal(await core.readApiKey(directory, "typesafe"), "synthetic-jevv-key");
+    await bridge({ ...route, action: "retryConnection" });
+    await bridge({ ...other, action: "retryConnection" });
+    const beforeInvalid = probes.length;
+    await fs.appendFile(path.join(directory, ".env"), "OPENAI_API_KEY=duplicate-openai-key\n");
+    const invalidPrimary = await save("openai", true);
+    assert.equal(invalidPrimary.health.reason, "DECISION_KEY_INVALID");
+    assert.ok(probes.slice(beforeInvalid).every(probe => probe.provider === "openai"),
+      "malformed primary credentials cannot trigger fallback");
+    await save("typesafe", false);
+    const ready = (await bridge({ ...route, action: "settingsRead" })).settings;
+    assert.equal(ready.config.fallback_enabled, false);
+    assert.deepEqual(ready.providerKeys, { openai: { hasKey: false }, typesafe: { hasKey: true } });
+    assert.equal(JSON.stringify(ready).includes("synthetic-"), false);
+    const invalid = await save("openai", "yes");
+    assert.equal(invalid.settings.action, "error");
+    assert.equal((await core.readGlobalSettings(directory)).provider, "typesafe");
+  } finally {
+    for (const subscription of context.subscriptions.reverse()) subscription.dispose();
+    await fs.rm(directory, { recursive: true });
+  }
+});
+
+test("settings and key saves supersede old probes and finish fallback health inside the UI reply deadline", { timeout: 15000 }, async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "decision-health-budget-"));
+  const commands = new Map();
+  const context = { subscriptions: [], extensionUri: {} };
+  const requests = [];
+  let slowPrimary = true;
+  let slowAll = false;
+  let aborted = 0;
+  const fake = {
+    window: { registerWebviewViewProvider: () => ({ dispose() {} }) },
+    commands: {
+      registerCommand(name, action) { commands.set(name, action); return { dispose() {} }; },
+      executeCommand: async () => {},
+    },
+    workspace: {
+      getConfiguration: () => ({ get: () => directory }),
+      onDidChangeConfiguration: () => ({ dispose() {} }),
+    },
+  };
+  const originalLoad = Module._load;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, { signal }) => {
+    const provider = url.includes("openai.com") ? "openai" : "typesafe";
+    requests.push(provider);
+    if (slowAll || provider === "openai" && slowPrimary) {
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => resolve({ ok: false, status: 503 }), 12000);
+        const cancel = () => { aborted += 1; clearTimeout(timer); reject(signal.reason); };
+        if (signal.aborted) cancel();
+        else signal.addEventListener("abort", cancel, { once: true });
+      });
+    }
+    return { ok: true, text: async () => JSON.stringify(provider === "openai" ?
+      { model: "gpt-6-luna", answers: [{ name: "ready", type: "predicate", probability: .9 }] } :
+      { model: "jev-latest", answers: { ready: { type: "noul", noul: .9 } } }) };
+  };
+  Module._load = function (request, parent, isMain) {
+    return request === "vscode" ? fake : originalLoad.call(this, request, parent, isMain);
+  };
+  try {
+    delete require.cache[require.resolve("../../vscode-control/extension")];
+    require("../../vscode-control/extension").activate(context);
+  } finally { Module._load = originalLoad; }
+  try {
+    await core.writeApiKey(directory, "synthetic-health-openai", "openai");
+    await core.writeApiKey(directory, "synthetic-health-typesafe", "typesafe");
+    const bridge = commands.get("codexDecision.bridge");
+    const route = { viewId: "budget-home", sessionId: null, focused: true };
+    const save = (provider, fallbackEnabled) => bridge({ ...route, action: "settingsSave", provider,
+      fallbackEnabled, key: "", mode: "replace", relevancePolicy: { relevant_max: 5 },
+      logLimitMb: 50, neverDeleteLogs: false });
+    await bridge({ ...route, action: "status" });
+    await until(() => requests.length === 1);
+    const changedAt = performance.now();
+    const switched = await save("typesafe", false);
+    assert.equal(switched.settings.action, "saved");
+    assert.equal(switched.health.provider, "typesafe");
+    assert.ok(performance.now() - changedAt < 1000, "provider save must cancel the old six-second check");
+    assert.equal(aborted, 1);
+    assert.deepEqual(requests, ["openai", "typesafe"], "switch runs one fresh check");
+    slowPrimary = false;
+    let before = requests.length;
+    await save("typesafe", false);
+    assert.deepEqual(requests.slice(before), ["typesafe"], "normal settings save does not duplicate a check");
+    before = requests.length;
+    const keySaved = await bridge({ ...route, action: "saveApiKey", provider: "typesafe", key: "" });
+    assert.equal(keySaved.keySaved, true);
+    assert.deepEqual(requests.slice(before), ["typesafe"], "normal saved-key selection runs one check");
+    slowAll = true;
+    before = requests.length;
+    const started = performance.now();
+    const failed = await save("openai", true);
+    const elapsed = performance.now() - started;
+    assert.equal(failed.settings.action, "saved");
+    assert.equal(failed.health.reason, "DECISION_TIMEOUT");
+    assert.equal(failed.health.provider, "typesafe");
+    assert.equal(failed.needsKey, false);
+    assert.deepEqual(requests.slice(before), ["openai", "typesafe"], "slow fallback checks each provider once");
+    assert.ok(elapsed >= 5500 && elapsed < 8500, `combined health checks took ${elapsed} ms`);
+    assert.equal(aborted, 3, "both slow provider checks stop at their budgets");
+  } finally {
+    for (const subscription of context.subscriptions.reverse()) subscription.dispose();
+    globalThis.fetch = originalFetch;
+    await fs.rm(directory, { recursive: true });
   }
 });

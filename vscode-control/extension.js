@@ -10,7 +10,7 @@ const { LatestDecisionProvider, VIEW_ID } = require("./panel");
 const {
   checkHealth, decisionSummary, defaultDataDirectory, estimateTokensSaved,
   outcomeLine, readConfig, readEventCursor, readEventsSince,
-  readApiKey, writeApiKey, writeSelection,
+  readApiKey, readProviderKeys, writeApiKey, writeSelection,
   completeRelevancePolicy,
   sessionDirectory, readSessionActivity, readRecentOutcomes, ensureSessionDefaults,
   DEFAULT_SETTINGS, readGlobalSettings, writeGlobalSettings, readInstallationStats,
@@ -27,13 +27,17 @@ function createController(dataDirectory) {
   let viewBaseline = Promise.resolve();
   let entering = Promise.resolve();
   let probePromise = null;
+  let probeAbort = null;
+  let probeRevision = 0;
   const activeDirectory = () => sessionDirectory(dataDirectory(), state.sessionId);
-  const providerFallback = () => ({ provider: state.provider || "openai",
+  const providerFallback = () => ({ provider: state.provider || "openai", fallback_enabled: state.fallbackEnabled === true,
     model: state.model || (state.provider === "typesafe" ? "jev-latest" : "gpt-6-luna") });
   const readSettings = () => readGlobalSettings(dataDirectory(), providerFallback());
   const writeSettings = (changes) => writeGlobalSettings(dataDirectory(), changes, providerFallback());
   const snapshot = () => ({
     ...providerFallback(),
+    fallbackEnabled: state.fallbackEnabled === true,
+    providerKeys: state.providerKeys || { openai: { hasKey: false }, typesafe: { hasKey: false } },
     enabled: state.enabled,
     needsKey: state.needsKey,
     health: state.health,
@@ -122,6 +126,7 @@ function createController(dataDirectory) {
     state.viewStartedAt = Date.now();
     state.hookHealth = null;
     const generation = ++state.generation;
+    state.eventDirectory = null;
     state.eventSize = -2;
     clearActivity();
     viewBaseline = (async () => {
@@ -142,8 +147,24 @@ function createController(dataDirectory) {
     return entering;
   }
 
-  async function sync() {
-    if (!state.sessionId) return;
+  async function sync({ checkConnection = true } = {}) {
+    if (!state.sessionId) {
+      try {
+        const settings = await readSettings();
+        const providerKeys = await readProviderKeys(dataDirectory());
+        if (state.provider !== settings.provider || state.model !== settings.model ||
+            state.fallbackEnabled !== settings.fallback_enabled ||
+            JSON.stringify(state.providerKeys) !== JSON.stringify(providerKeys)) {
+          state.provider = settings.provider;
+          state.model = settings.model;
+          state.fallbackEnabled = settings.fallback_enabled;
+          state.providerKeys = providerKeys;
+          if (checkConnection) void probe(true);
+        }
+        state.mode = settings.mode;
+      } catch { state.configurationError = "Decision configuration could not be read"; }
+      return;
+    }
     let generation = state.generation;
     try {
       const directory = activeDirectory();
@@ -159,24 +180,31 @@ function createController(dataDirectory) {
       }
       const config = await ensureSessionDefaults(directory);
       const settings = await readGlobalSettings(dataDirectory(), {
-        provider: config.provider, model: config.model,
+        provider: config.provider, model: config.model, fallback_enabled: config.fallback_enabled,
       });
       if (generation !== state.generation) return;
       const selected = config.enabled;
-      let needsKey = false;
-      try { await readApiKey(dataDirectory(), settings.provider); }
-      catch { needsKey = true; }
+      const providerKeys = await readProviderKeys(dataDirectory());
+      const alternate = settings.provider === "openai" ? "typesafe" : "openai";
+      const needsKey = !providerKeys[settings.provider].hasKey &&
+        !(settings.fallback_enabled && providerKeys[alternate].hasKey);
       if (generation !== state.generation) return;
+      const connectionChanged = state.provider !== settings.provider || state.model !== settings.model ||
+        state.fallbackEnabled !== settings.fallback_enabled ||
+        JSON.stringify(state.providerKeys) !== JSON.stringify(providerKeys);
       state.configurationError = null;
       state.enabled = selected;
       state.mode = settings.mode;
       state.provider = settings.provider;
       state.model = settings.model;
+      state.fallbackEnabled = settings.fallback_enabled;
+      state.providerKeys = providerKeys;
       const wasMissingKey = state.needsKey;
       state.needsKey = needsKey;
       if (state.needsKey) state.health = { ok: false, reason: "DECISION_KEY_MISSING" };
-      if (!state.needsKey && (wasMissingKey || directoryChanged || !state.health)) {
-        void (probePromise ? probePromise.then(() => probe()) : probe());
+      else if (connectionChanged) state.health = null;
+      if (checkConnection && !state.needsKey && (wasMissingKey || directoryChanged || connectionChanged || !state.health)) {
+        void probe(true);
       }
     } catch (error) {
       if (generation !== state.generation) return;
@@ -188,30 +216,62 @@ function createController(dataDirectory) {
     }
   }
 
-  function probe() {
-    if (probePromise) return probePromise;
+  function probe(refresh = false) {
+    if (probePromise && !refresh) return probePromise;
+    if (refresh) { probeRevision += 1; probeAbort?.abort(); }
+    const revision = probeRevision;
+    const abort = new AbortController();
+    probeAbort = abort;
+    const deadline = performance.now() + 6000;
+    const healthOptions = (budget) => ({
+      timeoutMs: Math.max(1, Math.min(budget, Math.floor(deadline - performance.now()))), signal: abort.signal,
+    });
     const generation = state.generation;
     state.checking = true;
-    probePromise = (async () => {
+    const task = (async () => {
       try {
         const settings = await readSettings();
-        const result = await checkHealth(dataDirectory(), globalThis.fetch, null, settings.provider);
-        if (generation === state.generation) {
+        const providerKeys = await readProviderKeys(dataDirectory());
+        const alternate = settings.provider === "openai" ? "typesafe" : "openai";
+        const canFallback = settings.fallback_enabled && providerKeys[alternate].hasKey;
+        // Both provider checks share the UI's six-second health budget.
+        const timeoutMs = canFallback ? 3000 : 6000;
+        let result = await checkHealth(dataDirectory(), globalThis.fetch, null, settings.provider,
+          healthOptions(timeoutMs));
+        if (abort.signal.aborted) return;
+        result = { ...result, provider: settings.provider };
+        if (!result.ok && canFallback &&
+            (/^DECISION_HTTP_\d{3}$/.test(result.reason) || ["DECISION_KEY_MISSING", "DECISION_KEY_EXPIRED",
+              "DECISION_NETWORK_ERROR", "DECISION_TIMEOUT", "DECISION_INVALID_RESPONSE"].includes(result.reason))) {
+          const primaryReason = result.reason;
+          const fallback = await checkHealth(dataDirectory(), globalThis.fetch, null, alternate,
+            healthOptions(3000));
+          result = { ...fallback, provider: alternate, primaryReason,
+            ...(fallback.ok ? { fallback: true } : { fallbackAttempted: true }) };
+        }
+        if (!abort.signal.aborted && revision === probeRevision && generation === state.generation) {
           state.provider = settings.provider;
           state.model = settings.model;
+          state.fallbackEnabled = settings.fallback_enabled;
+          state.providerKeys = providerKeys;
           state.health = result;
-          state.needsKey = result.reason === "DECISION_KEY_MISSING";
+          state.needsKey = !providerKeys[settings.provider].hasKey &&
+            !(settings.fallback_enabled && providerKeys[alternate].hasKey);
         }
       } catch {
-        if (generation === state.generation) {
+        if (!abort.signal.aborted && revision === probeRevision && generation === state.generation) {
           state.health = { ok: false, reason: "DECISION_CONFIG_ERROR" };
         }
       }
     })().finally(() => {
-      state.checking = false;
-      probePromise = null;
-      if (generation !== state.generation) void probe();
+      if (probePromise === task) {
+        state.checking = false;
+        probePromise = null;
+        probeAbort = null;
+        if (generation !== state.generation) void probe();
+      }
     });
+    probePromise = task;
     return probePromise;
   }
 
@@ -285,7 +345,7 @@ function createController(dataDirectory) {
         const lifetime = await readInstallationStats(directory);
         return { action: "ready", config,
           defaults: DEFAULT_SETTINGS,
-          hasKey: keyLength > 0, keyLength, lifetime };
+          hasKey: keyLength > 0, keyLength, providerKeys: await readProviderKeys(directory), lifetime };
       }
       if (request.action === "settingsOpenLogs") {
         const parent = await fs.lstat(directory);
@@ -308,25 +368,26 @@ function createController(dataDirectory) {
       if (request.action === "settingsSave") {
         if (!["observe", "replace"].includes(request.mode)) throw new Error("Invalid mode");
         if (!Number.isInteger(request.logLimitMb) || request.logLimitMb < 1 || request.logLimitMb > 9999 ||
-            typeof request.neverDeleteLogs !== "boolean") throw new Error("Invalid Decision settings");
+            typeof request.neverDeleteLogs !== "boolean" ||
+            (request.fallbackEnabled !== undefined && typeof request.fallbackEnabled !== "boolean")) throw new Error("Invalid Decision settings");
         const relevancePolicy = completeRelevancePolicy(request.relevancePolicy);
         const selected = request.provider || (await readSettings()).provider;
         const model = selected === "openai" ? "gpt-6-luna" : "jev-latest";
         if (!["openai", "typesafe"].includes(selected)) throw new Error("Invalid decision provider");
         const task = selectionQueue.then(async () => {
+          if (request.key) await writeApiKey(dataDirectory(), request.key, selected);
           await writeSettings({ provider: selected, model, mode: request.mode, relevance_policy: relevancePolicy,
+            ...(request.fallbackEnabled === undefined ? {} : { fallback_enabled: request.fallbackEnabled }),
             log_limit_mb: request.logLimitMb, never_delete_logs: request.neverDeleteLogs });
           state.mode = request.mode;
-          if (request.key) await writeApiKey(dataDirectory(), request.key, selected);
-          if (state.sessionId) await sync();
-          if (probePromise) await probePromise;
-          await probe();
+          await sync({ checkConnection: false });
+          await probe(true);
         });
         selectionQueue = task.catch(() => {});
         await task;
         let keyLength = 0;
         try { keyLength = (await readApiKey(dataDirectory(), selected)).length; } catch { /* optional key */ }
-        return { action: "saved", hasKey: keyLength > 0, keyLength };
+        return { action: "saved", hasKey: keyLength > 0, keyLength, providerKeys: await readProviderKeys(directory) };
       }
     } catch (error) {
       return { action: "error", message: error.message || "Decision settings failed" };
@@ -350,20 +411,20 @@ function createController(dataDirectory) {
     }
     if (request?.action === "testApiKey") {
       const keyTest = await checkHealth(dataDirectory(), globalThis.fetch,
-        typeof request.key === "string" ? request.key : "", request.provider || (await readSettings()).provider);
+        typeof request.key === "string" && request.key ? request.key : null, request.provider || (await readSettings()).provider);
       return { ...snapshot(), keyTest };
     }
     if (request?.action === "saveApiKey") {
       try {
         const selected = request.provider || (await readSettings()).provider;
         if (!["openai", "typesafe"].includes(selected)) throw new Error("Invalid decision provider");
-        await writeApiKey(dataDirectory(), request.key, selected);
+        if (request.key) await writeApiKey(dataDirectory(), request.key, selected);
+        else await readApiKey(dataDirectory(), selected);
         await writeSettings({ provider: selected, model: selected === "openai" ? "gpt-6-luna" : "jev-latest" });
         state.provider = selected;
         state.model = selected === "openai" ? "gpt-6-luna" : "jev-latest";
         state.needsKey = false;
-        if (probePromise) await probePromise;
-        await probe();
+        await probe(true);
         return { ...snapshot(), keySaved: true };
       } catch {
         return { ...snapshot(), keySaveError: "Could not save API key" };
@@ -451,8 +512,9 @@ function activate(context) {
             (request.action === "saveApiKey" || settingsSaved ||
              request.action === "settingsSetNeverDeleteLogs" ||
              other.state.sessionId === controller.state.sessionId)) {
-          if (other.state.sessionId) await other.sync();
-          else if (request.action === "saveApiKey") await other.probe();
+          const credentialsChanged = request.action === "saveApiKey" || settingsSaved;
+          await other.sync({ checkConnection: !credentialsChanged });
+          if (credentialsChanged) void other.probe(true);
         }
       }));
     }

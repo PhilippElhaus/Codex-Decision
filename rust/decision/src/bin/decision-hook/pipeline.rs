@@ -78,6 +78,29 @@ pub(super) fn process_event(
     event: &Value,
     config: &Config,
 ) -> Result<Value, String> {
+    let mut provider_failed = false;
+    let result = process_event_once(data_dir, scoped, event, config, &mut provider_failed);
+    if result.is_ok() || !config.fallback_enabled || !provider_failed {
+        return result;
+    }
+    // The failed attempt drops its progress and saved originals before retrying.
+    // Keep the same invocation deadline and retry the alternate provider once.
+    remaining()?;
+    let mut alternate = config.clone();
+    alternate.fallback_enabled = false;
+    alternate.fallback_from = Some((config.provider, config.model.clone()));
+    alternate.provider = config.provider.alternate();
+    alternate.model = alternate.provider.default_model().into();
+    process_event_once(data_dir, scoped, event, &alternate, &mut false)
+}
+
+fn process_event_once(
+    data_dir: &Path,
+    scoped: &Path,
+    event: &Value,
+    config: &Config,
+    provider_failed: &mut bool,
+) -> Result<Value, String> {
     if event.get("hook_event_name").and_then(Value::as_str) != Some("PostToolUse") {
         return skip(scoped, "unsupported_event");
     }
@@ -166,7 +189,10 @@ pub(super) fn process_event(
     {
         return skip(scoped, "insufficient_savings");
     }
-    let api_key = key(data_dir, config.provider)?;
+    let api_key = key(data_dir, config.provider).map_err(|error| {
+        *provider_failed = error == "missing credential";
+        error
+    })?;
     let agent = decision_agent();
     classification_start(scoped, config.never_delete_logs)?;
     let (kind, gate_record) = if let FormatDecision::Direct(kind) = format {
@@ -192,7 +218,11 @@ pub(super) fn process_event(
             &api_key,
             config.timeout.min(remaining()?.as_secs_f64()),
             classification,
-        )?;
+        )
+        .map_err(|error| {
+            *provider_failed = error.provider_unavailable;
+            error.reason
+        })?;
         let elapsed_ms = before.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
         let gate_record = BatchRecord {
             id: 0,
@@ -265,7 +295,11 @@ pub(super) fn process_event(
             &api_key,
             config.timeout.min(remaining()?.as_secs_f64()),
             |response| relevance_answers(&batch, response),
-        )?;
+        )
+        .map_err(|error| {
+            *provider_failed = error.provider_unavailable;
+            error.reason
+        })?;
         for (number, p) in answers {
             if probabilities.insert(number, (p, batch.id)).is_some() {
                 return Err("duplicate relevance target".into());

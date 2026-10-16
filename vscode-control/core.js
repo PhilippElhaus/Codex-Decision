@@ -17,6 +17,7 @@ const {readPublishedRecord,withPublication} = require("./publication-journal");
 const DEFAULT_RELEVANCE_POLICY = Object.freeze(defaults("config").relevance_policy);
 const { schema_version: _schemaVersion, ...settingsDefaults } = defaults("settings");
 const DEFAULT_SETTINGS = Object.freeze(settingsDefaults);
+const CREDENTIAL_FILE_LIMIT = 16384;
 const HEALTH_ACTIVITY_KEYS = Object.freeze({ seen: "seen", skipped: "skipped", errors: "errors",
   api_requests: "calls", request_cancelled: "requestCancelled", responses_received: "responsesReceived",
   responses_validated: "responsesValidated", request_failures: "requestFailures" });
@@ -784,21 +785,35 @@ function parseHealthOutput(stdout, selected = "openai") {
 
 async function readApiKey(directory, selected = "openai") {
   const keyName = provider(selected).keyName;
-  await validateSessionPath(directory);
-  const filename = path.join(directory, ".env");
-  const details = await fs.lstat(filename);
-  if (!details.isFile() || details.isSymbolicLink() || details.size > 8192 ||
-      (process.platform !== "win32" && (details.mode & 0o077))) throw new Error("Unsafe Decision credential file");
-  const lines = (await fs.readFile(filename, "utf8")).replace(/^\uFEFF/, "").split(/\r?\n/);
+  let record;
+  let source;
+  try {
+    await validateSessionPath(directory);
+    record = await readFileRecord(path.join(directory, ".env"), CREDENTIAL_FILE_LIMIT, { strict: true });
+    if (record) source = new TextDecoder("utf-8", { fatal: true }).decode(record.bytes);
+  } catch {
+    throw Object.assign(new Error("Unsafe Decision credential file"), { decisionReason: "DECISION_CREDENTIAL_UNSAFE" });
+  }
+  if (!record) throw Object.assign(new Error("Decision API key is missing or invalid"), { decisionReason: "DECISION_KEY_MISSING" });
+  const lines = source.replace(/^\uFEFF/, "").split(/\r?\n/);
   const values = lines.filter((line) => line.trim().split("=", 1)[0].trim() === keyName).map((line) => {
     let value = line.slice(line.indexOf("=") + 1).trim();
     if (value.length >= 2 && ["'", '"'].includes(value[0]) && value.at(-1) === value[0]) value = value.slice(1, -1);
     return value;
   });
-  if (values.length !== 1 || values[0].length < 8 || values[0].length > 4096 || /\s|\0/.test(values[0])) {
-    throw new Error("Decision API key is missing or invalid");
+  if (!values.length) throw Object.assign(new Error("Decision API key is missing or invalid"), { decisionReason: "DECISION_KEY_MISSING" });
+  if (values.length !== 1 || values[0].length < 8 || Buffer.byteLength(values[0]) > 4096 || /\s|\0/.test(values[0])) {
+    throw Object.assign(new Error("Decision API key is missing or invalid"), { decisionReason: "DECISION_KEY_INVALID" });
   }
   return values[0];
+}
+
+async function readProviderKeys(directory) {
+  const entries = await Promise.all(["openai", "typesafe"].map(async (selected) => {
+    try { return [selected, { hasKey: Boolean(await readApiKey(directory, selected)) }]; }
+    catch { return [selected, { hasKey: false }]; }
+  }));
+  return Object.fromEntries(entries);
 }
 
 async function boundedResponse(response, limit) {
@@ -823,14 +838,17 @@ async function boundedResponse(response, limit) {
   } finally { reader.releaseLock(); }
 }
 
-async function checkHealth(dataDirectory, send = globalThis.fetch, suppliedKey = null, selected = null) {
+async function checkHealth(dataDirectory, send = globalThis.fetch, suppliedKey = null, selected = null, options = {}) {
+  const timeoutMs = Math.max(1, Math.min(6000, Number.isFinite(options.timeoutMs) ? Math.ceil(options.timeoutMs) : 6000));
+  const signal = options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs);
+  if (options.signal?.aborted) return { ok: false, reason: "DECISION_CANCELLED" };
   try { selected ??= (await readGlobalSettings(dataDirectory)).provider; provider(selected); }
   catch { return { ok: false, reason: "DECISION_INVALID_SETTINGS" }; }
   let key;
   try {
     key = suppliedKey === null ? await readApiKey(dataDirectory, selected) : validateApiKey(suppliedKey);
-  } catch {
-    return { ok: false, reason: "DECISION_KEY_MISSING" };
+  } catch (error) {
+    return { ok: false, reason: error.decisionReason || "DECISION_KEY_INVALID" };
   }
   const body = JSON.stringify(wireRequest({
     state: { output_sample: "Compiling module 1 done\nCompiling module 2 done" },
@@ -841,9 +859,10 @@ async function checkHealth(dataDirectory, send = globalThis.fetch, suppliedKey =
   try {
     response = await send(provider(selected).endpoint, {
       method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body, signal: AbortSignal.timeout(6000), redirect: "error",
+      body, signal, redirect: "error",
     });
   } catch (error) {
+    if (options.signal?.aborted) return { ok: false, reason: "DECISION_CANCELLED" };
     return { ok: false, reason: ["AbortError", "TimeoutError"].includes(error?.name)
       ? "DECISION_TIMEOUT" : "DECISION_NETWORK_ERROR" };
   }
@@ -866,12 +885,13 @@ async function checkHealth(dataDirectory, send = globalThis.fetch, suppliedKey =
     const output = await boundedResponse(response, 262144);
     return parseHealthOutput(output, selected);
   } catch {
-    return { ok: false, reason: "DECISION_INVALID_RESPONSE" };
+    return { ok: false, reason: options.signal?.aborted ? "DECISION_CANCELLED" :
+      signal.aborted ? "DECISION_TIMEOUT" : "DECISION_INVALID_RESPONSE" };
   }
 }
 
 function validateApiKey(key) {
-  if (typeof key !== "string" || key.length < 8 || key.length > 4096 || /\s|\0/.test(key)) {
+  if (typeof key !== "string" || key.length < 8 || Buffer.byteLength(key) > 4096 || /\s|\0/.test(key)) {
     throw new Error("Decision API key is missing or invalid");
   }
   return key;
@@ -892,17 +912,13 @@ async function updateApiKey(directory, key, selected) {
   await validateSessionPath(directory);
   const target = path.join(directory, ".env");
   let lines = [];
-  try {
-    const details = await fs.lstat(target);
-    if (!details.isFile() || details.isSymbolicLink() || details.size > 8192 ||
-        (process.platform !== "win32" && (details.mode & 0o077))) throw new Error("Unsafe Decision credential file");
-    lines = (await fs.readFile(target, "utf8")).split(/\r?\n/)
+  const existing = await readFileRecord(target, CREDENTIAL_FILE_LIMIT, { strict: true });
+  if (existing) {
+    lines = new TextDecoder("utf-8", { fatal: true }).decode(existing.bytes).split(/\r?\n/)
       .filter((line) => line.trim().split("=", 1)[0].trim() !== keyName);
-  } catch (error) {
-    if (error.code !== "ENOENT") throw error;
   }
   const content = [...lines.filter(Boolean), `${keyName}=${key}`].join("\n") + "\n";
-  if (Buffer.byteLength(content) > 8192) throw new Error("Decision credential file is too large");
+  if (Buffer.byteLength(content) > CREDENTIAL_FILE_LIMIT) throw new Error("Decision credential file is too large");
   const temporary = path.join(directory, `.env-${crypto.randomUUID()}.tmp`);
   let owned = false;
   try {
@@ -926,7 +942,7 @@ module.exports = {
 
   decisionSummary, defaultDataDirectory, estimateTokensSaved,
   isDecisionOutcome, outcomeLine, parseHealthOutput, readConfig,
-  readApiKey, readEventOffset, readEventCursor, readEventsSince, readLifetimeStats,
+  readApiKey, readProviderKeys, readEventOffset, readEventCursor, readEventsSince, readLifetimeStats,
   readSessionActivity, readRecentOutcomes, retainedStatsFromEvents,
   savedCharacters, writeApiKey, writeSelection,
   ensureSessionDefaults,

@@ -10,6 +10,8 @@ pub(super) struct Config {
     pub(super) max_chars: usize,
     pub(super) model: String,
     pub(super) provider: codex_decision::provider::Provider,
+    pub(super) fallback_enabled: bool,
+    pub(super) fallback_from: Option<(codex_decision::provider::Provider, String)>,
     pub(super) timeout: f64,
     pub(super) allow_mcp_replacement: bool,
     pub(super) policy: RelevancePolicy,
@@ -39,6 +41,7 @@ struct SharedSettings {
     log_limit_mb: u64,
     never_delete_logs: bool,
     provider: String,
+    fallback_enabled: bool,
     model: String,
 }
 
@@ -62,6 +65,7 @@ pub(super) fn apply_shared_settings(data_dir: &Path, config: &mut Config) -> Res
     config.log_limit_mb = settings.log_limit_mb;
     config.never_delete_logs = settings.never_delete_logs;
     config.provider = codex_decision::provider::Provider::parse(&settings.provider)?;
+    config.fallback_enabled = settings.fallback_enabled;
     config.model = settings.model;
     Ok(())
 }
@@ -103,6 +107,8 @@ pub(super) fn config(data_dir: &Path) -> Result<Option<Config>, String> {
         max_chars: raw["max_chars"].as_u64().unwrap() as usize,
         model: raw["model"].as_str().unwrap().into(),
         provider: codex_decision::provider::Provider::parse(raw["provider"].as_str().unwrap())?,
+        fallback_enabled: raw["fallback_enabled"].as_bool().unwrap(),
+        fallback_from: None,
         timeout: raw["timeout_seconds"].as_f64().unwrap(),
         allow_mcp_replacement: raw["allow_mcp_replacement"].as_bool().unwrap(),
         policy: serde_json::from_value(raw["relevance_policy"].clone())
@@ -117,8 +123,14 @@ pub(super) fn key(
     provider: codex_decision::provider::Provider,
 ) -> Result<String, String> {
     let path = data_dir.join(".env");
-    let metadata = fs::symlink_metadata(&path).map_err(|_| "missing credential")?;
-    if !metadata.is_file() || metadata.file_type().is_symlink() || metadata.len() > 8192 {
+    let metadata = fs::symlink_metadata(&path).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::NotFound {
+            "missing credential"
+        } else {
+            "credential stat failed"
+        }
+    })?;
+    if !metadata.is_file() || metadata.file_type().is_symlink() || metadata.len() > 16384 {
         return Err("unsafe credential".into());
     }
     #[cfg(unix)]
@@ -129,15 +141,18 @@ pub(super) fn key(
         }
     }
     let content =
-        String::from_utf8(read_bounded(&path, 8192).map_err(|_| "invalid credential encoding")?)
+        String::from_utf8(read_bounded(&path, 16384).map_err(|_| "invalid credential encoding")?)
             .map_err(|_| "invalid credential encoding")?;
     let prefix = format!("{}=", provider.key_name());
     let values: Vec<&str> = content
         .lines()
         .filter_map(|line| line.trim().strip_prefix(&prefix))
         .collect();
-    if values.len() != 1 {
+    if values.is_empty() {
         return Err("missing credential".into());
+    }
+    if values.len() != 1 {
+        return Err("invalid credential".into());
     }
     let value = values[0].trim().trim_matches(['\'', '"']);
     if !(8..=4096).contains(&value.len())

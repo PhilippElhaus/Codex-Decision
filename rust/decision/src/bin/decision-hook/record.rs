@@ -134,7 +134,10 @@ pub(super) fn record(
         "lines_omitted":omitted,"lines_protected":protected,"lines_unjudged":unjudged,
         "lines_relevance_judged":relevance_judged,"lines_below_omit_cutoff":below_omit_cutoff,
         "lines_relevance_kept":relevance_kept,"search_relevance_guard":false,
-        "relevance_policy":config.policy,"provider":if config.model == "gpt-6-luna" {"openai"} else {"typesafe"},"model":config.model,
+        "relevance_policy":config.policy,"provider":config.provider.name(),"model":config.model,
+        "fallback_used":config.fallback_from.is_some(),
+        "configured_provider":config.fallback_from.as_ref().map_or(config.provider, |(provider, _)| *provider).name(),
+        "configured_model":config.fallback_from.as_ref().map_or(config.model.as_str(), |(_, model)| model.as_str()),
         "output_kind":gate_record.and_then(|record| record.response.pointer("/answers/output_kind/choice"))
             .or_else(|| batches.first().and_then(|record| record.request.pointer("/state/output_kind"))),
         "routing":if gate_record.is_some() {"classified"} else {"validated_format"},

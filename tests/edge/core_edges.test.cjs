@@ -37,8 +37,8 @@ test("credential parser rejects duplicate and oversized values", async () => {
   const filename = path.join(directory, ".env");
   try {
     await fs.writeFile(filename, "JEV_API_KEY=synthetic-one\nJEV_API_KEY=synthetic-two\n", { mode: 0o600 });
-    await assert.rejects(readApiKey(directory), /missing or invalid/);
-    await fs.writeFile(filename, `JEV_API_KEY=${"x".repeat(8192)}\n`, { mode: 0o600 });
+    await assert.rejects(readApiKey(directory, "typesafe"), /missing or invalid/);
+    await fs.writeFile(filename, `JEV_API_KEY=${"x".repeat(16384)}\n`, { mode: 0o600 });
     await assert.rejects(readApiKey(directory), /Unsafe/);
   } finally { await fs.rm(directory, { recursive: true, force: true }); }
 });

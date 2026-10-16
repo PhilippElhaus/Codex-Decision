@@ -16,7 +16,7 @@
   let scheduled = false;
   let nextId = 0;
   let pending = null;
-  let hasKey = false;
+  let providerKeys = { openai: { hasKey: false }, typesafe: { hasKey: false } };
   let busy = false;
   let defaults = null;
   let savedLogLimit = 50;
@@ -117,6 +117,7 @@
     panel.querySelector("#codex-decision-settings-reset").disabled = value || !defaults;
     panel.querySelector("#codex-decision-settings-open-logs").disabled = value;
     panel.querySelector("#codex-decision-settings-never-delete").disabled = value;
+    panel.querySelector("#codex-decision-settings-fallback").disabled = value;
   }
 
   function showNeverDeleteLogs(value) {
@@ -124,9 +125,16 @@
     panel.querySelector("#codex-decision-settings-log-limit").disabled = value;
   }
 
-  function showSavedKeyLength(length) {
-    panel.querySelector("#codex-decision-settings-key").placeholder =
-      Number.isInteger(length) && length >= 8 && length <= 4096 ? "•".repeat(length) : "Enter API key";
+  function showProviderKeys(reply) {
+    const selected = panel.querySelector("#codex-decision-settings-provider").value;
+    if (reply?.providerKeys) providerKeys = reply.providerKeys;
+    else if (reply) providerKeys = { ...providerKeys, [selected]: { hasKey: Boolean(reply.hasKey) } };
+    for (const [name, label] of [["openai", "OpenAI Decisions"], ["typesafe", "TypeSafe Jev"]]) {
+      panel.querySelector(`#codex-decision-settings-${name}-key-status`).textContent =
+        `${label}: ${providerKeys[name]?.hasKey ? "key saved" : "no saved key"}`;
+    }
+    panel.querySelector("#codex-decision-settings-key").placeholder = providerKeys[selected]?.hasKey
+      ? "Saved key kept unless replaced" : "Enter API key for this provider";
   }
 
   function formatDuration(milliseconds) {
@@ -148,7 +156,7 @@
       ["calls", "calls"], ["time", "averageMs"], ["protected", "linesProtected"]]) {
       panel.querySelector(`#codex-decision-settings-lifetime-${field}`).title = stats.overflowCounters?.includes(name) ?
         "This aggregate exceeds the exact numeric range and is unavailable." : partial.has(name) ?
-          "The historical baseline is incomplete." : "Recorded activity across all sessions.";
+          "The historical baseline is incomplete." : name === "linesOmitted" ? "Lines omitted by the hook. Delivery to Codex is unverified." : "Recorded activity across all sessions.";
     }
   }
 
@@ -224,6 +232,8 @@
       #codex-decision-settings-panel .percent-input { width: 76px; flex: none; text-align: right; font-variant-numeric: tabular-nums; }
       #codex-decision-settings-panel .log-limit-input { width: 96px; text-align: right; font-variant-numeric: tabular-nums; }
       #codex-decision-settings-panel .log-retention { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+      #codex-decision-settings-panel .fallback-setting { margin: 15px 0; }
+      #codex-decision-settings-panel .fallback-setting label { display: inline-flex; align-items: center; gap: 8px; }
       #codex-decision-settings-panel .log-retention label { display: inline-flex; align-items: center; gap: 6px; }
       #codex-decision-settings-panel .relevance-controls { margin: 15px 0 8px; padding: 12px 0 0; border-top: 1px solid var(--vscode-panel-border, #333); }
       #codex-decision-settings-panel .relevance-controls > label { display: flex; align-items: center; gap: 8px; }
@@ -259,7 +269,7 @@
     document.head.append(style);
     panel = document.createElement("div");
     panel.id = "codex-decision-settings-panel";
-    panel.innerHTML = `<div class="header"><h1>Decision</h1><button id="codex-decision-settings-open-logs" type="button">Open logs</button></div><section aria-label="Installation totals"><h2>All sessions</h2><div class="metrics"><div class="metric"><strong id="codex-decision-settings-lifetime-tokens">—</strong><span>Lines judged</span></div><div class="metric"><strong id="codex-decision-settings-lifetime-replaced">—</strong><span>Lines omitted</span></div><div class="metric"><strong id="codex-decision-settings-lifetime-protected">—</strong><span>Protected locally</span></div><div class="metric"><strong id="codex-decision-settings-lifetime-calls">—</strong><span>Decision requests</span></div><div class="metric"><strong id="codex-decision-settings-lifetime-time">—</strong><span>Avg. request time</span></div></div></section><section><h2>Decision provider</h2><div class="field"><label for="codex-decision-settings-provider">Provider</label><select id="codex-decision-settings-provider"><option value="openai">OpenAI Decisions</option><option value="typesafe">TypeSafe Jev</option></select></div><h2>API key</h2><div class="field"><label for="codex-decision-settings-key">API key</label><input id="codex-decision-settings-key" type="password" autocomplete="off" spellcheck="false" maxlength="4096"></div><div class="actions"><button id="codex-decision-settings-test" type="button">Test API key</button><span id="codex-decision-settings-test-status" role="status" aria-live="polite"></span></div></section><section><h2>Log retention</h2><div class="log-retention"><label for="codex-decision-settings-log-limit">Storage limit (MB)</label><input id="codex-decision-settings-log-limit" class="log-limit-input" type="text" inputmode="numeric" maxlength="4" aria-label="Log storage limit in MB"><label for="codex-decision-settings-never-delete"><input id="codex-decision-settings-never-delete" type="checkbox">Never delete logs</label></div><small>Oldest session log files are removed when the limit is reached.</small></section><section><h2>Behavior</h2><div class="field"><label for="codex-decision-settings-mode">Mode<small>Monitor previews per-line Decision decisions while leaving tool output unchanged. Filter shortens approved results.</small></label><select id="codex-decision-settings-mode"><option value="observe">Monitor</option><option value="replace">Filter</option></select></div><div id="codex-decision-settings-thresholds"></div></section><div class="actions save-actions"><button id="codex-decision-settings-save" type="button" class="primary">Save settings</button><button id="codex-decision-settings-reset" type="button" class="subtle" title="Restore the default settings in this form. Save to apply." disabled>Reset defaults</button></div><p id="codex-decision-settings-message" role="status" aria-live="polite"></p>`;
+    panel.innerHTML = `<div class="header"><h1>Decision</h1><button id="codex-decision-settings-open-logs" type="button">Open logs</button></div><section aria-label="Installation totals"><h2>All sessions</h2><div class="metrics"><div class="metric"><strong id="codex-decision-settings-lifetime-tokens">—</strong><span>Lines judged</span></div><div class="metric"><strong id="codex-decision-settings-lifetime-replaced">—</strong><span>Lines omitted by hook</span></div><div class="metric"><strong id="codex-decision-settings-lifetime-protected">—</strong><span>Protected locally</span></div><div class="metric"><strong id="codex-decision-settings-lifetime-calls">—</strong><span>Decision requests</span></div><div class="metric"><strong id="codex-decision-settings-lifetime-time">—</strong><span>Avg. request time</span></div></div></section><section><h2>Decision provider</h2><div class="field"><label for="codex-decision-settings-provider">Provider</label><select id="codex-decision-settings-provider"><option value="openai">OpenAI Decisions</option><option value="typesafe">TypeSafe Jev</option></select></div><div class="provider-key-status"><small id="codex-decision-settings-openai-key-status"></small><small id="codex-decision-settings-typesafe-key-status"></small></div><div class="fallback-setting"><label for="codex-decision-settings-fallback"><input id="codex-decision-settings-fallback" type="checkbox">Use the other provider if needed</label><small>If the selected provider fails, allow tool output to be sent to the other provider with its saved key. Off by default.</small></div><h2>API key</h2><div class="field"><label for="codex-decision-settings-key">API key</label><input id="codex-decision-settings-key" type="password" autocomplete="off" spellcheck="false" maxlength="4096"></div><div class="actions"><button id="codex-decision-settings-test" type="button">Test API key</button><span id="codex-decision-settings-test-status" role="status" aria-live="polite"></span></div></section><section><h2>Log retention</h2><div class="log-retention"><label for="codex-decision-settings-log-limit">Storage limit (MB)</label><input id="codex-decision-settings-log-limit" class="log-limit-input" type="text" inputmode="numeric" maxlength="4" aria-label="Log storage limit in MB"><label for="codex-decision-settings-never-delete"><input id="codex-decision-settings-never-delete" type="checkbox">Never delete logs</label></div><small>Oldest session log files are removed when the limit is reached.</small></section><section><h2>Behavior</h2><div class="field"><label for="codex-decision-settings-mode">Mode<small>Monitor previews per-line Decision decisions while leaving tool output unchanged. Filter shortens approved results.</small></label><select id="codex-decision-settings-mode"><option value="observe">Monitor</option><option value="replace">Filter</option></select></div><div id="codex-decision-settings-thresholds"></div></section><div class="actions save-actions"><button id="codex-decision-settings-save" type="button" class="primary">Save settings</button><button id="codex-decision-settings-reset" type="button" class="subtle" title="Restore the default settings in this form. Save to apply." disabled>Reset defaults</button></div><p id="codex-decision-settings-message" role="status" aria-live="polite"></p>`;
     const thresholds = panel.querySelector("#codex-decision-settings-thresholds");
     for (const [hook, heading, fields] of sections) {
       const title = document.createElement("h2");
@@ -333,7 +343,7 @@
     panel.querySelector("#codex-decision-settings-key").addEventListener("input", () => showTest(""));
     panel.querySelector("#codex-decision-settings-provider").addEventListener("change", () => {
       panel.querySelector("#codex-decision-settings-key").value = "";
-      panel.querySelector("#codex-decision-settings-key").placeholder = "Enter or test saved provider key";
+      showProviderKeys();
       showTest("");
     });
     panel.querySelector("#codex-decision-settings-never-delete").addEventListener("change", (event) => {
@@ -353,6 +363,7 @@
       if (busy || !defaults) return;
       panel.querySelector("#codex-decision-settings-provider").value = defaults.provider || "openai";
       panel.querySelector("#codex-decision-settings-provider").dispatchEvent(new Event("change"));
+      panel.querySelector("#codex-decision-settings-fallback").checked = defaults.fallback_enabled === true;
       panel.querySelector("#codex-decision-settings-mode").value = defaults.mode;
       setThresholds(defaults.relevance_policy);
       panel.querySelector("#codex-decision-settings-log-limit").value = String(defaults.log_limit_mb);
@@ -368,7 +379,7 @@
         const logLimitMb = parseLogLimit(panel.querySelector("#codex-decision-settings-log-limit").value);
         if (logLimitMb === null) throw new Error("Enter a log limit from 1 to 9999 MB.");
         const neverDeleteLogs = panel.querySelector("#codex-decision-settings-never-delete").checked;
-        if (request("settingsSave", { key, provider: panel.querySelector("#codex-decision-settings-provider").value, mode, relevancePolicy, logLimitMb, neverDeleteLogs })) {
+        if (request("settingsSave", { key, provider: panel.querySelector("#codex-decision-settings-provider").value, fallbackEnabled: panel.querySelector("#codex-decision-settings-fallback").checked, mode, relevancePolicy, logLimitMb, neverDeleteLogs })) {
           setBusy(true); showMessage("Saving…"); showTest("");
         }
       } catch (error) { showMessage(error.message, "error"); }
@@ -389,12 +400,13 @@
       return;
     }
     if (action === "settingsRead" && reply.action === "ready") {
-      hasKey = Boolean(reply.hasKey);
       defaults = reply.defaults || null;
       setBusy(false);
-      showSavedKeyLength(reply.keyLength);
       showLifetime(reply.lifetime);
       panel.querySelector("#codex-decision-settings-provider").value = reply.config?.provider || "openai";
+      panel.querySelector("#codex-decision-settings-key").value = "";
+      showProviderKeys(reply);
+      panel.querySelector("#codex-decision-settings-fallback").checked = reply.config?.fallback_enabled === true;
       panel.querySelector("#codex-decision-settings-mode").value = reply.config?.mode || "replace";
       setThresholds(reply.config?.relevance_policy);
       savedLogLimit = reply.config?.log_limit_mb || 50;
@@ -410,15 +422,15 @@
       else {
         const reasons = { DECISION_HTTP_401: "Invalid", DECISION_KEY_EXPIRED: "Expired", DECISION_HTTP_403: "Rejected",
           DECISION_HTTP_429: "Rate limited", DECISION_TIMEOUT: "Timed out", DECISION_NETWORK_ERROR: "Network error",
-          DECISION_INVALID_RESPONSE: "Invalid response" };
+          DECISION_INVALID_RESPONSE: "Invalid response", DECISION_KEY_MISSING: "No saved key",
+          DECISION_KEY_INVALID: "Invalid", DECISION_CREDENTIAL_UNSAFE: "Credential file unavailable" };
         showTest(reasons[reply.result?.reason] || "Connection failed", "error");
       }
     } else if (action === "settingsSave" && reply.action === "saved") {
-      hasKey = Boolean(reply.hasKey);
       savedLogLimit = parseLogLimit(panel.querySelector("#codex-decision-settings-log-limit").value) || 50;
       savedNeverDeleteLogs = panel.querySelector("#codex-decision-settings-never-delete").checked;
       panel.querySelector("#codex-decision-settings-key").value = "";
-      showSavedKeyLength(reply.keyLength);
+      showProviderKeys(reply);
       showMessage("Settings saved.", "ok");
     } else if (action === "settingsSetNeverDeleteLogs") {
       showNeverDeleteLogs(savedNeverDeleteLogs);

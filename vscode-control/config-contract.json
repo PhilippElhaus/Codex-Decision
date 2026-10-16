@@ -78,6 +78,10 @@
         "openai",
         "typesafe"
       ]
+    },
+    "fallback_enabled": {
+      "type": "boolean",
+      "default": false
     }
   },
   "settings": {
@@ -128,6 +132,10 @@
     "model": {
       "type": "model",
       "default": "gpt-6-luna"
+    },
+    "fallback_enabled": {
+      "type": "boolean",
+      "default": false
     }
   },
   "thresholds": {

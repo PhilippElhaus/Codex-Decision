@@ -182,7 +182,7 @@ exports.run = async () => {
     await fs.rm(path.join(one,"stats.json"));
     acknowledged = null;
     await provider.refresh();
-    await until(() => acknowledged?.status === "Saved totals" && acknowledged.metrics.calls === "9");
+    await until(() => acknowledged?.status === "Hook totals · delivery unverified" && acknowledged.metrics.calls === "9");
     result.checks.push("unreadable activity retains the selected thread and recovers after repair");
     acknowledged = null;
     await provider.view.webview.postMessage({type:"decision-test-switch",mode:"latest"});
