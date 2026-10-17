@@ -49,7 +49,7 @@
     document.documentElement.style.setProperty("--screenshot-offset", `${Math.max(0, outerHeight - innerHeight)}px`);
     const demo = new URLSearchParams(location.search).get("demo") || "tooltip";
     const disabled = demo === "disabled" || demo === "disabled-pending";
-    const history = ["judged 42 lines · omitted 29 · Bash"];
+    const history = ["judged 50 lines · omitted 47 · synthetic search matches"];
     window.acquireVsCodeApi = () => ({ postMessage(request) {
       const settings = request.action === "settingsRead" ? { action: "ready", hasKey: true, keyLength: 32, providerKeys: { openai: { hasKey: true }, typesafe: { hasKey: true } },
         lifetime: { calls: 126, completed: 124, replaced: 41, linesJudged: 87320, linesOmitted: 915,

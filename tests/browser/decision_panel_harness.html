@@ -87,7 +87,12 @@
       const box = document.querySelector(selector).getBoundingClientRect();
       return [box.x, box.y, box.width, box.height].map(Math.round).join(",");
     }).join("|");
-    if (query.has("capture") && query.has("fifty")) decision.status = "replace";
+    if (query.has("capture") && query.has("fifty")) {
+      decision.version = 6;
+      decision.status = "replace";
+      decision.classification_requests = 0;
+      decision.totals.requests = 1;
+    }
     send(decision);
     if (query.has("totals")) document.querySelector("[data-panel-mode=totals]").click();
     const report = {};

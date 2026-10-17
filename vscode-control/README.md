@@ -23,7 +23,7 @@ Temporary WSL or installer access failures receive three automatic retries after
 
 ## Rollback
 
-Keep the previous integrated package and the per-build patch rollback directory. Reinstall the prior VSIX to restore its bundled hook and control. Before downgrading a patch, restore it with its matching `decisionctl patch-webview restore` and preserved rollback directory. Never discard plugin data or saved originals during rollback.
+Keep the previous complete package and the per-build patch rollback directory. Reinstalling an older VSIX replaces the control, but the installer deliberately refuses to downgrade a newer hook. Hook rollback needs a verified restoration of the prior package and Codex registration; no automatic downgrade command is provided. The integrated source backups contain only changed files and are not a complete installation restore. Restore a composer patch with its matching `decisionctl patch-webview restore` and preserved rollback directory. Preserve plugin data, credentials, saved originals, and trust records. Verify the selected plugin version and exact package bytes before using a restored control.
 
 ## Use
 

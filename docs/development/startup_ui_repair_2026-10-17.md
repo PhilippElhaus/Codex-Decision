@@ -31,6 +31,6 @@ No inspected evidence justifies weaker privacy checks or a higher omission cutof
 - The exact integrated VSIX passed two isolated native Windows launches, eight checks each. The first launch recovered automatically from a fixture-only temporary installer failure. The second launch verified restart idempotence.
 - A live OpenAI check sent only reviewed synthetic output through an isolated proxy. Three requests evaluated one 242-line result, preserved both required lines and the exact original, and matched the receipt and panel. This does not establish normal-session delivery.
 
-The VSIX SHA-256 is `42c3753fb0fbe2785ebcb40027030d2054a078c83412877879a04aa97ffae59c`. Both the integrated VSIX and standalone ZIP passed exact allowlist, source-byte, production-binary, and version checks. Screenshots capture the current webviews with synthetic, key-free state.
+The VSIX SHA-256 is `8d07b812c6c04004bcbfba2d8964606f70b37be334e06e60986fea8b1eab7f7f`. Both the integrated VSIX and standalone ZIP passed exact allowlist, source-byte, production-binary, and version checks. Screenshots capture the current webviews with synthetic, key-free state.
 
 Lab-Control capacity was occupied by other tasks. No foreign session was stopped or reused. The documented WSL build path and native Windows checks supplied validation. Reports and submission artifacts remain in ignored `.local/quality/` and `.local/submission/` locations.
