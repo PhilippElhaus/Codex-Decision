@@ -116,7 +116,7 @@ test("concurrent windows retry busy checks and accept only a verified completed 
   await assert.rejects(runIntegration(foreign.options), /changed host/);
 });
 
-function extensionFixture(setup, bootstrap, globalState) {
+function extensionFixture(setup, bootstrap, globalState, options = {}) {
   const commands = new Map();
   const notifications = [];
   const log = [];
@@ -142,7 +142,7 @@ function extensionFixture(setup, bootstrap, globalState) {
     },
   };
   const integration = activateIntegration(vscode, context, { ...setup.options, ready: bootstrap,
-    dataDirectory: () => setup.options.dataDirectory });
+    dataDirectory: () => setup.options.dataDirectory, ...options });
   return { integration, commands, notifications, log, executed, listeners, settings, vscode,
     dispose() { for (const entry of context.subscriptions.reverse()) entry.dispose(); } };
 }
@@ -329,6 +329,66 @@ test("corrected configuration and manual repair retry a failed bootstrap without
     assert.deepEqual(extension.executed, ["codexDecision.showLatestDecision"]);
     assert.equal(extension.notifications.length, 2, "one initial failure and one recovered manual status");
   } finally { extension.dispose(); }
+});
+
+async function waitFor(check) {
+  const deadline = Date.now() + 1000;
+  while (!check() && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.ok(check(), "the scheduled integration check did not complete");
+}
+
+test("temporary installation failures recover automatically with a bounded retry budget", async () => {
+  for (const persistent of [false, true]) {
+    const setup = fixture(["ready"]);
+    let attempts = 0;
+    const extension = extensionFixture(setup, async () => {
+      attempts += 1;
+      if (persistent || attempts < 3) throw Object.assign(new Error("temporary file or process access failure"), { retryable: true });
+      return { status: "ready", distro: "Ubuntu" };
+    }, undefined, { retryDelaysMs: [5, 5] });
+    try {
+      assert.equal((await extension.integration.inspect(true, false)).status, "retrying");
+      await waitFor(() => persistent ? extension.notifications.length === 1 : setup.actions().length === 1);
+      assert.equal(attempts, 3);
+      assert.equal(extension.notifications.length, persistent ? 1 : 0);
+      assert.deepEqual(setup.actions(), persistent ? [] : ["status"]);
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      assert.equal(attempts, 3, "retries must stop after success or exhaustion");
+    } finally { extension.dispose(); }
+  }
+});
+
+test("configuration refusals never retry and disabling automatic repair cancels temporary recovery", async () => {
+  for (const retryable of [false, true]) {
+    const setup = fixture();
+    let attempts = 0;
+    const extension = extensionFixture(setup, async () => {
+      attempts += 1;
+      throw Object.assign(new Error("installation unavailable"), { retryable });
+    }, undefined, { retryDelaysMs: [10] });
+    try {
+      assert.equal((await extension.integration.inspect(true, false)).status, retryable ? "retrying" : "failed");
+      extension.settings.autoRepairIntegration = false;
+      extension.listeners.config({ affectsConfiguration: () => true });
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      assert.equal(attempts, 1);
+      assert.deepEqual(setup.actions(), []);
+      assert.equal(extension.notifications.length, retryable ? 0 : 1);
+    } finally { extension.dispose(); }
+  }
+});
+
+test("disposing the extension cancels a pending temporary installation retry", async () => {
+  const setup = fixture();
+  let attempts = 0;
+  const extension = extensionFixture(setup, async () => {
+    attempts += 1;
+    throw Object.assign(new Error("installation unavailable"), { retryable: true });
+  }, undefined, { retryDelaysMs: [10] });
+  assert.equal((await extension.integration.inspect(true, false)).status, "retrying");
+  extension.dispose();
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert.equal(attempts, 1);
 });
 
 test("concurrent manual checks serialize their bootstrap factories", async () => {

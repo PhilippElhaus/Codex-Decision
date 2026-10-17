@@ -4,12 +4,12 @@ The integrated VSIX must pass the native clean-install check before release:
 
 ```powershell
 pwsh -NoProfile -File .\vscode-control\scripts\windows_integrated_smoke.ps1 `
-  -Vsix .\.local\submission\codex-decision-0.12.0.vsix -Distro Ubuntu
+  -Vsix .\.local\submission\codex-decision-0.12.1.vsix -Distro Ubuntu
 ```
 
 This check uses the actual packaged extension, a copied supported Codex host,
 an isolated Windows profile, and private Linux fixture state. It verifies fresh
-installation, the exact hook cache, one registration, automatic UI repair,
+installation, recovery from an injected temporary startup failure, the exact hook cache, one registration, automatic UI repair,
 restart idempotence, provider forwarding, session defaults, and native panel
 rendering. It preserves the user's installed extensions, credentials, and chats.
 
@@ -17,7 +17,7 @@ Run the current release checks from the repository root. The offline tests use s
 
 Provider fallback tests exercise both directions, missing keys, malformed answers, failed later batches, and two maximum-length keys. They verify one complete-provider retry, exact originals, retained attempts, and no fallback across local safety checks. Fallback stays off for existing configurations.
 
-Run a read-only effectiveness audit with `node scripts/usage_effectiveness_audit.cjs --data-dir <PLUGIN_DATA> --codex-sessions <CODEX_HOME/sessions> --observation-date YYYY-MM-DD`. The report contains aggregate metadata and separates partial history, committed hook payloads, and observed omission headers. It does not read credentials, contact a provider, or establish delivered token savings from receipts alone. See the [2026-10-16 audit](../docs/development/usage_effectiveness_2026-10-16.md) for scope and limits.
+Run a read-only effectiveness audit with `node scripts/usage_effectiveness_audit.cjs --data-dir <PLUGIN_DATA> --codex-sessions <CODEX_HOME/sessions> --observation-date YYYY-MM-DD`. Add `--since YYYY-MM-DDTHH:MM:SSZ` for a recent retained-event slice. The report separates partial history, bounded output participation, classification-only API usage, committed hook payloads, and observed omission headers. It does not read credentials, contact a provider, or establish delivered token savings from receipts alone. See the [2026-10-17 audit](../docs/development/usage_effectiveness_2026-10-17.md) for scope and limits.
 
 Use `cargo bench --locked -p codex-decision --bench pipeline -- all` for offline CPU and allocation measurements. Use `equivalence` instead of `all` to print fingerprints for 1,000 seeded complete packing cases. Give before and after builds different `CARGO_TARGET_DIR` paths. Compare fingerprints before interpreting timing results.
 
@@ -42,6 +42,8 @@ To exercise the installed hook, run `decisionctl check-hook-trust --cwd <reposit
 Use the reviewed output corpus below for live checks. The runner reads the installed key only in memory and sends synthetic output. Review receipts with `decisionctl evaluate-quality --cases <private JSON>` before changing cutoffs. Old ignored live Rust tests have been replaced by this runner; they assumed the retired request shape and copied a key file into a fixture.
 
 Regenerate README screenshots with `python3 vscode-control/scripts/capture_docs.py`. The capture loads the real webviews through the visual and panel harnesses. It checks current relevance totals and the dated historical failing-test batch. The settings image shows the current 5% relevance cutoff. The fixtures contain no real keys or private conversations.
+
+Composer and panel regressions restore identical saved request/skip counts and latest hook outcomes across reloads and thread switches. Browser checks cover an error followed by a normal skip, retained errors, old-version verification, navigation, and activity-only updates that preserve line rows. Hit tests verify that Codex menu layers cover the indicator and its focused tooltip, then release the control when closed.
 
 Migration checks cover all eight legacy switch combinations, conservative cutoff merging, invalid legacy fields, and saving only the current schema. Browser checks assert the single accessible switch, absence of the popup, and one shared relevance cutoff.
 

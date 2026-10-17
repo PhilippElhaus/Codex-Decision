@@ -24,7 +24,7 @@
     let outputEnabled = false, needsKey = false, health = { ok: true, model: "jev-1.13.0" }, classificationPulse = 0, mode = "replace";
     const viewStartedAt = Date.now() - 1000;
     let hookHealth = { version: 1, hook_version: "0.8.1", last_seen_ms: Date.now(), last_success_ms: Date.now() };
-    const stats = { calls: 7, candidates: 4, kept: 2, replaced: 1, checkedChars: 90640, savedChars: 6058,
+    const stats = { calls: 7, skipped: 41, candidates: 4, kept: 2, replaced: 1, checkedChars: 90640, savedChars: 6058,
       estimatedTokensSaved: 1515, elapsedMs: 8120, timed: 7, averageMs: 1160, completed: 7 };
     const history = [
       "replaced · test/build · 6,367 chars · -95%",
@@ -34,6 +34,7 @@
     let calls = 0, activeViewId = null, freshView = false;
     window.__jevHarnessLastAction = "";
     window.__jevHarnessLastSessionId = null;
+    window.__jevHarnessHookActivity = null;
     window.__jevHarnessHoldNextStatus = false;
     window.__jevHarnessHeldStatus = null;
     window.__jevHarnessDropReplies = false;
@@ -108,7 +109,7 @@
             request.action === "settingsOpenLogs" ? { action: "openedLogs" } : undefined;
       queueMicrotask(() => window.dispatchEvent(new MessageEvent("message", { data: {
         type: "codex-decision-reply", id: request.id,
-        status: { provider: window.__jevHarnessProvider, providerKeys: window.__jevHarnessProviderKeys, fallbackEnabled: window.__jevHarnessFallback, enabled: !waitingForThread && outputEnabled, sessionPending: waitingForThread, configurationError: waitingForThread && request.expectsLocalSession ? "Codex session could not be identified" : null, needsKey, keyTest, keySaved, externalOpen: request.action === "openProvider" ? window.__jevHarnessExternalOpen : undefined, settings, health, hookHealth, expectedHookVersion: "0.8.1", viewStartedAt, classificationPulse, mode, recent: freshView ? "No decision recorded yet" : history[0],
+        status: { provider: window.__jevHarnessProvider, providerKeys: window.__jevHarnessProviderKeys, fallbackEnabled: window.__jevHarnessFallback, enabled: !waitingForThread && outputEnabled, sessionPending: waitingForThread, configurationError: waitingForThread && request.expectsLocalSession ? "Codex session could not be identified" : null, needsKey, keyTest, keySaved, externalOpen: request.action === "openProvider" ? window.__jevHarnessExternalOpen : undefined, settings, health, hookHealth, hookActivity: window.__jevHarnessHookActivity, expectedHookVersion: "0.8.1", viewStartedAt, classificationPulse, mode, recent: freshView ? "No decision recorded yet" : history[0],
           history: freshView ? [] : history,
           stats: freshView ? { calls: 0, candidates: 0, kept: 0, replaced: 0, checkedChars: 0, elapsedMs: 0, completed: 0 } : stats },
       } })));
@@ -153,6 +154,29 @@
         buttonStyle.backgroundColor === "rgba(0, 0, 0, 0)" &&
         Math.abs(button.getBoundingClientRect().height - document.querySelector(".model").getBoundingClientRect().height) <= 1,
         "Decision button has a transparent resting surface and matches model height");
+      // Codex portals menus above its composer at layers 50 and 70. Exercise
+      // hit testing against an opaque open menu, including a focused tooltip.
+      button.focus();
+      for (const layer of [50, 70]) {
+        const menu = document.createElement("div");
+        menu.setAttribute("role", "menu");
+        menu.style.cssText = `position:fixed;inset:0;z-index:${layer};background:#202020`;
+        menu.innerHTML = '<button role="menuitem">Usage remaining</button>';
+        document.body.append(menu);
+        await pause(25);
+        for (const target of [button, document.getElementById("codex-decision-tip")]) {
+          const bounds = target.getBoundingClientRect();
+          const x = Math.max(1, Math.min(innerWidth - 1, bounds.left + bounds.width / 2));
+          const y = Math.max(1, Math.min(innerHeight - 1, bounds.top + bounds.height / 2));
+          check(menu.contains(document.elementFromPoint(x, y)),
+            `Codex menu at layer ${layer} covers the Decision indicator and tooltip`);
+        }
+        menu.remove();
+      }
+      button.blur();
+      const restoredButton = button.getBoundingClientRect();
+      check(button.contains(document.elementFromPoint(restoredButton.left + restoredButton.width / 2,
+        restoredButton.top + restoredButton.height / 2)), "Decision becomes reachable after the menu closes");
       const modelControl = document.querySelector(".model");
       const accessControl = document.querySelector(".access");
       for (const height of [30, 38, 34]) {
@@ -339,18 +363,41 @@
       hookHealth = { ...hookHealth, last_error_ms: Date.now() + 1, last_error: "invalid Decision response" };
       await until(() => document.getElementById("codex-decision-health-reason").textContent.includes("invalid Decision response"),
         "hook error is reported");
-      check(button.style.color === "rgb(135, 205, 164)", "hook error does not change API color");
+      check(button.style.color === "rgb(233, 148, 144)" &&
+        document.getElementById("codex-decision-api-state").textContent === "Decision API connected",
+        "hook error is red while API connectivity stays separately labeled");
       check(document.getElementById("codex-decision-health-reason").textContent.includes("invalid Decision response"),
         "hook error is explained");
+      const savedHookAt = viewStartedAt - 5000;
+      hookHealth = { ...hookHealth, last_seen_ms: savedHookAt, last_error_ms: savedHookAt,
+        last_skip_ms: savedHookAt - 1 };
+      window.dispatchEvent(new Event("focus"));
+      await until(() => button.style.color === "rgb(233, 148, 144)" &&
+        healthReason.textContent.includes("invalid Decision response"),
+        "saved hook failure survives a restored composer");
+      hookHealth = { ...hookHealth, last_seen_ms: savedHookAt + 1, last_skip_ms: savedHookAt + 1 };
+      window.dispatchEvent(new Event("focus"));
+      await until(() => button.style.color === "rgb(135, 205, 164)" && healthRow.hidden,
+        "a newer saved skip clears an old hook error and verifies activity after restore");
+      check(!tip.textContent.includes("invalid Decision response"), "the recovered hook does not retain a stale error");
       hookHealth = { ...hookHealth, last_seen_ms: Date.now() + 2, last_success_ms: Date.now() + 2 };
       await until(() => button.style.color === "rgb(135, 205, 164)", "successful hook clears error state");
       hookHealth = { ...hookHealth, hook_version: "0.6.0", last_seen_ms: Date.now() + 3 };
       await until(() => document.getElementById("codex-decision-health-reason").textContent.includes("Update the Decision plugin"),
         "old hook binary is reported");
-      check(button.style.color === "rgb(135, 205, 164)", "old hook binary does not change API color");
+      check(button.style.color === "rgb(233, 148, 144)", "a fresh wrong hook version is red");
       check(document.getElementById("codex-decision-health-reason").textContent.includes("Update the Decision plugin"),
         "version mismatch has a recovery step");
-      hookHealth = { ...hookHealth, hook_version: "0.8.1", last_seen_ms: Date.now() + 4 };
+      hookHealth = { ...hookHealth, last_seen_ms: savedHookAt + 1, last_success_ms: savedHookAt + 1,
+        last_error_ms: 0, last_skip_ms: 0 };
+      window.dispatchEvent(new Event("focus"));
+      await until(() => button.style.color === "rgb(230, 188, 106)" &&
+        healthRow.querySelector("strong").textContent === "Verify updated Decision hook",
+        "a pre-upgrade receipt waits for version verification instead of reporting a broken installation");
+      check(healthReason.textContent.includes("Saved activity is from an earlier hook version"),
+        "historical version evidence is labeled accurately");
+      hookHealth = { ...hookHealth, hook_version: "0.8.1", last_seen_ms: Date.now() + 4,
+        last_skip_ms: Date.now() + 4, last_skip: "small" };
       await until(() => button.style.color === "rgb(135, 205, 164)", "matching hook restores health");
       health = { ok: false, reason: "DECISION_NETWORK_ERROR" };
       await until(() => button.style.color === "rgb(233, 148, 144)", "unreachable API is red");
@@ -378,6 +425,7 @@
       const tooltip = document.getElementById("codex-decision-tip");
       check(tooltip.textContent.includes("This session") && tooltip.textContent.includes("Recent Actions") &&
         tooltip.textContent.includes("7 checked · 1 replaced · 1,1s avg") &&
+        tooltip.querySelector("#codex-decision-requests").textContent === "7 API requests · 41 skipped outputs" &&
         tooltip.textContent.includes("Hook payload estimate: ~1,515") &&
         tooltip.textContent.includes("Delivery to Codex is unverified.") &&
         !tooltip.textContent.includes("chars checked") && !tooltip.textContent.includes("· replace") &&
@@ -528,7 +576,8 @@
       window.dispatchEvent(new Event("focus"));
       await until(() => healthRow.querySelector("strong").textContent === "No Decision hook activity",
         "API connectivity without a hook receipt explains the missing activity");
-      check(tooltip.innerText.includes("check /hooks and reload VS Code"), "missing hook activity explains recovery");
+      check(tooltip.innerText.includes("check /hooks and reload VS Code") &&
+        button.style.color === "rgb(230, 188, 106)", "missing hook activity is amber and explains recovery");
       hookHealth = previousHook;
       outputEnabled = false;
       Date.now = previousNow;
@@ -886,14 +935,23 @@
       await pause(30);
       check(button.style.color !== "rgb(154, 154, 154)",
         "an older reply cannot briefly turn the active thread gray");
+      window.__jevHarnessHookActivity = { kind: "error", message: "Synthetic saved hook error. Full output was kept." };
+      window.dispatchEvent(new Event("focus"));
+      await until(() => button.style.color === "rgb(233, 148, 144)" &&
+        document.getElementById("codex-decision-hook-activity").textContent.includes("Synthetic saved hook error"),
+        "the composer uses the shared persisted hook activity summary");
       window.__jevHarnessHeldStatus = null;
       window.__jevHarnessHoldNextStatus = true;
       await until(() => window.__jevHarnessHeldStatus?.sessionId === "fixture-session",
         "hold a reply from the previous thread");
       document.documentElement.dataset.codexDecisionRouteKind = "none";
       delete document.documentElement.dataset.codexDecisionSessionId;
+      window.__jevHarnessHookActivity = null;
+      window.dispatchEvent(new Event("codex-decision-route"));
       await until(() => document.getElementById("codex-decision-button").disabled &&
         button.style.color === "rgb(154, 154, 154)", "home view keeps the toggle gray without a thread");
+      check(!document.getElementById("codex-decision-hook-activity").textContent.includes("Synthetic saved hook error"),
+        "leaving a failed thread clears its shared hook state before the new reply");
       check(root.dataset.noSession === "true" &&
         button.title === "Open a local Codex thread to turn Decision on or off.",
         "home view explains why session switches are unavailable");

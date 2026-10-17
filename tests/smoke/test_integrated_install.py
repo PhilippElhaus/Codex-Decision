@@ -1,10 +1,12 @@
 """Check safe, repeatable updates of the hook bundled inside the VSIX."""
 
 import importlib.util
+import errno
 import json
 from pathlib import Path
 import shutil
 import tempfile
+import subprocess
 import unittest
 
 
@@ -161,6 +163,31 @@ class IntegratedInstall(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "already registered"):
             INSTALLER.install(self.payload, Path("codex"), self.home, self.codex_home, run)
         self.assertFalse((self.home / ".local/share/codex-decision").exists())
+
+    def test_failure_diagnostics_identify_stage_without_paths_or_process_output(self):
+        private = "private-path-or-credential-must-not-appear"
+        failures = [(OSError(errno.EBUSY, private, private), True, "temporary file"),
+                    (OSError(errno.EAGAIN, private, private), True, "temporary file"),
+                    (OSError(errno.EACCES, private, private), False, "file access denied"),
+                    (FileNotFoundError(errno.ENOENT, private, private), False, "file or executable missing"),
+                    (json.JSONDecodeError(private, private, 0), False, "invalid JSON metadata"),
+                    (subprocess.TimeoutExpired(private, 90, output=private, stderr=private), True, "timed out"),
+                    (TypeError(private), False, "unexpected installation error")]
+        for error, retryable, expected in failures:
+            result = INSTALLER.installation_failure(error, "Codex plugin discovery")
+            self.assertEqual(result["status"], "error")
+            self.assertEqual(result["retryable"], retryable)
+            self.assertIn(expected, result["error"])
+            self.assertIn("Codex plugin discovery", result["error"])
+            self.assertNotIn(private, json.dumps(result))
+        self.assertFalse(INSTALLER.installation_failure(ValueError("disabled in Codex"), "inspection")["retryable"])
+
+    def test_installation_reports_bounded_owned_phases(self):
+        self.existing()
+        phases = []
+        self.install(report_phase=phases.append)
+        self.assertEqual(phases, ["package inspection", "Codex plugin discovery", "package update",
+                                  "installed package verification"])
 
 
 if __name__ == "__main__":

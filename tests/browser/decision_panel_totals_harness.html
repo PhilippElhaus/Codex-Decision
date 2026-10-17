@@ -56,6 +56,17 @@
     select("latest");
     report.latestForB = document.querySelector(".batch-row")?.textContent.includes("Synthetic diagnostic") &&
       document.querySelector(".activity-counts").textContent === "2 API requests · 30 skipped outputs";
+    const retainedRow = document.querySelector(".batch-row");
+    const skippedAfterDecision = {...activityB,skipped:31,
+      message:"The latest output was too short to evaluate.",
+      hookActivity:{kind:"skip",message:"The latest output was too short to evaluate."}};
+    window.dispatchEvent(new MessageEvent("message",{data:{type:"activity",activity:skippedAfterDecision}}));
+    report.latestSkipVisible = !document.querySelector(".activity-status").hidden &&
+      document.querySelector(".activity-status").textContent === "Latest hook: The latest output was too short to evaluate." &&
+      document.querySelector(".activity-counts").textContent === "2 API requests · 31 skipped outputs";
+    report.latestSkipPreservesDecision = document.querySelector(".batch-row") === retainedRow &&
+      document.querySelector(".batch-title").textContent === "0 / 1 removed" &&
+      document.querySelector(".batch-status").textContent === "Hook replacement · delivery unverified";
     select("totals");
     send(make("a".repeat(32)),activityA);
     report.returnToA = metric("calls") === "9" && metric("seen") === "147";

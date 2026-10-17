@@ -4,19 +4,21 @@
 
 Codex Decision selects repetitive lines for removal from supported local tool output. Errors and useful evidence stay visible. Every shortened result links to the complete original.
 
-**Codex Decision 0.12.0** — [Download the integrated VSIX](https://github.com/PhilippElhaus/Codex-Decision/releases/latest).
+**Codex Decision 0.12.1** — [Download the integrated VSIX](https://github.com/PhilippElhaus/Codex-Decision/releases/latest).
 
 ## Get started
 
 Install the single VSIX in Windows VS Code with a Linux x86_64 WSL environment:
 
 ```bash
-code --install-extension codex-decision-0.12.0.vsix --force
+code --install-extension codex-decision-0.12.1.vsix --force
 ```
 
 The package contains the hook, skill, session controls, settings, and verified Codex UI patch. On activation it installs or updates the local plugin and repairs supported Codex builds. Existing plugin data and thread choices remain in place. Run **Developer: Reload Window** after the integration repair, then open your Codex thread. Review the hook in `/hooks` if Codex requests trust. No second package or manual composer patch is needed.
 
 Use **Decision: Check Integration** for status and **Decision: Repair Integration** to restore the controls and reopen a hidden Decision panel. Unsupported Codex builds produce a visible diagnostic. See [installation and upgrades](docs/setup/setup_installation.md) for details and standalone CLI setup.
+
+Temporary WSL or installer access failures retry automatically after 2, 5, and 15 seconds. Persistent failures identify the installation phase without exposing private process output. Configuration and security refusals remain visible immediately.
 
 ### 1. Connect Decision
 
@@ -32,6 +34,10 @@ Click **decision** in the composer. Each thread remembers its choice. Eligible o
 
 <img src="docs/images/decision-toggle.png" width="620" alt="Decision on/off button on the Codex composer toolbar">
 
+The enabled indicator reflects API and hook health: green when healthy, red for a failure, and amber while checking or waiting for hook verification. Its tooltip and the Decision panel share the active thread's request counts, skipped-output counts, and latest hook outcome. A newer normal skip clears an older error. Codex dropdown menus cover the indicator.
+
+<img src="docs/images/decision-activity.png" width="900" alt="Current composer tooltip showing two API requests, fourteen skipped outputs, and a normal short-output skip">
+
 ### 3. Adjust the details
 
 Open **Codex settings → Decision** to choose **Monitor** (keep full output) or **Filter** (shorten approved output). Manage the relevance cutoff, API key, and log retention here. Settings apply to all sessions.
@@ -40,7 +46,7 @@ Open **Codex settings → Decision** to choose **Monitor** (keep full output) or
 
 ### 4. Inspect a result
 
-Open the **Decision** panel beside **Terminal** and **Output**. Blue rows mark proposed omissions; gold rows mark kept lines. Bars show relevance. Hover for excerpts and reasons. Before the first decision, the panel shows hook activity and skip reasons.
+Open the **Decision** panel beside **Terminal** and **Output**. Blue rows mark proposed omissions; gold rows mark kept lines. Bars show relevance. Hover for excerpts and reasons. The latest hook status stays visible alongside the last line evaluation, so a later skip does not make an older evaluation appear current.
 
 <img src="docs/images/decision-panel.png" width="1000" alt="Decision panel showing 47 of 50 lines removed and persistent thread activity counts">
 
@@ -48,10 +54,10 @@ Select **Latest** for the current result or **Totals** for the selected thread�
 
 <img src="docs/images/decision-totals.png" width="1000" alt="Decision Totals view with saved session counts and reasons outputs stayed complete">
 
-Screenshots use synthetic data. Code-mode scripts can still serialize the original tool result after a hook records a replacement, so the panel’s removal counts do not establish downstream token savings. See the [processing investigation](docs/development/processing_recovery_2026-10-08.md) and [troubleshooting](docs/setup/setup_installation.md).
+Screenshots capture the current webview code with synthetic, key-free data. Code-mode scripts can still serialize the original tool result after a hook records a replacement, so the panel’s removal counts do not establish downstream token savings. See the [processing investigation](docs/development/processing_recovery_2026-10-08.md) and [troubleshooting](docs/setup/setup_installation.md).
 
-The [cross-session effectiveness audit](docs/development/usage_effectiveness_2026-10-16.md) separates API reliability, committed hook payloads, and observed delivery. The UI labels hook estimates and unverified delivery explicitly.
+The [October 17 usage audit](docs/development/usage_effectiveness_2026-10-17.md) bounds API participation at **7.34–7.78% of enabled invocations** in its exact historical cohort. Small outputs and exact source reads account for about 62% of invocations. A classification keep already contacted the API, and one output can require several requests. These figures do not justify raising the relevance cutoff or weakening preservation rules. The UI labels hook estimates and unverified delivery explicitly.
 
 ## Documentation
 
-[API key](docs/setup/setup_credentials.md) · [Filtering rules](docs/architecture/design_integrations.md) · [Privacy and safeguards](docs/architecture/design_data.md) · [Tests](tests/README.md) · [Request reliability audit](docs/development/reliability_audit_2026-10-08.md) · [Panel and skip investigation](docs/development/panel_activity_2026-10-08.md) · [Usage verification](docs/development/usage_optimization_2026-10-05.md) · [Provider benchmarks](docs/development/provider_benchmarks_2026-10-07.md)
+[API key](docs/setup/setup_credentials.md) · [Filtering rules](docs/architecture/design_integrations.md) · [Privacy and safeguards](docs/architecture/design_data.md) · [Tests](tests/README.md) · [Startup and UI verification](docs/development/startup_ui_repair_2026-10-17.md) · [Request reliability audit](docs/development/reliability_audit_2026-10-08.md) · [Usage verification](docs/development/usage_optimization_2026-10-05.md) · [Provider benchmarks](docs/development/provider_benchmarks_2026-10-07.md)

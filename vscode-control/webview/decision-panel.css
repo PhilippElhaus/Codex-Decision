@@ -13,6 +13,7 @@ body:is(.vscode-light, .light) .batch-layout { --batch-keep: #895900; --batch-cu
 .panel-tab:focus-visible { outline: 1px solid var(--vscode-focusBorder, #69aef0); outline-offset: 1px; }
 .batch-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; margin-left: auto; max-width: 100%; text-align: right; }
 .activity-counts { color: var(--vscode-foreground); font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.activity-status { flex-basis: 100%; margin-top: 2px; color: var(--vscode-descriptionForeground, #aaa); font-size: 11px; line-height: 1.4; overflow-wrap: anywhere; }
 .batch-status { color: var(--vscode-descriptionForeground, #888); font-size: 11px; white-space: nowrap; }
 .batch-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 290px), 1fr)); grid-auto-rows: var(--batch-row-height); gap: 0 12px; min-width: 0; }
 .batch-row { display: grid; grid-template-columns: 5ch minmax(0, 1fr) 10ch 4ch 4ch; align-items: center; gap: 5px; min-width: 0; height: var(--batch-row-height); padding: 3px 2px; border-bottom: 1px solid var(--vscode-panel-border, #5553); font: 11px var(--vscode-editor-font-family, monospace); }

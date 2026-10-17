@@ -25,6 +25,12 @@ const NAMES = new Set(["Bash", "exec", "functions.exec", "exec_command", "wait",
   "sensitive", "unsafe_task_context", "exact_content", "unsupported_result", "unsupported_route",
   "choice_kept_full_output", "structure_guard", "no_eligible_lines", "tool_input_budget", "line_budget",
   "relevance_budget", "protected_output", "protected_command", "protected_input", "validated_format", "classified"]);
+for (const name of ["unsupported_event", "structured_or_empty", "exhaustive_task"]) NAMES.add(name);
+const KINDS = new Set(["independent_records", "independent_matches", "progress_output", "repetitive_log",
+  "exact_content", "prose", "structured_payload", "mixed_or_unknown"]);
+const LOCAL_SKIP_REASONS = new Set(["unsupported_event", "unsupported_route", "unsupported_result", "small", "large",
+  "tool_input_budget", "line_budget", "exact_content", "sensitive", "structured_or_empty", "structure_guard",
+  "mcp_replacement_disabled", "unsafe_task_context", "exhaustive_task", "insufficient_savings"]);
 const safeName = text => NAMES.has(text) ? text : "unrecorded";
 const safeVersion = text => typeof text === "string" && /^\d+\.\d+\.\d+(?:-[a-z0-9.]+)?$/.test(text) ? text : "unrecorded";
 const count = (map, name, value = 1) => {
@@ -33,10 +39,13 @@ const count = (map, name, value = 1) => {
   }
   map[name] = (map[name] || 0) + value;
 };
-const freshSummary = () => ({ scopes: 0, metrics: {}, skip_reasons: {}, skip_details: {}, candidate_reasons: {} });
+const freshSummary = () => ({ scopes: 0, metrics: {}, skip_reasons: {}, skip_details: {}, candidate_reasons: {},
+  skip_reason_coverage: { exact_scopes: 0, partial_scopes: 0, unknown_scopes: 0 } });
 
 function addActivity(summary, activity) {
   summary.scopes += 1;
+  const coverage = summary.skip_reason_coverage ||= { exact_scopes: 0, partial_scopes: 0, unknown_scopes: 0 };
+  coverage[activity.skipReasonsPartial === false ? "exact_scopes" : activity.skipReasonsPartial === true ? "partial_scopes" : "unknown_scopes"] += 1;
   for (const key of METRICS) {
     const metric = summary.metrics[key] ||= { recorded: 0, known_scopes: 0, partial_scopes: 0, unknown_scopes: 0 };
     if (activity[key] === null || activity[key] === undefined) metric.unknown_scopes += 1;
@@ -52,6 +61,43 @@ function addActivity(summary, activity) {
   }
 }
 
+// A request count is not an output count: one output can need a Choice, many
+// relevance batches, and a fallback. Choice keeps also contacted the provider.
+// Bound the output count using exact counters instead of equating it to either
+// request attempts or completed line evaluations. Errors and ambiguous-stage
+// skips stay unresolved; they never become invented successful evaluations.
+function invocationFunnel(summary) {
+  const required = ["seen", "skipped", "calls", "requestCancelled", "completed", "errors"];
+  if (!summary.scopes || required.some(name => {
+    const metric = summary.metrics[name];
+    return !metric || metric.known_scopes !== summary.scopes || metric.partial_scopes || metric.unknown_scopes;
+  }) || summary.skip_reason_coverage?.exact_scopes !== summary.scopes) {
+    return { available: false, reason: "incomplete_counter_coverage" };
+  }
+  const value = name => summary.metrics[name].recorded;
+  const seen = value("seen"), completed = value("completed"), skipped = value("skipped"), errors = value("errors");
+  const local = Object.entries(summary.skip_reasons).reduce((total, [reason, amount]) =>
+    total + (LOCAL_SKIP_REASONS.has(reason) ? amount : 0), 0);
+  const classificationKeeps = summary.skip_reasons.choice_kept_full_output || 0;
+  const attempted = value("calls") - value("requestCancelled");
+  const skipReasonTotal = Object.values(summary.skip_reasons).reduce((total, amount) => total + amount, 0);
+  const lower = completed + classificationKeeps;
+  const upper = Math.min(attempted, seen - local);
+  const remainder = seen - skipped - completed - errors;
+  const consistent = remainder === 0 && attempted >= 0 && lower <= upper && skipReasonTotal === skipped &&
+    [local, lower, upper, skipReasonTotal].every(Number.isSafeInteger);
+  const percent = amount => seen ? Number((100 * amount / seen).toFixed(4)) : null;
+  return { available: true, enabled_invocations: seen, skipped_invocations: skipped,
+    local_skip_invocations_at_least: local, classification_kept_full_outputs: classificationKeeps,
+    completed_line_evaluations: completed, hook_errors: errors, unreconciled_invocations: remainder,
+    api_request_intents: value("calls"), cancelled_before_send: value("requestCancelled"),
+    attempted_requests_after_cancellation: attempted >= 0 ? attempted : null,
+    request_attempts_per_100_invocations: attempted >= 0 ? percent(attempted) : null, consistent_snapshot: consistent,
+    outputs_reaching_api_lower_bound: consistent ? lower : null,
+    outputs_reaching_api_upper_bound: consistent ? upper : null,
+    outputs_reaching_api_share_percent: consistent ? { lower: percent(lower), upper: percent(upper) } : null };
+}
+
 function emptyEvents() {
   return { records: 0, malformed_records: 0, truncated_files: 0, outcomes: {}, providers: {},
     tools: {}, routing: {}, replacements_by_tool: {}, replacement_source_hashes: new Set(),
@@ -60,7 +106,16 @@ function emptyEvents() {
     fallback_actual_providers: {}, fallback_configured_providers: {},
     requests: 0, elapsed_ms: 0, replacement_original_chars: 0, replacement_visible_chars: 0,
     proposed_omitted_lines: 0, replacement_omitted_lines: 0, api_input_tokens: 0,
-    api_output_tokens: 0, usage_records: 0, first_at: null, last_at: null };
+    api_output_tokens: 0, usage_records: 0, first_at: null, last_at: null,
+    classification_only: { records: 0, tools: {}, tool_families: {}, output_kinds: {}, source_size_bands: {} } };
+}
+
+function toolFamily(tool) {
+  if (["exec", "wait", "functions.exec", "functions.wait"].includes(tool)) return "code_mode";
+  if (["Bash", "exec_command", "functions.exec_command", "write_stdin", "functions.write_stdin"].includes(tool)) return "shell";
+  if (typeof tool === "string" && /^(?:functions\.)?mcp__lab_control__/.test(tool)) return "native_lab";
+  if (typeof tool === "string" && /^(?:functions\.)?mcp__/.test(tool)) return "other_mcp";
+  return "other";
 }
 
 function addEvent(summary, event) {
@@ -82,6 +137,24 @@ function addEvent(summary, event) {
     summary.first_at = summary.first_at === null || at < summary.first_at ? at : summary.first_at;
     summary.last_at = summary.last_at === null || at > summary.last_at ? at : summary.last_at;
   }
+  // Classification-only skips carry real request timing and usage. Keep these
+  // in request totals even though no line evaluation or receipt was committed.
+  for (const [field, target] of [["requests", "requests"], ["elapsed_ms", "elapsed_ms"]]) {
+    if (event[field] !== undefined && event[field] !== null) count(summary, target, event[field]);
+  }
+  if (event.api_usage && Number.isSafeInteger(event.api_usage.input_tokens) && Number.isSafeInteger(event.api_usage.output_tokens)) {
+    count(summary, "api_input_tokens", event.api_usage.input_tokens);
+    count(summary, "api_output_tokens", event.api_usage.output_tokens);
+    summary.usage_records += 1;
+  }
+  if (event.status === "skip" && event.requests > 0) {
+    const stage = summary.classification_only;
+    stage.records += 1; count(stage.tools, safeName(event.tool)); count(stage.tool_families, toolFamily(event.tool));
+    count(stage.output_kinds, KINDS.has(event.output_kind) ? event.output_kind : "unrecorded");
+    const size = event.original_chars;
+    count(stage.source_size_bands, !Number.isSafeInteger(size) ? "unrecorded" : size < 256 ? "under_256" :
+      size < 1024 ? "256_1023" : size < 4096 ? "1024_4095" : size < 16384 ? "4096_16383" : "16384_plus");
+  }
   if (!["replace", "candidate", "keep"].includes(event.status)) return true;
   const actualProvider = ["openai", "typesafe"].includes(event.provider) ? event.provider : "unrecorded";
   count(summary.providers, actualProvider);
@@ -95,14 +168,8 @@ function addEvent(summary, event) {
   }
   count(summary.tools, safeName(event.tool));
   count(summary.routing, safeName(event.routing));
-  for (const [field, target] of [["requests", "requests"], ["elapsed_ms", "elapsed_ms"],
-    ["lines_omitted", "proposed_omitted_lines"]]) {
+  for (const [field, target] of [["lines_omitted", "proposed_omitted_lines"]]) {
     if (event[field] !== undefined && event[field] !== null) count(summary, target, event[field]);
-  }
-  if (event.api_usage && Number.isSafeInteger(event.api_usage.input_tokens) && Number.isSafeInteger(event.api_usage.output_tokens)) {
-    count(summary, "api_input_tokens", event.api_usage.input_tokens);
-    count(summary, "api_output_tokens", event.api_usage.output_tokens);
-    summary.usage_records += 1;
   }
   if (event.status === "replace") {
     count(summary.replacements_by_tool, safeName(event.tool));
@@ -115,10 +182,10 @@ function addEvent(summary, event) {
   return true;
 }
 
-async function readEvents(directory, summary, publicationReader = withPublication) {
+async function readEvents(directory, summary, publicationReader = withPublication, recent = null) {
   const stable = await publicationReader(directory, async journal => {
-    const events = emptyEvents(), replacements = new Set();
-    const result = { events, replacements };
+    const events = emptyEvents(), recentEvents = emptyEvents(), replacements = new Set();
+    const result = { events, recentEvents, replacements };
     const filename = path.join(directory, "logs/events.jsonl");
     let details;
     try { details = await fs.lstat(filename); } catch (error) { if (error.code === "ENOENT") return result; throw error; }
@@ -127,25 +194,40 @@ async function readEvents(directory, summary, publicationReader = withPublicatio
     const record = await readFileRecord(filename, 1_048_576, { range: { position: start, length: visible - start } });
     if (!record) return result;
     let text = record.bytes.toString("utf8");
-    if (start) { events.truncated_files += 1; text = text.slice(text.indexOf("\n") + 1); }
+    if (start) {
+      events.truncated_files += 1;
+      if (recent) recentEvents.truncated_files += 1;
+      text = text.slice(text.indexOf("\n") + 1);
+    }
     text = text.slice(0, text.lastIndexOf("\n") + 1);
     for (const line of text.split("\n").filter(Boolean)) {
       try {
         const event = parseUniqueJson(line), accepted = addEvent(events, event);
+        if (accepted && recent && Date.parse(event.at) >= recent.since) addEvent(recentEvents, event);
         if (accepted && event.status === "replace" && /^[a-f0-9]{32}$/.test(event.id)) replacements.add(event.id);
       } catch { events.malformed_records += 1; }
     }
     return result;
   });
   // Publication can retry a read. Merge only the accepted, stable attempt.
-  for (const [key, value] of Object.entries(stable.events)) {
+  mergeEvents(summary, stable.events);
+  if (recent) mergeEvents(recent.summary, stable.recentEvents);
+  return stable.replacements;
+}
+
+function mergeEvents(summary, events) {
+  for (const [key, value] of Object.entries(events)) {
     if (typeof value === "number") count(summary, key, value);
     else if (value instanceof Set) for (const entry of value) summary[key].add(entry);
     else if (key === "first_at") summary[key] = summary[key] === null || value !== null && value < summary[key] ? value : summary[key];
     else if (key === "last_at") summary[key] = summary[key] === null || value !== null && value > summary[key] ? value : summary[key];
-    else for (const [name, amount] of Object.entries(value)) count(summary[key], name, amount);
+    else if (key === "classification_only") {
+      count(summary[key], "records", value.records);
+      for (const field of ["tools", "tool_families", "output_kinds", "source_size_bands"]) {
+        for (const [name, amount] of Object.entries(value[field])) count(summary[key][field], name, amount);
+      }
+    } else for (const [name, amount] of Object.entries(value)) count(summary[key], name, amount);
   }
-  return stable.replacements;
 }
 
 async function inspectReplacementReceipts(directory, dataRoot, publishedIds, summary) {
@@ -297,10 +379,14 @@ async function reconcileRollouts(root, sessionHashes) {
   return result;
 }
 
-async function audit({ dataDirectory, rolloutDirectory, observationDate }) {
+async function audit({ dataDirectory, rolloutDirectory, observationDate, since }) {
   if (!path.isAbsolute(dataDirectory) || rolloutDirectory && !path.isAbsolute(rolloutDirectory)) throw new Error("Use absolute audit scopes");
   if (!/^\d{4}-\d{2}-\d{2}$/.test(observationDate) || new Date(`${observationDate}T00:00:00Z`).toISOString().slice(0, 10) !== observationDate) {
     throw new Error("Use a valid observation date");
+  }
+  if (since !== undefined && (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(since) ||
+      !Number.isFinite(Date.parse(since)) || new Date(since).toISOString() !== since.replace("Z", ".000Z"))) {
+    throw new Error("Use an exact UTC recent-event boundary");
   }
   await core.validateSessionPath(dataDirectory);
   const result = { schema_version: 1, observation_date: observationDate,
@@ -317,8 +403,14 @@ async function audit({ dataDirectory, rolloutDirectory, observationDate }) {
       "Missing rollout headers do not prove absent model-visible hook feedback; no delivery acknowledgement is available",
       "Lifetime metrics retain coverage; event tails are bounded to 1 MiB per scope",
       "Cross-session reads are an observation interval, not an atomic installation snapshot"] };
+  const recent = since === undefined ? null : { since: Date.parse(since), summary: emptyEvents() };
+  if (recent) {
+    result.recent_events_since_utc = since;
+    result.retained_recent_events = recent.summary;
+    result.limits.push("Recent events cover retained dated events only; lifetime counters and skip totals are not a recent-window denominator");
+  }
   addActivity(result.root_legacy_scope, await core.readSessionActivity(dataDirectory));
-  const rootReplacements = await readEvents(dataDirectory, result.retained_events);
+  const rootReplacements = await readEvents(dataDirectory, result.retained_events, withPublication, recent);
   await inspectReplacementReceipts(dataDirectory, dataDirectory, rootReplacements, result.retained_replacement_receipts);
   const sessionRoot = path.join(dataDirectory, "sessions");
   await core.validateDirectoryPath(sessionRoot);
@@ -339,11 +431,16 @@ async function audit({ dataDirectory, rolloutDirectory, observationDate }) {
       result.first_health_at = result.first_health_at === null || at < result.first_health_at ? at : result.first_health_at;
       result.last_health_at = result.last_health_at === null || at > result.last_health_at ? at : result.last_health_at;
     } else if (activity.calls === 0 && activity.completed === 0) result.empty_session_count += 1;
-    const replacements = await readEvents(directory, result.retained_events);
+    const replacements = await readEvents(directory, result.retained_events, withPublication, recent);
     await inspectReplacementReceipts(directory, dataDirectory, replacements, result.retained_replacement_receipts);
   }
   result.retained_events.distinct_replacement_source_hashes = result.retained_events.replacement_source_hashes.size;
   delete result.retained_events.replacement_source_hashes;
+  if (recent) {
+    recent.summary.distinct_replacement_source_hashes = recent.summary.replacement_source_hashes.size;
+    delete recent.summary.replacement_source_hashes;
+  }
+  result.exact_invocation_funnel = invocationFunnel(result.exact_health_scopes);
   result.saved_original_inventory = await inventoryOriginals(dataDirectory);
   if (rolloutDirectory) result.rollout_observation = await reconcileRollouts(rolloutDirectory, hashes);
   result.finished_at_utc = new Date().toISOString();
@@ -376,13 +473,13 @@ async function selfTest() {
   return { checks: 10, passed: true };
 }
 
-module.exports = { audit, addActivity, addEvent, emptyEvents, readEvents, omissionMarkers, reconcileRollouts, selfTest };
+module.exports = { audit, addActivity, addEvent, emptyEvents, readEvents, invocationFunnel, omissionMarkers, reconcileRollouts, selfTest };
 if (require.main === module) (async () => {
   if (process.argv.includes("--self-test")) { process.stdout.write(`${JSON.stringify(await selfTest())}\n`); return; }
   const args = process.argv.slice(2), options = {};
-  const fields = { "--data-dir": "dataDirectory", "--codex-sessions": "rolloutDirectory", "--observation-date": "observationDate" };
+  const fields = { "--data-dir": "dataDirectory", "--codex-sessions": "rolloutDirectory", "--observation-date": "observationDate", "--since": "since" };
   for (let index = 0; index < args.length; index += 2) {
-    if (!fields[args[index]] || !args[index + 1]) throw new Error("Use --data-dir PATH [--codex-sessions PATH] --observation-date YYYY-MM-DD");
+    if (!fields[args[index]] || !args[index + 1]) throw new Error("Use --data-dir PATH [--codex-sessions PATH] --observation-date YYYY-MM-DD [--since YYYY-MM-DDTHH:MM:SSZ]");
     options[fields[args[index]]] = args[index + 1];
   }
   if (!options.dataDirectory || !options.observationDate) throw new Error("Data directory and observation date are required");

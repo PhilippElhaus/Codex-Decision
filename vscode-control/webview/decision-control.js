@@ -73,7 +73,7 @@
       pulseSeen = 0;
       pulseUntil = 0;
       clearTimeout(pulseTimer);
-      state = { ...state, enabled: false, needsKey: false, health: null, hookHealth: null,
+      state = { ...state, enabled: false, needsKey: false, health: null, hookHealth: null, hookActivity: null, panelFault: null,
         sessionPending: !sessionId(), configurationError: null, classificationPulse: 0,
         recent: "No decision recorded yet", history: [], stats: {} };
       render();
@@ -196,7 +196,7 @@
     if (root) return root;
     const style = document.createElement("style");
     style.textContent = `
-      #codex-decision { position: fixed; z-index: 2147483600; display: none; font-family: inherit; }
+      #codex-decision { position: fixed; z-index: 40; display: none; font-family: inherit; }
       #codex-decision * { box-sizing: border-box; }
       #codex-decision-button { display: inline-flex; align-items: center; gap: 7px; height: var(--codex-decision-button-height, 34px); min-height: 0; max-height: var(--codex-decision-button-height, 34px); padding: 0 12px; border: 0; border-radius: 999px; background: transparent; color: #9a9a9a; font-family: inherit; font-size: 14px; font-weight: 600; line-height: 18px; cursor: pointer; transition: color 220ms ease-in-out, background-color 220ms ease-in-out; }
       #codex-decision[data-compact="true"] #codex-decision-button { gap: 0; padding: 0 var(--codex-decision-compact-padding, 4px); }
@@ -212,7 +212,7 @@
       #codex-decision-tip { position: absolute; bottom: calc(100% + 9px); right: 0; box-shadow: 0 12px 30px #0009; }
       #codex-decision-tip { display: none; width: min(420px, calc(100vw - 24px)); padding: 11px 13px; border: 1px solid #454545; border-radius: 11px; background: #292929; color: #dedede; pointer-events: auto; font-size: 12px; line-height: 1.45; white-space: normal; }
       #codex-decision-tip[data-needs-key="true"] { width: min(252px, calc(100vw - 24px)); padding: 9px 11px; }
-      #codex-decision-tip[data-needs-key="true"] #codex-decision-session-heading, #codex-decision-tip[data-needs-key="true"] #codex-decision-stats, #codex-decision-tip[data-needs-key="true"] #codex-decision-tokens, #codex-decision-tip[data-needs-key="true"] #codex-decision-history-heading, #codex-decision-tip[data-needs-key="true"] #codex-decision-history, #codex-decision-tip[data-needs-key="true"] #codex-decision-empty { display: none !important; }
+      #codex-decision-tip[data-needs-key="true"] #codex-decision-session-heading, #codex-decision-tip[data-needs-key="true"] #codex-decision-requests, #codex-decision-tip[data-needs-key="true"] #codex-decision-stats, #codex-decision-tip[data-needs-key="true"] #codex-decision-tokens, #codex-decision-tip[data-needs-key="true"] #codex-decision-hook-activity, #codex-decision-tip[data-needs-key="true"] #codex-decision-history-heading, #codex-decision-tip[data-needs-key="true"] #codex-decision-history, #codex-decision-tip[data-needs-key="true"] #codex-decision-empty { display: none !important; }
       #codex-decision-tip::after { content: ""; position: absolute; top: 100%; left: 0; right: 0; height: 10px; }
       #codex-decision:hover #codex-decision-tip, #codex-decision:focus-within #codex-decision-tip { display: block; }
       #codex-decision[data-no-session="true"] #codex-decision-tip { display: none !important; }
@@ -225,6 +225,8 @@
       #codex-decision-retry:disabled { opacity: .6; cursor: default; }
       #codex-decision-retry:focus-visible { outline: 2px solid #83bcf7; outline-offset: 2px; }
       #codex-decision-stats { color: #d4d4d4; }
+      #codex-decision-api-state, #codex-decision-requests { color: #d4d4d4; }
+      #codex-decision-hook-activity { margin: 5px 0 0; color: #aaa; }
       #codex-decision-tokens { margin-top: 3px; color: #d4d4d4; }
       #codex-decision-tip h3 { margin: 10px 0 4px; color: #aaa; font-size: 11px; font-weight: 650; letter-spacing: .04em; }
       #codex-decision-health-row[hidden] + #codex-decision-session-heading { margin-top: 0; }
@@ -272,7 +274,7 @@
     root.id = "codex-decision";
     root.innerHTML = `
       <button id="codex-decision-button" type="button" role="switch" aria-label="Turn Decision on" aria-checked="false"><span id="codex-decision-dot"></span><span id="codex-decision-label">decision</span><span id="codex-decision-observe">MON</span></button>
-      <div id="codex-decision-tip" role="group" aria-label="Decision activity"><div id="codex-decision-health-row"><strong></strong><button id="codex-decision-retry" type="button">Retry</button></div><p id="codex-decision-health-reason"></p><h3 id="codex-decision-session-heading">This session</h3><div id="codex-decision-stats"></div><div id="codex-decision-tokens"></div><h3 id="codex-decision-history-heading">Recent Actions</h3><ol id="codex-decision-history"></ol><p id="codex-decision-empty">None yet</p></div>`;
+      <div id="codex-decision-tip" role="group" aria-label="Decision activity"><div id="codex-decision-health-row"><strong></strong><button id="codex-decision-retry" type="button">Retry</button></div><p id="codex-decision-health-reason"></p><div id="codex-decision-api-state"></div><h3 id="codex-decision-session-heading">This session</h3><div id="codex-decision-requests"></div><div id="codex-decision-stats"></div><div id="codex-decision-tokens"></div><p id="codex-decision-hook-activity"></p><h3 id="codex-decision-history-heading">Recent Actions</h3><ol id="codex-decision-history"></ol><p id="codex-decision-empty">None yet</p></div>`;
     document.body.appendChild(root);
     setup = document.createElement("div");
     setup.id = "codex-decision-connect";
@@ -356,18 +358,22 @@
     button.title = noSession ? "Open a local Codex thread to turn Decision on or off." :
       saving ? "Saving…" : state.enabled ? "Turn Decision off" : "Turn Decision on";
     const hook = state.hookHealth;
-    const seen = Number(hook?.last_seen_ms) >= Number(state.viewStartedAt || Infinity);
-    const versionMismatch = seen && hook.hook_version !== state.expectedHookVersion;
-    const hookFailed = hook?.fault || (seen && Number(hook.last_error_ms || 0) >= Number(state.viewStartedAt || Infinity) &&
-      Number(hook.last_error_ms || 0) > Number(hook.last_success_ms || 0));
+    // Hook activity belongs to the thread and survives a restored webview.
+    const seen = Number(hook?.last_seen_ms) > 0;
+    const differentVersion = seen && hook.hook_version !== state.expectedHookVersion;
+    const hookNeedsVerification = differentVersion && Number(hook.last_seen_ms) < Number(state.viewStartedAt || 0);
+    const versionMismatch = differentVersion && !hookNeedsVerification;
+    const latestOutcome = Math.max(Number(hook?.last_skip_ms || 0), Number(hook?.last_success_ms || 0));
+    const hookFailed = hook?.fault || state.hookActivity?.kind === "error" ||
+      (seen && Number(hook.last_error_ms || 0) > 0 && Number(hook.last_error_ms) >= latestOutcome);
     const choiceKeptFull = seen && hook?.last_skip === "choice_kept_full_output" &&
-      Number(hook.last_skip_ms || 0) >= Number(hook.last_success_ms || 0) &&
-      Number(hook.last_skip_ms || 0) >= Number(state.viewStartedAt || Infinity);
+      !hookFailed && Number(hook.last_skip_ms || 0) >= Number(hook.last_success_ms || 0);
     const hookWaiting = state.enabled && !noSession && !seen &&
       Date.now() - Number(state.viewStartedAt || Date.now()) >= 60_000;
     const failed = Boolean(bridgeFault) || state.health?.ok === false;
-    const visual = failed ? "failed" : state.health?.ok === true ? "healthy" : "pending";
-    const classifying = Boolean(state.enabled && !noSession && !bridgeFault && Date.now() < pulseUntil);
+    const unavailable = failed || Boolean(state.configurationError || state.panelFault || hookFailed || versionMismatch);
+    const visual = unavailable ? "failed" : hookWaiting || hookNeedsVerification || state.health?.ok !== true ? "pending" : "healthy";
+    const classifying = Boolean(state.enabled && !noSession && !unavailable && Date.now() < pulseUntil);
     root.dataset.classifying = String(classifying);
     button.style.color = classifying ? colors.classifying :
       state.enabled || bridgeFault ? colors[visual] : "#9a9a9a";
@@ -383,20 +389,24 @@
     root.querySelector("#codex-decision-tip").dataset.needsKey = String(needsSetup);
     const healthRow = root.querySelector("#codex-decision-health-row");
     healthRow.hidden = !failed && !checking && !needsSetup && !state.configurationError && !state.panelFault &&
-      !hookFailed && !versionMismatch && !choiceKeptFull && !hookWaiting && !state.health?.fallback;
+      !hookFailed && !versionMismatch && !hookNeedsVerification && !choiceKeptFull && !hookWaiting && !state.health?.fallback;
     healthRow.querySelector("strong").textContent = healthRow.hidden ? "" :
       bridgeFault ? status : state.configurationError ? "Decision configuration error" : state.panelFault ? "Decision view unavailable" :
       versionMismatch ? "Decision hook version mismatch" : hookFailed ? "Decision hook failed" :
+      hookNeedsVerification && !failed && !checking && !needsSetup ? "Verify updated Decision hook" :
       hookWaiting && !failed && !checking && !needsSetup ? "No Decision hook activity" :
       needsSetup ? "Decision API key required" : status;
-    const unavailable = failed || Boolean(state.configurationError || state.panelFault || hookFailed || versionMismatch);
     const reason = root.querySelector("#codex-decision-health-reason");
-    reason.textContent = state.health?.fallback ? `Using the saved fallback provider: ${healthReason(state.health.primaryReason)}.` : (unavailable || choiceKeptFull || hookWaiting) && !needsSetup ? `${bridgeFault || state.configurationError || state.panelFault ||
+    reason.textContent = state.health?.fallback && !unavailable ? `Using the saved fallback provider: ${healthReason(state.health.primaryReason)}.` : (unavailable || choiceKeptFull || hookWaiting || hookNeedsVerification) && !needsSetup ? `${bridgeFault || state.configurationError || state.panelFault ||
       (versionMismatch ? "Update the Decision plugin and control together" :
-        hookFailed ? (hook.fault || hook.last_error || "Tool output was left unchanged") :
+        hookFailed ? (hook?.fault || hook?.last_error || "Tool output was left unchanged") :
+        hookNeedsVerification && !failed && !checking ? "Run a local command to verify the installed hook version. Saved activity is from an earlier hook version." :
         choiceKeptFull ? "Choice kept the latest output complete" :
           hookWaiting && !failed && !checking ? "Run a local command. If activity stays empty, check /hooks and reload VS Code." : healthReason(state.health?.reason))}` : "";
-    reason.style.display = (state.health?.fallback || unavailable || choiceKeptFull || hookWaiting) && !needsSetup ? "block" : "none";
+    reason.style.display = (state.health?.fallback || unavailable || choiceKeptFull || hookWaiting || hookNeedsVerification) && !needsSetup ? "block" : "none";
+    const apiStatus = root.querySelector("#codex-decision-api-state");
+    apiStatus.textContent = status;
+    apiStatus.style.display = healthRow.hidden || healthRow.querySelector("strong").textContent !== status ? "block" : "none";
     const retry = root.querySelector("#codex-decision-retry");
     retry.style.display = bridgeFault || (!state.configurationError && (needsSetup || state.health?.ok === false)) ? "inline-block" : "none";
     retry.disabled = Boolean(retryRequestId);
@@ -408,6 +418,9 @@
     const average = Number(stats.timed) > 0 && Number.isSafeInteger(stats.averageMs) &&
       !["averageMs","elapsedMs","timed"].some(name=>partial.has(name)) ? formatDuration(stats.averageMs) : "—";
     const totals = `${recordedCount("completed")} checked · ${recordedCount("replaced")} replaced · ${average} avg request`;
+    const requests = `${recordedCount("calls")} API requests · ${recordedCount("skipped")} skipped outputs`;
+    root.querySelector("#codex-decision-requests").textContent = state.enabled ? requests : "";
+    root.querySelector("#codex-decision-requests").title = "Recorded request attempts and skips for this thread, shared with the Decision panel. Attempts do not establish provider receipt.";
     root.querySelector("#codex-decision-stats").textContent = state.enabled ? totals : "";
     const tokens = stats.estimatedTokensSaved === null ? "Hook payload estimate: —" :
       `Hook payload estimate: ~${(Number(stats.estimatedTokensSaved) || 0).toLocaleString("en-US")} tokens${partial.has("estimatedTokensSaved") ? " (partial history)" : ""}`;
@@ -435,12 +448,20 @@
     const empty = root.querySelector("#codex-decision-empty");
     empty.style.display = !state.enabled || !history.length ? "block" : "none";
     empty.textContent = state.enabled
-      ? seen && hook?.last_skip
+      ? seen && !hookFailed && hook?.last_skip &&
+        Number(hook.last_skip_ms || 0) >= Number(hook.last_success_ms || 0)
         ? `Hook ran; latest output skipped: ${hook.last_skip.replaceAll("_", " ")}.`
         : "No hook decision in this session. Short or protected results may be skipped."
       : "Decision is off for this session. Click to turn it on.";
+    const hookActivity = root.querySelector("#codex-decision-hook-activity");
+    hookActivity.textContent = state.hookActivity?.message ||
+      (hookFailed ? `Hook error: ${hook?.fault || hook?.last_error || "Tool output could not be evaluated"}. Full output was kept.` :
+        seen && hook?.last_skip && Number(hook.last_skip_ms || 0) >= Number(hook.last_success_ms || 0)
+          ? `Hook ran; latest output skipped: ${hook.last_skip.replaceAll("_", " ")}.` :
+          seen ? "Waiting for the next line decision." : "Waiting for tool output.");
+    hookActivity.style.display = state.enabled ? "block" : "none";
     const activity = state.enabled
-      ? `This session: ${recordedCount("calls")} API attempts. ${totals}. ${tokens}.${delivery} ${history.join(". ") || state.recent}.`
+      ? `This session: ${recordedCount("calls")} API attempts, ${recordedCount("skipped")} skipped outputs. ${totals}. ${tokens}.${delivery} ${hookActivity.textContent} ${history.join(". ") || state.recent}.`
       : empty.textContent;
     button.setAttribute("aria-label", noSession ? `${status}. Open a local Codex thread to turn Decision on or off` :
       `${status}${unavailable ? `: ${reason.textContent}` : ""}. ${activity} ${saving ? "Saving." : state.enabled ? "Turn Decision off." : "Turn Decision on."}`);

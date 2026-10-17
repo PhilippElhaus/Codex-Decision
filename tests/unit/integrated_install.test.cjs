@@ -85,6 +85,62 @@ test("installer errors cannot copy raw subprocess diagnostics into the control",
   assert.deepEqual(vscode.updates, []);
 }));
 
+test("only an explicit transient installer failure authorizes automatic recovery", async () => fixture(async (root) => {
+  for (const retryable of [true, false, "true", undefined]) {
+    await assert.rejects(ensureIntegratedInstall(vscodeStub(root), { extensionPath: root }, { platform: "linux",
+      run: async () => { throw Object.assign(new Error("private subprocess details"), {
+        stdout: JSON.stringify({ status: "error", error: "sanitized installation failure", retryable }),
+        stderr: "private environment must not appear" }); } }), (error) => {
+      assert.equal(error.message, "sanitized installation failure");
+      assert.equal(error.retryable, retryable === true);
+      return true;
+    });
+  }
+}));
+
+test("temporary WSL discovery, path conversion, and installer transport failures stay retryable", async () => fixture(async (root) => {
+  const configured = "\\\\wsl.localhost\\Ubuntu\\home\\alex\\.codex\\plugins\\data\\codex-decision-personal";
+  for (const phase of ["discovery", "conversion", "installation"]) {
+    for (const cause of [{ code: "EAGAIN" }, { code: "ETIMEDOUT" }, { code: null, killed: true, signal: "SIGTERM" }]) {
+      await assert.rejects(ensureIntegratedInstall(vscodeStub(root), { extensionPath: root }, {
+        platform: "win32", dataDirectory: phase === "discovery" ? "" : configured,
+        run: async (_program, args) => {
+          const actual = args[0] === "-e" ? "discovery" : args[3] === "wslpath" ? "conversion" : "installation";
+          if (actual === phase) throw Object.assign(new Error("private process arguments"), {
+            ...cause, stdout: "private stdout", stderr: "private stderr" });
+          if (actual === "discovery") return { stdout: "Ubuntu\n" };
+          if (actual === "conversion") return { stdout: "/mnt/c/converted\n" };
+          return { stdout: JSON.stringify(installed) };
+        },
+      }), (error) => {
+        assert.equal(error.retryable, true);
+        const label = phase === "discovery" ? "WSL discovery" : phase === "conversion" ? "WSL path conversion" : "hook installer";
+        assert.equal(error.message, `Decision installation is temporarily unavailable during ${label}; check WSL availability`);
+        return true;
+      });
+    }
+  }
+}));
+
+test("deterministic WSL discovery and conversion failures discard raw process diagnostics", async () => fixture(async (root) => {
+  for (const phase of ["discovery", "conversion"]) {
+    for (const code of [1, "ENOENT", "EACCES"]) {
+      await assert.rejects(ensureIntegratedInstall(vscodeStub(root), { extensionPath: root }, {
+        platform: "win32", dataDirectory: phase === "discovery" ? "" : "\\\\wsl.localhost\\Ubuntu\\home\\alex\\data",
+        run: async () => { throw Object.assign(new Error("private process arguments"), {
+          code, stdout: "private stdout", stderr: "private stderr", env: { KEY: "private key" } }); },
+      }), (error) => {
+        const label = phase === "discovery" ? "WSL discovery" : "WSL path conversion";
+        assert.equal(error.message, `Decision installation failed during ${label}; check WSL availability and file access`);
+        assert.notEqual(error.retryable, true);
+        assert.equal(error.stdout, undefined);
+        assert.equal(error.stderr, undefined);
+        return true;
+      });
+    }
+  }
+}));
+
 test("source-only test activation does not install a hook", async () => {
   const result = await ensureIntegratedInstall({}, { extensionUri: {} },
     { run: async () => { throw new Error("must not run"); } });

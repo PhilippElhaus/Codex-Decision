@@ -13,7 +13,22 @@ function cleanJson(stdout) {
 }
 
 async function ensureIntegratedInstall(vscode, context, options = {}) {
-  const run = options.run || runFile;
+  const processRun = options.run || runFile;
+  const run = async (...args) => {
+    try { return await processRun(...args); }
+    catch (error) {
+      const target = args[0] === "wsl.exe" ? args[1][args[1].indexOf("-e") + 1] : args[0];
+      const phase = target === "printenv" ? "WSL discovery" : target === "wslpath" ? "WSL path conversion" : "hook installer";
+      if (["EAGAIN", "EBUSY", "EINTR", "EIO", "ETIMEDOUT"].includes(error.code) ||
+          error.killed === true && error.signal === "SIGTERM" && error.code == null) {
+        throw Object.assign(new Error(`Decision installation is temporarily unavailable during ${phase}; check WSL availability`),
+          { code: "DECISION_INSTALL_TEMPORARY", retryable: true });
+      }
+      // Only Python's fixed JSON protocol can reach the installer error parser.
+      if (target !== "python3") throw new Error(`Decision installation failed during ${phase}; check WSL availability and file access`);
+      throw error;
+    }
+  };
   const platform = options.platform || process.platform;
   const extensionRoot = context.extensionPath || context.extensionUri?.fsPath;
   if (!extensionRoot) return { status: "not-packaged" };
@@ -62,9 +77,12 @@ async function ensureIntegratedInstall(vscode, context, options = {}) {
       { timeout: 180_000, maxBuffer: 16_384 });
     result = cleanJson(reply.stdout);
   } catch (error) {
+    if (error.code === "DECISION_INSTALL_TEMPORARY") throw error;
     if (typeof error.stdout === "string") {
       const failure = cleanJson(error.stdout);
-      if (failure.status === "error" && typeof failure.error === "string") throw new Error(failure.error);
+      if (failure.status === "error" && typeof failure.error === "string") {
+        throw Object.assign(new Error(failure.error), { retryable: failure.retryable === true });
+      }
     }
     throw new Error("Decision could not install its bundled hook in the Codex environment");
   }

@@ -145,7 +145,20 @@ exports.run = async () => {
     assert(extension, "combined VSIX extension is discoverable");
     await extension.activate();
     await until(() => globalThis.__decisionIntegratedInstallation, "startup installer");
-    const installation = await globalThis.__decisionIntegratedInstallation;
+    let installation;
+    let temporaryFailures = 0;
+    while (!installation) {
+      const pending = globalThis.__decisionIntegratedInstallation;
+      try { installation = await pending; }
+      catch (error) {
+        assert.equal(error.retryable, true, "only the injected transient startup failure can retry");
+        temporaryFailures += 1;
+        assert.equal(temporaryFailures, 1, "the owned fixture fails only once");
+        await until(() => globalThis.__decisionIntegratedInstallation !== pending, "automatic startup retry");
+      }
+    }
+    assert.equal(temporaryFailures, result.phase === "first" ? 1 : 0);
+    result.checks.push("native activation recovers automatically from one temporary installer access failure and stays ready on restart");
     assert.equal(installation.status, result.phase === "first" ? "installed" : "ready");
     assert.equal(installation.version, extension.packageJSON.codexDecisionHookVersion);
     assert(installation.pluginRoot.startsWith(`${linux}/codex/plugins/cache/`));

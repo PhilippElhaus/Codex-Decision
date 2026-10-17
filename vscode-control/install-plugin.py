@@ -1,6 +1,7 @@
 """Install the VSIX's hook payload through Codex without changing private state."""
 
 import argparse
+import errno
 import fcntl
 import json
 import os
@@ -111,7 +112,9 @@ def update_source(payload, source, backup_root):
     return True, str(rollback) if rollback else None
 
 
-def install(payload, codex, home=None, codex_home=None, run=run_codex, data_directory=None):
+def install(payload, codex, home=None, codex_home=None, run=run_codex, data_directory=None,
+            report_phase=lambda _phase: None):
+    report_phase("package inspection")
     home = safe_path(home or Path.home())
     codex_home = safe_path(codex_home or os.environ.get("CODEX_HOME", home / ".codex"))
     payload = safe_path(payload)
@@ -126,6 +129,7 @@ def install(payload, codex, home=None, codex_home=None, run=run_codex, data_dire
         raise ValueError("Invalid Decision hook payload")
     version = manifest.get("version")
     expected_version = version_tuple(version)
+    report_phase("Codex plugin discovery")
     current = existing_plugin(run(codex, ["list"]))
     registration_needed = current is None
     if current:
@@ -176,6 +180,7 @@ def install(payload, codex, home=None, codex_home=None, run=run_codex, data_dire
         if str(root) == "/mnt/d" or str(root).startswith("/mnt/d/"):
             raise ValueError("Decision installation state must remain outside D:")
     backup_root = safe_path(home / ".local/state/codex-decision/integrated-rollbacks")
+    report_phase("package update")
     changed, rollback = update_source(payload, source, backup_root)
     if registration_needed:
         write_exact(path, (json.dumps(metadata, indent=2) + "\n").encode())
@@ -187,7 +192,9 @@ def install(payload, codex, home=None, codex_home=None, run=run_codex, data_dire
                         for filename in FILES)
     refreshed = registration_needed or changed or not cache_matches or current.get("version") != version
     if refreshed:
+        report_phase("Codex plugin registration")
         run(codex, ["add", plugin_id])
+    report_phase("installed package verification")
     selected = existing_plugin(run(codex, ["list"]))
     if not selected or selected.get("pluginId") != plugin_id or selected.get("version") != version or selected.get("enabled") is not True:
         raise RuntimeError("Codex did not activate the packaged Decision version")
@@ -203,12 +210,36 @@ def install(payload, codex, home=None, codex_home=None, run=run_codex, data_dire
             "rollback": rollback}
 
 
+def installation_failure(error, phase):
+    """Expose a fixed diagnostic, never OS paths, CLI output, or private state."""
+    retryable = False
+    if isinstance(error, json.JSONDecodeError):
+        detail = "invalid JSON metadata"
+    elif isinstance(error, subprocess.TimeoutExpired):
+        detail = "Codex command timed out"
+        retryable = True
+    elif isinstance(error, OSError):
+        temporary = {errno.EAGAIN, errno.EBUSY, errno.EINTR, errno.EIO, errno.ESTALE, errno.ETIMEDOUT}
+        retryable = error.errno in temporary
+        detail = ("temporary file or process access failure" if retryable else
+                  "file or executable missing" if error.errno == errno.ENOENT else
+                  "file access denied" if error.errno in {errno.EACCES, errno.EPERM} else
+                  "operating system access failure")
+    elif isinstance(error, (ValueError, RuntimeError)):
+        return {"status": "error", "error": str(error), "retryable": False}
+    else:
+        detail = "unexpected installation error"
+    return {"status": "error", "error": f"Decision hook installation failed during {phase}: {detail}",
+            "retryable": retryable}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--payload", required=True, type=Path)
     parser.add_argument("--codex", required=True, type=Path)
     parser.add_argument("--data-directory", type=Path)
     args = parser.parse_args()
+    phase = "installation lock"
     try:
         # Serialize different VS Code windows before invoking CLI configuration writes.
         root = safe_path(Path.home() / ".local/state/codex-decision")
@@ -219,13 +250,13 @@ def main():
         descriptor = os.open(lock, os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW, 0o600)
         with os.fdopen(descriptor, "w") as stream:
             fcntl.flock(stream, fcntl.LOCK_EX)
-            print(json.dumps(install(args.payload, args.codex, data_directory=args.data_directory)))
+            def report_phase(value):
+                nonlocal phase
+                phase = value
+            print(json.dumps(install(args.payload, args.codex, data_directory=args.data_directory,
+                                     report_phase=report_phase)))
     except Exception as error:
-        # Do not forward subprocess output or configuration values.
-        if isinstance(error, (ValueError, RuntimeError)):
-            print(json.dumps({"status": "error", "error": str(error)}))
-        else:
-            print(json.dumps({"status": "error", "error": "Decision hook installation failed"}))
+        print(json.dumps(installation_failure(error, phase)))
         raise SystemExit(1)
 
 

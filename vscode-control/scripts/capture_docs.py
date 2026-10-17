@@ -17,6 +17,15 @@ ROOT = Path(__file__).resolve().parents[1]
 IMAGES = ROOT.parent / 'docs' / 'images'
 
 
+def crop_activity(path: Path, layout: dict) -> None:
+    """Keep the actual tooltip and composer, excluding empty canvas above."""
+    with Image.open(path) as captured:
+        top = max(0, int((layout['activityTop'] - 12) * 2))
+        if not top < captured.height:
+            raise RuntimeError('Composer activity exceeds the capture')
+        captured.crop((0, top, captured.width, captured.height)).save(path, optimize=True)
+
+
 def crop_settings(path: Path, layout: dict) -> None:
     """Split at section boundaries so both browser captures keep complete rows."""
     with Image.open(path) as settings:
@@ -40,6 +49,7 @@ def chromium_capture() -> None:
         try:
             for state, name, width, height in (
                 ('composer', 'decision-toggle.png', 620, 240),
+                ('tooltip', 'decision-activity.png', 900, 560),
                 ('classification', 'decision-classification.png', 620, 240),
                 ('onboarding', 'decision-connect.png', 950, 610),
                 ('settings', 'decision-settings.png', 1040, 1280),
@@ -57,6 +67,10 @@ def chromium_capture() -> None:
                         page.evaluate('window.dispatchEvent(new Event("focus"))')
                         page.wait_for_function('document.getElementById("codex-decision").dataset.classifying === "true"')
                         assert page.locator('#codex-decision-button').evaluate('node => node.style.color') == 'rgb(105, 174, 240)'
+                elif state == 'tooltip':
+                    assert page.locator('#codex-decision-tip').is_visible()
+                    assert page.locator('#codex-decision-requests').inner_text() == '2 API requests · 14 skipped outputs'
+                    assert 'too short to evaluate' in page.locator('#codex-decision-hook-activity').inner_text()
                 elif state == 'onboarding':
                     assert page.locator('#codex-decision-connect').is_visible()
                     assert page.locator('#codex-decision-key').input_value() == ''
@@ -67,6 +81,8 @@ def chromium_capture() -> None:
                     assert page.locator('#codex-decision-settings-output-relevant_max').input_value() == '5%'
                     assert page.locator('#codex-decision-settings-relevance-guard').count() == 0
                 page.screenshot(path=str(IMAGES / name))
+                if state == 'tooltip':
+                    crop_activity(IMAGES / name, json.loads(page.locator('body').get_attribute('data-layout')))
                 if state == 'settings':
                     crop_settings(IMAGES / name, json.loads(page.locator('body').get_attribute('data-layout')))
                 print(name)
@@ -109,7 +125,8 @@ def main() -> None:
         address = 'file:///' + quote(target, safe='/:')
         captures = [
             ('composer', 'decision-toggle.png', 620, 240),
-                ('classification', 'decision-classification.png', 620, 240),
+            ('tooltip', 'decision-activity.png', 900, 560),
+            ('classification', 'decision-classification.png', 620, 240),
             ('onboarding', 'decision-connect.png', 950, 610),
             ('settings', 'decision-settings.png', 1040, 1280),
         ]
@@ -134,6 +151,11 @@ def main() -> None:
                 raise RuntimeError(f'{name} is vertically misaligned: {layout}')
             if state == 'classification' and 'data-classifying="true"' not in result.stdout:
                 raise RuntimeError('Classification did not light up the composer')
+            if state == 'tooltip' and ('2 API requests · 14 skipped outputs' not in result.stdout or
+                                       'The latest output was too short to evaluate.' not in result.stdout):
+                raise RuntimeError('Composer activity counts and latest hook outcome were not rendered')
+            if state == 'tooltip':
+                crop_activity(output, layout)
             if state == 'onboarding' and 'id="codex-decision-connect"' not in result.stdout:
                 raise RuntimeError('Connect Decision overlay was not rendered')
             if state == 'settings' and ('id="codex-decision-settings-panel"' not in result.stdout or

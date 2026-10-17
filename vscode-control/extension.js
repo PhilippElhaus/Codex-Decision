@@ -12,7 +12,7 @@ const {
   outcomeLine, readConfig, readEventCursor, readEventsSince,
   readApiKey, readProviderKeys, writeApiKey, writeSelection,
   completeRelevancePolicy,
-  sessionDirectory, readSessionActivity, readRecentOutcomes, ensureSessionDefaults,
+  sessionDirectory, readSessionActivity, readRecentOutcomes, ensureSessionDefaults, describeHookActivity,
   DEFAULT_SETTINGS, readGlobalSettings, writeGlobalSettings, readInstallationStats,
 } = require("./core");
 
@@ -42,6 +42,7 @@ function createController(dataDirectory) {
     needsKey: state.needsKey,
     health: state.health,
     hookHealth: state.hookHealth,
+    hookActivity: describeHookActivity(state.enabled, state.hookHealth),
     panelFault: state.panelFault,
     sessionPending: state.sessionPending,
     expectedHookVersion: EXPECTED_HOOK_VERSION,

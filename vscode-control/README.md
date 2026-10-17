@@ -8,7 +8,7 @@ Build and install one package from WSL:
 
 ```bash
 ../scripts/build_control.sh
-code --install-extension "$(wslpath -w ../.local/submission/codex-decision-0.12.0.vsix)" --force
+code --install-extension "$(wslpath -w ../.local/submission/codex-decision-0.12.1.vsix)" --force
 ```
 
 On activation, the package installs or updates the bundled Codex plugin and checks the Codex UI integration. It uses the configured WSL data path or the default WSL distribution for a fresh installation. It sets `codexDecision.dataDirectory` when that setting is empty. Existing plugin identity, credentials, logs, and thread settings remain in place.
@@ -18,6 +18,8 @@ The integrated patch supports Codex builds `26.928.31416`, `26.930.21537`, `26.9
 After the repair, run **Developer: Reload Window**. Open a local Codex thread. Review the hook in `/hooks` if its definition needs trust; the installer does not edit Codex trust records.
 
 Use **Decision: Check Integration** to inspect the installed build. Use **Decision: Repair Integration** to retry and reopen the Decision panel. Automatic repair runs at startup and after a Codex extension change. Set `codexDecision.autoRepairIntegration` to `false` to use manual repair only. No separate plugin ZIP or manual patch command is required.
+
+Temporary WSL or installer access failures receive three automatic retries after 2, 5, and 15 seconds. A successful retry ends recovery. Disposal or disabling automatic repair cancels pending retries. Deterministic configuration, permission, and security refusals do not retry. Diagnostics identify a bounded installation phase and failure category without forwarding OS paths or child-process output.
 
 ## Rollback
 
@@ -31,7 +33,7 @@ Legacy schema-2/3/4 session configs and schema-1/2/3 shared settings remain read
 
 Each open Codex view keeps its own control state. A home view or another thread in the same VS Code window cannot reset the active thread's color, counters, or selection. Older status replies cannot replace newer ones. Each selection waits for its host acknowledgement before accepting another click. If the host does not reply within ten seconds, the activity tooltip reports the connection failure and the control offers Retry.
 
-When enabled, the indicator is green after a small successful Decision API request, red on a missing key or failed request, and amber while that check is pending. The button is gray when off or without a thread. API checks continue in both states. The activity tooltip is hidden on the home screen. Hook and session errors appear in the tooltip during a thread. An API check does not verify hook trust; review `/hooks` after installing or updating the hook. After a minute without a hook receipt, the tooltip explains how to check the hook. Windows WSL paths receive private Linux permissions, including existing session folders created by older controls. Short, sensitive, and unsupported results are intentionally skipped.
+When enabled, the indicator reflects API and hook health. It is green when healthy, red for an API, hook, configuration, or view failure, and amber while checking or waiting for verification. The button is gray when off or without a thread. API checks continue in both states and have a separate tooltip label. A newer normal skip or successful evaluation clears an older hook error. Saved same-version activity survives a reload. An earlier-version receipt requests verification in amber; a fresh mismatched receipt reports failure. An API check does not verify hook trust; review `/hooks` after installing or updating the hook. After a minute without recorded hook activity, the tooltip explains recovery. Windows WSL paths receive private Linux permissions, including existing session folders created by older controls. Short, sensitive, and unsupported results are intentionally skipped.
 
 Open **Codex settings → Decision** from any screen to choose Monitor or Filter, adjust the shared relevance cutoff, save and test each provider’s key, switch providers, and open the plugin data directory. Blank key fields preserve saved keys. **Use the other provider if needed** enables one fallback after a missing primary key or a provider failure. It starts off; enabling it permits eligible text to reach either provider. Local safety and storage failures never trigger fallback. These settings apply to every session. Monitor records decisions but leaves full output visible. Filter can shorten only eligible text after the local evidence checks pass; every shortened result links to its exact original.
 
@@ -54,3 +56,5 @@ The header keeps this thread's API request and skipped-output counts visible bef
 The composer briefly glows blue once at the start of output evaluation. Relevance calls, batch completions, and API connection checks do not flash. Each start is consumed once per view, so repeated status replies cannot restart the pulse.
 
 The composer keeps its indicator on the toolbar row. Tight gaps reduce its padding and show only the dot. If the controls leave less than 11 px, the indicator hides until space returns. It never moves over the prompt.
+
+The composer tooltip and panel use the same latest hook outcome and saved request/skip counts. The panel displays that outcome even while retaining an earlier line evaluation. Activity updates preserve the existing rows and animation state. The indicator and tooltip sit below Codex dropdown menu layers.

@@ -6,7 +6,7 @@ const fs = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
 const crypto = require("node:crypto");
-const { audit, reconcileRollouts, addEvent, addActivity, emptyEvents, readEvents } = require("../../scripts/usage_effectiveness_audit.cjs");
+const { audit, reconcileRollouts, addEvent, addActivity, emptyEvents, readEvents, invocationFunnel } = require("../../scripts/usage_effectiveness_audit.cjs");
 const cases = require("../fixtures/activity-accounting.json");
 const fixture = cases.find(item => item.name === "current_exact");
 const sha = text => crypto.createHash("sha256").update(text).digest("hex");
@@ -105,21 +105,94 @@ test("malformed counters and fallback metadata contribute no partial outcome met
 });
 
 test("a publication retry contributes only its stable event snapshot", async t => {
-  const root = await temporary(t), summary = emptyEvents();
+  const root = await temporary(t), summary = emptyEvents(), recent = { since: Date.parse("2026-10-16T00:00:00Z"), summary: emptyEvents() };
   await write(path.join(root, "logs/events.jsonl"), rollout({ status: "replace", reason: "relevance_policy",
-    id: "a".repeat(32), tool: "Bash", requests: 2, elapsed_ms: 40, lines_omitted: 5 }));
+    at: "2026-10-16T00:00:00Z", id: "a".repeat(32), tool: "Bash", requests: 2, elapsed_ms: 40, lines_omitted: 5 }));
   let reads = 0;
   const replacements = await readEvents(root, summary, async (_directory, callback) => {
     await callback(null); reads += 1;
     const stable = await callback(null); reads += 1;
     return stable;
-  });
+  }, recent);
   assert.equal(reads, 2);
   assert.equal(summary.records, 1);
   assert.equal(summary.requests, 2);
   assert.equal(summary.elapsed_ms, 40);
   assert.equal(summary.replacement_omitted_lines, 5);
+  assert.equal(recent.summary.records, 1);
+  assert.equal(recent.summary.requests, 2);
   assert.equal(replacements.size, 1);
+});
+
+test("the invocation funnel bounds API-entered outputs without equating requests or local skips to outputs", () => {
+  const summary = { scopes: 1, metrics: {}, skip_reasons: { small: 70, choice_kept_full_output: 15, no_eligible_lines: 4 },
+    skip_reason_coverage: { exact_scopes: 1, partial_scopes: 0, unknown_scopes: 0 } };
+  for (const [name, recorded] of Object.entries({ seen: 100, skipped: 89, calls: 29, requestCancelled: 1, completed: 10, errors: 1 })) {
+    summary.metrics[name] = { recorded, known_scopes: 1, partial_scopes: 0, unknown_scopes: 0 };
+  }
+  const result = invocationFunnel(summary);
+  assert.equal(result.consistent_snapshot, true);
+  assert.equal(result.request_attempts_per_100_invocations, 28);
+  assert.equal(result.outputs_reaching_api_lower_bound, 25);
+  assert.equal(result.outputs_reaching_api_upper_bound, 28);
+  assert.deepEqual(result.outputs_reaching_api_share_percent, { lower: 25, upper: 28 });
+  assert.equal(result.local_skip_invocations_at_least, 70);
+  assert.equal(result.attempted_requests_after_cancellation, 28);
+  summary.skip_reasons.no_eligible_lines = 50;
+  assert.equal(invocationFunnel(summary).consistent_snapshot, false);
+  assert.equal(invocationFunnel(summary).outputs_reaching_api_upper_bound, null);
+  summary.skip_reasons.no_eligible_lines = 4;
+  summary.metrics.seen.recorded = 99;
+  assert.equal(invocationFunnel(summary).consistent_snapshot, false);
+  assert.equal(invocationFunnel(summary).outputs_reaching_api_lower_bound, null);
+  summary.metrics.seen.partial_scopes = 1;
+  assert.deepEqual(invocationFunnel(summary), { available: false, reason: "incomplete_counter_coverage" });
+  summary.metrics.seen.partial_scopes = 0;
+  summary.skip_reason_coverage.exact_scopes = 0;
+  assert.equal(invocationFunnel(summary).available, false);
+});
+
+test("classification-only requests contribute usage and a recent retained-event slice without exporting private metadata", async t => {
+  const root = await temporary(t), data = path.join(root, "data");
+  await write(path.join(data, "sessions", sha(session), "logs/events.jsonl"), rollout(
+    { status: "skip", reason: "choice_kept_full_output", requests: 1, elapsed_ms: 30, original_chars: 2000,
+      at: "2026-10-15T23:59:59Z", tool: "Bash", output_kind: "exact_content", api_usage: { input_tokens: 20, output_tokens: 3 } },
+    { status: "skip", reason: "choice_kept_full_output", requests: 1, elapsed_ms: 40, original_chars: 900,
+      at: "2026-10-16T00:00:00Z", tool: "functions.exec", output_kind: "prose", api_usage: { input_tokens: 30, output_tokens: 4 } },
+    { status: "skip", reason: "no_eligible_lines", requests: 1, elapsed_ms: 20, original_chars: 4000,
+      at: "2026-10-16T01:00:00Z", tool: "mcp__PRIVATE_SENTINEL__read", output_kind: "PRIVATE_SENTINEL",
+      api_usage: { input_tokens: 40, output_tokens: 5 } },
+    { status: "replace", reason: "relevance_policy", requests: 2, elapsed_ms: 50,
+      at: "invalid-private-date", tool: "Bash", api_usage: { input_tokens: 50, output_tokens: 6 } }));
+  const result = await audit({ dataDirectory: data, observationDate: "2026-10-17", since: "2026-10-16T00:00:00Z" });
+  assert.equal(result.retained_events.requests, 5);
+  assert.equal(result.retained_events.api_input_tokens, 140);
+  assert.equal(result.retained_events.api_output_tokens, 18);
+  assert.equal(result.retained_events.usage_records, 4);
+  assert.equal(result.retained_recent_events.requests, 2);
+  assert.equal(result.retained_recent_events.elapsed_ms, 60);
+  assert.equal(result.retained_recent_events.api_input_tokens, 70);
+  assert.equal(result.retained_recent_events.classification_only.records, 2);
+  assert.deepEqual(result.retained_recent_events.classification_only.tool_families, { code_mode: 1, other_mcp: 1 });
+  assert.deepEqual(result.retained_recent_events.classification_only.output_kinds, { prose: 1, unrecorded: 1 });
+  assert.deepEqual(result.retained_recent_events.classification_only.source_size_bands, { "256_1023": 1, "1024_4095": 1 });
+  assert.equal(JSON.stringify(result).includes("PRIVATE_SENTINEL"), false);
+  assert.equal(JSON.stringify(result).includes(root), false);
+  await assert.rejects(audit({ dataDirectory: data, observationDate: "2026-10-17", since: "2026-02-30T00:00:00Z" }), /boundary/);
+});
+
+test("a recent-event slice retains source truncation coverage", async t => {
+  const root = await temporary(t), summary = emptyEvents();
+  const recent = { since: Date.parse("2026-10-16T00:00:00Z"), summary: emptyEvents() };
+  const event = { status: "skip", reason: "choice_kept_full_output", requests: 1,
+    at: "2026-10-16T00:00:00Z", output_kind: "prose", tool: "Bash", padding: "x".repeat(4096) };
+  await write(path.join(root, "logs/events.jsonl"), rollout(...Array(300).fill(event)));
+  await readEvents(root, summary, async (_directory, callback) => callback(null), recent);
+  assert.equal(summary.truncated_files, 1);
+  assert.equal(recent.summary.truncated_files, 1);
+  assert.ok(recent.summary.records > 0 && recent.summary.records < 300);
+  assert.equal(recent.summary.records, summary.records);
+  assert.equal(recent.summary.classification_only.records, summary.records);
 });
 
 test("rollout reconciliation owns filenames, deduplicates copies, and ignores quoted marker literals", async t => {

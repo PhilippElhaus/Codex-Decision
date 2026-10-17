@@ -139,12 +139,15 @@ function failureMessage(error) {
 }
 
 function activateIntegration(vscode, context, { dataDirectory, ready = Promise.resolve(),
-  platform = process.platform, localAppData = process.env.LOCALAPPDATA, run = runFile, io = fs } = {}) {
+  platform = process.platform, localAppData = process.env.LOCALAPPDATA, run = runFile, io = fs,
+  retryDelaysMs = [2000, 5000, 15000] } = {}) {
   if (!vscode.extensions?.getExtension || !context.extensionUri?.fsPath) return null;
   const output = vscode.window.createOutputChannel("Decision Integration");
   let inFlight = null;
   let disposed = false;
   let timer = null;
+  let retryTimer = null;
+  let retryCount = 0;
   let reportedFailure = null;
   let panelRestored = false;
   const configuration = () => vscode.workspace.getConfiguration("codexDecision");
@@ -169,6 +172,10 @@ function activateIntegration(vscode, context, { dataDirectory, ready = Promise.r
       if (!manual) return inFlight;
       await inFlight;
     }
+    if (manual) {
+      clearTimeout(retryTimer);
+      retryCount = 0;
+    }
     const task = (async () => {
       let hostVersion = null;
       try {
@@ -186,6 +193,8 @@ function activateIntegration(vscode, context, { dataDirectory, ready = Promise.r
         });
         if (disposed || result.status === "unsupported-platform") return result;
         output.appendLine(`Codex ${result.version}: Decision integration ${result.status}${result.changed ? ` (${result.action})` : ""}.`);
+        clearTimeout(retryTimer);
+        retryCount = 0;
         reportedFailure = null;
         const migratePanel = result.status === "ready" && typeof context.globalState?.get === "function" &&
           typeof context.globalState?.update === "function" && context.globalState.get(PANEL_VERSION_KEY) !== CONTROL_VERSION;
@@ -211,6 +220,16 @@ function activateIntegration(vscode, context, { dataDirectory, ready = Promise.r
         if (disposed) return;
         const message = `${hostVersion ? `Codex ${hostVersion}: ` : ""}${failureMessage(error)}`;
         output.appendLine(`Decision integration unavailable: ${message}`);
+        if (!manual && error.retryable === true && retryCount < retryDelaysMs.length &&
+            configuration().get("autoRepairIntegration", true) !== false) {
+          const delay = retryDelaysMs[retryCount++];
+          output.appendLine(`Decision will retry the temporary installation failure (${retryCount}/${retryDelaysMs.length}).`);
+          clearTimeout(retryTimer);
+          retryTimer = setTimeout(() => {
+            if (!disposed && configuration().get("autoRepairIntegration", true) !== false) void inspect(true, false);
+          }, delay);
+          return { status: "retrying", message };
+        }
         if (manual || reportedFailure !== message) {
           reportedFailure = message;
           notify("showWarningMessage", `Decision integration is unavailable: ${message}`, ["Show Diagnostics"], (selected) => {
@@ -226,6 +245,8 @@ function activateIntegration(vscode, context, { dataDirectory, ready = Promise.r
   }
   function schedule(manual = false) {
     clearTimeout(timer);
+    clearTimeout(retryTimer);
+    retryCount = 0;
     timer = setTimeout(async () => {
       if (inFlight) await inFlight;
       if (!disposed && (manual || configuration().get("autoRepairIntegration", true) !== false)) void inspect(true, manual);
@@ -238,7 +259,7 @@ function activateIntegration(vscode, context, { dataDirectory, ready = Promise.r
     vscode.workspace.onDidChangeConfiguration((event) => {
       if (event.affectsConfiguration("codexDecision")) schedule();
     }),
-    { dispose() { disposed = true; clearTimeout(timer); } });
+    { dispose() { disposed = true; clearTimeout(timer); clearTimeout(retryTimer); } });
   schedule();
   return { inspect };
 }

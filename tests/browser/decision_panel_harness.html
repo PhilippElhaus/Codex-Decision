@@ -77,7 +77,9 @@
       }
     }
     const send = (value) => window.dispatchEvent(new MessageEvent("message", {
-      data: { type: "decision", decision: value, activity: {calls:2,skipped:14,message:"Synthetic activity",totals:{seen:16,completed:2,replaced:1,candidates:1,kept:0,errors:0,
+      data: { type: "decision", decision: value, activity: {calls:2,skipped:14,
+        message:"The latest output was too short to evaluate.",
+        hookActivity:{kind:"skip",message:"The latest output was too short to evaluate."},totals:{seen:16,completed:2,replaced:1,candidates:1,kept:0,errors:0,
         responsesReceived:2,responsesValidated:2,requestFailures:0,requestCancelled:0,
         linesRelevanceJudged:125,linesActuallyOmitted:47,candidateReasons:{observe:1},skipCounts:{small:10,exact_content:4}}} },
     }));
@@ -130,7 +132,7 @@
     }, 1800);
     setTimeout(() => {
       report.newBatchShown = document.querySelector(".batch-line-number").textContent === String(nextDecision.rows[0].line);
-      report.minimalHeader = document.querySelector(".batch-header").children.length === 2 &&
+      report.minimalHeader = document.querySelector(".batch-header").children.length === 3 &&
         document.querySelectorAll(".card-kicker,.batch-summary,.batch-legend").length === 0 &&
         document.querySelector(".batch-title").textContent === `0 / ${nextDecision.totals.seen} removed` &&
         document.querySelector(".activity-counts") !== null;

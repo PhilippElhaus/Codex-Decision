@@ -3,7 +3,7 @@
 const fs = require("node:fs/promises");
 const { constants } = require("node:fs");
 const path = require("node:path");
-const { validateSessionPath, validateDirectoryPath, readConfig, readSessionActivity } = require("./core");
+const { validateSessionPath, validateDirectoryPath, readConfig, readSessionActivity, describeHookActivity } = require("./core");
 const {readFileRecord,parseUniqueJson} = require("./private-records");
 const {readPublishedRecord} = require("./publication-journal");
 
@@ -126,28 +126,8 @@ async function readPanelActivity(directory) {
     readSessionActivity(directory), readConfig(directory),
   ]);
   const { hookHealth: health, ...totals } = stats;
-  let message;
-  if (!config.enabled) message = "Decision is off for this thread.";
-  else if (!health) message = "Waiting for tool output. If activity stays absent, check /hooks and start a new Codex thread.";
-  else if (health.last_error_ms >= Math.max(health.last_skip_ms || 0, health.last_success_ms || 0)) {
-    message = `Hook error: ${health.last_error}. Full output was kept.`;
-  } else if (health.last_skip_ms >= (health.last_success_ms || 0)) {
-    const reasons = {
-      choice_kept_full_output: "Decision classified the output and kept it complete. No line judgments were needed.",
-      unsupported_route: "The hook skipped this tool or command format before calling Decision.",
-      unsupported_result: "The hook kept this response format complete.",
-      mcp_replacement_disabled: "MCP filtering is disabled. This supported output was kept without an API request.",
-      small: "The latest output was too short to evaluate.",
-      sensitive: "The latest output was protected from sending to Decision.",
-      unsafe_task_context: "The task context was protected from sending to Decision.",
-      exact_content: "The latest result requires exact source content and was kept complete.",
-      exhaustive_task: "The task requires the complete result, so it was kept without an API request.",
-      structure_guard: "The latest result has no validated independent-line format and was kept complete.",
-      insufficient_savings: "The latest result could not save enough text after preserving evidence and metadata.",
-    };
-    message = reasons[health.last_skip] || `Hook ran; latest output skipped: ${health.last_skip.replaceAll("_", " ")}.`;
-  } else message = "Waiting for the next line decision.";
-  return { message, calls: stats.calls, skipped: stats.skipped, totals };
+  const hookActivity = describeHookActivity(config.enabled, health);
+  return { message: hookActivity.message, hookActivity, calls: stats.calls, skipped: stats.skipped, totals };
 }
 
 module.exports = { parsePanelDecision, readLatestPanelDecision, readPanelActivity };

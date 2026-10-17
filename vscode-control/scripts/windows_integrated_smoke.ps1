@@ -136,7 +136,15 @@ try {
         Replace-One (Join-Path $control $file) 'const runFile = promisify(execFile);' 'const runFile = require(process.env.DECISION_INTEGRATED_TEST_WRAPPER).run;'
     }
     Replace-One (Join-Path $control 'install-plugin.py') 'root = safe_path(Path.home() / ".local/state/codex-decision")' 'root = safe_path(Path(os.environ["DECISION_TEST_HOME"]) / ".local/state/codex-decision")'
-    Replace-One (Join-Path $control 'install-plugin.py') 'install(args.payload, args.codex, data_directory=args.data_directory)' 'install(args.payload, args.codex, home=Path(os.environ["DECISION_TEST_HOME"]), codex_home=Path(os.environ["CODEX_HOME"]), data_directory=args.data_directory)'
+    Replace-One (Join-Path $control 'install-plugin.py') 'install(args.payload, args.codex, data_directory=args.data_directory,' 'install(args.payload, args.codex, home=Path(os.environ["DECISION_TEST_HOME"]), codex_home=Path(os.environ["CODEX_HOME"]), data_directory=args.data_directory,'
+    $temporaryFailure = @'
+fcntl.flock(stream, fcntl.LOCK_EX)
+            marker = Path(os.environ["DECISION_TEST_HOME"]) / "startup-retry-verified"
+            if not marker.exists():
+                marker.write_text("owned native startup failure fixture")
+                raise BlockingIOError(errno.EAGAIN, "synthetic temporary startup access failure")
+'@
+    Replace-One (Join-Path $control 'install-plugin.py') 'fcntl.flock(stream, fcntl.LOCK_EX)' $temporaryFailure
     Replace-One (Join-Path $control 'extension.js') '    ready: () => ensureIntegratedInstall(vscode, context, {' '    ready: () => globalThis.__decisionIntegratedInstallation = ensureIntegratedInstall(vscode, context, {'
     Replace-One (Join-Path $control 'extension.js') '  activateIntegration(vscode, context, {' '  globalThis.__decisionIntegratedIntegration = activateIntegration(vscode, context, {'
     Replace-One (Join-Path $control 'panel.js') 'this.extensionUri = extensionUri;' 'this.extensionUri = extensionUri; globalThis.__decisionIntegratedPanel = this;'

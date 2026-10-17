@@ -28,6 +28,34 @@ function completeRelevancePolicy(value = {}) {
   return validate("relevance_threshold", { ...DEFAULT_RELEVANCE_POLICY, ...value });
 }
 
+function describeHookActivity(enabled, health) {
+  if (!enabled) return { kind: "disabled", message: "Decision is off for this thread." };
+  if (health?.fault) return { kind: "error", message: health.fault };
+  if (!health) return { kind: "waiting", message: "Waiting for tool output. If activity stays absent, check /hooks and start a new Codex thread." };
+  const latest = Math.max(health.last_skip_ms || 0, health.last_success_ms || 0);
+  if (health.last_error_ms > 0 && health.last_error_ms >= latest) {
+    return { kind: "error", message: `Hook error: ${health.last_error || "Tool output could not be evaluated"}. Full output was kept.` };
+  }
+  if (health.last_skip_ms > 0 && health.last_skip_ms >= (health.last_success_ms || 0)) {
+    const reasons = {
+      choice_kept_full_output: "Decision classified the output and kept it complete. No line judgments were needed.",
+      unsupported_route: "The hook skipped this tool or command format before calling Decision.",
+      unsupported_result: "The hook kept this response format complete.",
+      mcp_replacement_disabled: "MCP filtering is disabled. This supported output was kept without an API request.",
+      small: "The latest output was too short to evaluate.",
+      sensitive: "The latest output was protected from sending to Decision.",
+      unsafe_task_context: "The task context was protected from sending to Decision.",
+      exact_content: "The latest result requires exact source content and was kept complete.",
+      exhaustive_task: "The task requires the complete result, so it was kept without an API request.",
+      structure_guard: "The latest result has no validated independent-line format and was kept complete.",
+      insufficient_savings: "The latest result could not save enough text after preserving evidence and metadata.",
+    };
+    return { kind: "skip", message: reasons[health.last_skip] ||
+      `Hook ran; latest output skipped: ${(health.last_skip || "unknown").replaceAll("_", " ")}.` };
+  }
+  return { kind: "ready", message: "Waiting for the next line decision." };
+}
+
 function defaultDataDirectory() {
   return process.env.CODEX_DECISION_DATA_DIRECTORY || "";
 }
@@ -944,6 +972,7 @@ module.exports = {
   isDecisionOutcome, outcomeLine, parseHealthOutput, readConfig,
   readApiKey, readProviderKeys, readEventOffset, readEventCursor, readEventsSince, readLifetimeStats,
   readSessionActivity, readRecentOutcomes, retainedStatsFromEvents,
+  describeHookActivity,
   savedCharacters, writeApiKey, writeSelection,
   ensureSessionDefaults,
   DEFAULT_SETTINGS, readGlobalSettings, writeGlobalSettings, readInstallationStats,

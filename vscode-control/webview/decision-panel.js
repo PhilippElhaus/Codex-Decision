@@ -59,7 +59,10 @@
       tabs.appendChild(button);
     }
     const heading = append(element("div", "batch-heading"), tabs, title);
-    return { header: append(element("header", "batch-header"), heading, meta), title, status, counts };
+    const activity = element("div", "activity-status");
+    activity.hidden = true;
+    activity.setAttribute("aria-label", "Latest hook activity");
+    return { header: append(element("header", "batch-header"), heading, meta, activity), title, status, counts };
   }
 
   function updateActivity(activity) {
@@ -73,6 +76,12 @@
     const skipLabel = Number.isSafeInteger(skipped) && partial.includes("skipped") ? `≥${skipped}` : skipped;
     counts.textContent = `${callLabel} API request${calls === 1 ? "" : "s"} · ${skipLabel} skipped output${skipped === 1 ? "" : "s"}`;
     counts.title = `${activity?.message || "Activity for the selected thread"} API requests are recorded attempts; they do not establish provider receipt. ≥ marks an incomplete historical baseline.`;
+    const summary = app.querySelector(".activity-status");
+    const message = activity?.hookActivity?.message || activity?.message;
+    if (summary) {
+      summary.hidden = typeof message !== "string" || !message || (!latestDecision && panelMode !== "totals");
+      summary.textContent = summary.hidden ? "" : `Latest hook: ${message}`;
+    }
   }
 
   function batchTitle(decision) {
