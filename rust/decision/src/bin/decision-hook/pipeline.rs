@@ -127,6 +127,7 @@ fn process_event_once(
     remaining()?;
     let mut lines = source_lines(&source);
     protect_response_metadata(&mut lines);
+    protect_command_boundaries(event, &mut lines);
     protect_lab_streams(event, &mut lines);
     let format = format_decision(event, &mut lines);
     // An exact source read already stays local. Do not mistake source syntax

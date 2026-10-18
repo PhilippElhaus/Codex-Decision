@@ -67,11 +67,11 @@
             demo === "onboarding" || demo === "missing-key" ? { ok: false, reason: "DECISION_KEY_MISSING" } :
             demo === "unavailable" ? { ok: false, reason: "DECISION_TIMEOUT" } : { ok: true, model: "gpt-6-luna" },
           hookHealth: disabled || demo === "pending" ? null :
-            { version: 1, hook_version: "0.12.1", last_seen_ms: Date.now(), last_success_ms: Date.now() - 100,
+            { version: 1, hook_version: "0.13.0", last_seen_ms: Date.now(), last_success_ms: Date.now() - 100,
               last_skip_ms: Date.now(), last_skip: "small" },
           hookActivity: disabled || demo === "pending" ? null :
             { kind: "skip", message: "The latest output was too short to evaluate." },
-          expectedHookVersion: "0.12.1",
+          expectedHookVersion: "0.13.0",
           viewStartedAt: Date.now() - 1000,
           classificationPulse: demo === "classification" ? 1 : 0, mode: "replace", recent: history[0], history: disabled ? [] : history,
           stats: disabled ? {} : { calls: 2, skipped: 14, candidates: 1, kept: 0, replaced: 1, checkedChars: 6367, savedChars: 6058,

@@ -5,7 +5,7 @@ const path = require("node:path");
 const os = require("node:os");
 const { spawn } = require("node:child_process");
 const ROOT = path.resolve(__dirname, "..");
-const SPLITS = ["base", "holdout", "batching", "precision", "precision-holdout"];
+const SPLITS = ["base", "holdout", "batching", "precision", "precision-holdout", "coverage", "classification-holdout"];
 
 async function main() {
   const options = { jobs: 2, providers: ["openai", "typesafe"],

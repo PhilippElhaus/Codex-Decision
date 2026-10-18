@@ -40,10 +40,13 @@ use sensitivity::*;
 #[path = "decision-hook/context.rs"]
 mod context;
 use context::*;
+#[path = "decision-hook/command_result.rs"]
+mod command_result;
 #[path = "decision-hook/lab_result.rs"]
 mod lab_result;
 #[path = "decision-hook/projection.rs"]
 mod projection;
+use command_result::*;
 use lab_result::*;
 #[path = "decision-hook/lab_protection.rs"]
 mod lab_protection;

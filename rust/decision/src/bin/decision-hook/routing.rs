@@ -195,11 +195,24 @@ pub(super) fn tool_route(tool: &str) -> Option<&'static str> {
     ]
     .iter()
     .any(|part| action.contains(part))
-        || [
-            "deploy", "publish", "install", "commit", "push", "merge", "delete", "remove",
-        ]
-        .iter()
-        .any(|verb| action.contains(verb))
+    {
+        return None;
+    }
+    // These complete MCP action names describe reads even though the resource
+    // name contains mutation vocabulary. Keep this contract narrow: a suffix,
+    // prefix or credential-bearing variant must still pass the normal guards.
+    if mcp_tool(tool) {
+        match action.as_str() {
+            "list_commits" | "lookup_merge_conflicts" => return Some("search_listing"),
+            "get_deployment_status" => return Some("output"),
+            _ => {}
+        }
+    }
+    if [
+        "deploy", "publish", "install", "commit", "push", "merge", "delete", "remove",
+    ]
+    .iter()
+    .any(|verb| action.contains(verb))
     {
         return None;
     }

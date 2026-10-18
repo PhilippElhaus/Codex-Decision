@@ -1,5 +1,4 @@
 //! Safe task cues and plain-text response envelopes.
-use super::projection::command_projection;
 use super::*;
 use std::borrow::Cow;
 
@@ -49,6 +48,15 @@ pub(super) fn response_text(event: &Value) -> Option<Cow<'_, str>> {
             return Some(Cow::Owned(source));
         }
     }
+    let tool = event["tool_name"].as_str()?;
+    if body.is_object()
+        && body.get("status").is_none()
+        && (shell_tool(tool) || polling_tool(event) || orchestration_tool(tool))
+    {
+        if let Some(view) = command_view(body) {
+            return Some(Cow::Owned(view.source));
+        }
+    }
     // Local function tools serialize their model-facing content items as an
     // array. These are distinct from MCP's text blocks and metadata objects.
     if let Some(items) = body.as_array() {
@@ -67,6 +75,16 @@ pub(super) fn response_text(event: &Value) -> Option<Cow<'_, str>> {
             .iter()
             .map(|item| text_block(item, "input_text"))
             .collect::<Option<Vec<_>>>()?;
+        if orchestration_tool(event["tool_name"].as_str()?)
+            && parts.iter().any(|text| supported_serialized_command(text))
+            && parts.iter().any(|text| {
+                text.trim_start().starts_with(['{', '[']) && !supported_serialized_command(text)
+            })
+        {
+            // A valid printed command does not grant a neighboring unknown
+            // JSON envelope an independent-line contract.
+            return None;
+        }
         return Some(Cow::Owned(
             if orchestration_tool(event["tool_name"].as_str()?) {
                 parts
@@ -86,7 +104,7 @@ pub(super) fn response_text(event: &Value) -> Option<Cow<'_, str>> {
     }
     if let Some(text) = body.get("output").and_then(Value::as_str) {
         return Some(if known_command_result(body) {
-            Cow::Owned(command_projection(body.as_object().unwrap()))
+            Cow::Owned(projection::command_projection(body.as_object().unwrap()))
         } else {
             Cow::Borrowed(text)
         });
@@ -109,6 +127,11 @@ fn text_block<'a>(item: &'a Value, kind: &str) -> Option<&'a str> {
     (item.get("type")?.as_str()? == kind).then(|| item.get("text")?.as_str())?
 }
 
+fn supported_serialized_command(text: &str) -> bool {
+    strict_json::parse(text.as_bytes())
+        .is_ok_and(|value| command_view(&value).is_some() || lab_projection(&value).is_some())
+}
+
 pub(super) fn orchestration_tool(tool: &str) -> bool {
     matches!(tool, "exec" | "wait" | "functions.exec" | "functions.wait")
 }
@@ -117,31 +140,15 @@ pub(super) fn orchestration_tool(tool: &str) -> bool {
 // Decode only the known command envelope. Metadata remains an explicit,
 // protected source line, and replacement also saves the typed envelope.
 pub(super) fn command_preview(text: &str) -> Cow<'_, str> {
-    let Ok(Value::Object(object)) = strict_json::parse(text.as_bytes()) else {
+    let Ok(value) = strict_json::parse(text.as_bytes()) else {
         return Cow::Borrowed(text);
     };
-    if !known_command_fields(&object) {
-        if let Some(source) = lab_projection(&Value::Object(object)) {
-            return Cow::Owned(source);
-        }
-        return Cow::Borrowed(text);
+    if let Some(view) = command_view(&value) {
+        return Cow::Owned(view.source);
     }
-    Cow::Owned(command_projection(&object))
-}
-
-pub(super) fn known_command_result(body: &Value) -> bool {
-    body.as_object().is_some_and(known_command_fields)
-}
-
-fn known_command_fields(object: &serde_json::Map<String, Value>) -> bool {
-    object.get("output").is_some_and(Value::is_string)
-        && object.iter().all(|(key, value)| match key.as_str() {
-            "output" | "chunk_id" => value.is_string(),
-            "wall_time_seconds" => value.as_f64().is_some_and(|n| n >= 0.0),
-            "exit_code" => value.is_null() || value.as_i64().is_some(),
-            "session_id" | "original_token_count" => value.as_u64().is_some(),
-            _ => false,
-        })
+    lab_projection(&value)
+        .map(Cow::Owned)
+        .unwrap_or(Cow::Borrowed(text))
 }
 
 pub(super) fn replacement_supported(event: &Value) -> bool {
@@ -154,10 +161,13 @@ pub(super) fn replacement_supported(event: &Value) -> bool {
         return lab_projection(body).is_some();
     }
     if shell_tool(tool) || polling_tool(event) {
-        return known_command_result(body);
+        return body.is_object() && body.get("status").is_none() && command_view(body).is_some();
     }
     if !orchestration_tool(tool) {
         return false;
+    }
+    if body.is_object() {
+        return body.get("status").is_none() && command_view(body).is_some();
     }
     body.as_array().is_some_and(|items| {
         !items.is_empty()
@@ -172,7 +182,7 @@ pub(super) fn replacement_supported(event: &Value) -> bool {
                     return false;
                 };
                 match strict_json::parse(text.as_bytes()) {
-                    Ok(value) => known_command_result(&value) || lab_projection(&value).is_some(),
+                    Ok(value) => command_view(&value).is_some() || lab_projection(&value).is_some(),
                     Err(error) => !error.is_data(),
                 }
             })

@@ -12,10 +12,13 @@ const holdout = require("../tests/fixtures/two-stage-holdout.cjs");
 const batching = require("../tests/fixtures/batching-cases.cjs");
 const precision = require("../tests/fixtures/precision-cases.cjs");
 const precisionHoldout = require("../tests/fixtures/precision-holdout.cjs");
+const coverageCases = require("../tests/fixtures/coverage-cases.cjs");
+const classificationHoldout = require("../tests/fixtures/classification-holdout.cjs");
 const { provider: providerSpec } = require("../vscode-control/providers");
 const { readApiKey, sessionDirectory } = require("../vscode-control/core");
 const { readLatestPanelDecision } = require("../vscode-control/panel-state");
-const { requireProxyHook, auditRun } = require("./two_stage_audit.cjs");
+const { requireProxyHook, auditRun, hookDiagnostics } = require("./two_stage_audit.cjs");
+const { caseCoverage, summarizeCoverage } = require("./two-stage/coverage_report.cjs");
 const { LiveProxyError, postLive, observedUsage } = require("./two-stage/live_proxy.cjs");
 const kinds = ["repetitive_log", "progress_output", "independent_matches", "independent_records", "exact_content", "prose", "structured_payload", "mixed_or_unknown"];
 const faults = ["choice-missing", "choice-extra", "choice-sum", "choice-argmax", "choice-class", "choice-confidence", "choice-type", "choice-model", "choice-json", "choice-http401", "choice-http429", "choice-http529", "choice-timeout", "line-missing", "line-extra", "line-type", "line-range", "line-confidence", "line-json", "line-http500", "line-timeout", "line-oversized"];
@@ -45,6 +48,7 @@ async function main() {
   if (temporary.startsWith("/mnt/d/")) throw new Error("Temporary work must be off D:");
   let current, calls = 0, totalCalls = 0, forwardedCalls = 0, inputTokens = 0, outputTokens = 0, abortReason = null;
   let providerResponses = 0, caseProxyFailures = [], unknownUsageCalls = 0;
+  let caseForwardedCalls = 0, caseProviderResponses = 0;
   const proxyFailures = {};
   const reports = [];
   const remoteTimes = [];
@@ -90,7 +94,8 @@ async function main() {
         const remoteStarted = Date.now();
         const { response, text } = await postLive({ endpoint: spec.endpoint, key, wire,
           calls: totalCalls, tokens: inputTokens + outputTokens, maxCalls, maxTokens, unknownUsage:unknownUsageCalls > 0,
-          onForward: () => { forwardedCalls += 1; }, onResponse: () => { providerResponses += 1; } });
+          onForward: () => { forwardedCalls += 1; caseForwardedCalls += 1; },
+          onResponse: () => { providerResponses += 1; caseProviderResponses += 1; } });
         remoteTimes.push(Date.now() - remoteStarted);
         const dest = path.join(out,caseId);await fs.mkdir(dest,{recursive:true,mode:0o700});
         await fs.writeFile(path.join(dest,`remote-call-${stage}.json`), JSON.stringify({request:wire,status:response.status,
@@ -170,7 +175,8 @@ async function main() {
   });
   try {
     await new Promise(resolve => server.listen(0,"127.0.0.1",resolve));
-    let selected = process.argv.includes("--precision-holdout") ? precisionHoldout : process.argv.includes("--precision") ? precision : process.argv.includes("--batching") ? batching : process.argv.includes("--holdout") ? holdout : fixtures;
+    const holdoutSplit = ["--coverage", "--holdout", "--batching", "--precision-holdout", "--classification-holdout"].some(flag => process.argv.includes(flag));
+    let selected = process.argv.includes("--classification-holdout") ? classificationHoldout : process.argv.includes("--coverage") ? coverageCases : process.argv.includes("--precision-holdout") ? precisionHoldout : process.argv.includes("--precision") ? precision : process.argv.includes("--batching") ? batching : process.argv.includes("--holdout") ? holdout : fixtures;
     if (!live && !process.argv.includes("--skip-faults")) selected = [...selected,
       ...[...faults, ...providerFaults].map(fault => {
         const fixture=fixtures.find(item => item.id === "log-failure-240");
@@ -178,10 +184,12 @@ async function main() {
           expected_classification_calls:Number(fault.startsWith("choice-")), expected_relevance_calls:fault.startsWith("choice-") ? 0 : fault.startsWith("line-late-") ? 3 : 1,
           lines:fault.startsWith("choice-") ? fixture.lines.map(line=>line.replace(/^INFO /,"Routine ")) : fixture.lines};
       })];
-    selected = selected.filter(item => !process.argv.includes("--case") || arg("--case").split(",").includes(item.id));
+    selected = selected.filter(item => (!live || !item.fault) &&
+      (!process.argv.includes("--case") || arg("--case").split(",").includes(item.id)));
     if (!selected.length) throw new Error("No matching case");
     for (const item of selected) {
       current = item;calls = 0;judged = new Set();requestBudgets=[];protocolFailures=[];stages=[];caseProxyFailures=[];
+      caseForwardedCalls = 0;caseProviderResponses = 0;
       const data = path.join(temporary,item.id);await fs.mkdir(data,{mode:0o700});
       await fs.writeFile(path.join(data,".env"),`${spec.keyName}=synthetic-proxy-key\n`,{mode:0o600});
       await fs.writeFile(path.join(data,"config.json"),item.config_raw || JSON.stringify({schema_version:5,provider,scope:"global",enabled:item.enabled !== false,
@@ -209,13 +217,16 @@ async function main() {
       child.stdin.end(JSON.stringify(event));
       const code=await new Promise((resolve,reject)=>{child.on("error",reject);child.on("close",resolve);});
       if (code !== 0) throw new Error(`Hook crashed: ${item.id}`);
-      const reply=JSON.parse(stdout);const visible=reply.reason || source;
+      const reply=JSON.parse(stdout);const visible=reply.reason || projectedSource;
       const files=await fs.readdir(data,{recursive:true});
       const receiptPath=files.find(file=>path.basename(file).startsWith("receipt-"));
       const receipt=receiptPath ? JSON.parse(await fs.readFile(path.join(data,receiptPath),"utf8")) : null;
       const panel=await readLatestPanelDecision(sessionDirectory(data,item.id));
       const eventPath=files.find(file=>path.basename(file)==="events.jsonl");
       const activity=eventPath ? (await fs.readFile(path.join(data,eventPath),"utf8")).trim().split("\n").map(JSON.parse).at(-1) : null;
+      const classificationPath=files.find(file=>/^batch-.*-0\.json$/.test(path.basename(file)));
+      const classification=activity?.classification || (classificationPath ?
+        JSON.parse(await fs.readFile(path.join(data,classificationPath),"utf8")).batch?.response?.answers?.output_kind : null);
       const healthPath=files.find(file=>path.basename(file)==="hook-health.json");
       const health=healthPath ? JSON.parse(await fs.readFile(path.join(data,healthPath),"utf8")) : null;
       const statsPath=files.find(file=>path.basename(file)==="stats.json");
@@ -231,21 +242,27 @@ async function main() {
       const typedEnvelope=typeof event.tool_response!=="string";
       const originalEnvelope=typedEnvelope&&originals.length ? JSON.parse(await fs.readFile(path.join(data,originals[0].replace(/\.txt$/,".json")),"utf8")) : null;
       const envelopeExact=originalEnvelope ? isDeepStrictEqual(originalEnvelope,event.tool_response) : null;
+      const diagnostics=hookDiagnostics({health,stderr});
       const report={id:item.id,expected_kind:item.kind,kind:receipt?.manifest.output_kind || activity?.output_kind || null,
         status:receipt?.manifest.status || health?.last_skip || (item.enabled === false ? "disabled" : "error"),lines:item.lines.length,required:requiredLines.length,
         calls,relevance_batches:receipt ? receipt.manifest.requests-Number(receipt.manifest.choice_gate_ran) : null,request_budgets:requestBudgets,protocol_failures:protocolFailures,
-        elapsed_ms:Date.now()-started,saved_bytes:Buffer.byteLength(source)-Buffer.byteLength(visible),
+        elapsed_ms:Date.now()-started,saved_bytes:Buffer.byteLength(projectedSource)-Buffer.byteLength(visible),
         required_lost:actualLost,proposed_required_lost:requiredLost,original_exact:originalExact,envelope_exact:envelopeExact,
         protected_targeted:protectedLines.filter(number=>judged.has(number)),
         labeled_judgments:labeled.length,routine_kept:routineKept,
         panel_rows:panel?.rows.length || 0,panel_matches_receipt:receipt ? panel?.receipt_id===receipt.manifest.id &&
           panel.status===receipt.manifest.status && panel.totals.requests===receipt.manifest.requests : panel===null,
         proxy_failures:[...caseProxyFailures],
-        error:health?.last_error || (stderr ? stderr.trim().slice(0,256) : null)};
+        error:diagnostics.error,warnings:diagnostics.warnings,
+        coverage:caseCoverage({item,tool:event.tool_name,source:projectedSource,visible,toolResponse:event.tool_response,
+          calls,forwardedCalls:caseForwardedCalls,providerResponses:caseProviderResponses,stages,receipt,activity,health,
+          replaced:!!reply.reason,originalExact,envelopeExact,requiredLines,requiredLost:actualLost,proposedRequiredLost:requiredLost,
+          classification,labelSplit:holdoutSplit ? "holdout" : "train"})};
       const audit = auditRun({ item, calls, stages, receipt, health, stats, activity, error:report.error, replaced:!!reply.reason, live });
       Object.assign(report, { outcome:audit.outcome, recorded_requests:audit.recorded_requests,
         classification_attempts:audit.classification_attempts, relevance_attempts:audit.relevance_attempts, audit_failures:audit.failures });
       const complete=receipt && receipt.decisions.filter(row=>row.batch_id!==undefined).length===judged.size && receipt.manifest.lines_unjudged===0;
+      if (item.must_stay_local && calls > 0) audit.failures.push("must_stay_local_output_sent_to_evaluation");
       if (audit.failures.length || report.protected_targeted.length || !report.panel_matches_receipt || (item.fault && (!report.error || receipt || originals.length || files.some(file=>path.basename(file)==="latest-decision.json"))) || protocolFailures.length || (receipt&&!complete) || actualLost.length || (reply.reason&&(originalExact!==true || typedEnvelope&&envelopeExact!==true)) ||
           (!live&&item.min_batches&&(!receipt||report.relevance_batches<item.min_batches)) ||
           (item.expect_full&&reply.reason) || (item.expected_calls!==undefined&&calls!==item.expected_calls)) {
@@ -258,7 +275,7 @@ async function main() {
       if (stats) await fs.writeFile(path.join(dest,"stats.json"),JSON.stringify(stats,null,2)+"\n");
       await fs.writeFile(path.join(dest,"reply.json"),JSON.stringify(reply)+"\n");
       if (panel) await fs.writeFile(path.join(dest,"panel.json"),JSON.stringify(panel)+"\n");
-      if (receipt) qualityCases.push({id:item.id,split:process.argv.includes("--holdout") || process.argv.includes("--batching") || process.argv.includes("--precision-holdout") ? "holdout" : "train",
+      if (receipt) qualityCases.push({id:item.id,split:holdoutSplit ? "holdout" : "train",
         receipt:`${item.id}/${path.basename(receiptPath)}`,required_lines:requiredLines});
       reports.push(report);console.log(JSON.stringify(report));
       if (audit.abort || live && report.failed || abortReason) {
@@ -285,7 +302,10 @@ async function main() {
       routine_kept:reports.reduce((sum,item)=>sum+item.routine_kept,0),
       failures:reports.filter(item=>item.failed).map(item=>item.id),
       errors:reports.filter(item=>item.error).map(item=>({id:item.id,error:item.error})),
-      saved_bytes:reports.reduce((sum,item)=>sum+item.saved_bytes,0),p50_ms:times[Math.floor(times.length*.5)],p95_ms:times[Math.min(times.length-1,Math.floor(times.length*.95))]};
+      warnings:reports.filter(item=>item.warnings.length).map(item=>({id:item.id,warnings:item.warnings})),
+      saved_bytes:reports.reduce((sum,item)=>sum+item.saved_bytes,0),
+      coverage:summarizeCoverage(reports,{live}),
+      p50_ms:times[Math.floor(times.length*.5)],p95_ms:times[Math.min(times.length-1,Math.floor(times.length*.95))]};
     await fs.writeFile(path.join(out,"report.json"),JSON.stringify({summary,cases:reports},null,2)+"\n");
     if (qualityCases.length) {
       const casesPath=path.join(out,"quality-cases.json");

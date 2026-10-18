@@ -4,7 +4,7 @@ The integrated VSIX must pass the native clean-install check before release:
 
 ```powershell
 pwsh -NoProfile -File .\vscode-control\scripts\windows_integrated_smoke.ps1 `
-  -Vsix .\.local\submission\codex-decision-0.12.1.vsix -Distro Ubuntu
+  -Vsix .\.local\submission\codex-decision-0.13.0.vsix -Distro Ubuntu
 ```
 
 This check uses the actual packaged extension, a copied supported Codex host,
@@ -50,7 +50,7 @@ Migration checks cover all eight legacy switch combinations, conservative cutoff
 Run the reviewed dummy corpus against the debug hook:
 
 ```bash
-# All five splits and one complete fault suite for each provider:
+# All seven splits and one complete fault suite for each provider:
 node scripts/dummy_matrix.cjs --hook <debug-hook> --jobs 2 --out .local/quality/dummy-matrix
 # Individual splits or bounded live checks:
 node scripts/two_stage_quality.cjs --out .local/two-stage/offline
@@ -58,6 +58,8 @@ node scripts/two_stage_quality.cjs --holdout --skip-faults --out .local/two-stag
 node scripts/two_stage_quality.cjs --batching --skip-faults --out .local/two-stage/offline-batching
 node scripts/two_stage_quality.cjs --precision --skip-faults --out .local/two-stage/offline-precision
 node scripts/two_stage_quality.cjs --precision-holdout --skip-faults --out .local/two-stage/offline-precision-holdout
+node scripts/two_stage_quality.cjs --coverage --skip-faults --out .local/two-stage/offline-coverage
+node scripts/two_stage_quality.cjs --classification-holdout --skip-faults --out .local/two-stage/offline-classification
 node scripts/two_stage_quality.cjs --live --data-dir <installed-PLUGIN_DATA> --out .local/two-stage/live
 node scripts/two_stage_quality.cjs --live --holdout --data-dir <installed-PLUGIN_DATA> --out .local/two-stage/live-holdout
 ```
@@ -67,6 +69,29 @@ Live runs use the installed key only in the proxy process memory. The hook uses 
 Batching fixtures cover 251–10,000 lines, long target text, Unicode, escaped JSON, ANSI/CRLF, and unpackable context. All emitted requests must fit both conservative API token bounds. The runner checks exactly-once coverage and complete target text. Later-batch fault cases verify rollback after an earlier valid relevance batch. The current panel accepts complete version-6 snapshots up to 10,000 source lines and 8 MiB. It includes earlier batches and protected lines; its row counts must match all recorded totals.
 
 The runner requires a debug or verification hook and rejects the production binary before loading a live key. It reconciles proxy calls, persisted attempts, stage counts, receipts, errors, and completion counters. Eligible offline cases must produce their expected decision; local skips need an explicit expectation. Unexpected live errors stop further requests. Use `--case` with a fault ID for a focused failure rerun.
+
+Every report includes `summary.coverage`. It counts distinct outputs, completed
+line evaluations, classification keeps, previews, and prepared replacements.
+It reports source bytes and skip reasons by tool family and size. Disabled
+controls and injected faults have separate denominators. The `--coverage`
+holdout pairs supported shell/code-mode wrappers and safe missed opportunities
+with privacy, mutation, diagnostic, and exact-content controls. Fixture
+expectations require the reviewed safe opportunities to reach evaluation;
+paired negative cases must remain local. Offline participation
+measures routing with mocked judgments. Live reports also separate proxy
+arrivals from provider forwarding. Delivered context savings remain unknown.
+See the [participation investigation](../docs/development/participation_evaluation_2026-10-18.md)
+for measured causes, acceptance criteria, and the next runtime experiments.
+
+The independent `--classification-holdout` split tests all eight reviewed format
+classes through the semantic classifier. Reports include normalized combined
+excerptable probability, confidence bins, gate confusion counts, Brier score,
+and calibration error. Offline replies validate the accounting only. Live
+synthetic replies measure these eight held-out cases; they cannot establish a
+general model error rate. The 95% classification gate and 5% omission cutoff
+stay fixed. Deliberate fixture faults never reach a live provider. The coverage
+split includes a later-batch adapter fault in its offline run to check whole
+batch rollback.
 
 The base corpus includes all 34 protocol, timeout, and later-batch faults. Use
 `--skip-faults` for additional corpus splits to avoid repeating that identical

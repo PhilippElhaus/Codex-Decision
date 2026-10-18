@@ -2,6 +2,15 @@
 // Reconcile one isolated hook invocation with the mock/proxy and saved counters.
 const excerptable = new Set(["repetitive_log", "progress_output", "independent_matches", "independent_records"]);
 
+function hookDiagnostics({ health, stderr }) {
+  const warnings = [], errors = [];
+  for (const line of (stderr || "").split(/\r?\n/).map(line => line.trim()).filter(Boolean)) {
+    if (line === "Codex Decision publication cleanup deferred: publication recovery deadline") warnings.push(line);
+    else errors.push(line);
+  }
+  return { error: health?.last_error || (errors.length ? errors.join("\n").slice(0, 256) : null), warnings };
+}
+
 function requireProxyHook(binary) {
   if (!binary.includes(Buffer.from("CODEX_DECISION_TEST_ENDPOINT"))) {
     throw new Error("This runner requires a debug hook with CODEX_DECISION_TEST_ENDPOINT support; build the debug hook before testing.");
@@ -64,4 +73,4 @@ function auditRun({ item, calls, stages, receipt, health, stats, activity, error
   return { failures, abort, outcome, recorded_requests: recorded, classification_attempts: classified, relevance_attempts: relevant };
 }
 
-module.exports = { requireProxyHook, auditRun };
+module.exports = { requireProxyHook, auditRun, hookDiagnostics };

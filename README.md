@@ -4,14 +4,14 @@
 
 Codex Decision selects repetitive lines for removal from supported local tool output. Errors and useful evidence stay visible. Every shortened result links to the complete original.
 
-**Codex Decision 0.12.1** — [Download the integrated VSIX](https://github.com/PhilippElhaus/Codex-Decision/releases/latest).
+**Codex Decision 0.13.0** — [Download the integrated VSIX](https://github.com/PhilippElhaus/Codex-Decision/releases/latest).
 
 ## Get started
 
 Install the single VSIX in Windows VS Code with a Linux x86_64 WSL environment:
 
 ```bash
-code --install-extension codex-decision-0.12.1.vsix --force
+code --install-extension codex-decision-0.13.0.vsix --force
 ```
 
 The package contains the hook, skill, session controls, settings, and verified Codex UI patch. On activation it installs or updates the local plugin and repairs supported Codex builds. Existing plugin data and thread choices remain in place. Run **Developer: Reload Window** after the integration repair, then open your Codex thread. Review the hook in `/hooks` if Codex requests trust. No second package or manual composer patch is needed.
@@ -56,7 +56,7 @@ Select **Latest** for the current result or **Totals** for the selected thread�
 
 Screenshots capture the current webview code with synthetic, key-free data. Code-mode scripts can still serialize the original tool result after a hook records a replacement, so the panel’s removal counts do not establish downstream token savings. See the [processing investigation](docs/development/processing_recovery_2026-10-08.md) and [troubleshooting](docs/setup/setup_installation.md).
 
-The [October 17 usage audit](docs/development/usage_effectiveness_2026-10-17.md) bounds API participation at **7.34–7.78% of enabled invocations** in its exact historical cohort. Small outputs and exact source reads account for about 62% of invocations. A classification keep already contacted the API, and one output can require several requests. These figures do not justify raising the relevance cutoff or weakening preservation rules. The UI labels hook estimates and unverified delivery explicitly.
+The [October 18 investigation](docs/development/participation_evaluation_2026-10-18.md) bounds historical API participation at **8.04–8.44% of enabled invocations**. Small outputs and exact source reads account for about 61%. [Version 0.13.0](docs/development/coverage_release_0.13.0.md) fixes 11 missed safe opportunities through validated wrappers, narrower diagnostic matching, and reviewed read-only routes. The paired synthetic cohort improved from **9/20 to 20/20 safe outputs evaluated**, with no labeled evidence loss. A separate classifier holdout still kept all unknown formats. These tests do not predict the new workload rate. The UI labels hook estimates and unverified delivery explicitly.
 
 ## Documentation
 

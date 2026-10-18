@@ -183,7 +183,7 @@ fn exact_file_tool(event: &Value, tool: &str) -> bool {
     let mut explicit_log = false;
     for field in ["file_path", "path", "filePath"] {
         if let Some(value) = input.get(field) {
-            if !value.as_str().is_some_and(|path| path.ends_with(".log")) {
+            if !value.as_str().is_some_and(explicit_log_path) {
                 return true;
             }
             explicit_log = true;
@@ -222,13 +222,24 @@ fn explicit_log_read(words: &[String], executable: &str) -> bool {
             }
         } else if !script {
             script = true;
-        } else if word.ends_with(".log") {
+        } else if explicit_log_path(word) {
             logs += 1;
         } else {
             return false;
         }
     }
     logs > 0
+}
+
+fn explicit_log_path(path: &str) -> bool {
+    let filename = path.rsplit(['/', '\\']).next().unwrap_or("");
+    let lower = filename.to_ascii_lowercase();
+    lower.ends_with(".log")
+        || lower.rsplit_once(".log.").is_some_and(|(stem, rotation)| {
+            !stem.is_empty()
+                && !rotation.is_empty()
+                && rotation.bytes().all(|byte| byte.is_ascii_digit())
+        })
 }
 
 fn final_status(text: &str) -> bool {

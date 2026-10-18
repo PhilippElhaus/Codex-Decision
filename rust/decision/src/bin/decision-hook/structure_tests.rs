@@ -1,5 +1,53 @@
 use super::*;
 
+#[test]
+fn scalar_filenames_use_only_a_verified_path_listing_contract() {
+    for command in ["rg --files", "git ls-files", "find src -type f", "ls src"] {
+        for scalar in ["123", "true", "false", "null", "\"quoted-name\""] {
+            let source = format!("{scalar}\nsrc/routine.rs\nsrc/required.rs\n");
+            let event =
+                json!({"tool_name":"Bash","tool_input":{"command":command},"tool_response":source});
+            let (accepted, lines) = checked(&event);
+            assert!(accepted, "{command}: {scalar}");
+            assert_eq!(lines[0].model_text, scalar);
+        }
+    }
+    for command in ["node synthetic-export.cjs", "cargo test"] {
+        let mut lines = source_lines("true\nsrc/routine.rs\nFinished run\n");
+        assert!(
+            !apply_route_structure(
+                if command == "cargo test" {
+                    "test_build"
+                } else {
+                    "output"
+                },
+                "Bash",
+                command,
+                &mut lines
+            ),
+            "scalar acquired an unverified path contract: {command}"
+        );
+    }
+}
+
+#[test]
+fn path_listings_reject_containers_and_mixed_structured_output() {
+    for source in [
+        "{\"required\":true}\nsrc/routine.rs\n",
+        "[\"required\",\"routine\"]\nsrc/routine.rs\n",
+        "123\n{\"required\":true}\nsrc/routine.rs\n",
+        "true\n[\"required\",\"routine\"]\n",
+        "src/routine.rs\n{\n\"required\": true\n}\n",
+        "src/routine.rs\n[\n123,\ntrue\n]\n",
+    ] {
+        let event = json!({"tool_name":"Bash","tool_input":{"command":"rg --files"},"tool_response":source});
+        assert!(
+            !checked(&event).0,
+            "container became independent paths: {source}"
+        );
+    }
+}
+
 fn native_event(script: &str, stdout: &str, stderr: &str) -> Value {
     let value = json!({"exit_code":1,"stdout":stdout,"stderr":stderr,"duration_ms":20,
         "output_truncated":false,"writable_layer_bytes":4096});

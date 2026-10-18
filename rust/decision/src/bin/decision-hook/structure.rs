@@ -40,12 +40,18 @@ pub(super) fn apply_route_structure(
             .is_some_and(|words| cargo_json_messages(words));
     let explicit_json = route == "search_listing" && executable == "rg" && flag("--json")
         || route == "test_build" && (go_json || cargo_json);
+    let path_listing = route == "search_listing"
+        && (executable == "rg" && flag("--files")
+            || executable == "git" && action == "ls-files"
+            || matches!(executable, "find" | "fd" | "ls"));
     let looks_structured = lines
         .iter()
         .find(|line| !line.model_text.trim().is_empty() && !metadata_or_stderr(line))
         .is_some_and(|line| {
             let first = line.model_text.trim();
-            matches!(first, "{" | "[") || serde_json::from_str::<Value>(first).is_ok()
+            matches!(first, "{" | "[")
+                || serde_json::from_str::<Value>(first)
+                    .is_ok_and(|value| !path_listing || value.is_object() || value.is_array())
         });
     if looks_structured && !explicit_json {
         return false;
@@ -136,9 +142,6 @@ pub(super) fn apply_route_structure(
     if route == "search_listing" {
         let jsonl = executable == "rg" && flag("--json");
         let numbered = executable == "rg" && (flag("-n") || flag("--line-number"));
-        let paths = executable == "rg" && flag("--files")
-            || executable == "git" && action == "ls-files"
-            || matches!(executable, "find" | "fd" | "ls");
 
         for line in lines {
             if metadata_or_stderr(line) {
@@ -183,8 +186,13 @@ pub(super) fn apply_route_structure(
                     // model evidence, including absolute/submatch byte offsets.
                     // Normalizing to path:line:text hid distinct match facts.
                 }
-            } else if paths {
-                if line.model_text.is_empty() || line.model_text.chars().any(char::is_control) {
+            } else if path_listing {
+                if line.model_text.is_empty()
+                    || line.model_text.chars().any(char::is_control)
+                    || multiline_json_start(&line.model_text)
+                    || strict_json::parse(line.model_text.as_bytes())
+                        .is_ok_and(|value| value.is_object() || value.is_array())
+                {
                     return false;
                 }
             } else if (numbered && !numbered_match(&line.model_text))

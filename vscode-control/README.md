@@ -8,7 +8,7 @@ Build and install one package from WSL:
 
 ```bash
 ../scripts/build_control.sh
-code --install-extension "$(wslpath -w ../.local/submission/codex-decision-0.12.1.vsix)" --force
+code --install-extension "$(wslpath -w ../.local/submission/codex-decision-0.13.0.vsix)" --force
 ```
 
 On activation, the package installs or updates the bundled Codex plugin and checks the Codex UI integration. It uses the configured WSL data path or the default WSL distribution for a fresh installation. It sets `codexDecision.dataDirectory` when that setting is empty. Existing plugin identity, credentials, logs, and thread settings remain in place.
@@ -42,6 +42,13 @@ The **Decision** panel sits beside Output and Terminal. **Latest** shows the sel
 ## Verify
 
 The control packs each judged line into a single row. A ten-character bar and a 0–100% value show its score. Columns adapt to the panel width. Hover for the full excerpt, precise probability, and reason. Known command envelopes in code-mode `exec` and `wait` can be shortened. Metadata stays protected, and a complete typed original is saved. The panel labels previews explicitly.
+
+Version 0.13.0 also validates matching duplicate command envelopes and serialized
+homogeneous command-result batches, including fulfilled `Promise.allSettled`
+results. Each member retains metadata and output boundaries. Unknown or rejected
+members, mismatched duplicates, mixed media, and coupled structures keep the
+complete batch. Passing Cargo test names and exact zero-valued diagnostic
+counters can reach relevance judgments while real diagnostics stay protected.
 
 ```bash
 npm test

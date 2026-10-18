@@ -6,14 +6,15 @@ pub fn protect_neighbors(lines: &mut [SourceLine]) {
     for line in lines.iter_mut() {
         let lower = line.model_text.to_ascii_lowercase();
         let indented = line.model_text.starts_with(char::is_whitespace);
-        if lower.contains("traceback")
-            || lower.contains("assertionerror")
-            || lower.contains("panic!")
-            || lower.contains("panicked at")
-            || lower.starts_with("panic:")
-            || lower.contains("stack backtrace:")
-            || lower.contains("error:")
-            || lower.contains("failed:")
+        if !super::routine::passing_test(&lower)
+            && (lower.contains("traceback")
+                || lower.contains("assertionerror")
+                || lower.contains("panic!")
+                || lower.contains("panicked at")
+                || lower.starts_with("panic:")
+                || lower.contains("stack backtrace:")
+                || lower.contains("error:")
+                || lower.contains("failed:"))
         {
             block = 24;
             diagnostic_block = true;

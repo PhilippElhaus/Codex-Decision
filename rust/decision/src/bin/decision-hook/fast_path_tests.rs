@@ -173,6 +173,73 @@ fn file_tools_preserve_source_and_allow_explicit_logs() {
 }
 
 #[test]
+fn uppercase_and_numeric_rotated_logs_require_a_complete_log_contract() {
+    let log = "INFO routine synthetic heartbeat\n".repeat(30) + "Done\n";
+    for filename in [
+        "worker.LOG",
+        "worker.log.1",
+        "worker.LOG.002",
+        "C:\\synthetic\\worker.LOG.1",
+    ] {
+        for command in [
+            format!("cat '{filename}'"),
+            format!("tail -n 40 '{filename}'"),
+        ] {
+            assert!(
+                matches!(
+                    decide(&command, &log),
+                    FormatDecision::Direct("repetitive_log")
+                ),
+                "{command}"
+            );
+            assert!(
+                matches!(
+                    decide(&command, "{\n\"required\":true\n}\n"),
+                    FormatDecision::Keep("structure_guard")
+                ),
+                "{command}"
+            );
+        }
+        let event = json!({"tool_name":"Read","tool_input":{"file_path":filename}});
+        assert!(
+            matches!(
+                format_decision(&event, &mut source_lines(&log)),
+                FormatDecision::Direct("repetitive_log")
+            ),
+            "{filename}"
+        );
+    }
+    for filename in [
+        "worker.log.rs",
+        "worker.log.backup",
+        "worker.log.1.rs",
+        "worker.log.1.gz",
+        "worker.log.1/Config",
+        "Config",
+    ] {
+        assert!(
+            matches!(
+                decide(&format!("cat {filename}"), &log),
+                FormatDecision::Keep("exact_content")
+            ),
+            "{filename}"
+        );
+        let event = json!({"tool_name":"Read","tool_input":{"file_path":filename}});
+        assert!(
+            matches!(
+                format_decision(&event, &mut source_lines(&log)),
+                FormatDecision::Keep("exact_content")
+            ),
+            "{filename}"
+        );
+    }
+    assert!(matches!(
+        decide("cat worker.LOG Config", &log),
+        FormatDecision::Keep("exact_content")
+    ));
+}
+
+#[test]
 fn diff_content_overrides_summary_flags() {
     let diff = "diff --git a/source b/source\n--- a/source\n+++ b/source\n@@ -1 +1 @@\n-INFO old value\n+INFO new value\n";
     for command in ["git diff --stat --patch", "git show --stat -p"] {

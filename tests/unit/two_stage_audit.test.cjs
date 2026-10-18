@@ -1,7 +1,15 @@
 "use strict";
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { requireProxyHook, auditRun } = require("../../scripts/two_stage_audit.cjs");
+const { requireProxyHook, auditRun, hookDiagnostics } = require("../../scripts/two_stage_audit.cjs");
+
+test("bounded post-commit cleanup warnings do not invent hook failures", () => {
+  const warning = "Codex Decision publication cleanup deferred: publication recovery deadline";
+  assert.deepEqual(hookDiagnostics({health:{errors:0},stderr:warning + "\n"}), {error:null,warnings:[warning]});
+  assert.equal(hookDiagnostics({health:{last_error:"actual failure"},stderr:warning}).error,"actual failure");
+  assert.match(hookDiagnostics({stderr:warning + "\nunknown hook diagnostic"}).error,/unknown hook diagnostic/);
+  assert.match(hookDiagnostics({stderr:"Codex Decision publication cleanup deferred: publication artifact changed"}).error,/artifact changed/);
+});
 
 const successful = () => ({ item: { kind: "repetitive_log" }, calls: 2,
   stages: ["classification", "relevance"], receipt: { manifest: { requests: 2, choice_gate_ran: true, status: "replace" } },

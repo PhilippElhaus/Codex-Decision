@@ -1,6 +1,10 @@
 //! Source spans and plain model text; original bytes remain untouched.
 use crate::SourceLine;
 mod protection;
+mod routine;
+#[cfg(test)]
+#[path = "source/routine_tests.rs"]
+mod routine_tests;
 pub use protection::protect_neighbors;
 pub fn source_lines(source: &str) -> Vec<SourceLine> {
     let mut lines = Vec::new();
@@ -26,7 +30,29 @@ fn source_line(source: &str, number: usize, start: usize, end: usize) -> SourceL
         Some("blank".into())
     } else if clean.len() > 4096 {
         Some("long_line".into())
-    } else if lower
+    } else if diagnostic_or_completion(&lower) {
+        Some("diagnostic_or_completion".into())
+    } else {
+        None
+    };
+    SourceLine {
+        number,
+        byte_start: start,
+        byte_end: end,
+        model_text: clean,
+        protected_reason: reason,
+        eligible: true,
+    }
+}
+
+fn diagnostic_or_completion(lower: &str) -> bool {
+    // Only two explicit routine grammars can mask diagnostic words. Unknown
+    // identifiers and prose keep the existing conservative diagnostic rule.
+    if routine::passing_test(lower) {
+        return false;
+    }
+    let diagnostic_text = routine::without_zero_counters(lower);
+    diagnostic_text
         .split(|c: char| !c.is_ascii_alphanumeric())
         .any(|word| word == "warn")
         || [
@@ -47,20 +73,7 @@ fn source_line(source: &str, number: usize, start: usize, end: usize) -> SourceL
             "ran ",
         ]
         .iter()
-        .any(|word| lower.contains(word))
-    {
-        Some("diagnostic_or_completion".into())
-    } else {
-        None
-    };
-    SourceLine {
-        number,
-        byte_start: start,
-        byte_end: end,
-        model_text: clean,
-        protected_reason: reason,
-        eligible: true,
-    }
+        .any(|word| diagnostic_text.contains(word))
 }
 
 pub fn strip_ansi(text: &str) -> String {
