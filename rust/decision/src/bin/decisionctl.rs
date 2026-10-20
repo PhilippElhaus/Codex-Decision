@@ -48,6 +48,9 @@ fn write_private(path: &Path, data: &[u8]) -> Result<(), String> {
 }
 
 fn set_key(data_dir: &Path, provider: codex_decision::provider::Provider) -> Result<(), String> {
+    if provider == codex_decision::provider::Provider::Custom {
+        return Err("configure custom provider credentials in the Decision control".into());
+    }
     #[cfg(unix)]
     if unsafe { libc::isatty(libc::STDIN_FILENO) } != 0 {
         return Err("pipe the key on stdin; interactive echo is disabled".into());

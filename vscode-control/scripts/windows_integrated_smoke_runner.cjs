@@ -60,6 +60,19 @@ async function providerBridge(checks) {
     }
   }
   checks.push("packaged host bridge retains OpenAI, TypeSafe, and fallback consent across all provider actions");
+  const customProvider = { name: "Synthetic custom", protocol: "jev", endpoint: "http://127.0.0.1:9/v1/systemone",
+    model: "local-model", auth: "basic", username: "test-user", header_name: "" };
+  for (const action of ["testApiKey", "saveApiKey", "settingsTest", "settingsSave"]) {
+    handler({ type: "codex-decision", id: ++id, action, provider: "custom", customProvider, key: "", password: "synthetic password",
+      mode: "replace", relevancePolicy: { relevant_max: 5 }, logLimitMb: 50, neverDeleteLogs: false, fallbackEnabled: false });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(replies.at(-1).id, id);
+    assert.equal(captured.provider, "custom");
+    assert.equal(captured.password, "synthetic password");
+    assert.deepEqual(captured.customProvider, customProvider);
+  }
+  checks.push("packaged host bridge retains custom provider drafts and private password fields across login and settings actions");
+
 }
 
 async function actualPanel(dataDirectory, checks) {
@@ -88,6 +101,24 @@ async function actualPanel(dataDirectory, checks) {
     assert.equal((await core.readGlobalSettings(dataDirectory)).model, chosen === "openai" ? "gpt-6-luna" : "jev-latest");
   }
   checks.push("native settings bridge saves and restores each provider with the matching model and no keys");
+  const customProvider = { name: "Native synthetic custom", protocol: "jev", endpoint: "http://127.0.0.1:9/v1/systemone",
+    model: "native-model", auth: "basic", username: "test-user", header_name: "" };
+  const custom = await vscode.commands.executeCommand("codexDecision.bridge", {
+    action: "settingsSave", viewId: "native-integrated-view", sessionId: session, provider: "custom", customProvider,
+    key: "", password: "synthetic private password", mode: "replace", relevancePolicy: { relevant_max: 5 },
+    logLimitMb: 50, neverDeleteLogs: false, fallbackEnabled: false,
+  });
+  assert.equal(custom.settings.action, "saved");
+  assert.equal(custom.provider, "custom");
+  assert.equal(custom.custom_provider.model, "native-model");
+  assert.equal(await core.readApiKey(dataDirectory, "custom"), "synthetic private password");
+  assert.equal(JSON.stringify(custom).includes("synthetic private password"), false);
+  await vscode.commands.executeCommand("codexDecision.bridge", {
+    action: "settingsSave", viewId: "native-integrated-view", sessionId: session, provider: "openai", key: "",
+    mode: "replace", relevancePolicy: { relevant_max: 5 }, logLimitMb: 50, neverDeleteLogs: false, fallbackEnabled: false,
+  });
+  checks.push("native custom settings preserve the private password and return only connection metadata");
+
   const logs = path.join(selected, "logs");
   await fs.mkdir(logs, { recursive: true });
   const id = "a".repeat(32);
@@ -204,7 +235,14 @@ exports.run = async () => {
     assert.deepEqual(await fingerprint(watched), before, "healthy repair performs zero host, rollback, or payload writes");
     result.checks.push("repeated activation checks are idempotent and preserve host, rollback, and bundled binary bytes and timestamps");
         await checkpoint();
-    await assert.rejects(fs.access(path.join(installation.dataDirectory, ".env")), { code: "ENOENT" });
+    if (result.phase === "first") {
+      await assert.rejects(fs.access(path.join(installation.dataDirectory, ".env")), { code: "ENOENT" });
+    } else {
+      assert.equal(await core.readApiKey(installation.dataDirectory, "custom"), "synthetic private password");
+      await assert.rejects(core.readApiKey(installation.dataDirectory, "openai"));
+      await assert.rejects(core.readApiKey(installation.dataDirectory, "typesafe"));
+      result.checks.push("restart preserves only the synthetic custom credential without creating built-in keys");
+    }
     await actualPanel(installation.dataDirectory, result.checks);
     await providerBridge(result.checks);
     result.ok = true;

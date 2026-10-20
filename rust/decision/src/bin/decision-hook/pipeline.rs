@@ -102,27 +102,27 @@ fn process_event_once(
     provider_failed: &mut bool,
 ) -> Result<Value, String> {
     if event.get("hook_event_name").and_then(Value::as_str) != Some("PostToolUse") {
-        return skip(scoped, "unsupported_event");
+        return skip_event(scoped, event, "unsupported_event");
     }
     let Some(route) = route(event, config) else {
-        return skip(scoped, "unsupported_route");
+        return skip_event(scoped, event, "unsupported_route");
     };
     let Some(source) = response_text(event) else {
-        return skip(scoped, "unsupported_result");
+        return skip_event(scoped, event, "unsupported_result");
     };
     if source.len() < config.min_chars {
-        return skip(scoped, "small");
+        return skip_event(scoped, event, "small");
     }
     if source.len() > config.max_chars {
-        return skip(scoped, "large");
+        return skip_event(scoped, event, "large");
     }
     if !json_limit::within(&event["tool_input"], 256 * 1024)? {
-        return skip(scoped, "tool_input_budget");
+        return skip_event(scoped, event, "tool_input_budget");
     }
     let line_count =
         source.bytes().filter(|byte| *byte == b'\n').count() + usize::from(!source.ends_with('\n'));
     if line_count > MAX_SOURCE_LINES {
-        return skip(scoped, "line_budget");
+        return skip_event(scoped, event, "line_budget");
     }
     remaining()?;
     let mut lines = source_lines(&source);
@@ -133,7 +133,7 @@ fn process_event_once(
     // An exact source read already stays local. Do not mistake source syntax
     // or an unrelated unreadable transcript for an evaluation opportunity.
     if matches!(format, FormatDecision::Keep("exact_content")) {
-        return skip(scoped, "exact_content");
+        return skip_event(scoped, event, "exact_content");
     }
     let privacy = if sensitive_source(&source) {
         Some("protected_output")
@@ -145,20 +145,20 @@ fn process_event_once(
         None
     };
     if let Some(detail) = privacy {
-        return skip_with_detail(scoped, "sensitive", detail);
+        return skip_event_with_detail(scoped, event, "sensitive", detail);
     }
     if lines.is_empty() {
-        return skip(scoped, "structured_or_empty");
+        return skip_event(scoped, event, "structured_or_empty");
     }
     protect_neighbors(&mut lines);
     if !lines
         .iter()
         .any(|line| line.eligible && line.protected_reason.is_none())
     {
-        return skip(scoped, "no_eligible_lines");
+        return skip_event(scoped, event, "no_eligible_lines");
     }
     if let FormatDecision::Keep(reason) = format {
-        return skip(scoped, reason);
+        return skip_event(scoped, event, reason);
     }
     let tool = event["tool_name"].as_str().unwrap_or("");
     if config.mode == "replace"
@@ -166,16 +166,16 @@ fn process_event_once(
         && mcp_tool(tool)
         && !(matches!(format, FormatDecision::Direct(_)) && supported_lab_command(event))
     {
-        return skip(scoped, "mcp_replacement_disabled");
+        return skip_event(scoped, event, "mcp_replacement_disabled");
     }
     let user_task = match task_context(event) {
         Ok(task) => task,
-        Err(()) => return skip(scoped, "unsafe_task_context"),
+        Err(()) => return skip_event(scoped, event, "unsafe_task_context"),
     };
     let has_user_task = user_task.is_some();
     let task = user_task.unwrap_or_else(|| fallback_task(event));
     if has_user_task && exhaustive_task(&task) {
-        return skip(scoped, "exhaustive_task");
+        return skip_event(scoped, event, "exhaustive_task");
     }
     if config.mode == "replace"
         && has_user_task
@@ -188,9 +188,9 @@ fn process_event_once(
             !event["tool_response"].is_string(),
         )
     {
-        return skip(scoped, "insufficient_savings");
+        return skip_event(scoped, event, "insufficient_savings");
     }
-    let api_key = key(data_dir, config.provider).map_err(|error| {
+    let connection = Connection::load(data_dir, config).map_err(|error| {
         *provider_failed = error == "missing credential";
         error
     })?;
@@ -199,7 +199,7 @@ fn process_event_once(
     let (kind, gate_record) = if let FormatDecision::Direct(kind) = format {
         (kind.to_owned(), None)
     } else {
-        let request = classification_request(
+        let mut request = classification_request(
             &task,
             event["tool_name"].as_str().unwrap_or(""),
             command(event),
@@ -216,7 +216,7 @@ fn process_event_once(
             scoped,
             &agent,
             &request,
-            &api_key,
+            &connection,
             config.timeout.min(remaining()?.as_secs_f64()),
             classification,
         )
@@ -225,6 +225,7 @@ fn process_event_once(
             error.reason
         })?;
         let elapsed_ms = before.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
+        request["model"] = Value::from(config.actual_model());
         let gate_record = BatchRecord {
             id: 0,
             target_numbers: vec![],
@@ -242,7 +243,7 @@ fn process_event_once(
                 "choice_kept_full_output",
                 config.never_delete_logs,
             )?;
-            return skip(scoped, "choice_kept_full_output");
+            return skip_event(scoped, event, "choice_kept_full_output");
         }
         (kind, Some(gate_record))
     };
@@ -261,7 +262,7 @@ fn process_event_once(
                 config.never_delete_logs,
             )?;
         }
-        return skip(scoped, "no_eligible_lines");
+        return skip_event(scoped, event, "no_eligible_lines");
     }
     let batches = match relevance_requests(&task, command(event), &kind, &lines, &config.model) {
         Ok(batches) => batches,
@@ -277,7 +278,7 @@ fn process_event_once(
                     config.never_delete_logs,
                 )?;
             }
-            return skip(scoped, "relevance_budget");
+            return skip_event(scoped, event, "relevance_budget");
         }
     };
     let receipt_id = Uuid::new_v4().simple().to_string();
@@ -286,14 +287,14 @@ fn process_event_once(
     let mut probabilities = BTreeMap::new();
     let mut records = Vec::new();
     let batch_count = batches.len();
-    for batch in batches {
+    for mut batch in batches {
         remaining()?;
         let before = Instant::now();
         let (response, answers) = evaluate(
             scoped,
             &agent,
             &batch.request,
-            &api_key,
+            &connection,
             config.timeout.min(remaining()?.as_secs_f64()),
             |response| relevance_answers(&batch, response),
         )
@@ -306,6 +307,7 @@ fn process_event_once(
                 return Err("duplicate relevance target".into());
             }
         }
+        batch.request["model"] = Value::from(config.actual_model());
         let record = BatchRecord {
             id: batch.id,
             target_numbers: batch.target_numbers,

@@ -16,6 +16,8 @@
   let setup;
   let setupDismissed = false;
   let keyRequestId = 0;
+  let testedConnection = null;
+  let saveAfterTest = false;
   let externalRequestId = 0;
   let pending = 0;
   let lastAppliedReply = 0;
@@ -88,7 +90,7 @@
     const current = currentViewId();
     sentViews.set(id, { viewId: current, action, expires: Date.now() + requestTimeoutMs });
     if (sentViews.size > 50) sentViews.delete(sentViews.keys().next().value);
-    api.postMessage({ type: "codex-decision", action, enabled, sourceId, visible: document.visibilityState === "visible", focused: document.hasFocus() && document.visibilityState === "visible", ...(key === undefined ? {} : { key, provider: setup?.querySelector("#codex-decision-provider")?.value || state.provider || "openai" }), viewId: current, sessionId: sessionId(), expectsLocalSession: expectsLocalSession(), id });
+    api.postMessage({ type: "codex-decision", action, enabled, sourceId, visible: document.visibilityState === "visible", focused: document.hasFocus() && document.visibilityState === "visible", ...(key === undefined ? {} : connectionValues()), viewId: current, sessionId: sessionId(), expectsLocalSession: expectsLocalSession(), id });
     return id;
   }
 
@@ -105,9 +107,7 @@
       if (id === externalRequestId) externalRequestId = 0;
       if (id === keyRequestId) {
         keyRequestId = 0;
-        setup.querySelector("#codex-decision-provider").disabled = false;
-        setup.querySelector("#codex-decision-test-key").disabled = false;
-        setup.querySelector("#codex-decision-save-key").disabled = false;
+        setConnectionBusy(false);
         showKeyStatus("Decision controls did not respond. Try again.", false);
       }
     }
@@ -154,35 +154,84 @@
     label.dataset.ok = String(ok);
   }
 
+  function connectionValues() {
+    const value = name => setup.querySelector(`#codex-decision-${name}`).value;
+    const selected = value("provider");
+    return { provider: selected, key: selected === "custom" && ["basic", "none"].includes(value("auth")) ? "" : value("key"),
+      password: selected === "custom" && value("auth") === "basic" ? value("password") : "",
+      ...(selected === "custom" ? { customProvider: { name: value("name").trim() || "Custom provider", protocol: value("protocol"),
+        endpoint: value("endpoint").trim(), model: value("model").trim(), auth: value("auth"),
+        username: value("auth") === "basic" ? value("username") : "", header_name: value("auth") === "header" ? value("header-name").trim() : "" } } : {}) };
+  }
+
+  function loadConnection(custom = {}) {
+    custom ||= {};
+    for (const [field, value] of Object.entries({ name: custom.name || "", protocol: custom.protocol || "openai",
+      endpoint: custom.endpoint || "", model: custom.model || "", auth: custom.auth || "bearer",
+      username: custom.username || "", "header-name": custom.header_name || "" })) setup.querySelector(`#codex-decision-${field}`).value = value;
+  }
+
+  function showConnectionFields() {
+    const values = connectionValues();
+    const custom = values.provider === "custom";
+    const auth = values.customProvider?.auth;
+    for (const row of setup.querySelectorAll(".connection-custom")) row.hidden = !custom;
+    setup.querySelector(".connection-username").hidden = !custom || auth !== "basic";
+    setup.querySelector(".connection-header").hidden = !custom || auth !== "header";
+    setup.querySelector(".connection-password").hidden = !custom || auth !== "basic";
+    setup.querySelector(".connection-key").hidden = custom && ["basic", "none"].includes(auth);
+    setup.querySelector(`#codex-decision-connection-help`).textContent = custom
+      ? "Connect an endpoint that accepts the selected JSON schema and returns its typed answers. Chat completion endpoints need a compatible adapter."
+      : values.provider === "typesafe" ? "Typed decisions with TypeSafe Jev. Your saved OpenAI key stays available." : "Typed decisions with OpenAI Decisions. Your saved TypeSafe key stays available.";
+    setup.querySelector(`#codex-decision-credential-help`).hidden = custom && auth === "none";
+    setup.querySelector("#codex-decision-connect-link").hidden = custom;
+  }
+
+  function validateConnection() {
+    const values = connectionValues();
+    const custom = values.customProvider;
+    if (custom) {
+      if (!custom.endpoint || !custom.model) throw new Error("Enter the endpoint URL and model ID.");
+      if (custom.auth === "basic" && !custom.username) throw new Error("Enter a username for Basic authentication.");
+      if (custom.auth === "header" && !custom.header_name) throw new Error("Enter the API key header name.");
+    }
+    return values;
+  }
+
   function showProviderKeys() {
     if (!setup) return;
     const selected = setup.querySelector("#codex-decision-provider").value;
-    const saved = Boolean(state.providerKeys?.[selected]?.hasKey);
-    setup.querySelector("#codex-decision-key").placeholder = saved ? "Saved key kept unless replaced" : "Enter API key";
-    setup.querySelector("#codex-decision-provider-keys").textContent = [
-      ["openai", "OpenAI Decisions"], ["typesafe", "TypeSafe Jev"],
-    ].map(([name, label]) => `${label}: ${state.providerKeys?.[name]?.hasKey ? "key saved" : "no saved key"}`).join(" · ");
-    setup.querySelector("#codex-decision-save-key").textContent = saved && !setup.querySelector("#codex-decision-key").value
-      ? "Use saved key" : "Save API key";
+    const identity = custom => JSON.stringify([custom?.endpoint, custom?.auth, custom?.username || "", custom?.header_name || ""]);
+    const saved = Boolean(state.providerKeys?.[selected]?.hasKey) && (selected !== "custom" ||
+      identity(state.custom_provider) === identity(connectionValues().customProvider));
+    showConnectionFields();
+    for (const field of ["key", "password"]) setup.querySelector(`#codex-decision-${field}`).placeholder = saved
+      ? "Leave blank to keep saved credential" : "Enter credential";
+    setup.querySelector("#codex-decision-provider-keys").textContent = selected === "custom"
+      ? `Custom connection: ${saved ? "credential saved" : "new credentials required for a new destination"}`
+      : [["openai", "OpenAI"], ["typesafe", "TypeSafe"]].map(([name, label]) => `${label}: ${state.providerKeys?.[name]?.hasKey ? "key saved" : "no saved key"}`).join(" · ");
+    setup.querySelector("#codex-decision-save-key").textContent = "Test & save connection";
+  }
+
+  function setConnectionBusy(value) {
+    for (const item of setup.querySelectorAll(".connection-input, #codex-decision-test-key, #codex-decision-save-key")) item.disabled = value;
   }
 
   function requestKey(action) {
     if (keyRequestId) return;
-    const key = setup.querySelector("#codex-decision-key").value;
-    const selected = setup.querySelector("#codex-decision-provider").value;
-    if ((!key && !state.providerKeys?.[selected]?.hasKey) || (key && (key.length < 8 || key.length > 4096 || /\s|\0/.test(key)))) {
-      showKeyStatus("Enter a valid key", false);
-      return;
+    let values;
+    try { values = validateConnection(); } catch (error) { showKeyStatus(error.message, false); return; }
+    const key = values.key;
+    if (values.provider !== "custom" && ((!key && !state.providerKeys?.[values.provider]?.hasKey) ||
+        (key && (key.length < 8 || key.length > 4096 || /\s|\0/.test(key))))) {
+      showKeyStatus("Enter a valid key", false); return;
     }
-    keyRequestId = send(action, undefined, key);
-    if (!keyRequestId) {
-      showKeyStatus("Connection unavailable", false);
-      return;
-    }
-    setup.querySelector("#codex-decision-provider").disabled = true;
-    setup.querySelector("#codex-decision-test-key").disabled = true;
-    setup.querySelector("#codex-decision-save-key").disabled = true;
-    showKeyStatus(action === "testApiKey" ? "Testing…" : "Saving…", false);
+    saveAfterTest = action === "saveApiKey" && testedConnection !== JSON.stringify(values);
+    const outgoing = saveAfterTest ? "testApiKey" : action;
+    keyRequestId = send(outgoing, undefined, key);
+    if (!keyRequestId) { showKeyStatus("Connection unavailable", false); return; }
+    setConnectionBusy(true);
+    showKeyStatus(outgoing === "testApiKey" ? "Testing connection…" : "Saving…", false);
   }
 
   function formatDuration(elapsedMs) {
@@ -240,14 +289,20 @@
       #codex-decision-connect-art pre { position: absolute; top: 50%; left: 50%; margin: 0; color: #bdc9d3; opacity: .18; font: 12px/18px monospace; letter-spacing: 2px; white-space: pre; animation: codex-decision-art-drift 14s ease-in-out infinite alternate; }
       @keyframes codex-decision-art-drift { from { transform: translate(-52%, -51%) rotate(-2deg); } to { transform: translate(-48%, -49%) rotate(2deg); } }
       @media (prefers-reduced-motion: reduce) { #codex-decision-connect-art pre { animation: none; transform: translate(-50%, -50%); } }
-      #codex-decision-connect-card { position: relative; width: min(100%, 440px); min-width: 0; margin: auto; padding: 24px; border: 1px solid var(--vscode-panel-border, #3c3c3c); border-radius: 12px; background: var(--vscode-editor-background, #1b1b1b); box-shadow: 0 20px 60px #0008; }
+      #codex-decision-connect-card { position: relative; width: min(100%, 560px); min-width: 0; margin: auto; padding: 24px; border: 1px solid var(--vscode-panel-border, #3c3c3c); border-radius: 12px; background: var(--vscode-editor-background, #1b1b1b); box-shadow: 0 20px 60px #0008; }
       #codex-decision-connect-heading { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
       #codex-decision-connect h1 { margin: 0; font-size: clamp(26px, 5vw, 32px); line-height: 1.2; }
       #codex-decision-connect-icon { width: 34px; height: 34px; object-fit: contain; flex: none; }
       #codex-decision-connect p { margin: 0 0 22px; color: var(--vscode-descriptionForeground, #999); font-size: 14px; line-height: 1.5; }
       #codex-decision-connect label { display: block; margin-bottom: 6px; font-size: 14px; }
       #codex-decision-provider, #codex-decision-key { width: 100%; height: 40px; padding: 8px 10px; border: 1px solid var(--vscode-input-border, #555); border-radius: 8px; outline: none; background: var(--vscode-input-background, #202020); color: var(--vscode-input-foreground, #ddd); font: inherit; }
-      #codex-decision-provider { margin-bottom: 12px; }
+      #codex-decision-connect .connection-input { width:100%; min-width:0; height:40px; padding:8px 10px; border:1px solid var(--vscode-input-border,#555); border-radius:8px; background:var(--vscode-input-background,#202020); color:var(--vscode-input-foreground,#ddd); font:inherit; }
+      #codex-decision-connect .connection-input:focus-visible { outline:2px solid var(--vscode-focusBorder,#83bcf7); outline-offset:2px; }
+      #codex-decision-connect [hidden] { display:none !important; }
+      #codex-decision-connect .connection-field { margin:12px 0; }
+      #codex-decision-connect .connection-description, #codex-decision-connect .connection-credential-help, #codex-decision-provider-keys { margin:10px 0 !important; font-size:12px !important; overflow-wrap:anywhere; }
+      #codex-decision-connect .connection-description { line-height:1.5; }
+      #codex-decision-provider { margin-bottom: 0; }
       #codex-decision-key:focus { border-color: var(--vscode-focusBorder, #e4a900); }
       #codex-decision-connect-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
       #codex-decision-connect button { min-height: 34px; padding: 6px 12px; border: 1px solid var(--vscode-contrastBorder, #707070); border-radius: 8px; background: var(--vscode-button-secondaryBackground, #262626); color: var(--vscode-button-secondaryForeground, #ddd); font: inherit; cursor: pointer; }
@@ -281,12 +336,14 @@
     setup.setAttribute("role", "dialog");
     setup.setAttribute("aria-modal", "true");
     setup.setAttribute("aria-labelledby", "codex-decision-connect-title");
-    setup.innerHTML = `<div id="codex-decision-connect-art" aria-hidden="true"><pre></pre></div><div id="codex-decision-connect-card"><div id="codex-decision-connect-heading"><h1 id="codex-decision-connect-title">Connect Decision</h1><img id="codex-decision-connect-icon" src="./assets/decision-icon.png" alt=""></div><p>Choose a provider. Use its saved key or enter a new API key.</p><label for="codex-decision-provider">Provider</label><select id="codex-decision-provider"><option value="openai">OpenAI Decisions</option><option value="typesafe">TypeSafe Jev</option></select><p id="codex-decision-provider-keys"></p><label for="codex-decision-key">API key</label><input id="codex-decision-key" type="password" autocomplete="off" spellcheck="false" maxlength="4096"><div id="codex-decision-connect-actions"><button id="codex-decision-test-key" type="button">Test API key</button><span id="codex-decision-key-status" role="status" aria-live="polite"></span></div><div id="codex-decision-connect-footer"><button id="codex-decision-save-key" type="button">Save API key</button><button id="codex-decision-skip-key" type="button">Skip for now</button></div><p id="codex-decision-connect-link">Need a key? <a href="https://platform.openai.com/api-keys" rel="noopener noreferrer">Get a provider API key</a></p></div>`;
+    setup.innerHTML = `<div id="codex-decision-connect-art" aria-hidden="true"><pre></pre></div><div id="codex-decision-connect-card"><div id="codex-decision-connect-heading"><h1 id="codex-decision-connect-title">Connect Decision</h1><img id="codex-decision-connect-icon" src="./assets/decision-icon.png" alt=""></div><p>Choose a provider and test your connection.</p><div class="field connection-field"><label for="codex-decision-provider">Provider</label><select id="codex-decision-provider" class="connection-input"><option value="openai">OpenAI Decisions</option><option value="typesafe">TypeSafe Jev</option><option value="custom">Custom provider</option></select></div><p class="connection-description" id="codex-decision-connection-help"></p><div class="field connection-field connection-custom" hidden><label for="codex-decision-name">Connection name</label><input id="codex-decision-name" class="connection-input" type="text" maxlength="80" autocomplete="off" spellcheck="false" placeholder="My model provider"></div><div class="field connection-field connection-custom" hidden><label for="codex-decision-protocol">JSON schema</label><select id="codex-decision-protocol" class="connection-input"><option value="openai">OpenAI Decisions</option><option value="jev">TypeSafe Jev</option></select></div><div class="field connection-field connection-custom" hidden><label for="codex-decision-endpoint">Endpoint URL</label><input id="codex-decision-endpoint" class="connection-input" type="url" maxlength="2048" autocomplete="off" spellcheck="false" placeholder="https://provider.example/v1/decisions"></div><div class="field connection-field connection-custom" hidden><label for="codex-decision-model">Model ID</label><input id="codex-decision-model" class="connection-input" type="text" maxlength="128" autocomplete="off" spellcheck="false" placeholder="provider-model-id"></div><div class="field connection-field connection-custom" hidden><label for="codex-decision-auth">Authentication</label><select id="codex-decision-auth" class="connection-input"><option value="bearer">Bearer API key</option><option value="basic">Username and password</option><option value="header">API key header</option><option value="none">No authentication</option></select></div><div class="field connection-field connection-custom connection-username" hidden><label for="codex-decision-username">Username</label><input id="codex-decision-username" class="connection-input" type="text" maxlength="256" autocomplete="off" spellcheck="false" placeholder=""></div><div class="field connection-field connection-custom connection-header" hidden><label for="codex-decision-header-name">Header name</label><input id="codex-decision-header-name" class="connection-input" type="text" maxlength="128" autocomplete="off" spellcheck="false" placeholder="X-API-Key"></div><div class="field connection-field connection-key"><label for="codex-decision-key">API key</label><input id="codex-decision-key" class="connection-input" type="password" maxlength="4096" autocomplete="off" spellcheck="false" placeholder=""></div><div class="field connection-field connection-custom connection-password" hidden><label for="codex-decision-password">Password</label><input id="codex-decision-password" class="connection-input" type="password" maxlength="4096" autocomplete="off" spellcheck="false" placeholder=""></div><p class="connection-credential-help" id="codex-decision-credential-help">Credentials stay private on this computer. Leave blank to keep the saved credential.</p><p id="codex-decision-provider-keys"></p><div id="codex-decision-connect-actions"><button id="codex-decision-test-key" type="button">Test connection</button><span id="codex-decision-key-status" role="status" aria-live="polite"></span></div><div id="codex-decision-connect-footer"><button id="codex-decision-save-key" type="button">Test &amp; save connection</button><button id="codex-decision-skip-key" type="button">Skip for now</button></div><p id="codex-decision-connect-link">Need a key? <a href="https://platform.openai.com/api-keys" rel="noopener noreferrer">Get a provider API key</a></p></div>`;
     document.body.appendChild(setup);
     setup.querySelector("#codex-decision-provider").addEventListener("change", () => {
       setup.querySelector("#codex-decision-key").value = "";
       const selected = setup.querySelector("#codex-decision-provider").value;
       setup.querySelector("#codex-decision-connect-link a").href = selected === "typesafe" ? "https://typesafe.ai/" : "https://platform.openai.com/api-keys";
+      setup.querySelector("#codex-decision-password").value = "";
+      testedConnection = null;
       showProviderKeys();
       showKeyStatus("", false);
     });
@@ -297,7 +354,17 @@
       }).join("")).join("\n");
     setup.addEventListener("click", (event) => event.stopPropagation());
     setup.addEventListener("keydown", (event) => event.stopPropagation());
-    setup.querySelector("#codex-decision-key").addEventListener("input", () => { showProviderKeys(); showKeyStatus("", false); });
+    for (const field of setup.querySelectorAll(".connection-input")) {
+      const changed = () => {
+        if (["endpoint", "auth", "username", "header-name"].some(name => field.id === `codex-decision-${name}`)) {
+          setup.querySelector("#codex-decision-key").value = "";
+          setup.querySelector("#codex-decision-password").value = "";
+        }
+        testedConnection = null; showProviderKeys(); showKeyStatus("", false);
+      };
+      field.addEventListener("input", changed);
+      field.addEventListener("change", changed);
+    }
     setup.querySelector("#codex-decision-test-key").addEventListener("click", () => requestKey("testApiKey"));
     setup.querySelector("#codex-decision-save-key").addEventListener("click", () => requestKey("saveApiKey"));
     setup.querySelector("#codex-decision-connect-link a").addEventListener("click", (event) => {
@@ -308,6 +375,8 @@
     setup.querySelector("#codex-decision-skip-key").addEventListener("click", () => {
       setupDismissed = true;
       setup.querySelector("#codex-decision-key").value = "";
+      setup.querySelector("#codex-decision-password").value = "";
+      saveAfterTest = false;
       showKeyStatus("", false);
       render();
     });
@@ -340,9 +409,10 @@
     const wasVisible = setup.style.display === "flex";
     setup.style.display = showSetup ? "flex" : "none";
     if (showSetup && !wasVisible) {
+      loadConnection(state.custom_provider);
       setup.querySelector("#codex-decision-provider").value = state.provider || "openai";
       setup.querySelector("#codex-decision-provider").dispatchEvent(new Event("change"));
-      queueMicrotask(() => setup.querySelector("#codex-decision-key").focus());
+      queueMicrotask(() => setup.querySelector("#codex-decision-provider").focus());
     }
     showProviderKeys();
     const button = root.querySelector("#codex-decision-button");
@@ -382,7 +452,7 @@
       root.dataset.observe = observe;
       schedulePosition();
     }
-    const providerLabel = state.health?.provider === "typesafe" ? "TypeSafe Jev" : "OpenAI Decisions";
+    const providerLabel = (state.health?.provider || state.provider) === "custom" ? state.custom_provider?.name || "Custom provider" : state.health?.provider === "typesafe" ? "TypeSafe Jev" : "OpenAI Decisions";
     const status = state.health?.fallback ? `${providerLabel} connected (fallback)` : bridgeFault ? "Decision control unavailable" : state.health?.ok === false ? "Decision API unavailable" :
       state.health?.ok === true ? "Decision API connected" : "Checking Decision API";
     const checking = !bridgeFault && state.health?.ok !== true && state.health?.ok !== false;
@@ -686,14 +756,17 @@
       }
       if (event.data.id === keyRequestId) {
         keyRequestId = 0;
-        setup.querySelector("#codex-decision-provider").disabled = false;
-        setup.querySelector("#codex-decision-test-key").disabled = false;
-        setup.querySelector("#codex-decision-save-key").disabled = false;
+        setConnectionBusy(false);
         if (event.data.status?.keyTest) {
           const result = keyResult(event.data.status.keyTest);
           showKeyStatus(result.text, result.ok);
+          testedConnection = result.ok ? JSON.stringify(connectionValues()) : null;
+          const shouldSave = result.ok && saveAfterTest;
+          saveAfterTest = false;
+          if (shouldSave) queueMicrotask(() => requestKey("saveApiKey"));
         } else if (event.data.status?.keySaved) {
           setup.querySelector("#codex-decision-key").value = "";
+          setup.querySelector("#codex-decision-password").value = "";
           showKeyStatus("", false);
         } else {
           showKeyStatus(event.data.status?.keySaveError || "Connection unavailable", false);

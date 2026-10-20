@@ -76,12 +76,16 @@
       "default": "openai",
       "values": [
         "openai",
-        "typesafe"
+        "typesafe",
+        "custom"
       ]
     },
     "fallback_enabled": {
       "type": "boolean",
       "default": false
+    },
+    "custom_provider": {
+      "type": "custom_provider"
     }
   },
   "settings": {
@@ -126,7 +130,8 @@
       "default": "openai",
       "values": [
         "openai",
-        "typesafe"
+        "typesafe",
+        "custom"
       ]
     },
     "model": {
@@ -136,6 +141,9 @@
     "fallback_enabled": {
       "type": "boolean",
       "default": false
+    },
+    "custom_provider": {
+      "type": "custom_provider"
     }
   },
   "thresholds": {
@@ -596,6 +604,46 @@
         "relevant_max": 5
       },
       "required": true
+    }
+  },
+  "custom_provider": {
+    "name": {
+      "type": "string",
+      "required": true
+    },
+    "protocol": {
+      "type": "string",
+      "required": true,
+      "values": [
+        "openai",
+        "jev"
+      ]
+    },
+    "endpoint": {
+      "type": "string",
+      "required": true
+    },
+    "model": {
+      "type": "string",
+      "required": true
+    },
+    "auth": {
+      "type": "string",
+      "required": true,
+      "values": [
+        "bearer",
+        "basic",
+        "header",
+        "none"
+      ]
+    },
+    "username": {
+      "type": "string",
+      "default": ""
+    },
+    "header_name": {
+      "type": "string",
+      "default": ""
     }
   }
 }

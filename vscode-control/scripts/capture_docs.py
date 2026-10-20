@@ -88,6 +88,26 @@ def chromium_capture() -> None:
                 print(name)
                 page.close()
             (IMAGES / 'decision-settings.png').unlink()
+            for state, name, height in (
+                ('onboarding', 'decision-connect-custom.png', 1020),
+                ('settings', 'decision-settings-custom.png', 1800),
+            ):
+                page = browser.new_page(viewport={'width': 1100, 'height': height}, device_scale_factor=2)
+                page.goto((ROOT.parent / 'tests/browser/visual_harness.html').as_uri() + f'?demo={state}&custom')
+                page.wait_for_function('document.title === "DECISION_VISUAL_READY"')
+                prefix = 'codex-decision-settings' if state == 'settings' else 'codex-decision'
+                assert page.locator(f'#{prefix}-provider').input_value() == 'custom'
+                assert page.locator(f'#{prefix}-auth').input_value() == 'basic'
+                assert page.locator(f'#{prefix}-password').is_visible()
+                assert page.locator(f'#{prefix}-password').input_value() == ''
+                assert page.locator(f'#{prefix}-endpoint').input_value() == 'https://decisions.example.com/v1/decisions'
+                if state == 'settings':
+                    bottom = page.locator('#codex-decision-settings-panel section').nth(1).evaluate('node => Math.ceil(node.getBoundingClientRect().bottom + 20)')
+                    page.screenshot(path=str(IMAGES / name), clip={'x': 0, 'y': 0, 'width': 1100, 'height': bottom})
+                else:
+                    page.screenshot(path=str(IMAGES / name))
+                print(name)
+                page.close()
             for state, name, height, count, expected in (
                 ('fifty', 'decision-panel.png', 900, 50, ('47 / 50 removed',)),
                 ('fifty&totals', 'decision-totals.png', 900, 0, ('This thread', 'Why outputs were skipped', 'Observed outputs')),
@@ -107,6 +127,15 @@ def chromium_capture() -> None:
                 })
                 print(name)
                 page.close()
+            page = browser.new_page(viewport={'width': 1200, 'height': 850})
+            page.goto((ROOT.parent / 'tests/browser/decision_panel_raw_harness.html').as_uri())
+            page.wait_for_function('document.title === "DECISION_RAW_READY"')
+            assert all(json.loads(page.locator('body').get_attribute('data-result')).values())
+            assert page.locator('#raw-skips-toggle').is_checked()
+            assert page.locator('.raw-skip-entry').count() == 2
+            page.screenshot(path=str(IMAGES / 'decision-skipped-raw.png'))
+            print('decision-skipped-raw.png')
+            page.close()
         finally:
             browser.close()
 

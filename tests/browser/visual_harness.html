@@ -48,6 +48,10 @@
   <script>
     document.documentElement.style.setProperty("--screenshot-offset", `${Math.max(0, outerHeight - innerHeight)}px`);
     const demo = new URLSearchParams(location.search).get("demo") || "tooltip";
+    const customConnection = new URLSearchParams(location.search).has("custom") ? {
+      name: "My decision service", protocol: "openai", endpoint: "https://decisions.example.com/v1/decisions",
+      model: "relevance-v1", auth: "basic", username: "decision-user", header_name: "",
+    } : null;
     const disabled = demo === "disabled" || demo === "disabled-pending";
     const history = ["judged 50 lines · omitted 47 · synthetic search matches"];
     window.acquireVsCodeApi = () => ({ postMessage(request) {
@@ -55,12 +59,15 @@
         lifetime: { calls: 126, completed: 124, replaced: 41, linesJudged: 87320, linesOmitted: 915,
           linesProtected: 1420, linesRelevanceJudged: 6200, averageMs: 487 },
         defaults: { provider:"openai", model:"gpt-6-luna", fallback_enabled:false, mode: "replace", relevance_policy: { relevant_max: 5 } },
-        config: { provider:"openai", model:"gpt-6-luna", fallback_enabled:false, mode: "replace", log_limit_mb: 50, never_delete_logs: true,
+        config: { provider:customConnection ? "custom" : "openai", model:"gpt-6-luna", fallback_enabled:false, mode: "replace", log_limit_mb: 50, never_delete_logs: true,
+          ...(customConnection ? { custom_provider: customConnection } : {}),
           relevance_policy: { relevant_max: 5 } } } :
         request.action === "settingsTest" ? { action: "tested", result: { ok: true, model: "gpt-6-luna" } } : undefined;
       queueMicrotask(() => window.dispatchEvent(new MessageEvent("message", { data: {
         type: "codex-decision-reply", id: request.id,
         status: {
+          provider: customConnection ? "custom" : "openai",
+          ...(customConnection ? { custom_provider: customConnection } : {}),
           enabled: !disabled,
           needsKey: demo === "onboarding" || demo === "missing-key",
           health: demo === "disabled-pending" ? null :

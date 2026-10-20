@@ -18,6 +18,10 @@
   let pending = null;
   let providerKeys = { openai: { hasKey: false }, typesafe: { hasKey: false } };
   let busy = false;
+  let testedConnection = null;
+  let pendingConnectionSave = null;
+  let savedConnection = null;
+  let savedCustomProvider = null;
   let defaults = null;
   let savedLogLimit = 50;
   let savedNeverDeleteLogs = false;
@@ -26,6 +30,7 @@
   function failRequest(id) {
     if (pending?.id !== id) return;
     const action = pending.action;
+    pendingConnectionSave = null;
     clearTimeout(pending.timer);
     pending = null;
     setBusy(false);
@@ -111,7 +116,7 @@
   function setBusy(value) {
     busy = value;
     if (!panel) return;
-    panel.querySelector("#codex-decision-settings-provider").disabled = value;
+    for (const field of panel.querySelectorAll(".connection-input")) field.disabled = value;
     panel.querySelector("#codex-decision-settings-test").disabled = value;
     panel.querySelector("#codex-decision-settings-save").disabled = value;
     panel.querySelector("#codex-decision-settings-reset").disabled = value || !defaults;
@@ -125,16 +130,66 @@
     panel.querySelector("#codex-decision-settings-log-limit").disabled = value;
   }
 
+  function connectionValues() {
+    const value = name => panel.querySelector(`#codex-decision-settings-${name}`).value;
+    const selected = value("provider");
+    return { provider: selected, key: selected === "custom" && ["basic", "none"].includes(value("auth")) ? "" : value("key"),
+      password: selected === "custom" && value("auth") === "basic" ? value("password") : "",
+      ...(selected === "custom" ? { customProvider: { name: value("name").trim() || "Custom provider", protocol: value("protocol"),
+        endpoint: value("endpoint").trim(), model: value("model").trim(), auth: value("auth"),
+        username: value("auth") === "basic" ? value("username") : "", header_name: value("auth") === "header" ? value("header-name").trim() : "" } } : {}) };
+  }
+
+  function loadConnection(custom = {}) {
+    custom ||= {};
+    for (const [field, value] of Object.entries({ name: custom.name || "", protocol: custom.protocol || "openai",
+      endpoint: custom.endpoint || "", model: custom.model || "", auth: custom.auth || "bearer",
+      username: custom.username || "", "header-name": custom.header_name || "" })) panel.querySelector(`#codex-decision-settings-${field}`).value = value;
+  }
+
+  function showConnectionFields() {
+    const values = connectionValues();
+    const custom = values.provider === "custom";
+    const auth = values.customProvider?.auth;
+    for (const row of panel.querySelectorAll(".connection-custom")) row.hidden = !custom;
+    panel.querySelector(".connection-username").hidden = !custom || auth !== "basic";
+    panel.querySelector(".connection-header").hidden = !custom || auth !== "header";
+    panel.querySelector(".connection-password").hidden = !custom || auth !== "basic";
+    panel.querySelector(".connection-key").hidden = custom && ["basic", "none"].includes(auth);
+    panel.querySelector(`#codex-decision-settings-connection-help`).textContent = custom
+      ? "Connect an endpoint that accepts the selected JSON schema and returns its typed answers. Chat completion endpoints need a compatible adapter."
+      : values.provider === "typesafe" ? "Typed decisions with TypeSafe Jev. Your saved OpenAI key stays available." : "Typed decisions with OpenAI Decisions. Your saved TypeSafe key stays available.";
+    panel.querySelector(`#codex-decision-settings-credential-help`).hidden = custom && auth === "none";
+    panel.querySelector("#codex-decision-settings-fallback").closest(".fallback-setting").hidden = custom;
+    if (custom) panel.querySelector("#codex-decision-settings-fallback").checked = false;
+  }
+
+  function validateConnection() {
+    const values = connectionValues();
+    const custom = values.customProvider;
+    if (custom) {
+      if (!custom.endpoint || !custom.model) throw new Error("Enter the endpoint URL and model ID.");
+      if (custom.auth === "basic" && !custom.username) throw new Error("Enter a username for Basic authentication.");
+      if (custom.auth === "header" && !custom.header_name) throw new Error("Enter the API key header name.");
+    }
+    return values;
+  }
+
   function showProviderKeys(reply) {
     const selected = panel.querySelector("#codex-decision-settings-provider").value;
+    showConnectionFields();
     if (reply?.providerKeys) providerKeys = reply.providerKeys;
     else if (reply) providerKeys = { ...providerKeys, [selected]: { hasKey: Boolean(reply.hasKey) } };
     for (const [name, label] of [["openai", "OpenAI Decisions"], ["typesafe", "TypeSafe Jev"]]) {
       panel.querySelector(`#codex-decision-settings-${name}-key-status`).textContent =
         `${label}: ${providerKeys[name]?.hasKey ? "key saved" : "no saved key"}`;
     }
-    panel.querySelector("#codex-decision-settings-key").placeholder = providerKeys[selected]?.hasKey
-      ? "Saved key kept unless replaced" : "Enter API key for this provider";
+    const identity = custom => JSON.stringify([custom?.endpoint, custom?.auth, custom?.username || "", custom?.header_name || ""]);
+    const saved = providerKeys[selected]?.hasKey && (selected !== "custom" || identity(savedCustomProvider) === identity(connectionValues().customProvider));
+    for (const field of ["key", "password"]) panel.querySelector(`#codex-decision-settings-${field}`).placeholder = saved
+      ? "Leave blank to keep saved credential" : "Enter credential for this connection";
+    panel.querySelector("#codex-decision-settings-custom-key-status").textContent = selected === "custom"
+      ? `Custom: ${saved ? "credential saved" : "new credentials required for a new destination"}` : "";
   }
 
   function formatDuration(milliseconds) {
@@ -232,6 +287,9 @@
       #codex-decision-settings-panel .percent-input { width: 76px; flex: none; text-align: right; font-variant-numeric: tabular-nums; }
       #codex-decision-settings-panel .log-limit-input { width: 96px; text-align: right; font-variant-numeric: tabular-nums; }
       #codex-decision-settings-panel .log-retention { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+      #codex-decision-settings-panel [hidden] { display:none !important; }
+      #codex-decision-settings-panel .connection-description, #codex-decision-settings-panel .connection-credential-help { font-size:12px; line-height:1.5; color:var(--vscode-descriptionForeground,#999); overflow-wrap:anywhere; }
+      #codex-decision-settings-panel .connection-input { min-width:0; width:100%; }
       #codex-decision-settings-panel .fallback-setting { margin: 15px 0; }
       #codex-decision-settings-panel .fallback-setting label { display: inline-flex; align-items: center; gap: 8px; }
       #codex-decision-settings-panel .log-retention label { display: inline-flex; align-items: center; gap: 6px; }
@@ -269,7 +327,7 @@
     document.head.append(style);
     panel = document.createElement("div");
     panel.id = "codex-decision-settings-panel";
-    panel.innerHTML = `<div class="header"><h1>Decision</h1><button id="codex-decision-settings-open-logs" type="button">Open logs</button></div><section aria-label="Installation totals"><h2>All sessions</h2><div class="metrics"><div class="metric"><strong id="codex-decision-settings-lifetime-tokens">—</strong><span>Lines judged</span></div><div class="metric"><strong id="codex-decision-settings-lifetime-replaced">—</strong><span>Lines omitted by hook</span></div><div class="metric"><strong id="codex-decision-settings-lifetime-protected">—</strong><span>Protected locally</span></div><div class="metric"><strong id="codex-decision-settings-lifetime-calls">—</strong><span>Decision requests</span></div><div class="metric"><strong id="codex-decision-settings-lifetime-time">—</strong><span>Avg. request time</span></div></div></section><section><h2>Decision provider</h2><div class="field"><label for="codex-decision-settings-provider">Provider</label><select id="codex-decision-settings-provider"><option value="openai">OpenAI Decisions</option><option value="typesafe">TypeSafe Jev</option></select></div><div class="provider-key-status"><small id="codex-decision-settings-openai-key-status"></small><small id="codex-decision-settings-typesafe-key-status"></small></div><div class="fallback-setting"><label for="codex-decision-settings-fallback"><input id="codex-decision-settings-fallback" type="checkbox">Use the other provider if needed</label><small>If the selected provider fails, allow tool output to be sent to the other provider with its saved key. Off by default.</small></div><h2>API key</h2><div class="field"><label for="codex-decision-settings-key">API key</label><input id="codex-decision-settings-key" type="password" autocomplete="off" spellcheck="false" maxlength="4096"></div><div class="actions"><button id="codex-decision-settings-test" type="button">Test API key</button><span id="codex-decision-settings-test-status" role="status" aria-live="polite"></span></div></section><section><h2>Log retention</h2><div class="log-retention"><label for="codex-decision-settings-log-limit">Storage limit (MB)</label><input id="codex-decision-settings-log-limit" class="log-limit-input" type="text" inputmode="numeric" maxlength="4" aria-label="Log storage limit in MB"><label for="codex-decision-settings-never-delete"><input id="codex-decision-settings-never-delete" type="checkbox">Never delete logs</label></div><small>Oldest session log files are removed when the limit is reached.</small></section><section><h2>Behavior</h2><div class="field"><label for="codex-decision-settings-mode">Mode<small>Monitor previews per-line Decision decisions while leaving tool output unchanged. Filter shortens approved results.</small></label><select id="codex-decision-settings-mode"><option value="observe">Monitor</option><option value="replace">Filter</option></select></div><div id="codex-decision-settings-thresholds"></div></section><div class="actions save-actions"><button id="codex-decision-settings-save" type="button" class="primary">Save settings</button><button id="codex-decision-settings-reset" type="button" class="subtle" title="Restore the default settings in this form. Save to apply." disabled>Reset defaults</button></div><p id="codex-decision-settings-message" role="status" aria-live="polite"></p>`;
+    panel.innerHTML = `<div class="header"><h1>Decision</h1><button id="codex-decision-settings-open-logs" type="button">Open logs</button></div><section aria-label="Installation totals"><h2>All sessions</h2><div class="metrics"><div class="metric"><strong id="codex-decision-settings-lifetime-tokens">—</strong><span>Lines judged</span></div><div class="metric"><strong id="codex-decision-settings-lifetime-replaced">—</strong><span>Lines omitted by hook</span></div><div class="metric"><strong id="codex-decision-settings-lifetime-protected">—</strong><span>Protected locally</span></div><div class="metric"><strong id="codex-decision-settings-lifetime-calls">—</strong><span>Decision requests</span></div><div class="metric"><strong id="codex-decision-settings-lifetime-time">—</strong><span>Avg. request time</span></div></div></section><section><h2>Decision provider</h2><div class="field connection-field"><label for="codex-decision-settings-provider">Provider</label><select id="codex-decision-settings-provider" class="connection-input"><option value="openai">OpenAI Decisions</option><option value="typesafe">TypeSafe Jev</option><option value="custom">Custom provider</option></select></div><p class="connection-description" id="codex-decision-settings-connection-help"></p><div class="field connection-field connection-custom" hidden><label for="codex-decision-settings-name">Connection name</label><input id="codex-decision-settings-name" class="connection-input" type="text" maxlength="80" autocomplete="off" spellcheck="false" placeholder="My model provider"></div><div class="field connection-field connection-custom" hidden><label for="codex-decision-settings-protocol">JSON schema</label><select id="codex-decision-settings-protocol" class="connection-input"><option value="openai">OpenAI Decisions</option><option value="jev">TypeSafe Jev</option></select></div><div class="field connection-field connection-custom" hidden><label for="codex-decision-settings-endpoint">Endpoint URL</label><input id="codex-decision-settings-endpoint" class="connection-input" type="url" maxlength="2048" autocomplete="off" spellcheck="false" placeholder="https://provider.example/v1/decisions"></div><div class="field connection-field connection-custom" hidden><label for="codex-decision-settings-model">Model ID</label><input id="codex-decision-settings-model" class="connection-input" type="text" maxlength="128" autocomplete="off" spellcheck="false" placeholder="provider-model-id"></div><div class="field connection-field connection-custom" hidden><label for="codex-decision-settings-auth">Authentication</label><select id="codex-decision-settings-auth" class="connection-input"><option value="bearer">Bearer API key</option><option value="basic">Username and password</option><option value="header">API key header</option><option value="none">No authentication</option></select></div><div class="field connection-field connection-custom connection-username" hidden><label for="codex-decision-settings-username">Username</label><input id="codex-decision-settings-username" class="connection-input" type="text" maxlength="256" autocomplete="off" spellcheck="false" placeholder=""></div><div class="field connection-field connection-custom connection-header" hidden><label for="codex-decision-settings-header-name">Header name</label><input id="codex-decision-settings-header-name" class="connection-input" type="text" maxlength="128" autocomplete="off" spellcheck="false" placeholder="X-API-Key"></div><div class="field connection-field connection-key"><label for="codex-decision-settings-key">API key</label><input id="codex-decision-settings-key" class="connection-input" type="password" maxlength="4096" autocomplete="off" spellcheck="false" placeholder=""></div><div class="field connection-field connection-custom connection-password" hidden><label for="codex-decision-settings-password">Password</label><input id="codex-decision-settings-password" class="connection-input" type="password" maxlength="4096" autocomplete="off" spellcheck="false" placeholder=""></div><p class="connection-credential-help" id="codex-decision-settings-credential-help">Credentials stay private on this computer. Leave blank to keep the saved credential.</p><div class="provider-key-status"><small id="codex-decision-settings-openai-key-status"></small><small id="codex-decision-settings-typesafe-key-status"></small><small id="codex-decision-settings-custom-key-status"></small></div><div class="fallback-setting"><label for="codex-decision-settings-fallback"><input id="codex-decision-settings-fallback" type="checkbox">Use the other provider if needed</label><small>If the selected provider fails, allow tool output to be sent to the other provider with its saved key. Off by default.</small></div><div class="actions"><button id="codex-decision-settings-test" type="button">Test connection</button><span id="codex-decision-settings-test-status" role="status" aria-live="polite"></span></div></section><section><h2>Log retention</h2><div class="log-retention"><label for="codex-decision-settings-log-limit">Storage limit (MB)</label><input id="codex-decision-settings-log-limit" class="log-limit-input" type="text" inputmode="numeric" maxlength="4" aria-label="Log storage limit in MB"><label for="codex-decision-settings-never-delete"><input id="codex-decision-settings-never-delete" type="checkbox">Never delete logs</label></div><small>Oldest session log files are removed when the limit is reached.</small></section><section><h2>Behavior</h2><div class="field"><label for="codex-decision-settings-mode">Mode<small>Monitor previews per-line Decision decisions while leaving tool output unchanged. Filter shortens approved results.</small></label><select id="codex-decision-settings-mode"><option value="observe">Monitor</option><option value="replace">Filter</option></select></div><div id="codex-decision-settings-thresholds"></div></section><div class="actions save-actions"><button id="codex-decision-settings-save" type="button" class="primary">Save settings</button><button id="codex-decision-settings-reset" type="button" class="subtle" title="Restore the default settings in this form. Save to apply." disabled>Reset defaults</button></div><p id="codex-decision-settings-message" role="status" aria-live="polite"></p>`;
     const thresholds = panel.querySelector("#codex-decision-settings-thresholds");
     for (const [hook, heading, fields] of sections) {
       const title = document.createElement("h2");
@@ -332,17 +390,29 @@
     }
     panel.querySelector("#codex-decision-settings-test").addEventListener("click", () => {
       if (busy) return;
-      const key = panel.querySelector("#codex-decision-settings-key").value.trim();
-
-      if (request("settingsTest", { key, provider: panel.querySelector("#codex-decision-settings-provider").value })) { setBusy(true); showTest("Checking…"); showMessage(""); }
+      try {
+        const values = validateConnection();
+        if (request("settingsTest", values)) { setBusy(true); showTest("Checking…"); showMessage(""); }
+      } catch (error) { showTest(error.message, "error"); }
     });
     panel.querySelector("#codex-decision-settings-open-logs").addEventListener("click", () => {
       if (busy) return;
       if (request("settingsOpenLogs")) { setBusy(true); showMessage(""); }
     });
-    panel.querySelector("#codex-decision-settings-key").addEventListener("input", () => showTest(""));
+    for (const field of panel.querySelectorAll(".connection-input")) {
+      const changed = () => {
+        if (["endpoint", "auth", "username", "header-name"].some(name => field.id === `codex-decision-settings-${name}`)) {
+          panel.querySelector("#codex-decision-settings-key").value = "";
+          panel.querySelector("#codex-decision-settings-password").value = "";
+        }
+        testedConnection = null; pendingConnectionSave = null; showProviderKeys(); showTest("");
+      };
+      field.addEventListener("input", changed);
+      field.addEventListener("change", changed);
+    }
     panel.querySelector("#codex-decision-settings-provider").addEventListener("change", () => {
       panel.querySelector("#codex-decision-settings-key").value = "";
+      panel.querySelector("#codex-decision-settings-password").value = "";
       showProviderKeys();
       showTest("");
     });
@@ -373,15 +443,18 @@
     panel.querySelector("#codex-decision-settings-save").addEventListener("click", () => {
       if (busy) return;
       try {
-        const key = panel.querySelector("#codex-decision-settings-key").value.trim();
+        const connection = validateConnection();
         const mode = panel.querySelector("#codex-decision-settings-mode").value;
         const relevancePolicy = thresholdValues();
         const logLimitMb = parseLogLimit(panel.querySelector("#codex-decision-settings-log-limit").value);
         if (logLimitMb === null) throw new Error("Enter a log limit from 1 to 9999 MB.");
         const neverDeleteLogs = panel.querySelector("#codex-decision-settings-never-delete").checked;
-        if (request("settingsSave", { key, provider: panel.querySelector("#codex-decision-settings-provider").value, fallbackEnabled: panel.querySelector("#codex-decision-settings-fallback").checked, mode, relevancePolicy, logLimitMb, neverDeleteLogs })) {
-          setBusy(true); showMessage("Saving…"); showTest("");
-        }
+        const payload = { ...connection, fallbackEnabled: panel.querySelector("#codex-decision-settings-fallback").checked, mode, relevancePolicy, logLimitMb, neverDeleteLogs };
+        if (JSON.stringify(connection) !== savedConnection && JSON.stringify(connection) !== testedConnection) {
+          pendingConnectionSave = payload;
+          if (request("settingsTest", connection)) { setBusy(true); showTest("Checking connection before saving…"); showMessage(""); }
+          else pendingConnectionSave = null;
+        } else if (request("settingsSave", payload)) { setBusy(true); showMessage("Saving…"); }
       } catch (error) { showMessage(error.message, "error"); }
     });
     return panel;
@@ -403,9 +476,12 @@
       defaults = reply.defaults || null;
       setBusy(false);
       showLifetime(reply.lifetime);
+      savedCustomProvider = reply.config?.custom_provider;
+      loadConnection(savedCustomProvider);
       panel.querySelector("#codex-decision-settings-provider").value = reply.config?.provider || "openai";
       panel.querySelector("#codex-decision-settings-key").value = "";
       showProviderKeys(reply);
+      savedConnection = JSON.stringify(connectionValues());
       panel.querySelector("#codex-decision-settings-fallback").checked = reply.config?.fallback_enabled === true;
       panel.querySelector("#codex-decision-settings-mode").value = reply.config?.mode || "replace";
       setThresholds(reply.config?.relevance_policy);
@@ -418,18 +494,29 @@
       showNeverDeleteLogs(savedNeverDeleteLogs);
       showMessage("Log retention saved.", "ok");
     } else if (action === "settingsTest" && reply.action === "tested") {
-      if (reply.result?.ok) showTest("OK", "ok");
+      if (reply.result?.ok) {
+        testedConnection = JSON.stringify(connectionValues());
+        showTest("Connection verified", "ok");
+        const payload = pendingConnectionSave;
+        pendingConnectionSave = null;
+        if (payload && request("settingsSave", payload)) { setBusy(true); showMessage("Saving…"); }
+      }
       else {
+        pendingConnectionSave = null;
         const reasons = { DECISION_HTTP_401: "Invalid", DECISION_KEY_EXPIRED: "Expired", DECISION_HTTP_403: "Rejected",
           DECISION_HTTP_429: "Rate limited", DECISION_TIMEOUT: "Timed out", DECISION_NETWORK_ERROR: "Network error",
           DECISION_INVALID_RESPONSE: "Invalid response", DECISION_KEY_MISSING: "No saved key",
-          DECISION_KEY_INVALID: "Invalid", DECISION_CREDENTIAL_UNSAFE: "Credential file unavailable" };
+          DECISION_KEY_INVALID: "Invalid", DECISION_INVALID_SETTINGS: "Check endpoint, model, and authentication", DECISION_CREDENTIAL_UNSAFE: "Credential file unavailable" };
         showTest(reasons[reply.result?.reason] || "Connection failed", "error");
       }
     } else if (action === "settingsSave" && reply.action === "saved") {
       savedLogLimit = parseLogLimit(panel.querySelector("#codex-decision-settings-log-limit").value) || 50;
       savedNeverDeleteLogs = panel.querySelector("#codex-decision-settings-never-delete").checked;
       panel.querySelector("#codex-decision-settings-key").value = "";
+      panel.querySelector("#codex-decision-settings-password").value = "";
+      savedCustomProvider = connectionValues().customProvider || savedCustomProvider;
+      savedConnection = JSON.stringify(connectionValues());
+      testedConnection = savedConnection;
       showProviderKeys(reply);
       showMessage("Settings saved.", "ok");
     } else if (action === "settingsSetNeverDeleteLogs") {

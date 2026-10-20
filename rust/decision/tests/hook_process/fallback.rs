@@ -5,6 +5,9 @@ use super::*;
 mod support;
 use support::*;
 
+#[path = "fallback/custom.rs"]
+mod custom;
+
 #[test]
 fn unavailable_providers_fallback_in_both_directions_with_actual_receipts_and_attempts() {
     for (provider, primary, alternate) in [

@@ -4,7 +4,7 @@ The integrated VSIX must pass the native clean-install check before release:
 
 ```powershell
 pwsh -NoProfile -File .\vscode-control\scripts\windows_integrated_smoke.ps1 `
-  -Vsix .\.local\submission\codex-decision-0.13.0.vsix -Distro Ubuntu
+  -Vsix .\.local\submission\codex-decision-0.14.0.vsix -Distro Ubuntu
 ```
 
 This check uses the actual packaged extension, a copied supported Codex host,
@@ -16,6 +16,8 @@ rendering. It preserves the user's installed extensions, credentials, and chats.
 Run the current release checks from the repository root. The offline tests use synthetic tool output and provider replies; they do not need an API key.
 
 Provider fallback tests exercise both directions, missing keys, malformed answers, failed later batches, and two maximum-length keys. They verify one complete-provider retry, exact originals, retained attempts, and no fallback across local safety checks. Fallback stays off for existing configurations.
+
+Custom-provider regressions cover both decision schemas, independent model IDs, supported authentication methods, credential identity changes, malformed replies, and full-output preservation. Raw-skip tests cover opt-in capture, per-thread state, exact tool input and response, bounded retention, unavailable payloads, and private path checks. Browser checks exercise the custom connection fields in onboarding and settings, plus the panel checkbox and raw inspector with synthetic data.
 
 Run a read-only effectiveness audit with `node scripts/usage_effectiveness_audit.cjs --data-dir <PLUGIN_DATA> --codex-sessions <CODEX_HOME/sessions> --observation-date YYYY-MM-DD`. Add `--since YYYY-MM-DDTHH:MM:SSZ` for a recent retained-event slice. The report separates partial history, bounded output participation, classification-only API usage, committed hook payloads, and observed omission headers. It does not read credentials, contact a provider, or establish delivered token savings from receipts alone. See the [2026-10-17 audit](../docs/development/usage_effectiveness_2026-10-17.md) for scope and limits.
 

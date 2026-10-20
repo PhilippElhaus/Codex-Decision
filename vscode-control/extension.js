@@ -7,10 +7,11 @@ const { ensureIntegratedInstall } = require("./integrated-install");
 const { activateIntegration } = require("./integration");
 const EXPECTED_HOOK_VERSION = require("./package.json").codexDecisionHookVersion;
 const { LatestDecisionProvider, VIEW_ID } = require("./panel");
+const { provider } = require("./providers");
 const {
   checkHealth, decisionSummary, defaultDataDirectory, estimateTokensSaved,
   outcomeLine, readConfig, readEventCursor, readEventsSince,
-  readApiKey, readProviderKeys, writeApiKey, writeSelection,
+  readApiKey, readProviderKeys, saveProviderSettings, writeSelection,
   completeRelevancePolicy,
   sessionDirectory, readSessionActivity, readRecentOutcomes, ensureSessionDefaults, describeHookActivity,
   DEFAULT_SETTINGS, readGlobalSettings, writeGlobalSettings, readInstallationStats,
@@ -31,7 +32,8 @@ function createController(dataDirectory) {
   let probeRevision = 0;
   const activeDirectory = () => sessionDirectory(dataDirectory(), state.sessionId);
   const providerFallback = () => ({ provider: state.provider || "openai", fallback_enabled: state.fallbackEnabled === true,
-    model: state.model || (state.provider === "typesafe" ? "jev-latest" : "gpt-6-luna") });
+    model: state.model || (state.provider === "typesafe" ? "jev-latest" : "gpt-6-luna"),
+    ...(state.customProvider ? { custom_provider: state.customProvider } : {}) });
   const readSettings = () => readGlobalSettings(dataDirectory(), providerFallback());
   const writeSettings = (changes) => writeGlobalSettings(dataDirectory(), changes, providerFallback());
   const snapshot = () => ({
@@ -152,11 +154,13 @@ function createController(dataDirectory) {
     if (!state.sessionId) {
       try {
         const settings = await readSettings();
-        const providerKeys = await readProviderKeys(dataDirectory());
+        const providerKeys = await readProviderKeys(dataDirectory(), settings.custom_provider);
         if (state.provider !== settings.provider || state.model !== settings.model ||
             state.fallbackEnabled !== settings.fallback_enabled ||
+            JSON.stringify(state.customProvider) !== JSON.stringify(settings.custom_provider) ||
             JSON.stringify(state.providerKeys) !== JSON.stringify(providerKeys)) {
           state.provider = settings.provider;
+          state.customProvider = settings.custom_provider;
           state.model = settings.model;
           state.fallbackEnabled = settings.fallback_enabled;
           state.providerKeys = providerKeys;
@@ -182,21 +186,24 @@ function createController(dataDirectory) {
       const config = await ensureSessionDefaults(directory);
       const settings = await readGlobalSettings(dataDirectory(), {
         provider: config.provider, model: config.model, fallback_enabled: config.fallback_enabled,
+        ...(config.custom_provider ? { custom_provider: config.custom_provider } : {}),
       });
       if (generation !== state.generation) return;
       const selected = config.enabled;
-      const providerKeys = await readProviderKeys(dataDirectory());
+      const providerKeys = await readProviderKeys(dataDirectory(), settings.custom_provider);
       const alternate = settings.provider === "openai" ? "typesafe" : "openai";
-      const needsKey = !providerKeys[settings.provider].hasKey &&
-        !(settings.fallback_enabled && providerKeys[alternate].hasKey);
+      const needsKey = !providerKeys[settings.provider]?.hasKey &&
+        !(settings.provider !== "custom" && settings.fallback_enabled && providerKeys[alternate].hasKey);
       if (generation !== state.generation) return;
       const connectionChanged = state.provider !== settings.provider || state.model !== settings.model ||
         state.fallbackEnabled !== settings.fallback_enabled ||
+        JSON.stringify(state.customProvider) !== JSON.stringify(settings.custom_provider) ||
         JSON.stringify(state.providerKeys) !== JSON.stringify(providerKeys);
       state.configurationError = null;
       state.enabled = selected;
       state.mode = settings.mode;
       state.provider = settings.provider;
+      state.customProvider = settings.custom_provider;
       state.model = settings.model;
       state.fallbackEnabled = settings.fallback_enabled;
       state.providerKeys = providerKeys;
@@ -232,13 +239,13 @@ function createController(dataDirectory) {
     const task = (async () => {
       try {
         const settings = await readSettings();
-        const providerKeys = await readProviderKeys(dataDirectory());
+        const providerKeys = await readProviderKeys(dataDirectory(), settings.custom_provider);
         const alternate = settings.provider === "openai" ? "typesafe" : "openai";
-        const canFallback = settings.fallback_enabled && providerKeys[alternate].hasKey;
+        const canFallback = settings.provider !== "custom" && settings.fallback_enabled && providerKeys[alternate].hasKey;
         // Both provider checks share the UI's six-second health budget.
         const timeoutMs = canFallback ? 3000 : 6000;
         let result = await checkHealth(dataDirectory(), globalThis.fetch, null, settings.provider,
-          healthOptions(timeoutMs));
+          { ...healthOptions(timeoutMs), customProvider: settings.custom_provider });
         if (abort.signal.aborted) return;
         result = { ...result, provider: settings.provider };
         if (!result.ok && canFallback &&
@@ -252,12 +259,13 @@ function createController(dataDirectory) {
         }
         if (!abort.signal.aborted && revision === probeRevision && generation === state.generation) {
           state.provider = settings.provider;
+          state.customProvider = settings.custom_provider;
           state.model = settings.model;
           state.fallbackEnabled = settings.fallback_enabled;
           state.providerKeys = providerKeys;
           state.health = result;
-          state.needsKey = !providerKeys[settings.provider].hasKey &&
-            !(settings.fallback_enabled && providerKeys[alternate].hasKey);
+          state.needsKey = !providerKeys[settings.provider]?.hasKey &&
+            !(settings.provider !== "custom" && settings.fallback_enabled && providerKeys[alternate].hasKey);
         }
       } catch {
         if (!abort.signal.aborted && revision === probeRevision && generation === state.generation) {
@@ -336,6 +344,23 @@ function createController(dataDirectory) {
     return task;
   }
 
+  async function connectionDraft(request) {
+    const current = await readSettings();
+    const selected = request.provider || current.provider;
+    const custom = request.customProvider || current.custom_provider;
+    const spec = provider(selected, custom);
+    return { provider: selected, model: selected === "custom" ? (spec.protocol === "jev" ? "jev-latest" : "gpt-6-luna") : spec.model,
+      ...(selected === "custom" ? { custom_provider: custom, fallback_enabled: false } : {}) };
+  }
+
+  async function testConnection(request) {
+    try {
+      const connection = await connectionDraft(request);
+      return await checkHealth(dataDirectory(), globalThis.fetch, request.key || null, connection.provider,
+        { customProvider: connection.custom_provider, password: request.password });
+    } catch { return { ok: false, reason: "DECISION_INVALID_SETTINGS" }; }
+  }
+
   async function settingsReply(request) {
     try {
       const directory = dataDirectory();
@@ -346,7 +371,7 @@ function createController(dataDirectory) {
         const lifetime = await readInstallationStats(directory);
         return { action: "ready", config,
           defaults: DEFAULT_SETTINGS,
-          hasKey: keyLength > 0, keyLength, providerKeys: await readProviderKeys(directory), lifetime };
+          hasKey: (await readProviderKeys(directory, config.custom_provider))[config.provider]?.hasKey === true, keyLength, providerKeys: await readProviderKeys(directory, config.custom_provider), lifetime };
       }
       if (request.action === "settingsOpenLogs") {
         const parent = await fs.lstat(directory);
@@ -355,8 +380,7 @@ function createController(dataDirectory) {
         return { action: "openedLogs" };
       }
       if (request.action === "settingsTest") {
-        const key = typeof request.key === "string" && request.key ? request.key : null;
-        return { action: "tested", result: await checkHealth(dataDirectory(), globalThis.fetch, key, request.provider || (await readSettings()).provider) };
+        return { action: "tested", result: await testConnection(request) };
       }
       if (request.action === "settingsSetNeverDeleteLogs") {
         if (typeof request.neverDeleteLogs !== "boolean") throw new Error("Never delete logs must be a boolean");
@@ -372,14 +396,12 @@ function createController(dataDirectory) {
             typeof request.neverDeleteLogs !== "boolean" ||
             (request.fallbackEnabled !== undefined && typeof request.fallbackEnabled !== "boolean")) throw new Error("Invalid Decision settings");
         const relevancePolicy = completeRelevancePolicy(request.relevancePolicy);
-        const selected = request.provider || (await readSettings()).provider;
-        const model = selected === "openai" ? "gpt-6-luna" : "jev-latest";
-        if (!["openai", "typesafe"].includes(selected)) throw new Error("Invalid decision provider");
+        const connection = await connectionDraft(request);
+        const selected = connection.provider;
         const task = selectionQueue.then(async () => {
-          if (request.key) await writeApiKey(dataDirectory(), request.key, selected);
-          await writeSettings({ provider: selected, model, mode: request.mode, relevance_policy: relevancePolicy,
+          await saveProviderSettings(dataDirectory(), { ...connection, mode: request.mode, relevance_policy: relevancePolicy,
             ...(request.fallbackEnabled === undefined ? {} : { fallback_enabled: request.fallbackEnabled }),
-            log_limit_mb: request.logLimitMb, never_delete_logs: request.neverDeleteLogs });
+            log_limit_mb: request.logLimitMb, never_delete_logs: request.neverDeleteLogs }, { key: request.key, password: request.password }, providerFallback());
           state.mode = request.mode;
           await sync({ checkConnection: false });
           await probe(true);
@@ -388,7 +410,7 @@ function createController(dataDirectory) {
         await task;
         let keyLength = 0;
         try { keyLength = (await readApiKey(dataDirectory(), selected)).length; } catch { /* optional key */ }
-        return { action: "saved", hasKey: keyLength > 0, keyLength, providerKeys: await readProviderKeys(directory) };
+        return { action: "saved", hasKey: (await readProviderKeys(directory))[selected]?.hasKey === true, keyLength, providerKeys: await readProviderKeys(directory) };
       }
     } catch (error) {
       return { action: "error", message: error.message || "Decision settings failed" };
@@ -411,24 +433,23 @@ function createController(dataDirectory) {
       return { ...snapshot(), settings };
     }
     if (request?.action === "testApiKey") {
-      const keyTest = await checkHealth(dataDirectory(), globalThis.fetch,
-        typeof request.key === "string" && request.key ? request.key : null, request.provider || (await readSettings()).provider);
+      const keyTest = await testConnection(request);
       return { ...snapshot(), keyTest };
     }
     if (request?.action === "saveApiKey") {
       try {
-        const selected = request.provider || (await readSettings()).provider;
-        if (!["openai", "typesafe"].includes(selected)) throw new Error("Invalid decision provider");
-        if (request.key) await writeApiKey(dataDirectory(), request.key, selected);
-        else await readApiKey(dataDirectory(), selected);
-        await writeSettings({ provider: selected, model: selected === "openai" ? "gpt-6-luna" : "jev-latest" });
+        const connection = await connectionDraft(request);
+        const selected = connection.provider;
+        await saveProviderSettings(dataDirectory(), connection, { key: request.key, password: request.password }, providerFallback());
+        if (selected !== "custom" || connection.custom_provider.auth !== "none") await readApiKey(dataDirectory(), selected);
         state.provider = selected;
-        state.model = selected === "openai" ? "gpt-6-luna" : "jev-latest";
+        state.model = connection.model;
+        state.customProvider = connection.custom_provider;
         state.needsKey = false;
         await probe(true);
         return { ...snapshot(), keySaved: true };
       } catch {
-        return { ...snapshot(), keySaveError: "Could not save API key" };
+        return { ...snapshot(), keySaveError: "Could not save connection. Check the connection details and credential." };
       }
     }
     if (request?.action === "retryConnection") {

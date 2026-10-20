@@ -1,6 +1,36 @@
 # Configure provider keys
 
-Codex Decision supports OpenAI Decisions with `gpt-6-luna` and TypeSafe Jev with `jev-latest`. Select the provider in **Connect Decision** or **Codex settings → Decision**. Keys stay local and never enter the webview when read from disk.
+Codex Decision supports OpenAI Decisions with `gpt-6-luna`, TypeSafe Jev with `jev-latest`, and a custom endpoint that implements either JSON schema. Select the provider in **Connect Decision** or **Codex settings → Decision**. Saved secrets stay local and never return to the webview.
+
+## Custom connections
+
+Select **Custom provider** in either connection form. Enter a display name, the complete endpoint URL, and the model ID. Choose the schema that the server implements:
+
+| Schema | Request | Response |
+| --- | --- | --- |
+| OpenAI Decisions | `model`, serialized `input`, and named `predicate` or `choice` questions | Named answers in an `answers` array |
+| TypeSafe Jev | `model`, structured `state`, and named `noul` or `choice` questions | Named answers in an `answers` object |
+
+The endpoint must support the full selected schema, including choice distributions and probabilities. A standard OpenAI chat-completions endpoint does not provide this contract by itself. Use a compatible adapter if needed. See the [official Decisions guide](https://developers.openai.com/api/docs/guides/decisions) for the OpenAI request and answer format.
+
+Enter the full route, for example `https://decisions.example.com/v1/decisions`. Decision does not append a path. URLs must use HTTPS, except that local loopback endpoints can use HTTP. URL user information, query parameters, and fragments are rejected. Redirects are rejected so credentials cannot be forwarded to another route.
+
+Choose an authentication method:
+
+| Authentication | Fields |
+| --- | --- |
+| Bearer API key | API key |
+| Basic | Username and password |
+| API-key header | Header name and API key |
+| None | No credentials |
+
+Test the draft connection, then save it. The test sends only a synthetic readiness question. An empty secret field keeps the saved value for the same connection identity. Changing the endpoint, authentication method, username, or header name requires fresh credentials. Switching providers clears draft secret fields and preserves each provider's saved credentials.
+
+Custom connection details live in the `custom_provider` object in shared settings. The selected provider is `custom`. The private `.env` stores `CUSTOM_API_KEY` or `CUSTOM_PASSWORD` and the connection identity. Use the form to manage these together. The connection name, endpoint, model, and authentication method are not secrets; do not put credentials in those fields.
+
+Custom providers do not use automatic fallback. A failed request keeps the full tool output. Built-in provider fallback remains available as described below.
+
+## Built-in provider keys
 
 Store keys in the installed plugin’s private `PLUGIN_DATA/.env`, outside the repository:
 
@@ -24,7 +54,7 @@ decisionctl set-key --data-dir <PLUGIN_DATA> --provider typesafe
 
 The first command writes `OPENAI_API_KEY`. The second writes `JEV_API_KEY`. Both require piped standard input. OpenAI requests go directly to `https://api.openai.com/v1/decisions`; TypeSafe requests go to `https://api.typesafe.ai/v1/systemone`. Only the matching key enters the HTTPS Authorization header.
 
-In settings, choose the provider before testing or saving a key. Leave the key field empty to test that provider’s saved key. A provider change clears the draft field. Shared provider settings apply to all sessions; each session keeps its own enabled flag. Legacy configurations retain TypeSafe until you explicitly change providers.
+In either connection form, choose the provider before testing or saving a key. Leave the key field empty to test that provider’s saved key. A provider change clears the draft field. Shared provider settings apply to all sessions; each session keeps its own enabled flag. Legacy configurations retain TypeSafe until you explicitly change providers.
 
 For a standalone installation, set `"fallback_enabled": true` in schema-5 `config.json` or schema-4 shared `settings.json`. Shared settings take precedence. Keep this field false to use only the selected provider. Existing configurations default to false when the field is absent.
 

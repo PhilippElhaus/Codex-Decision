@@ -163,16 +163,49 @@ pub fn validate(kind: &str, value: &Value) -> Result<Value, String> {
         let provider = crate::provider::Provider::parse(
             result["provider"].as_str().ok_or("missing provider")?,
         )?;
-        if !object.contains_key("model") && provider == crate::provider::Provider::TypeSafe {
-            result.insert("model".into(), Value::from("jev-latest"));
+        if provider == crate::provider::Provider::Custom {
+            let custom: crate::provider::CustomProvider = serde_json::from_value(
+                result
+                    .get("custom_provider")
+                    .ok_or("missing custom provider")?
+                    .clone(),
+            )
+            .map_err(|_| "invalid custom provider")?;
+            custom.validate()?;
+            if result["fallback_enabled"] == true {
+                return Err("custom providers do not support automatic fallback".into());
+            }
+            let model = custom.protocol()?.default_model();
+            result.insert("model".into(), Value::from(model));
+        } else {
+            if !object.contains_key("model") && provider == crate::provider::Provider::TypeSafe {
+                result.insert("model".into(), Value::from("jev-latest"));
+            }
+            if provider
+                != crate::provider::Provider::for_model(
+                    result["model"].as_str().ok_or("missing model")?,
+                )?
+            {
+                return Err("provider/model mismatch".into());
+            }
         }
-        if provider
-            != crate::provider::Provider::for_model(
-                result["model"].as_str().ok_or("missing model")?,
-            )?
-        {
-            return Err("provider/model mismatch".into());
+    }
+    if kind == "custom_provider" {
+        let mut custom: crate::provider::CustomProvider =
+            serde_json::from_value(Value::Object(result.clone()))
+                .map_err(|_| "invalid custom provider")?;
+        custom.validate()?;
+        if custom.auth != "basic" {
+            custom.username.clear();
         }
+        if custom.auth != "header" {
+            custom.header_name.clear();
+        }
+        result = serde_json::to_value(custom)
+            .map_err(|_| "invalid custom provider")?
+            .as_object()
+            .ok_or("invalid custom provider")?
+            .clone();
     }
     let result = Value::Object(result);
     if kind == "config" && result["min_chars"].as_u64() > result["max_chars"].as_u64() {

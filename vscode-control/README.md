@@ -8,7 +8,7 @@ Build and install one package from WSL:
 
 ```bash
 ../scripts/build_control.sh
-code --install-extension "$(wslpath -w ../.local/submission/codex-decision-0.13.0.vsix)" --force
+code --install-extension "$(wslpath -w ../.local/submission/codex-decision-0.14.0.vsix)" --force
 ```
 
 On activation, the package installs or updates the bundled Codex plugin and checks the Codex UI integration. It uses the configured WSL data path or the default WSL distribution for a fresh installation. It sets `codexDecision.dataDirectory` when that setting is empty. Existing plugin identity, credentials, logs, and thread settings remain in place.
@@ -26,6 +26,10 @@ Temporary WSL or installer access failures receive three automatic retries after
 Keep the previous complete package and the per-build patch rollback directory. Reinstalling an older VSIX replaces the control, but the installer deliberately refuses to downgrade a newer hook. Hook rollback needs a verified restoration of the prior package and Codex registration; no automatic downgrade command is provided. The integrated source backups contain only changed files and are not a complete installation restore. Restore a composer patch with its matching `decisionctl patch-webview restore` and preserved rollback directory. Preserve plugin data, credentials, saved originals, and trust records. Verify the selected plugin version and exact package bytes before using a restored control.
 
 ## Use
+
+Connect through **OpenAI Decisions**, **TypeSafe Jev**, or **Custom provider** in onboarding or Decision settings. Custom connections accept either decision schema, a full endpoint URL, a model, and bearer, Basic, named-header, or no authentication. Saved secrets stay private and are reused only for the same endpoint and authentication identity. Custom connections do not use automatic fallback. See [provider setup](https://github.com/PhilippElhaus/Codex-Decision/blob/main/docs/setup/setup_credentials.md).
+
+Enable **Show raw skipped outputs** next to the panel's skip count to capture future skipped tool calls for the selected thread. Expand an entry to inspect its reason, input, and original response. The bounded private capture stays local. Older skips have no raw payload. Disable the checkbox to stop recording.
 
 Click **decision** to turn filtering on or off for all supported tool output in the current thread. There is no integration popup. Each Codex session has its own enabled flag, decisions, counters, and hook status. The pinned patch reads the active session ID from Codex's internal router, even when the webview URL does not change. State lives under `PLUGIN_DATA/sessions/<session-hash>/`; a new local session starts enabled, and later choices are preserved. On the home screen, the button is disabled until a thread opens. A local thread with an unreadable ID cannot change another session's state. The API key in `PLUGIN_DATA/.env` and behavior settings in `PLUGIN_DATA/settings.json` are shared across this installation.
 

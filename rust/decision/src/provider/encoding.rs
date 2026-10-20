@@ -7,7 +7,15 @@ use std::io::Write;
 
 pub fn encode_request(request: &Value) -> Result<Vec<u8>, String> {
     let model = request["model"].as_str().ok_or("missing model")?;
-    if Provider::for_model(model)? == Provider::TypeSafe {
+    encode_request_for(request, Provider::for_model(model)?)
+}
+
+pub fn encode_request_for(request: &Value, protocol: Provider) -> Result<Vec<u8>, String> {
+    let model = request["model"].as_str().ok_or("missing model")?;
+    if protocol == Provider::Custom {
+        return Err("missing custom provider protocol".into());
+    }
+    if protocol == Provider::TypeSafe {
         return serde_json::to_vec(request).map_err(|_| "request encoding".into());
     }
     let questions = request["questions"]

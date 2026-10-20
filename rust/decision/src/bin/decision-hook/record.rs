@@ -134,10 +134,10 @@ pub(super) fn record(
         "lines_omitted":omitted,"lines_protected":protected,"lines_unjudged":unjudged,
         "lines_relevance_judged":relevance_judged,"lines_below_omit_cutoff":below_omit_cutoff,
         "lines_relevance_kept":relevance_kept,"search_relevance_guard":false,
-        "relevance_policy":config.policy,"provider":config.provider.name(),"model":config.model,
+        "relevance_policy":config.policy,"provider":config.provider.name(),"model":config.actual_model(),
         "fallback_used":config.fallback_from.is_some(),
         "configured_provider":config.fallback_from.as_ref().map_or(config.provider, |(provider, _)| *provider).name(),
-        "configured_model":config.fallback_from.as_ref().map_or(config.model.as_str(), |(_, model)| model.as_str()),
+        "configured_model":config.fallback_from.as_ref().map_or(config.actual_model(), |(_, model)| model.as_str()),
         "output_kind":gate_record.and_then(|record| record.response.pointer("/answers/output_kind/choice"))
             .or_else(|| batches.first().and_then(|record| record.request.pointer("/state/output_kind"))),
         "routing":if gate_record.is_some() {"classified"} else {"validated_format"},
@@ -145,6 +145,14 @@ pub(super) fn record(
         "requests":batches.len()+usize::from(gate_elapsed_ms.is_some()),
         "choice_gate_ran":gate_elapsed_ms.is_some(),
         "original_chars":original_chars,"visible_chars":visible_chars});
+    if let Some(custom) = config
+        .custom_provider
+        .as_ref()
+        .filter(|_| config.provider == codex_decision::provider::Provider::Custom)
+    {
+        summary["custom_provider"] = json!({"name":custom.name,"protocol":custom.protocol,
+                "endpoint":custom.endpoint,"model":custom.model});
+    }
     let receipt = prepare_receipt(
         &summary,
         event,

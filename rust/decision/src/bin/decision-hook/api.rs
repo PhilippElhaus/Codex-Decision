@@ -1,8 +1,11 @@
 //! Bounded Decision line and Choice requests.
 use super::*;
 
+#[path = "api/connection.rs"]
+mod connection;
 #[path = "api/endpoint.rs"]
 mod endpoint;
+pub(super) use connection::Connection;
 
 pub(super) fn decision_agent() -> ureq::Agent {
     // Decision POSTs use fixed endpoints. Redirects would add untracked GETs.
@@ -43,21 +46,28 @@ pub(super) fn evaluate<T>(
     scoped: &Path,
     agent: &ureq::Agent,
     request: &Value,
-    key: &str,
+    connection: &Connection,
     timeout: f64,
     validate: impl FnOnce(&Value) -> Result<T, String>,
 ) -> Result<(Value, T), EvaluationFailure> {
     validate_request_budget(request)?;
-    let provider = codex_decision::provider::Provider::for_model(
-        request["model"].as_str().ok_or("missing model")?,
-    )?;
-    let encoded = codex_decision::provider::encode_request(request)?;
+    let mut wire_source = std::borrow::Cow::Borrowed(request);
+    if connection.custom {
+        wire_source.to_mut()["model"] = Value::from(connection.model.as_str());
+    }
+    let encoded = codex_decision::provider::encode_request_for(&wire_source, connection.protocol)?;
     if encoded.len().saturating_add(TOKEN_HEADROOM) > DECISION_REQUEST_TOKENS {
         return Err("Decision context budget".into());
     }
-    let endpoint = endpoint::endpoint(provider)?;
     evaluate_prepared_inner(
-        scoped, agent, request, &encoded, key, timeout, &endpoint, validate,
+        scoped,
+        agent,
+        request,
+        &wire_source,
+        &encoded,
+        connection,
+        timeout,
+        validate,
     )
 }
 
@@ -73,8 +83,24 @@ fn evaluate_prepared<T>(
     endpoint: &str,
     validate: impl FnOnce(&Value) -> Result<T, String>,
 ) -> Result<(Value, T), String> {
+    let connection = Connection {
+        protocol: codex_decision::provider::Provider::for_model(
+            request["model"].as_str().ok_or("missing model")?,
+        )?,
+        endpoint: endpoint.into(),
+        model: request["model"].as_str().unwrap().into(),
+        header: Some(("Authorization".into(), format!("Bearer {key}"))),
+        custom: false,
+    };
     evaluate_prepared_inner(
-        scoped, agent, request, encoded, key, timeout, endpoint, validate,
+        scoped,
+        agent,
+        request,
+        request,
+        encoded,
+        &connection,
+        timeout,
+        validate,
     )
     .map_err(|error| error.reason)
 }
@@ -84,10 +110,10 @@ fn evaluate_prepared_inner<T>(
     scoped: &Path,
     agent: &ureq::Agent,
     request: &Value,
+    wire_source: &Value,
     encoded: &[u8],
-    key: &str,
+    connection: &Connection,
     timeout: f64,
-    endpoint: &str,
     validate: impl FnOnce(&Value) -> Result<T, String>,
 ) -> Result<(Value, T), EvaluationFailure> {
     // Count attempts before sending, including requests whose answers fail.
@@ -95,18 +121,42 @@ fn evaluate_prepared_inner<T>(
     hook_health(scoped, "request", "")?;
     let mut outcome = RequestOutcome::default();
     let result = (|| {
-        let body = send_request(scoped, agent, encoded, key, timeout, endpoint, &mut outcome)
-            .map_err(|error| match error.as_str() {
-                "Decision request failed"
-                | "Decision response read failed"
-                | "Decision response too large" => EvaluationFailure::provider(error),
-                _ => EvaluationFailure::from(error),
-            })?;
+        let body = send_request(
+            scoped,
+            agent,
+            encoded,
+            connection.header.as_ref(),
+            timeout,
+            &connection.endpoint,
+            &mut outcome,
+        )
+        .map_err(|error| match error.as_str() {
+            "Decision request failed"
+            | "Decision response read failed"
+            | "Decision response too large" => EvaluationFailure::provider(error),
+            _ => EvaluationFailure::from(error),
+        })?;
         let response = strict_json::parse(&body)
             .map_err(|_| EvaluationFailure::provider("invalid decision response".into()))?;
-        let response = codex_decision::provider::normalize_response(request, response)
-            .map_err(EvaluationFailure::provider)?;
+        let mut response = if connection.custom {
+            codex_decision::provider::normalize_custom_response(
+                wire_source,
+                response,
+                connection.protocol,
+            )
+        } else {
+            codex_decision::provider::normalize_response(request, response)
+        }
+        .map_err(EvaluationFailure::provider)?;
+        // Typed evidence validation keeps its established model contract. The
+        // custom identity was checked against the actual wire model above.
+        let actual_model = connection
+            .custom
+            .then(|| std::mem::replace(&mut response["model"], request["model"].clone()));
         let judgment = validate(&response).map_err(EvaluationFailure::provider)?;
+        if let Some(actual_model) = actual_model {
+            response["model"] = actual_model;
+        }
         Ok((response, judgment))
     })();
     if !outcome.cancelled {
@@ -125,7 +175,7 @@ fn send_request(
     scoped: &Path,
     agent: &ureq::Agent,
     encoded: &[u8],
-    key: &str,
+    header: Option<&(String, String)>,
     timeout: f64,
     endpoint: &str,
     outcome: &mut RequestOutcome,
@@ -140,13 +190,14 @@ fn send_request(
             return Err(error);
         }
     };
-    let response = match agent
+    let mut outgoing = agent
         .post(endpoint)
         .timeout(Duration::from_secs_f64(timeout).min(remaining))
-        .set("Authorization", &format!("Bearer {key}"))
-        .set("Content-Type", "application/json")
-        .send_bytes(encoded)
-    {
+        .set("Content-Type", "application/json");
+    if let Some((name, value)) = header {
+        outgoing = outgoing.set(name, value);
+    }
+    let response = match outgoing.send_bytes(encoded) {
         Ok(response) => {
             outcome.received = true;
             if !(200..300).contains(&response.status()) {

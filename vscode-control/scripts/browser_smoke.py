@@ -66,6 +66,14 @@ def chromium_smoke() -> None:
                 assert all(report.values()), report
                 reports.append({'protected_panel': True, 'requested_width': width, **report})
                 page.close()
+            for width in (360, 1200):
+                page = browser.new_page(viewport={'width': width, 'height': 600})
+                page.goto((ROOT.parent / 'tests/browser/decision_panel_raw_harness.html').as_uri())
+                page.wait_for_function('document.title === "DECISION_RAW_READY"')
+                report = json.loads(page.locator('body').get_attribute('data-result'))
+                assert all(report.values()), report
+                reports.append({'raw_skips_panel': True, 'requested_width': width, **report})
+                page.close()
         finally:
             browser.close()
     print(json.dumps(reports))
@@ -156,6 +164,21 @@ def main() -> None:
             ], capture_output=True, text=True, timeout=30, check=False)
             if result.returncode != 0 or '<title>DECISION_PROTECTED_READY</title>' not in result.stdout:
                 raise RuntimeError(f'Decision protected panel check failed at {width}px')
+        raw = windows_path(ROOT.parent / 'tests/browser/decision_panel_raw_harness.html').replace('\\', '/')
+        raw_address = 'file:///' + quote(raw, safe='/:')
+        for width in (360, 1200):
+            result = subprocess.run([
+                str(edge), '--headless', '--disable-gpu', '--no-first-run',
+                '--no-default-browser-check', '--disable-extensions', f'--window-size={width},600',
+                f'--user-data-dir={windows_path(profile / f"raw-{width}")}',
+                '--dump-dom', raw_address,
+            ], capture_output=True, text=True, timeout=30, check=False)
+            match = re.search(r'data-result="([^"]+)"', result.stdout)
+            if result.returncode != 0 or '<title>DECISION_RAW_READY</title>' not in result.stdout or not match:
+                raise RuntimeError(f'Decision raw skips panel check failed at {width}px')
+            report = json.loads(match.group(1).replace('&quot;', '"'))
+            assert all(report.values()), report
+            reports.append({'raw_skips_panel': True, 'requested_width': width, **report})
         print(json.dumps(reports))
     finally:
         remove_profile(profile, 'jev-edge-test-')

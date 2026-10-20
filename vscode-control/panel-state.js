@@ -6,6 +6,7 @@ const path = require("node:path");
 const { validateSessionPath, validateDirectoryPath, readConfig, readSessionActivity, describeHookActivity } = require("./core");
 const {readFileRecord,parseUniqueJson} = require("./private-records");
 const {readPublishedRecord} = require("./publication-journal");
+const { readRawSkipState } = require("./raw-skip-state");
 
 const FILTERS = new Set(["output", "test_build", "search_listing"]);
 const MAX_SNAPSHOT_BYTES = 8 * 1024 * 1024;
@@ -121,13 +122,15 @@ async function readLatestPanelDecision(directory, cache = null) {
   }
 }
 
-async function readPanelActivity(directory) {
-  const [stats, config] = await Promise.all([
+async function readPanelActivity(directory, rawCache = null) {
+  const [stats, config, rawSkips] = await Promise.all([
     readSessionActivity(directory), readConfig(directory),
+    readRawSkipState(directory, rawCache).catch(error => ({ enabled: error.rawCaptureEnabled === true,
+      entries: [], unavailable: true })),
   ]);
   const { hookHealth: health, ...totals } = stats;
   const hookActivity = describeHookActivity(config.enabled, health);
-  return { message: hookActivity.message, hookActivity, calls: stats.calls, skipped: stats.skipped, totals };
+  return { message: hookActivity.message, hookActivity, calls: stats.calls, skipped: stats.skipped, totals, rawSkips };
 }
 
 module.exports = { parsePanelDecision, readLatestPanelDecision, readPanelActivity };

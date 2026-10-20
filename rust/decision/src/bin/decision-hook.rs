@@ -78,6 +78,9 @@ use retention::*;
 #[path = "decision-hook/telemetry.rs"]
 mod telemetry;
 use telemetry::*;
+#[path = "decision-hook/raw_skips.rs"]
+mod raw_skips;
+use raw_skips::*;
 #[path = "decision-hook/snapshot.rs"]
 mod snapshot;
 use snapshot::*;

@@ -4,14 +4,14 @@
 
 Codex Decision selects repetitive lines for removal from supported local tool output. Errors and useful evidence stay visible. Every shortened result links to the complete original.
 
-**Codex Decision 0.13.0** — [Download the integrated VSIX](https://github.com/PhilippElhaus/Codex-Decision/releases/latest).
+**Codex Decision 0.14.0** — [Download the integrated VSIX](https://github.com/PhilippElhaus/Codex-Decision/releases/latest).
 
 ## Get started
 
 Install the single VSIX in Windows VS Code with a Linux x86_64 WSL environment:
 
 ```bash
-code --install-extension codex-decision-0.13.0.vsix --force
+code --install-extension codex-decision-0.14.0.vsix --force
 ```
 
 The package contains the hook, skill, session controls, settings, and verified Codex UI patch. On activation it installs or updates the local plugin and repairs supported Codex builds. Existing plugin data and thread choices remain in place. Run **Developer: Reload Window** after the integration repair, then open your Codex thread. Review the hook in `/hooks` if Codex requests trust. No second package or manual composer patch is needed.
@@ -22,9 +22,13 @@ Temporary WSL or installer access failures retry automatically after 2, 5, and 1
 
 ### 1. Connect Decision
 
-Sign in to Codex, select **OpenAI Decisions** or **TypeSafe Jev**, then enter and test that provider’s API key in **Connect Decision**. The key stays out of chat.
+Sign in to Codex, select **OpenAI Decisions**, **TypeSafe Jev**, or **Custom provider**, then test and save the connection in **Connect Decision**. The credentials stay out of chat.
 
 Save a separate key for each provider and switch without entering it again. Decision settings show both saved-key states. Enable **Use the other provider if needed** for one automatic fallback when the primary key is missing or a provider request fails. Fallback is off by default; enabling it permits eligible output to reach either provider. Failed evaluations keep the full output.
+
+For a custom provider, choose the **OpenAI Decisions** or **TypeSafe Jev** JSON schema and enter the complete endpoint URL and model ID. Authentication supports a bearer API key, username and password, a named API-key header, or no authentication. HTTPS is required except for a local loopback endpoint. The provider must implement the selected decision schema. A standard chat-completions endpoint needs a compatible adapter. Custom connections use only their configured endpoint and do not use automatic fallback.
+
+<img src="docs/images/decision-connect-custom.png" width="760" alt="Custom connection form with endpoint, model, JSON schema, and username and password fields">
 
 <img src="docs/images/decision-connect.png" width="760" alt="Connect Decision screen with an empty API key field">
 
@@ -51,6 +55,10 @@ Open the **Decision** panel beside **Terminal** and **Output**. Blue rows mark p
 <img src="docs/images/decision-panel.png" width="1000" alt="Decision panel showing 47 of 50 lines removed and persistent thread activity counts">
 
 Select **Latest** for the current result or **Totals** for the selected thread’s saved request attempts, validated responses, evaluations, removals, and skip reasons. Switching threads restores their own counters. Incomplete older history shows a lower bound (`≥`) or an unknown count (`—`).
+
+Select **Show raw skipped outputs** beside the skip count to capture and inspect future skipped tool calls for that thread. Expand an entry to see its skip reason, tool input, and original response. Captured data stays in private local storage with bounded retention. Older skips have no saved raw payload. Turn the checkbox off to stop capture.
+
+<img src="docs/images/decision-skipped-raw.png" width="1000" alt="Decision panel showing the raw skipped outputs checkbox and a captured tool call with input and original response">
 
 <img src="docs/images/decision-totals.png" width="1000" alt="Decision Totals view with saved session counts and reasons outputs stayed complete">
 

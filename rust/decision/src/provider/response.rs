@@ -2,17 +2,42 @@
 use super::Provider;
 use serde_json::{Map, Value};
 
-pub fn normalize_response(request: &Value, mut response: Value) -> Result<Value, String> {
+pub fn normalize_response(request: &Value, response: Value) -> Result<Value, String> {
     let model = request["model"].as_str().ok_or("missing model")?;
     let provider = Provider::for_model(model)?;
     let actual = response["model"].as_str().ok_or("missing response model")?;
     if Provider::for_model(actual)? != provider {
         return Err("response provider mismatch".into());
     }
-    if provider == Provider::TypeSafe {
-        if !typesafe_model_matches(model, actual) {
-            return Err("response model mismatch".into());
-        }
+    if provider == Provider::TypeSafe && !typesafe_model_matches(model, actual) {
+        return Err("response model mismatch".into());
+    }
+    normalize_wire_response(request, response, provider)
+}
+
+/// A custom endpoint must echo its configured model exactly. Built-in model
+/// aliases never widen the trust boundary of a custom connection.
+pub fn normalize_custom_response(
+    request: &Value,
+    response: Value,
+    protocol: Provider,
+) -> Result<Value, String> {
+    let requested = request["model"].as_str().ok_or("missing model")?;
+    if !super::valid_custom_model(requested)
+        || response["model"].as_str() != Some(requested)
+        || protocol == Provider::Custom
+    {
+        return Err("response model mismatch".into());
+    }
+    normalize_wire_response(request, response, protocol)
+}
+
+fn normalize_wire_response(
+    request: &Value,
+    mut response: Value,
+    protocol: Provider,
+) -> Result<Value, String> {
+    if protocol == Provider::TypeSafe {
         return Ok(response);
     }
     let envelope = response

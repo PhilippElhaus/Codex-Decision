@@ -10,6 +10,7 @@ pub(super) struct Config {
     pub(super) max_chars: usize,
     pub(super) model: String,
     pub(super) provider: codex_decision::provider::Provider,
+    pub(super) custom_provider: Option<codex_decision::provider::CustomProvider>,
     pub(super) fallback_enabled: bool,
     pub(super) fallback_from: Option<(codex_decision::provider::Provider, String)>,
     pub(super) timeout: f64,
@@ -17,6 +18,15 @@ pub(super) struct Config {
     pub(super) policy: RelevancePolicy,
     pub(super) log_limit_mb: u64,
     pub(super) never_delete_logs: bool,
+}
+
+impl Config {
+    pub(super) fn actual_model(&self) -> &str {
+        self.custom_provider
+            .as_ref()
+            .filter(|_| self.provider == codex_decision::provider::Provider::Custom)
+            .map_or(self.model.as_str(), |custom| custom.model.as_str())
+    }
 }
 
 #[derive(Clone, Deserialize, serde::Serialize)]
@@ -41,6 +51,7 @@ struct SharedSettings {
     log_limit_mb: u64,
     never_delete_logs: bool,
     provider: String,
+    custom_provider: Option<codex_decision::provider::CustomProvider>,
     fallback_enabled: bool,
     model: String,
 }
@@ -65,6 +76,7 @@ pub(super) fn apply_shared_settings(data_dir: &Path, config: &mut Config) -> Res
     config.log_limit_mb = settings.log_limit_mb;
     config.never_delete_logs = settings.never_delete_logs;
     config.provider = codex_decision::provider::Provider::parse(&settings.provider)?;
+    config.custom_provider = settings.custom_provider;
     config.fallback_enabled = settings.fallback_enabled;
     config.model = settings.model;
     Ok(())
@@ -107,6 +119,12 @@ pub(super) fn config(data_dir: &Path) -> Result<Option<Config>, String> {
         max_chars: raw["max_chars"].as_u64().unwrap() as usize,
         model: raw["model"].as_str().unwrap().into(),
         provider: codex_decision::provider::Provider::parse(raw["provider"].as_str().unwrap())?,
+        custom_provider: raw
+            .get("custom_provider")
+            .map(|value| {
+                serde_json::from_value(value.clone()).map_err(|_| "invalid custom provider")
+            })
+            .transpose()?,
         fallback_enabled: raw["fallback_enabled"].as_bool().unwrap(),
         fallback_from: None,
         timeout: raw["timeout_seconds"].as_f64().unwrap(),
@@ -122,6 +140,22 @@ pub(super) fn key(
     data_dir: &Path,
     provider: codex_decision::provider::Provider,
 ) -> Result<String, String> {
+    let entered = credential_value(data_dir, provider.key_name())?;
+    let value = entered.trim().trim_matches(['\'', '"']);
+    if !(8..=4096).contains(&value.len())
+        || value.chars().any(char::is_whitespace)
+        || value.contains('\0')
+    {
+        return Err("invalid credential".into());
+    }
+    Ok(value.into())
+}
+
+pub(super) fn credential_value(data_dir: &Path, name: &str) -> Result<String, String> {
+    credential_values(data_dir, &[name]).map(|mut values| values.remove(0))
+}
+
+pub(super) fn credential_values(data_dir: &Path, names: &[&str]) -> Result<Vec<String>, String> {
     let path = data_dir.join(".env");
     let metadata = fs::symlink_metadata(&path).map_err(|error| {
         if error.kind() == std::io::ErrorKind::NotFound {
@@ -143,23 +177,21 @@ pub(super) fn key(
     let content =
         String::from_utf8(read_bounded(&path, 16384).map_err(|_| "invalid credential encoding")?)
             .map_err(|_| "invalid credential encoding")?;
-    let prefix = format!("{}=", provider.key_name());
-    let values: Vec<&str> = content
-        .lines()
-        .filter_map(|line| line.trim().strip_prefix(&prefix))
-        .collect();
-    if values.is_empty() {
-        return Err("missing credential".into());
-    }
-    if values.len() != 1 {
-        return Err("invalid credential".into());
-    }
-    let value = values[0].trim().trim_matches(['\'', '"']);
-    if !(8..=4096).contains(&value.len())
-        || value.chars().any(char::is_whitespace)
-        || value.contains('\0')
-    {
-        return Err("invalid credential".into());
-    }
-    Ok(value.into())
+    names
+        .iter()
+        .map(|name| {
+            let prefix = format!("{name}=");
+            let values: Vec<&str> = content
+                .lines()
+                .filter_map(|line| line.trim_start().strip_prefix(&prefix))
+                .collect();
+            if values.is_empty() {
+                return Err("missing credential".into());
+            }
+            if values.len() != 1 {
+                return Err("invalid credential".into());
+            }
+            Ok(values[0].into())
+        })
+        .collect()
 }

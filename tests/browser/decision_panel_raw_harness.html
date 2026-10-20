@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Decision raw skipped outputs</title>
+  <link rel="stylesheet" href="../../vscode-control/webview/decision-panel.css">
+  <style>
+    body { --vscode-foreground: #d4d4d4; --vscode-descriptionForeground: #969696;
+      --vscode-panel-background: #181818; --vscode-panel-border: #343434;
+      --vscode-font-family: "Segoe UI", sans-serif; --vscode-editor-font-family: Consolas, monospace; }
+  </style>
+  <script>
+    let saved = { panelMode: "latest" };
+    const sent = [];
+    window.acquireVsCodeApi = () => ({ postMessage: message => sent.push(message),
+      getState: () => saved, setState: value => { saved = value; } });
+  </script>
+</head>
+<body>
+  <main id="app"></main>
+  <script src="../../vscode-control/webview/decision-totals.js"></script>
+  <script src="../../vscode-control/webview/decision-panel.js"></script>
+  <script>
+    const app = document.getElementById("app");
+    const activity = { calls: 11, skipped: 341, message: "The latest output was too short to evaluate.",
+      rawSkips: { enabled: false, entries: [] }, totals: { seen: 352, skipped: 341, calls: 11 } };
+    const send = value => window.dispatchEvent(new MessageEvent("message", {
+      data: { type: "decision", decision: null, activity: value } }));
+    send(activity);
+    const report = { initialOff: !app.querySelector("#raw-skips-toggle").checked &&
+      app.textContent.includes("Earlier raw payloads are unavailable.") };
+    app.querySelector("#raw-skips-toggle").click();
+    report.explicitOptIn = sent.at(-1).type === "set-raw-skips" && sent.at(-1).enabled === true &&
+      app.querySelector("#raw-skips-toggle").disabled;
+    send({ ...activity, rawSkips: { enabled: true, entries: [] } });
+    report.futureOnly = app.textContent.includes("Waiting for future skips.");
+    const entries = [
+      { id: "a".repeat(32), at: "2026-10-20T10:15:02Z", reason: "unsupported_result", detail: null,
+        tool_name: "tools.exec_command", tool_use_id: "synthetic-call-01", payload_unavailable: null,
+        payload: { tool_input_json: '{\n  "cmd": "printf synthetic",\n  "request_id": 18446744073709551615\n}',
+          tool_response_json: '{\n  "output": "synthetic tool output",\n  "exit_code": 0\n}' } },
+      { id: "b".repeat(32), at: "2026-10-20T10:15:08Z", reason: "small", detail: null,
+        tool_name: "tools.exec_command", tool_use_id: "synthetic-call-02", payload_unavailable: null,
+        payload: { tool_input_json: '{\n  "cmd": "git status --short",\n  "workdir": "/synthetic/project"\n}',
+          tool_response_json: '" M src/example.rs\\n?? tests/example.test.js\\n"' } },
+    ];
+    send({ ...activity, skipped: 343, rawSkips: { enabled: true, entries } });
+    report.inspectable = app.querySelectorAll(".raw-skip-entry").length === 2 &&
+      app.querySelector(".raw-skip-entry").open &&
+      app.querySelectorAll(".raw-payload")[1].textContent === " M src/example.rs\n?? tests/example.test.js\n";
+    report.exactInteger = app.textContent.includes("18446744073709551615");
+    report.localLabel = app.textContent.includes("Stored locally for this thread.") &&
+      app.textContent.includes("Filtering stays active.");
+    const htmlEntry = { ...entries[0], id: "c".repeat(32), payload: {
+      tool_input_json: '{"cmd":"synthetic"}', tool_response_json: '"<img src=x onerror=alert(1)>"' } };
+    send({ ...activity, rawSkips: { enabled: true, entries: [htmlEntry] } });
+    report.inertRawText = app.querySelector("img") === null && app.textContent.includes("<img src=x");
+    const unavailable = { ...entries[0], payload: null, payload_unavailable: "size_limit" };
+    send({ ...activity, rawSkips: { enabled: true, entries: [unavailable] } });
+    report.oversizeExplained = app.textContent.includes("exceeded the capture size limit") && !app.querySelector(".raw-payload");
+    send({ ...activity, rawSkips: { enabled: true, entries } });
+    app.querySelector("#raw-skips-toggle").click();
+    report.explicitOff = sent.at(-1).type === "set-raw-skips" && sent.at(-1).enabled === false;
+    send(activity);
+    report.offClearsRaw = !app.querySelector(".raw-payload");
+    send(null);
+    report.switchClearsRaw = app.querySelector("#raw-skips-toggle").disabled && !app.querySelector(".raw-skips");
+    send({ ...activity, skipped: 343, rawSkips: { enabled: true, entries } });
+    const priorWidth = app.style.maxWidth;
+    app.style.maxWidth = "360px";
+    report.noOverflowAt360 = app.scrollWidth <= app.clientWidth + 1 &&
+      document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1;
+    app.style.maxWidth = priorWidth;
+    report.preferenceStoresNoPayload = Object.keys(saved).length === 1 && saved.panelMode === "latest";
+    document.body.dataset.result = JSON.stringify(report);
+    document.title = Object.values(report).every(Boolean) ? "DECISION_RAW_READY" : "DECISION_RAW_FAILED";
+  </script>
+</body>
+</html>

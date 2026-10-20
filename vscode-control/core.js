@@ -807,12 +807,22 @@ function decisionSummary(event) {
   return `Last decision: ${action} ${event.tool || "tool"} output (${event.reason}); ${event.original_chars.toLocaleString("en-US")} chars`;
 }
 
-function parseHealthOutput(stdout, selected = "openai") {
-  return parseHealthResult(JSON.parse(stdout), selected);
+function parseHealthOutput(stdout, selected = "openai", custom) {
+  return parseHealthResult(JSON.parse(stdout), selected, custom);
 }
 
-async function readApiKey(directory, selected = "openai") {
-  const keyName = provider(selected).keyName;
+function customCredentialIdentity(custom) {
+  const spec = provider("custom", custom);
+  return crypto.createHash("sha256").update(JSON.stringify([spec.endpoint, spec.auth, spec.username, spec.header_name])).digest("hex");
+}
+
+function validateCustomSecret(secret, password = false) {
+  if (typeof secret !== "string" || !secret.length || Buffer.byteLength(secret) > 4096 ||
+      (password ? /\p{Cc}/u : /[^\x20-\x7e]/).test(secret)) throw new Error("Enter a valid provider credential");
+  return secret;
+}
+
+async function credentialSource(directory) {
   let record;
   let source;
   try {
@@ -822,8 +832,25 @@ async function readApiKey(directory, selected = "openai") {
   } catch {
     throw Object.assign(new Error("Unsafe Decision credential file"), { decisionReason: "DECISION_CREDENTIAL_UNSAFE" });
   }
-  if (!record) throw Object.assign(new Error("Decision API key is missing or invalid"), { decisionReason: "DECISION_KEY_MISSING" });
-  const lines = source.replace(/^\uFEFF/, "").split(/\r?\n/);
+  return source?.replace(/^\uFEFF/, "") || "";
+}
+
+async function readApiKey(directory, selected = "openai", custom) {
+  if (selected === "custom") {
+    custom ??= (await readGlobalSettings(directory)).custom_provider;
+    const spec = provider(selected, custom);
+    if (spec.auth === "none") return "";
+    const lines = (await credentialSource(directory)).split(/\r?\n/);
+    const values = name => lines.filter(line => line.split("=", 1)[0] === name).map(line => line.slice(line.indexOf("=") + 1));
+    const identity = values("CUSTOM_CREDENTIAL_IDENTITY");
+    const secrets = values(spec.keyName);
+    if (identity.length !== 1 || identity[0] !== customCredentialIdentity(custom) || secrets.length !== 1)
+      throw Object.assign(new Error("Enter credentials for this custom connection"), { decisionReason: "DECISION_KEY_MISSING" });
+    try { return validateCustomSecret(secrets[0], spec.auth === "basic"); }
+    catch { throw Object.assign(new Error("Invalid custom credential"), { decisionReason: "DECISION_KEY_INVALID" }); }
+  }
+  const keyName = provider(selected).keyName;
+  const lines = (await credentialSource(directory)).split(/\r?\n/);
   const values = lines.filter((line) => line.trim().split("=", 1)[0].trim() === keyName).map((line) => {
     let value = line.slice(line.indexOf("=") + 1).trim();
     if (value.length >= 2 && ["'", '"'].includes(value[0]) && value.at(-1) === value[0]) value = value.slice(1, -1);
@@ -836,11 +863,16 @@ async function readApiKey(directory, selected = "openai") {
   return values[0];
 }
 
-async function readProviderKeys(directory) {
+async function readProviderKeys(directory, customProvider) {
   const entries = await Promise.all(["openai", "typesafe"].map(async (selected) => {
     try { return [selected, { hasKey: Boolean(await readApiKey(directory, selected)) }]; }
     catch { return [selected, { hasKey: false }]; }
   }));
+  customProvider ??= (await readGlobalSettings(directory).catch(() => ({}))).custom_provider;
+  if (customProvider) {
+    try { entries.push(["custom", { hasKey: customProvider.auth === "none" || Boolean(await readApiKey(directory, "custom", customProvider)) }]); }
+    catch { entries.push(["custom", { hasKey: false }]); }
+  }
   return Object.fromEntries(entries);
 }
 
@@ -870,23 +902,37 @@ async function checkHealth(dataDirectory, send = globalThis.fetch, suppliedKey =
   const timeoutMs = Math.max(1, Math.min(6000, Number.isFinite(options.timeoutMs) ? Math.ceil(options.timeoutMs) : 6000));
   const signal = options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs);
   if (options.signal?.aborted) return { ok: false, reason: "DECISION_CANCELLED" };
-  try { selected ??= (await readGlobalSettings(dataDirectory)).provider; provider(selected); }
+  let spec;
+  let custom;
+  try {
+    const settings = selected === null || (selected === "custom" && !options.customProvider) ? await readGlobalSettings(dataDirectory) : {};
+    selected ??= settings.provider;
+    custom = options.customProvider || settings.custom_provider;
+    spec = provider(selected, custom);
+  }
   catch { return { ok: false, reason: "DECISION_INVALID_SETTINGS" }; }
   let key;
   try {
-    key = suppliedKey === null ? await readApiKey(dataDirectory, selected) : validateApiKey(suppliedKey);
+    key = spec.auth === "none" ? "" : selected === "custom" ?
+      (spec.auth === "basic" ? options.password : suppliedKey) || await readApiKey(dataDirectory, selected, custom) :
+      suppliedKey === null ? await readApiKey(dataDirectory, selected) : validateApiKey(suppliedKey);
+    if (selected === "custom" && spec.auth !== "none") validateCustomSecret(key, spec.auth === "basic");
   } catch (error) {
     return { ok: false, reason: error.decisionReason || "DECISION_KEY_INVALID" };
   }
   const body = JSON.stringify(wireRequest({
     state: { output_sample: "Compiling module 1 done\nCompiling module 2 done" },
-    model: provider(selected).model,
+    model: spec.model,
     questions: { ready: { type: "noul", instructions: "Is output_sample routine build progress?" } },
-  }));
+  }, spec.protocol));
+  const headers = { "Content-Type": "application/json" };
+  if (spec.auth === "bearer") headers.Authorization = `Bearer ${key}`;
+  else if (spec.auth === "basic") headers.Authorization = `Basic ${Buffer.from(`${spec.username}:${key}`, "utf8").toString("base64")}`;
+  else if (spec.auth === "header") headers[spec.header_name] = key;
   let response;
   try {
-    response = await send(provider(selected).endpoint, {
-      method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+    response = await send(spec.endpoint, {
+      method: "POST", headers,
       body, signal, redirect: "error",
     });
   } catch (error) {
@@ -911,7 +957,7 @@ async function checkHealth(dataDirectory, send = globalThis.fetch, suppliedKey =
   }
   try {
     const output = await boundedResponse(response, 262144);
-    return parseHealthOutput(output, selected);
+    return parseHealthOutput(output, selected, custom);
   } catch {
     return { ok: false, reason: options.signal?.aborted ? "DECISION_CANCELLED" :
       signal.aborted ? "DECISION_TIMEOUT" : "DECISION_INVALID_RESPONSE" };
@@ -933,6 +979,36 @@ async function writeApiKey(directory, key, selected = "openai") {
 async function updateApiKey(directory, key, selected) {
   const keyName = provider(selected).keyName;
   validateApiKey(key);
+  return updateCredentials(directory, { [keyName]: key });
+}
+
+// Validate the full draft before changing either settings or credentials. Binding the
+// custom credential to its destination also protects externally edited config files.
+async function saveProviderSettings(directory, changes, secrets = {}, fallback = {}) {
+  return withWriteLock(directory, async () => {
+    const current = await readGlobalSettings(directory, fallback);
+    const settings = completeSettings({ ...current, ...changes });
+    if (settings.provider === "custom") {
+      const spec = provider("custom", settings.custom_provider);
+      const entered = spec.auth === "basic" ? secrets.password : secrets.key;
+      const sameIdentity = current.custom_provider && customCredentialIdentity(current.custom_provider) === customCredentialIdentity(settings.custom_provider);
+      if (spec.auth !== "none" && !entered && !sameIdentity) throw new Error("Enter credentials for this custom connection");
+      if (entered && spec.auth !== "none") validateCustomSecret(entered, spec.auth === "basic");
+      if (spec.auth === "none" || entered) await updateCredentials(directory, {
+        CUSTOM_API_KEY: spec.auth !== "basic" && spec.auth !== "none" ? entered : null,
+        CUSTOM_PASSWORD: spec.auth === "basic" ? entered : null,
+        CUSTOM_CREDENTIAL_IDENTITY: spec.auth === "none" ? null : customCredentialIdentity(settings.custom_provider),
+      });
+    } else if (secrets.key) {
+      validateApiKey(secrets.key);
+      await updateCredentials(directory, { [provider(settings.provider).keyName]: secrets.key });
+    }
+    await atomicWrite(path.join(directory, "settings.json"), JSON.stringify({ schema_version: 4, ...settings }, null, 2) + "\n");
+    return settings;
+  });
+}
+
+async function updateCredentials(directory, values) {
   await fs.mkdir(directory, { recursive: true, mode: 0o700 });
   if (!(await fs.lstat(directory)).isDirectory() || (await fs.lstat(directory)).isSymbolicLink()) {
     throw new Error("Unsafe plugin data directory");
@@ -943,9 +1019,9 @@ async function updateApiKey(directory, key, selected) {
   const existing = await readFileRecord(target, CREDENTIAL_FILE_LIMIT, { strict: true });
   if (existing) {
     lines = new TextDecoder("utf-8", { fatal: true }).decode(existing.bytes).split(/\r?\n/)
-      .filter((line) => line.trim().split("=", 1)[0].trim() !== keyName);
+      .filter((line) => !Object.hasOwn(values, line.trim().split("=", 1)[0].trim()));
   }
-  const content = [...lines.filter(Boolean), `${keyName}=${key}`].join("\n") + "\n";
+  const content = [...lines.filter(Boolean), ...Object.entries(values).filter(([, value]) => value !== null).map(([name, value]) => `${name}=${value}`)].join("\n") + "\n";
   if (Buffer.byteLength(content) > CREDENTIAL_FILE_LIMIT) throw new Error("Decision credential file is too large");
   const temporary = path.join(directory, `.env-${crypto.randomUUID()}.tmp`);
   let owned = false;
@@ -973,7 +1049,7 @@ module.exports = {
   readApiKey, readProviderKeys, readEventOffset, readEventCursor, readEventsSince, readLifetimeStats,
   readSessionActivity, readRecentOutcomes, retainedStatsFromEvents,
   describeHookActivity,
-  savedCharacters, writeApiKey, writeSelection,
+  savedCharacters, writeApiKey, writeSelection, saveProviderSettings, customCredentialIdentity,
   ensureSessionDefaults,
   DEFAULT_SETTINGS, readGlobalSettings, writeGlobalSettings, readInstallationStats,
 };

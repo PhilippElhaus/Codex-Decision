@@ -45,6 +45,82 @@ test("panel manifest registers a visible view in a valid container", () => {
   assert.equal(view.visibility, "visible");
 });
 
+test("panel raw checkbox saves per-thread capture without changing filtering settings", async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "decision-panel-raw-"));
+  const fake = { Uri: { joinPath: (_root, ...parts) => parts.join("/") } };
+  const originalLoad = Module._load;
+  let LatestDecisionProvider;
+  try {
+    Module._load = function (request, parent, isMain) {
+      return request === "vscode" ? fake : originalLoad.call(this, request, parent, isMain);
+    };
+    delete require.cache[require.resolve("../../vscode-control/panel")];
+    ({ LatestDecisionProvider } = require("../../vscode-control/panel"));
+  } finally { Module._load = originalLoad; }
+  const messages = [];
+  const provider = new LatestDecisionProvider({}, () => directory);
+  provider.view = { visible: true, webview: { postMessage: async message => { messages.push(message); return true; } } };
+  try {
+    await fs.writeFile(path.join(directory, "config.json"), JSON.stringify({
+      schema_version: 4, enabled: true, mode: "replace", relevance_policy: { relevant_max: 5 } }));
+    const before = await fs.readFile(path.join(directory, "config.json"), "utf8");
+    await provider.setRawSkips(true);
+    await provider.refresh();
+    assert.equal(messages.at(-1).activity.rawSkips.enabled, true);
+    assert.deepEqual(messages.at(-1).activity.rawSkips.entries, []);
+    await fs.writeFile(path.join(directory, "logs", "skipped-raw.json"), "{broken", { mode: 0o600 });
+    await provider.refresh();
+    assert.equal(messages.at(-1).activity.rawSkips.unavailable, true);
+    assert.equal(messages.at(-1).activity.rawSkips.enabled, true,
+      "a corrupt payload file must leave capture checked so the user can stop it");
+    assert.equal(messages.at(-1).activity.unavailable, undefined,
+      "optional raw data errors must not hide filtering counters");
+    await provider.setRawSkips(false);
+    await provider.refresh();
+    assert.equal(messages.at(-1).activity.rawSkips.enabled, false);
+    assert.equal(await fs.readFile(path.join(directory, "config.json"), "utf8"), before);
+    assert.equal(messages.at(-1).activity.calls, 0);
+  } finally { provider.dispose(); await fs.rm(directory, { recursive: true, force: true }); }
+});
+
+test("a stale raw checkbox click cannot enable capture for a newly selected thread", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "decision-panel-raw-switch-"));
+  const first = path.join(root, "first"), second = path.join(root, "second");
+  await fs.mkdir(first, { mode: 0o700 });
+  await fs.mkdir(second, { mode: 0o700 });
+  const originalLoad = Module._load;
+  let LatestDecisionProvider;
+  try {
+    Module._load = function (request, parent, isMain) {
+      return request === "vscode" ? { Uri: { joinPath: (_root, ...parts) => parts.join("/") } } :
+        originalLoad.call(this, request, parent, isMain);
+    };
+    delete require.cache[require.resolve("../../vscode-control/panel")];
+    ({ LatestDecisionProvider } = require("../../vscode-control/panel"));
+  } finally { Module._load = originalLoad; }
+  const messages = [];
+  let onMessage;
+  let selected = first;
+  const provider = new LatestDecisionProvider({}, () => selected);
+  const view = { visible: true, webview: { cspSource: "vscode-resource:", asWebviewUri: uri => uri,
+    onDidReceiveMessage: callback => { onMessage = callback; return { dispose() {} }; },
+    postMessage: async message => { messages.push(message); return true; } },
+    onDidChangeVisibility: () => ({ dispose() {} }), onDidDispose() {} };
+  try {
+    provider.resolveWebviewView(view);
+    onMessage({ type: "ready" });
+    await provider.refresh();
+    const scope = messages.at(-1).activity.rawSkips.scope;
+    selected = second;
+    onMessage({ type: "set-raw-skips", enabled: true, scope });
+    await provider.refresh();
+    assert.equal(provider.directory, second);
+    assert.notEqual(messages.at(-1).activity.rawSkips.scope, scope);
+    for (const directory of [first, second]) await assert.rejects(
+      fs.stat(path.join(directory, "logs", "skipped-raw-enabled.json")), { code: "ENOENT" });
+  } finally { provider.dispose(); await fs.rm(root, { recursive: true, force: true }); }
+});
+
 test("panel keeps each decision visible through its animation and a one second rest", async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "decision-panel-test-"));
   const logs = path.join(directory, "logs");

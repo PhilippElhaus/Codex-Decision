@@ -2,6 +2,7 @@
 
 const vscode = require("vscode");
 const { readLatestPanelDecision, readPanelActivity } = require("./panel-state");
+const { writeRawSkipPreference } = require("./raw-skip-state");
 
 const VIEW_ID = "codexDecisionDecision";
 const MIN_SETTLED_MS = 1000;
@@ -20,6 +21,8 @@ class LatestDecisionProvider {
     this.timer = null;
     this.pending = null;
     this.cache = {};
+    this.rawCache = {};
+    this.rawTogglePending = false;
     this.lastMessage = "";
     this.lastActivity = "";
     this.displayedDecision = null;
@@ -51,6 +54,14 @@ class LatestDecisionProvider {
         this.lastDecisionId = null;
         this.nextDecisionAt = 0;
         void this.refresh();
+      }
+      if (this.view === view && !this.awaitingReady && message?.type === "set-raw-skips" &&
+          typeof message.enabled === "boolean") {
+        let selected;
+        try { selected = this.dataDirectory(); } catch { selected = null; }
+        // A click on a stale panel must not enable capture for a newly selected thread.
+        if (message.scope === this.generation && selected === this.directory) void this.setRawSkips(message.enabled);
+        else void this.refresh();
       }
     });
     const visibility = view.onDidChangeVisibility(() => {
@@ -84,7 +95,7 @@ class LatestDecisionProvider {
   }
 
   async refresh() {
-    if (!this.view?.visible || this.awaitingReady) return;
+    if (!this.view?.visible || this.awaitingReady || this.rawTogglePending) return;
     let directory;
     let directoryFault = false;
     try { directory = this.dataDirectory(); }
@@ -96,6 +107,7 @@ class LatestDecisionProvider {
       this.directory = directory;
       this.generation += 1;
       this.cache = {};
+      this.rawCache = {};
       this.lastMessage = "";
       this.lastActivity = "";
       this.displayedDecision = null;
@@ -119,9 +131,10 @@ class LatestDecisionProvider {
         const refreshDecision = this.now() >= this.nextDecisionAt;
         const [decision, activity] = await Promise.all([
           directory ? refreshDecision ? readLatestPanelDecision(directory, this.cache) : this.displayedDecision : null,
-          directory ? readPanelActivity(directory) : null,
+          directory ? readPanelActivity(directory, this.rawCache) : null,
         ]);
         if (!current()) return;
+        if (activity?.rawSkips) activity.rawSkips.scope = generation;
         this.onFault(null);
         serialized = refreshDecision ? JSON.stringify(decision) : this.lastMessage;
         activitySerialized = JSON.stringify(activity);
@@ -159,6 +172,31 @@ class LatestDecisionProvider {
     try { return await task; } finally {
       this.pending = null;
       if (generation !== this.generation && this.view?.visible) void this.refresh();
+    }
+  }
+
+  async setRawSkips(enabled) {
+    if (this.rawTogglePending) return;
+    let directory;
+    try { directory = this.dataDirectory(); } catch { return; }
+    if (!directory || !this.view?.visible) return;
+    const view = this.view;
+    this.rawTogglePending = true;
+    this.generation += 1;
+    try {
+      await writeRawSkipPreference(directory, enabled);
+      this.rawCache = {};
+    } catch {
+      if (view === this.view) {
+        try {
+          await view.webview.postMessage({ type: "raw-skips-error",
+            message: "The raw skipped-output preference could not be saved." });
+        } catch { /* The webview may have closed while saving. */ }
+      }
+    } finally {
+      this.rawTogglePending = false;
+      this.lastActivity = "";
+      void this.refresh();
     }
   }
 

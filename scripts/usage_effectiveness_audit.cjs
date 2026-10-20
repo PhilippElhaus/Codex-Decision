@@ -28,6 +28,7 @@ const NAMES = new Set(["Bash", "exec", "functions.exec", "exec_command", "wait",
 for (const name of ["unsupported_event", "structured_or_empty", "exhaustive_task"]) NAMES.add(name);
 const KINDS = new Set(["independent_records", "independent_matches", "progress_output", "repetitive_log",
   "exact_content", "prose", "structured_payload", "mixed_or_unknown"]);
+const PROVIDERS = new Set(["openai", "typesafe", "custom"]);
 const LOCAL_SKIP_REASONS = new Set(["unsupported_event", "unsupported_route", "unsupported_result", "small", "large",
   "tool_input_budget", "line_budget", "exact_content", "sensitive", "structured_or_empty", "structure_guard",
   "mcp_replacement_disabled", "unsafe_task_context", "exhaustive_task", "insufficient_savings"]);
@@ -156,7 +157,7 @@ function addEvent(summary, event) {
       size < 1024 ? "256_1023" : size < 4096 ? "1024_4095" : size < 16384 ? "4096_16383" : "16384_plus");
   }
   if (!["replace", "candidate", "keep"].includes(event.status)) return true;
-  const actualProvider = ["openai", "typesafe"].includes(event.provider) ? event.provider : "unrecorded";
+  const actualProvider = PROVIDERS.has(event.provider) ? event.provider : "unrecorded";
   count(summary.providers, actualProvider);
   const fallback = event.fallback_used === true ? "used" : event.fallback_used === false ? "not_used" : "unknown";
   count(summary.fallback_completed_outcomes, fallback);
@@ -164,7 +165,7 @@ function addEvent(summary, event) {
   if (event.fallback_used === true) {
     count(summary.fallback_actual_providers, actualProvider);
     count(summary.fallback_configured_providers,
-      ["openai", "typesafe"].includes(event.configured_provider) ? event.configured_provider : "unrecorded");
+      PROVIDERS.has(event.configured_provider) ? event.configured_provider : "unrecorded");
   }
   count(summary.tools, safeName(event.tool));
   count(summary.routing, safeName(event.routing));
@@ -252,7 +253,7 @@ async function inspectReplacementReceipts(directory, dataRoot, publishedIds, sum
       }
       seenIds.add(match[1]);
       summary.records += 1; count(summary.tools, safeName(receipt.tool));
-      count(summary.providers, ["openai", "typesafe"].includes(receipt.manifest.provider) ? receipt.manifest.provider : "unrecorded");
+      count(summary.providers, PROVIDERS.has(receipt.manifest.provider) ? receipt.manifest.provider : "unrecorded");
       count(summary, "original_bytes", Buffer.byteLength(receipt.initial_output));
       count(summary, "visible_bytes", Buffer.byteLength(receipt.visible_output));
       if (/synthetic|dummy|fixture/i.test(receipt.initial_output)) summary.explicit_fixture_text_records += 1;

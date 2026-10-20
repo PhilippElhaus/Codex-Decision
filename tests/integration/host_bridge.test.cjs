@@ -102,6 +102,17 @@ test("patched host carries the Decision toggle through the extension to session 
     assert.equal(background.sessionPending, true);
     const returned = await request("status");
     assert.equal(returned.enabled, false, "navigation must preserve saved selections");
+    const customProvider = { name: "Local typed decisions", protocol: "jev", endpoint: "http://127.0.0.1:9/v1/systemone",
+      model: "local-model", auth: "basic", username: "test-user", header_name: "" };
+    const customSaved = await request("settingsSave", { provider: "custom", customProvider, password: "synthetic private password", key: "",
+      mode: "replace", relevancePolicy: { relevant_max: 5 }, logLimitMb: 50, neverDeleteLogs: false, fallbackEnabled: false });
+    assert.equal(customSaved.settings.action, "saved");
+    assert.equal(customSaved.provider, "custom");
+    assert.equal(customSaved.custom_provider.endpoint, customProvider.endpoint);
+    assert.equal(await core.readApiKey(directory, "custom"), "synthetic private password");
+    assert.equal(JSON.stringify(customSaved).includes("synthetic private password"), false, "secret values never return through the host bridge");
+    assert.equal((await core.readGlobalSettings(directory)).custom_provider.model, "local-model");
+
   } finally {
     for (const disposable of context.subscriptions.reverse()) disposable.dispose();
     await fs.rm(directory, { recursive: true });
@@ -193,4 +204,27 @@ test("patched host rejects invalid fallback consent and forwards explicit false"
   await bridge.send({ ...request, fallbackEnabled: false });
   assert.equal(received.length, 1);
   assert.equal(received[0].fallbackEnabled, false);
+});
+
+test("patched host carries custom connection drafts and private passwords across login and settings", async () => {
+  const received = [];
+  const bridge = await hostBridge(async (_command, request) => { received.push(request); return {}; });
+  const customProvider = { name: "Synthetic local", protocol: "jev", endpoint: "http://127.0.0.1:8080/v1/systemone",
+    model: "custom-typed-model", auth: "basic", username: "test-user", header_name: "" };
+  let id = 50;
+  for (const action of ["testApiKey", "saveApiKey", "settingsTest", "settingsSave"]) {
+    const request = { type: "codex-decision", action, id: ++id, provider: "custom", customProvider, key: "", password: "synthetic password",
+      mode: "replace", relevancePolicy: { relevant_max: 5 }, logLimitMb: 50, neverDeleteLogs: false, fallbackEnabled: false };
+    const reply = await bridge.send(request);
+    assert.equal(reply.id, request.id);
+    assert.equal(received.at(-1).provider, "custom");
+    assert.equal(received.at(-1).password, request.password);
+    assert.deepEqual(received.at(-1).customProvider, customProvider);
+  }
+  const before = received.length;
+  for (const customProvider of [null, [], "invalid", { endpoint: 7 }, { endpoint: "x".repeat(2049) }, { password: "must-stay-private" }]) {
+    await bridge.send({ type: "codex-decision", action: "testApiKey", provider: "custom", customProvider, key: "", password: "" });
+  }
+  for (const password of [null, 5, {}, "x".repeat(4097)]) await bridge.send({ type: "codex-decision", action: "testApiKey", provider: "custom", customProvider, key: "", password });
+  assert.equal(received.length, before, "malformed custom drafts and credentials never reach the command");
 });

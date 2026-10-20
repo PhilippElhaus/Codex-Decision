@@ -13,6 +13,9 @@
   let visibleRows = 0;
   let currentActivity = null;
   let latestDecision = null;
+  let rawPreferencePending = false;
+  let rawPreferenceError = "";
+  let rawContentKey = "";
   let panelMode = vscode.getState?.()?.panelMode === "totals" ? "totals" : "latest";
 
   function element(tag, className, label) {
@@ -47,8 +50,14 @@
   function makeHeader(label) {
     const title = element("strong", "batch-title", label);
     const counts = element("span", "activity-counts");
+    const rawToggle = element("input");
+    rawToggle.type = "checkbox";
+    rawToggle.id = "raw-skips-toggle";
+    const rawLabel = append(element("label", "raw-skips-toggle"), rawToggle,
+      element("span", "", "Show raw skipped outputs"));
+    rawLabel.title = "Capture and inspect future skipped tool calls locally for this thread. Filtering stays active.";
     const status = element("span", "batch-status");
-    const meta = append(element("div", "batch-meta"), counts, status);
+    const meta = append(element("div", "batch-meta"), counts, rawLabel, status);
     const tabs = element("nav", "panel-tabs");
     tabs.setAttribute("aria-label", "Decision view");
     for (const [mode, name] of [["latest", "Latest"], ["totals", "Totals"]]) {
@@ -82,6 +91,71 @@
       summary.hidden = typeof message !== "string" || !message || (!latestDecision && panelMode !== "totals");
       summary.textContent = summary.hidden ? "" : `Latest hook: ${message}`;
     }
+    updateRawSkips();
+  }
+
+  function payloadText(json) {
+    // Render JSON tokens directly so large integer values remain exact.
+    if (json.startsWith('"')) {
+      try { return JSON.parse(json); } catch { /* Keep malformed text inert. */ }
+    }
+    return json;
+  }
+
+  function updateRawSkips() {
+    const raw = currentActivity?.rawSkips;
+    const toggle = app.querySelector("#raw-skips-toggle");
+    if (toggle) {
+      toggle.checked = raw?.enabled === true;
+      toggle.disabled = rawPreferencePending || !currentActivity || currentActivity.unavailable;
+    }
+    const existing = app.querySelector(".raw-skips");
+    if (!currentActivity || currentActivity.unavailable) { existing?.remove(); return; }
+    const entries = raw?.entries || [];
+    const key = JSON.stringify([raw?.enabled, raw?.unavailable, entries.map(entry => entry.id),
+      currentActivity.skipped, rawPreferenceError]);
+    if (existing && key === rawContentKey) return;
+    rawContentKey = key;
+    const section = element("section", "raw-skips");
+    section.setAttribute("aria-label", "Raw skipped tool calls");
+    if (rawPreferenceError) append(section, element("p", "raw-skips-note raw-skips-error", rawPreferenceError));
+    if (raw?.unavailable) {
+      append(section, element("p", "raw-skips-note", "Saved raw skipped outputs could not be read for this thread."));
+    } else if (!raw?.enabled) {
+      append(section, element("p", "raw-skips-note", "Enable to capture future skips locally for this thread. Earlier raw payloads are unavailable."));
+    } else {
+      append(section, element("h2", "raw-skips-heading", "Skipped tool calls"),
+        element("p", "raw-skips-note", "Stored locally for this thread. Raw data can contain sensitive text. Filtering stays active."));
+      if (!entries.length) append(section, element("p", "raw-skips-note", "Waiting for future skips. Earlier raw payloads are unavailable."));
+      else {
+        append(section, element("p", "raw-skips-note", "Recent captures only: up to 20 calls and 4 MiB. Payloads above 512 KiB are unavailable."));
+        for (const [index, entry] of [...entries].reverse().entries()) {
+          const item = element("details", "raw-skip-entry");
+          item.open = index === 0;
+          const summary = element("summary", "raw-skip-summary");
+          const time = element("time", "raw-skip-time", new Date(entry.at).toLocaleTimeString());
+          time.dateTime = entry.at;
+          time.title = entry.at;
+          append(summary, time, element("strong", "raw-skip-tool", entry.tool_name),
+            element("span", "raw-skip-reason", (entry.detail || entry.reason).replaceAll("_", " ")));
+          append(item, summary);
+          if (entry.tool_use_id) append(item, element("p", "raw-skips-note raw-skip-id", `Tool call: ${entry.tool_use_id}`));
+          if (!entry.payload) append(item, element("p", "raw-skips-note", "Raw payload unavailable: this tool call exceeded the capture size limit."));
+          else {
+            append(item, element("h3", "raw-payload-heading", "Tool input"),
+              element("pre", "raw-payload", payloadText(entry.payload.tool_input_json)),
+              element("h3", "raw-payload-heading", "Original tool response"),
+              element("pre", "raw-payload", payloadText(entry.payload.tool_response_json)));
+          }
+          section.appendChild(item);
+        }
+        if (!Number.isSafeInteger(currentActivity.skipped) || currentActivity.skipped > entries.length) {
+          append(section, element("p", "raw-skips-note", "Raw payloads from before capture or outside this recent history are unavailable."));
+        }
+      }
+    }
+    if (existing) existing.replaceWith(section);
+    else app.appendChild(section);
   }
 
   function batchTitle(decision) {
@@ -123,6 +197,15 @@
     panelMode = button.dataset.panelMode;
     vscode.setState?.({ panelMode });
     showSelectedView();
+  });
+
+  app.addEventListener("change", (event) => {
+    if (event.target.id !== "raw-skips-toggle" || rawPreferencePending) return;
+    rawPreferencePending = true;
+    rawPreferenceError = "";
+    event.target.disabled = true;
+    vscode.postMessage({ type: "set-raw-skips", enabled: event.target.checked,
+      scope: currentActivity?.rawSkips?.scope });
   });
 
   function renderBatchDecision(decision) {
@@ -212,7 +295,14 @@
   }
 
   window.addEventListener("message", (event) => {
+    if (event.data?.type === "raw-skips-error") {
+      rawPreferencePending = false;
+      rawPreferenceError = event.data.message;
+      updateRawSkips();
+      return;
+    }
     if (event.data?.type === "activity") {
+      rawPreferencePending = false;
       updateActivity(event.data.activity);
       if (panelMode === "totals") { showTotals(); return; }
       const emptyStatus = app.querySelector(".empty-status");
@@ -220,6 +310,7 @@
       return;
     }
     if (event.data?.type !== "decision") return;
+    rawPreferencePending = false;
     latestDecision = event.data.decision || null;
     currentActivity = event.data.activity ?? (latestDecision ? currentActivity : null);
     showSelectedView();

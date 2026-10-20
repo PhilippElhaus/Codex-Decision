@@ -6,6 +6,7 @@ use std::fmt::Write;
 pub enum Provider {
     OpenAi,
     TypeSafe,
+    Custom,
 }
 
 impl Provider {
@@ -13,6 +14,7 @@ impl Provider {
         match self {
             Self::OpenAi => "openai",
             Self::TypeSafe => "typesafe",
+            Self::Custom => "custom",
         }
     }
 
@@ -20,6 +22,7 @@ impl Provider {
         match self {
             Self::OpenAi => Self::TypeSafe,
             Self::TypeSafe => Self::OpenAi,
+            Self::Custom => Self::OpenAi,
         }
     }
 
@@ -27,6 +30,7 @@ impl Provider {
         match self {
             Self::OpenAi => "gpt-6-luna",
             Self::TypeSafe => "jev-latest",
+            Self::Custom => "gpt-6-luna",
         }
     }
 
@@ -34,6 +38,7 @@ impl Provider {
         match value {
             "openai" => Ok(Self::OpenAi),
             "typesafe" => Ok(Self::TypeSafe),
+            "custom" => Ok(Self::Custom),
             _ => Err("invalid decision provider".into()),
         }
     }
@@ -52,6 +57,7 @@ impl Provider {
         match self {
             Self::OpenAi => "https://api.openai.com/v1/decisions",
             Self::TypeSafe => "https://api.typesafe.ai/v1/systemone",
+            Self::Custom => "",
         }
     }
 
@@ -59,13 +65,23 @@ impl Provider {
         match self {
             Self::OpenAi => "OPENAI_API_KEY",
             Self::TypeSafe => "JEV_API_KEY",
+            Self::Custom => "CUSTOM_API_KEY",
         }
     }
 }
 
 pub fn wire_request(request: &Value) -> Result<Value, String> {
-    if Provider::for_model(request["model"].as_str().ok_or("missing model")?)? == Provider::TypeSafe
-    {
+    wire_request_for(
+        request,
+        Provider::for_model(request["model"].as_str().ok_or("missing model")?)?,
+    )
+}
+
+pub fn wire_request_for(request: &Value, protocol: Provider) -> Result<Value, String> {
+    if protocol == Provider::Custom {
+        return Err("missing custom provider protocol".into());
+    }
+    if protocol == Provider::TypeSafe {
         return Ok(request.clone());
     }
     let questions = request["questions"]
@@ -106,6 +122,8 @@ pub fn wire_request(request: &Value) -> Result<Value, String> {
 }
 
 mod response;
-pub use response::normalize_response;
+pub use response::{normalize_custom_response, normalize_response};
 mod encoding;
-pub use encoding::encode_request;
+pub use encoding::{encode_request, encode_request_for};
+mod custom;
+pub use custom::{valid_custom_model, CustomProvider};

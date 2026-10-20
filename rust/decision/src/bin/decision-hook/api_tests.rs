@@ -5,6 +5,9 @@ use std::net::{TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
+#[path = "api_tests/custom.rs"]
+mod custom;
+
 struct ResetDeadline(Option<Instant>);
 
 impl ResetDeadline {
@@ -149,7 +152,10 @@ fn expired_budget_after_attempt_registration_sends_nothing_and_records_cancellat
         &data,
         &decision_agent(),
         &encoded,
-        "synthetic-deadline-key",
+        Some(&(
+            "Authorization".into(),
+            "Bearer synthetic-deadline-key".into(),
+        )),
         1.0,
         &endpoint,
         &mut RequestOutcome::default(),

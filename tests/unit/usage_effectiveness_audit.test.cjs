@@ -87,6 +87,34 @@ test("unknown event strings and counter-map names never become exported identifi
   assert.equal(JSON.stringify({ events, summary }).includes("PRIVATE_SENTINEL"), false);
 });
 
+test("custom providers retain audit attribution without exporting connection details or raw skipped payloads", async t => {
+  const root = await temporary(t), data = path.join(root, "data");
+  const directory = path.join(data, "sessions", sha(session));
+  const id = "a".repeat(32);
+  const original = path.join(data, "outputs", "b".repeat(20), "c".repeat(20) + ".txt");
+  const custom = { name: "PRIVATE_CUSTOM_NAME", endpoint: "https://private-custom.example.invalid/decisions", model: "PRIVATE_MODEL" };
+  await write(path.join(directory, "logs/events.jsonl"), rollout({ status: "replace", reason: "relevance_policy",
+    id, tool: "Bash", provider: "custom", configured_provider: "custom", custom_provider: custom,
+    model: "PRIVATE_MODEL", requests: 1, fallback_used: false, original_chars: 1000, capsule_chars: 20,
+    source_sha256: sha("PRIVATE_TOOL_OUTPUT") }));
+  await write(original, "PRIVATE_TOOL_OUTPUT");
+  await write(path.join(directory, "logs", "2026-10-20-" + sha(session).slice(0, 10), `receipt-${id}.json`), {
+    manifest: { id, status: "replace", provider: "custom", custom_provider: custom, model: "PRIVATE_MODEL" },
+    tool: "Bash", initial_output: "PRIVATE_TOOL_OUTPUT",
+    visible_output: `[Codex Decision: 6 of 10 lines omitted; full original: ${original}]\nkept` });
+  const rawTrap = path.join(root, "raw-payload-must-not-be-read");
+  await fs.mkdir(rawTrap, { mode: 0o700 });
+  await linkDirectory(rawTrap, path.join(directory, "logs", "skipped-raw.json"));
+  const result = await audit({ dataDirectory: data, observationDate: "2026-10-20" });
+  assert.deepEqual(result.retained_events.providers, { custom: 1 });
+  assert.deepEqual(result.retained_replacement_receipts.providers, { custom: 1 });
+  assert.equal(result.retained_replacement_receipts.verified_saved_original, 1);
+  const serialized = JSON.stringify(result);
+  for (const privateText of [custom.name, custom.endpoint, custom.model, "PRIVATE_TOOL_OUTPUT", root]) {
+    assert.equal(serialized.includes(privateText), false);
+  }
+});
+
 test("malformed counters and fallback metadata contribute no partial outcome metrics", async t => {
   const root = await temporary(t), summary = emptyEvents();
   await write(path.join(root, "logs/events.jsonl"), rollout(

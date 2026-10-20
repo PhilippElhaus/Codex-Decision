@@ -48,11 +48,15 @@
     window.__jevHarnessKeyLength = 32;
     window.__jevHarnessProviderKeys = { openai: { hasKey: true }, typesafe: { hasKey: false } };
     window.__jevHarnessProvider = "openai";
+    window.__jevHarnessCustomProvider = null;
+    window.__jevHarnessSettingsTestResult = null;
+    window.__jevHarnessActions = [];
     window.__jevHarnessFallback = false;
     window.__jevHarnessRelevancePolicy = { relevant_max: 10 };
     window.__jevHarnessExternalOpen = true;
     window.acquireVsCodeApi = () => ({ postMessage(request) {
       calls += 1;
+      window.__jevHarnessActions.push(request.action);
       window.__jevHarnessLastAction = request.action;
       window.__jevHarnessLastRequest = request;
       window.__jevHarnessLastSessionId = request.sessionId;
@@ -69,10 +73,11 @@
       if (request.action === "settingsSave") {
         window.__jevHarnessNeverDelete = request.neverDeleteLogs;
         window.__jevHarnessRelevancePolicy = request.relevancePolicy;
-        if (request.key) {
-          window.__jevHarnessKeyLength = request.key.length;
+        if (request.key || request.password || request.customProvider?.auth === "none") {
+          window.__jevHarnessKeyLength = (request.key || request.password || "").length;
           window.__jevHarnessProviderKeys[request.provider] = { hasKey: true };
         }
+        if (request.customProvider) window.__jevHarnessCustomProvider = request.customProvider;
         window.__jevHarnessProvider = request.provider;
         window.__jevHarnessFallback = request.fallbackEnabled;
       }
@@ -87,7 +92,7 @@
           request.key === "invalid-example-key" ? { ok: false, reason: "DECISION_HTTP_401" } :
             { ok: true, model: "jev-1.13.0" }) : undefined;
       const keySaved = request.action === "saveApiKey";
-      if (keySaved) { window.__jevHarnessProvider = request.provider; window.__jevHarnessProviderKeys[request.provider] = { hasKey: true }; }
+      if (keySaved) { if (request.customProvider) window.__jevHarnessCustomProvider = request.customProvider; window.__jevHarnessProvider = request.provider; window.__jevHarnessProviderKeys[request.provider] = { hasKey: true }; }
       const waitingForThread = request.sessionId == null;
       if (request.action === "status" && window.__jevHarnessHoldNextStatus) {
         window.__jevHarnessHoldNextStatus = false;
@@ -99,17 +104,17 @@
         lifetime: { calls: 126, completed: 124, replaced: 41, linesJudged: 87320, linesOmitted: 915, averageMs: 487 },
         defaults: { provider: "openai", fallback_enabled: false, mode: "replace", log_limit_mb: 50, never_delete_logs: false,
           relevance_policy: { relevant_max: 5 } },
-        config: { provider: window.__jevHarnessProvider, fallback_enabled: window.__jevHarnessFallback, mode: "replace", log_limit_mb: 75, never_delete_logs: window.__jevHarnessNeverDelete,
+        config: { custom_provider: window.__jevHarnessCustomProvider, provider: window.__jevHarnessProvider, fallback_enabled: window.__jevHarnessFallback, mode: "replace", log_limit_mb: 75, never_delete_logs: window.__jevHarnessNeverDelete,
           relevance_policy: window.__jevHarnessRelevancePolicy } } :
         request.action === "settingsSave" ? { action: "saved", hasKey: true, providerKeys: window.__jevHarnessProviderKeys, keyLength: window.__jevHarnessKeyLength } :
           request.action === "settingsSetNeverDeleteLogs" ? (window.__jevHarnessFailNeverDelete ?
             { action: "error", message: "Could not save log retention" } :
             { action: "neverDeleteLogsSaved", neverDeleteLogs: request.neverDeleteLogs }) :
-          request.action === "settingsTest" ? { action: "tested", result: { ok: true, model: "jev-1.13.0" } } :
+          request.action === "settingsTest" ? { action: "tested", result: window.__jevHarnessSettingsTestResult || { ok: true, model: "jev-1.13.0" } } :
             request.action === "settingsOpenLogs" ? { action: "openedLogs" } : undefined;
       queueMicrotask(() => window.dispatchEvent(new MessageEvent("message", { data: {
         type: "codex-decision-reply", id: request.id,
-        status: { provider: window.__jevHarnessProvider, providerKeys: window.__jevHarnessProviderKeys, fallbackEnabled: window.__jevHarnessFallback, enabled: !waitingForThread && outputEnabled, sessionPending: waitingForThread, configurationError: waitingForThread && request.expectsLocalSession ? "Codex session could not be identified" : null, needsKey, keyTest, keySaved, externalOpen: request.action === "openProvider" ? window.__jevHarnessExternalOpen : undefined, settings, health, hookHealth, hookActivity: window.__jevHarnessHookActivity, expectedHookVersion: "0.8.1", viewStartedAt, classificationPulse, mode, recent: freshView ? "No decision recorded yet" : history[0],
+        status: { custom_provider: window.__jevHarnessCustomProvider, provider: window.__jevHarnessProvider, providerKeys: window.__jevHarnessProviderKeys, fallbackEnabled: window.__jevHarnessFallback, enabled: !waitingForThread && outputEnabled, sessionPending: waitingForThread, configurationError: waitingForThread && request.expectsLocalSession ? "Codex session could not be identified" : null, needsKey, keyTest, keySaved, externalOpen: request.action === "openProvider" ? window.__jevHarnessExternalOpen : undefined, settings, health, hookHealth, hookActivity: window.__jevHarnessHookActivity, expectedHookVersion: "0.8.1", viewStartedAt, classificationPulse, mode, recent: freshView ? "No decision recorded yet" : history[0],
           history: freshView ? [] : history,
           stats: freshView ? { calls: 0, candidates: 0, kept: 0, replaced: 0, checkedChars: 0, elapsedMs: 0, completed: 0 } : stats },
       } })));
@@ -660,7 +665,7 @@
           routineSlider.style.getPropertyValue("--fill") === normalized,
           `percentage boundary ${entered} updates both controls`);
       }
-      check(settingsScreen.querySelector("#codex-decision-settings-key").placeholder.includes("Saved key") &&
+      check(settingsScreen.querySelector("#codex-decision-settings-key").placeholder.includes("saved credential") &&
         settingsScreen.querySelector("#codex-decision-settings-openai-key-status").textContent === "OpenAI Decisions: key saved" &&
         settingsScreen.querySelector("#codex-decision-settings-typesafe-key-status").textContent === "TypeSafe Jev: no saved key",
         "both providers show saved status without disclosing credentials");
@@ -707,7 +712,7 @@
           reset.getBoundingClientRect().left >= saveSettings.getBoundingClientRect().right + 11),
         "Reset defaults is right aligned and wraps when the settings pane is narrow");
       const keyField = settingsScreen.querySelector("#codex-decision-settings-key");
-      check(keyField.placeholder === "Enter API key for this provider", "different provider shows its own missing credential");
+      check(keyField.placeholder === "Enter credential for this connection", "different provider shows its own missing credential");
       keyField.value = "unsaved-key";
       check(!reset.disabled && getComputedStyle(reset).color !== getComputedStyle(settingsScreen.querySelector("#codex-decision-settings-save")).color,
         "reset is available with a subdued style");
@@ -755,11 +760,11 @@
       settingsContent.style.width = "";
       settingsContent.style.right = "";
       settingsScreen.querySelector("#codex-decision-settings-test").click();
-      await until(() => settingsScreen.querySelector("#codex-decision-settings-test-status").textContent === "OK", "saved key test result");
+      await until(() => settingsScreen.querySelector("#codex-decision-settings-test-status").textContent === "Connection verified", "saved key test result");
       fallback.checked = true;
       settingsScreen.querySelector("#codex-decision-settings-save").click();
       await until(() => settingsScreen.querySelector("#codex-decision-settings-message").textContent === "Settings saved.", "settings saved inline");
-      check(keyField.placeholder === "Saved key kept unless replaced" && keyField.value === "",
+      check(keyField.placeholder === "Leave blank to keep saved credential" && keyField.value === "",
         "saved key status updates and clears the entered credential");
       check(window.__jevHarnessLastSettingsSave.mode === "replace" &&
         window.__jevHarnessLastSettingsSave.relevancePolicy.relevant_max === 5 &&
@@ -781,7 +786,7 @@
         check(!neverDelete.checked && !logLimit.disabled, "timed out retention restores the saved checkbox");
         window.__jevHarnessDropSettingsReplies = false;
         settingsTest.click();
-        await until(() => settingsScreen.querySelector("#codex-decision-settings-test-status").textContent === "OK",
+        await until(() => settingsScreen.querySelector("#codex-decision-settings-test-status").textContent === "Connection verified",
           "settings request works after timeout");
         window.dispatchEvent(new MessageEvent("message", { data: { type: "codex-decision-reply", id: dropped.id,
           status: { settings: { action: "error", message: "obsolete reply" } } } }));
@@ -810,10 +815,51 @@
       await until(() => !settingsScreen.querySelector("#codex-decision-settings-never-delete").disabled,
         "reopened settings loads saved retention");
       check(settingsScreen.querySelector("#codex-decision-settings-never-delete").checked &&
-        settingsScreen.querySelector("#codex-decision-settings-key").placeholder === "Saved key kept unless replaced" &&
+        settingsScreen.querySelector("#codex-decision-settings-key").placeholder === "Leave blank to keep saved credential" &&
         settingsScreen.querySelector("#codex-decision-settings-fallback").checked &&
         settingsScreen.querySelector("#codex-decision-settings-output-relevant_max").value === "5%",
         "retention, line policy, saved key status, and fallback consent persist after reopening settings");
+      const customField = name => settingsScreen.querySelector(`#codex-decision-settings-${name}`);
+      customField("provider").value = "custom";
+      customField("provider").dispatchEvent(new Event("change", { bubbles: true }));
+      customField("name").value = "Local decisions";
+      customField("endpoint").value = "http://127.0.0.1:8080/v1/decisions";
+      customField("model").value = "local-model";
+      customField("auth").value = "basic";
+      customField("auth").dispatchEvent(new Event("change", { bubbles: true }));
+      customField("username").value = "test-user";
+      customField("password").value = "synthetic-password";
+      check(!customField("username").closest(".field").hidden && !customField("password").closest(".field").hidden &&
+        customField("key").closest(".field").hidden && customField("fallback").closest(".fallback-setting").hidden && !customField("fallback").checked,
+        "custom Basic auth reveals username and password and disables built-in fallback");
+      for (const auth of ["header", "none", "bearer", "basic"]) {
+        customField("auth").value = auth;
+        customField("auth").dispatchEvent(new Event("change", { bubbles: true }));
+        check(customField("header-name").closest(".field").hidden === (auth !== "header") &&
+          customField("key").closest(".field").hidden === ["none", "basic"].includes(auth),
+          `custom ${auth} authentication exposes only its relevant fields`);
+      }
+      check(customField("password").value === "", "changing authentication clears an entered custom credential");
+      customField("password").value = "synthetic-password";
+      const beforeCustomSave = window.__jevHarnessLastSettingsSave;
+      window.__jevHarnessSettingsTestResult = { ok: false, reason: "DECISION_INVALID_RESPONSE" };
+      customField("save").click();
+      await until(() => customField("test-status").textContent === "Invalid response", "invalid custom schema is reported");
+      check(window.__jevHarnessLastSettingsSave === beforeCustomSave, "failed draft test leaves saved settings unchanged");
+      window.__jevHarnessSettingsTestResult = null;
+      const beforeCustomActions = window.__jevHarnessActions.length;
+      customField("save").click();
+      await until(() => window.__jevHarnessLastSettingsSave?.provider === "custom" && !customField("save").disabled, "custom draft tests then saves");
+      check(window.__jevHarnessActions.slice(beforeCustomActions).filter(action => action.startsWith("settings")).join(",") === "settingsTest,settingsSave" &&
+        window.__jevHarnessLastSettingsSave.customProvider.username === "test-user" &&
+        window.__jevHarnessLastSettingsSave.customProvider.model === "local-model" && customField("password").value === "",
+        "verified custom connection is saved with private password and clears the password field");
+      const customPanel = settingsScreen.querySelector("#codex-decision-settings-panel");
+      check(customPanel.scrollWidth <= customPanel.clientWidth + 1, "custom settings contain all fields at this viewport");
+      customField("provider").value = "openai";
+      customField("provider").dispatchEvent(new Event("change", { bubbles: true }));
+      customField("save").click();
+      await until(() => window.__jevHarnessProvider === "openai" && !customField("save").disabled, "built-in provider restored after custom settings");
       settingsScreen.querySelector('button[aria-label="General"]').click();
       settingsScreen.style.display = "none";
       outputEnabled = true;
@@ -827,7 +873,7 @@
       check(bounds.left === 0 && bounds.top === 0 && bounds.width === innerWidth &&
         bounds.height === innerHeight && setup.parentElement === document.body,
         "setup covers the Codex webview");
-      check(setup.textContent.includes("Choose a provider. Use its saved key or enter a new API key.") &&
+      check(setup.textContent.includes("Choose a provider and test your connection.") &&
         !setup.textContent.includes("Test it here before saving") &&
         !setup.textContent.includes("plugin data directory"), "concise onboarding copy");
       check(getComputedStyle(setup).backgroundColor === "rgb(17, 17, 17)", "opaque setup backdrop hides Codex content");
@@ -889,7 +935,7 @@
       connectProvider.value = "typesafe";
       connectProvider.dispatchEvent(new Event("change", {bubbles:true}));
       check(key.value === "" && keyLink.href === "https://typesafe.ai/" &&
-        saveButton.textContent === "Use saved key", "connect provider change clears the key and exposes its saved key");
+        saveButton.textContent === "Test & save connection", "connect provider change clears the key and exposes its saved key");
       setup.querySelector("#codex-decision-test-key").click();
       await until(() => result.textContent === "OK", "stored alternate key can be tested with blank input");
       check(window.__jevHarnessLastRequest.key === "" && window.__jevHarnessLastRequest.provider === "typesafe",
@@ -914,6 +960,20 @@
       setup.querySelector("#codex-decision-save-key").click();
       await until(() => setup.style.display === "none" && !needsKey, "saving key closes overlay");
       check(key.value === "", "key field cleared after save");
+      needsKey = true;
+      health = { ok: false, reason: "DECISION_KEY_MISSING" };
+      await until(() => setup.style.display === "flex", "onboarding can add a custom connection");
+      connectProvider.value = "custom";
+      connectProvider.dispatchEvent(new Event("change", { bubbles: true }));
+      setup.querySelector("#codex-decision-auth").value = "none";
+      setup.querySelector("#codex-decision-auth").dispatchEvent(new Event("change", { bubbles: true }));
+      check(key.closest(".field").hidden && setup.querySelector("#codex-decision-password").closest(".field").hidden &&
+        setup.querySelector("#codex-decision-connect-link").hidden, "custom anonymous onboarding hides credentials and provider key link");
+      const beforeConnectActions = window.__jevHarnessActions.length;
+      saveButton.click();
+      await until(() => setup.style.display === "none" && window.__jevHarnessProvider === "custom", "custom onboarding tests and saves without an API key");
+      check(window.__jevHarnessActions.slice(beforeConnectActions).filter(action => ["testApiKey", "saveApiKey"].includes(action)).join(",") === "testApiKey,saveApiKey" &&
+        window.__jevHarnessCustomProvider.auth === "none", "onboarding verifies the complete custom draft before saving");
       window.__jevHarnessHoldNextStatus = true;
       await until(() => window.__jevHarnessHeldStatus?.sessionId === "fixture-session",
         "hold an older reply in the same thread");

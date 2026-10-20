@@ -1,10 +1,12 @@
 "use strict";
 const contract = require("./config-contract.json");
+const { validateCustomProvider } = require("./providers");
 function defaults(kind) {
   return Object.fromEntries(Object.entries(contract[kind]).filter(([, spec]) => Object.hasOwn(spec, "default"))
     .map(([key, spec]) => [key, structuredClone(spec.default)]));
 }
 function validate(kind, value) {
+  if (kind === "custom_provider") return validateCustomProvider(value);
   if ((kind === "config" && value?.schema_version === 4) ||
       (kind === "settings" && value?.schema_version === 3)) {
     const current = validate(kind === "config" ? "config_v4" : "settings_v3", value);
@@ -45,7 +47,8 @@ function validate(kind, value) {
       continue;
     }
     let entered = value[key];
-    if (contract[spec.type]) entered = validate(spec.type, entered);
+    if (spec.type === "custom_provider") entered = validateCustomProvider(entered);
+    else if (contract[spec.type]) entered = validate(spec.type, entered);
     else {
       const valid = spec.type === "integer" ? Number.isSafeInteger(entered) :
         spec.type === "number" ? typeof entered === "number" && Number.isFinite(entered) :
@@ -59,6 +62,12 @@ function validate(kind, value) {
   }
   if (kind === "config" && result.min_chars > result.max_chars) throw new Error("Invalid Decision config size bounds");
   if (["config", "settings"].includes(kind)) {
+    if (result.provider === "custom") {
+      if (!result.custom_provider) throw new Error("Custom provider connection is required");
+      if (result.fallback_enabled) throw new Error("Fallback is available only between built-in providers");
+      result.model = result.custom_provider.protocol === "jev" ? "jev-latest" : "gpt-6-luna";
+      return result;
+    }
     if (!Object.hasOwn(value, "model") && result.provider === "typesafe") result.model = "jev-latest";
     if (result.provider === "openai" ? result.model !== "gpt-6-luna" : !result.model.startsWith("jev-"))
       throw new Error("Decision provider/model mismatch");
