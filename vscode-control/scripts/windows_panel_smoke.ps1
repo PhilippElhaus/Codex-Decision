@@ -28,7 +28,7 @@ try {
     $data = '\\wsl.localhost\' + $Distro + $linuxRoot.Replace('/', '\')
     $files = @('package.json', 'config-contract.json', 'core.js', 'extension.js', 'panel.js', 'panel-state.js',
         'integration.js', 'integrated-install.js', 'install-plugin.py',
-        'private-paths.js', 'private-records.js', 'publication-journal.js', 'schema.js', 'providers.js', 'icon.png', 'LICENSE', 'README.md', 'media\decision-panel.svg',
+        'raw-skip-state.js', 'session-work.js', 'private-paths.js', 'private-records.js', 'publication-journal.js', 'schema.js', 'providers.js', 'icon.png', 'LICENSE', 'README.md', 'media\decision-panel.svg',
         'webview\decision-control.js', 'webview\decision-settings.js', 'webview\decision-totals.js', 'webview\decision-panel.js', 'webview\decision-panel.css')
     foreach ($file in $files) {
         $source = Join-Path $repository ('vscode-control\' + $file)
@@ -38,6 +38,12 @@ try {
         Copy-Item -LiteralPath $source -Destination $target
     }
     # Instrument only the disposable copy. Packaged application code is unchanged.
+    # This panel-only fixture deliberately has no Codex host. The integrated
+    # smoke test checks the packaged dependency with a copied supported host.
+    $manifestPath = Join-Path $control 'package.json'
+    $manifest = [IO.File]::ReadAllText($manifestPath) | ConvertFrom-Json -AsHashtable
+    $manifest.Remove('extensionDependencies') | Out-Null
+    [IO.File]::WriteAllText($manifestPath, ($manifest | ConvertTo-Json -Depth 20), $utf8)
     $providerPath = Join-Path $control 'panel.js'
     $source = [IO.File]::ReadAllText($providerPath)
     $needle = 'this.extensionUri = extensionUri;'
@@ -45,12 +51,10 @@ try {
     [IO.File]::WriteAllText($providerPath, $source.Replace($needle, $needle + ' globalThis.__decisionPanelTestProvider = this;'), $utf8)
     $rendererPath = Join-Path $control 'webview\decision-panel.js'
     $source = [IO.File]::ReadAllText($rendererPath)
-    $needle = '    showSelectedView();'
+    $needle = '    receiveResult(event.data);'
     if (-not $source.Contains($needle)) { throw 'Renderer instrumentation anchor changed.' }
-    $ack = ' vscode.postMessage({type:"decision-test-rendered", id:event.data.decision?.id || null, rows:document.querySelectorAll(".batch-row").length, kept:document.querySelectorAll(".batch-row.keep").length, unscored:[...document.querySelectorAll(".batch-row.unscored")].map(row => ({score:row.querySelector(".batch-value").textContent, title:row.title})), title:document.querySelector(".batch-title")?.textContent || "Decision", status:document.querySelector(".batch-status")?.textContent || null, activity:(document.querySelector(".activity-counts")?.textContent || "") + " " + (document.querySelector(".empty")?.textContent || ""), layout:document.querySelector(".batch-list") ? getComputedStyle(document.querySelector(".batch-list")).display : null, tenCharacterBars:[...document.querySelectorAll(".batch-bar-fill,.batch-bar-empty")].every(node => [...node.textContent].length === 10), compactRows:[...document.querySelectorAll(".batch-row")].every(node => node.getBoundingClientRect().height <= 28), mode:document.querySelector(".panel-tab[aria-pressed=true]")?.dataset.panelMode, metrics:Object.fromEntries([...document.querySelectorAll("[data-metric]")].map(node => [node.dataset.metric,node.querySelector("dd").textContent]))});'
+    $ack = ' vscode.postMessage({type:"decision-test-rendered", id:latestDecision?.id || null, rows:document.querySelectorAll(".batch-row").length, kept:document.querySelectorAll(".batch-row.keep").length, unscored:[...document.querySelectorAll(".batch-row.unscored")].map(row => ({score:row.querySelector(".batch-value").textContent, title:row.title})), title:document.querySelector(".batch-title")?.textContent || "Decision", status:document.querySelector(".batch-status")?.textContent || null, activity:(document.querySelector(".activity-counts")?.textContent || "") + " " + (document.querySelector(".empty")?.textContent || ""), layout:document.querySelector(".batch-list") ? getComputedStyle(document.querySelector(".batch-list")).display : null, tenCharacterBars:[...document.querySelectorAll(".batch-bar-fill,.batch-bar-empty")].every(node => [...node.textContent].length === 10), compactRows:[...document.querySelectorAll(".batch-row")].every(node => node.getBoundingClientRect().height <= 28), mode:document.querySelector(".panel-tab[aria-pressed=true]")?.dataset.panelMode, metrics:Object.fromEntries([...document.querySelectorAll("[data-metric]")].map(node => [node.dataset.metric,node.querySelector("dd").textContent]))});'
     $source = $source.Insert($source.LastIndexOf($needle) + $needle.Length, $ack)
-    $source = $source.Replace('if (panelMode === "totals") { showTotals(); return; }', 'if (panelMode === "totals") { showTotals();' + $ack + ' return; }')
-    $source = $source.Replace('if (emptyStatus && event.data.activity?.message) emptyStatus.textContent = event.data.activity.message;', 'if (emptyStatus && event.data.activity?.message) emptyStatus.textContent = event.data.activity.message;' + $ack)
     $readyNeedle = 'vscode.postMessage({ type: "ready" });'
     $switchListener = 'window.addEventListener("message", (event) => { if (event.data?.type === "decision-test-switch") { app.querySelector("button[data-panel-mode=" + event.data.mode + "]").click();' + $ack + '} });'
     [IO.File]::WriteAllText($rendererPath, $source.Replace($readyNeedle, $switchListener + $readyNeedle), $utf8)
@@ -182,7 +186,7 @@ exports.run = async () => {
     await fs.rm(path.join(one,"stats.json"));
     acknowledged = null;
     await provider.refresh();
-    await until(() => acknowledged?.status === "Hook totals · delivery unverified" && acknowledged.metrics.calls === "9");
+    await until(() => acknowledged?.status === "Saved totals" && acknowledged.metrics.calls === "9");
     result.checks.push("unreadable activity retains the selected thread and recovers after repair");
     acknowledged = null;
     await provider.view.webview.postMessage({type:"decision-test-switch",mode:"latest"});
@@ -217,7 +221,7 @@ exports.run = async () => {
     assert.equal(acknowledged.title, "69 / 72 proposed removals");
     assert.equal(acknowledged.unscored.length, 3);
     assert(acknowledged.unscored.every(row => row.score === "\u2014" && row.title.includes("no Decision relevance score")));
-    assert.equal(acknowledged.status, "Preview \u00b7 full output kept");
+    assert.equal(acknowledged.status, "Preview");
     result.checks.push("version-6 requests, all 72 rows, protected keeps, and preview status render under the real webview CSP");
     const empty = core.sessionDirectory(root, "native-empty");
     await core.ensureSessionDefaults(empty);
@@ -235,7 +239,7 @@ exports.run = async () => {
     await until(() => acknowledged?.activity?.includes("11 API requests"));
     assert.equal(acknowledged.rows, 0);
     assert.match(acknowledged.activity, /341 skipped outputs/);
-    assert.match(acknowledged.activity, /No line judgments were needed/);
+    assert.match(acknowledged.activity, /Complete output kept/);
     assert.match(acknowledged.activity, /\u226511 API requests/);
     await provider.view.webview.postMessage({type:"decision-test-switch",mode:"totals"});
     await until(() => acknowledged?.mode === "totals");

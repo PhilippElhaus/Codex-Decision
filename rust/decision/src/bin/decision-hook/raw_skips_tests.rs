@@ -52,6 +52,61 @@ fn skipped_payloads_stay_local_and_only_capture_after_opt_in() {
 }
 
 #[test]
+fn session_capture_inherits_the_default_and_preserves_thread_overrides() {
+    let root = tempfile::tempdir().unwrap();
+    let sessions = root.path().join("sessions");
+    let first = sessions.join("a".repeat(64));
+    let second = sessions.join("b".repeat(64));
+    enable(root.path(), true);
+    ensure_dir(&first).unwrap();
+    assert!(enabled(&first).unwrap());
+    capture(&first, &fixture(), "small", None).unwrap();
+    assert!(first.join("logs/skipped-raw.json").exists());
+    assert!(!root.path().join("logs/skipped-raw.json").exists());
+    enable(&first, false);
+    assert!(!enabled(&first).unwrap());
+    let before = fs::read(first.join("logs/skipped-raw.json")).unwrap();
+    capture(&first, &fixture(), "small", None).unwrap();
+    assert_eq!(
+        fs::read(first.join("logs/skipped-raw.json")).unwrap(),
+        before
+    );
+    assert!(enabled(&second).unwrap());
+    enable(&second, true);
+    enable(root.path(), false);
+    assert!(enabled(&second).unwrap());
+    assert!(!enabled(&first).unwrap());
+    enable(root.path(), true);
+    assert!(!enabled(&sessions.join("unknown")).unwrap());
+    write_private(
+        &first.join("logs/skipped-raw-enabled.json"),
+        b"{broken",
+        true,
+    )
+    .unwrap();
+    assert!(enabled(&first).is_err());
+}
+
+#[cfg(unix)]
+#[test]
+fn inherited_capture_rejects_public_directories_and_linked_preferences() {
+    use std::os::unix::fs::{symlink, PermissionsExt};
+    let root = tempfile::tempdir().unwrap();
+    let data = root.path().join("sessions").join("a".repeat(64));
+    enable(root.path(), true);
+    ensure_dir(&data).unwrap();
+    let logs = root.path().join("logs");
+    fs::set_permissions(&logs, fs::Permissions::from_mode(0o755)).unwrap();
+    assert!(enabled(&data).is_err());
+    fs::set_permissions(&logs, fs::Permissions::from_mode(0o700)).unwrap();
+    let flag = logs.join("skipped-raw-enabled.json");
+    let target = root.path().join("flag.json");
+    fs::rename(&flag, &target).unwrap();
+    symlink(&target, &flag).unwrap();
+    assert!(enabled(&data).is_err());
+}
+
+#[test]
 fn recent_capture_has_count_size_and_payload_limits_without_changing_skips() {
     let root = tempfile::tempdir().unwrap();
     let data = root.path().join("session");

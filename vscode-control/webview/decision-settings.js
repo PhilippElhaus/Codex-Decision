@@ -1,10 +1,10 @@
 /* Decision settings inside the version-pinned Codex settings view. */
 (() => {
   const sections = [["output", "Tool output", [
-    ["relevant_max", "Relevance, maximum for omission", "Remove a line only when its probability of being needed is at or below this cutoff."],
+    ["relevant_max", "Omit cutoff", "Omit a line only when its relevance is at or below this limit."],
   ]]];
   const sectionDescriptions = {
-    output: "Validated logs receive line relevance judgments directly. Unknown formats first pass an excerptability check. Diagnostics, completion evidence, and structured records stay protected.",
+    output: "Check validated logs by line. Check unknown formats first. Keep diagnostics, completion evidence, and structured records.",
   };
   let active = false;
   let openingVoice = false;
@@ -26,6 +26,45 @@
   let savedLogLimit = 50;
   let savedNeverDeleteLogs = false;
   const REPLY_TIMEOUT_MS = 10_000;
+  let helpId = 0;
+
+  function helpTip(text, label, id = "", className = "") {
+    const wrap = document.createElement("span");
+    wrap.className = "decision-help";
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "decision-help-button";
+    button.setAttribute("aria-label", `About ${label}`);
+    const tip = document.createElement("span");
+    tip.id = id || `decision-settings-help-${++helpId}`;
+    tip.className = `decision-help-text ${className}`.trim();
+    tip.textContent = text;
+    tip.setAttribute("role", "tooltip");
+    button.setAttribute("aria-describedby", tip.id);
+    const place = () => {
+      wrap.classList.remove("help-dismissed");
+      const target = button.getBoundingClientRect();
+      const size = tip.getBoundingClientRect();
+      const anchor = wrap.getBoundingClientRect();
+      tip.style.left = `${Math.max(8, Math.min(target.left, innerWidth - size.width - 8)) - anchor.left}px`;
+      tip.style.top = `${(target.bottom + size.height + 12 > innerHeight ? Math.max(8, target.top - size.height - 5) : target.bottom + 5) - anchor.top}px`;
+    };
+    wrap.addEventListener("mouseenter", place);
+    button.addEventListener("focus", place);
+    button.addEventListener("keydown", event => {
+      if (event.key === "Escape") { wrap.classList.add("help-dismissed"); event.stopPropagation(); }
+    });
+    wrap.append(button, tip);
+    return wrap;
+  }
+
+  function moveHelp(source, target, label, text) {
+    const item = panel.querySelector(source);
+    const tooltip = helpTip(text || item.textContent, label, item.id, item.className);
+    item.remove();
+    target.append(tooltip);
+    return tooltip;
+  }
 
   function failRequest(id) {
     if (pending?.id !== id) return;
@@ -157,9 +196,11 @@
     panel.querySelector(".connection-password").hidden = !custom || auth !== "basic";
     panel.querySelector(".connection-key").hidden = custom && ["basic", "none"].includes(auth);
     panel.querySelector(`#codex-decision-settings-connection-help`).textContent = custom
-      ? "Connect an endpoint that accepts the selected JSON schema and returns its typed answers. Chat completion endpoints need a compatible adapter."
-      : values.provider === "typesafe" ? "Typed decisions with TypeSafe Jev. Your saved OpenAI key stays available." : "Typed decisions with OpenAI Decisions. Your saved TypeSafe key stays available.";
-    panel.querySelector(`#codex-decision-settings-credential-help`).hidden = custom && auth === "none";
+      ? "Use an endpoint for the selected schema. Chat endpoints need an adapter."
+      : values.provider === "typesafe" ? "Use TypeSafe Jev. Your OpenAI key stays saved." : "Use OpenAI Decisions. Your TypeSafe key stays saved.";
+    const credentialHelp = panel.querySelector("#codex-decision-settings-credential-help").closest(".decision-help");
+    credentialHelp.hidden = custom && auth === "none";
+    panel.querySelector(`label[for="codex-decision-settings-${custom && auth === "basic" ? "password" : "key"}"]`).append(credentialHelp);
     panel.querySelector("#codex-decision-settings-fallback").closest(".fallback-setting").hidden = custom;
     if (custom) panel.querySelector("#codex-decision-settings-fallback").checked = false;
   }
@@ -212,6 +253,8 @@
       panel.querySelector(`#codex-decision-settings-lifetime-${field}`).title = stats.overflowCounters?.includes(name) ?
         "This aggregate exceeds the exact numeric range and is unavailable." : partial.has(name) ?
           "The historical baseline is incomplete." : name === "linesOmitted" ? "Lines omitted by the hook. Delivery to Codex is unverified." : "Recorded activity across all sessions.";
+      const value = panel.querySelector(`#codex-decision-settings-lifetime-${field}`);
+      value.closest(".metric").querySelector(".decision-help-text").textContent = value.title;
     }
   }
 
@@ -276,12 +319,12 @@
       #codex-decision-settings-panel .metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; }
       #codex-decision-settings-panel .metric { min-width: 0; padding: 13px; border: 1px solid var(--vscode-panel-border, #3b3b3b); border-radius: 10px; background: #ffffff06; }
       #codex-decision-settings-panel .metric strong { display: block; font-size: 20px; font-weight: 650; line-height: 1.2; font-variant-numeric: tabular-nums; }
-      #codex-decision-settings-panel .metric span { display: block; margin-top: 5px; color: var(--vscode-descriptionForeground, #999); font-size: 11px; line-height: 1.3; }
+      #codex-decision-settings-panel .metric > span { display: block; margin-top: 5px; color: var(--vscode-descriptionForeground, #999); font-size: 11px; line-height: 1.3; }
       #codex-decision-settings-panel p, #codex-decision-settings-panel small { color: var(--vscode-descriptionForeground, #999); line-height: 1.5; }
       #codex-decision-settings-panel .field { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 11px 0; }
       #codex-decision-settings-panel .threshold-field { display: grid; grid-template-columns: minmax(0, 1fr) minmax(160px, 300px); }
       #codex-decision-settings-panel .threshold-controls { display: flex; align-items: center; gap: 12px; min-width: 0; }
-      #codex-decision-settings-panel .field label { max-width: 540px; }
+      #codex-decision-settings-panel .field label { max-width: 540px; flex: none; }
       #codex-decision-settings-panel small { display: block; margin-top: 3px; }
       #codex-decision-settings-panel input, #codex-decision-settings-panel select { background: var(--vscode-input-background, #181818); color: var(--vscode-input-foreground, #ddd); border: 1px solid var(--vscode-input-border, #555); border-radius: 9px; padding: 7px 9px; font: inherit; }
       #codex-decision-settings-panel .percent-input { width: 76px; flex: none; text-align: right; font-variant-numeric: tabular-nums; }
@@ -313,6 +356,14 @@
       #codex-decision-settings-panel button.subtle:hover { background: var(--vscode-button-secondaryHoverBackground, #363636); color: var(--vscode-foreground, #d0d0d0); }
       #codex-decision-settings-panel button:focus-visible, #codex-decision-settings-panel select:focus-visible, #codex-decision-settings-panel input:focus-visible { outline: 2px solid var(--vscode-focusBorder, #83bcf7); outline-offset: 2px; }
       #codex-decision-settings-panel button:disabled { opacity: .55; cursor: default; }
+      #codex-decision-settings-panel .decision-help { position: relative; display: inline-flex; vertical-align: middle; margin: 0 0 0 5px; }
+      #codex-decision-settings-panel button.decision-help-button { display: inline-grid; place-items: center; width: 18px; height: 18px; min-height: 0; padding: 0; border: 0; border-radius: 3px; background: transparent; color: var(--vscode-descriptionForeground, #999); font-size: 13px; cursor: help; }
+      #codex-decision-settings-panel .decision-help-button::before { content: "ⓘ"; }
+      #codex-decision-settings-panel .decision-help-text { position: absolute; z-index: 100; display: none; width: min(290px, calc(100vw - 16px)); max-height: calc(100vh - 16px); overflow: auto; margin: 0; padding: 8px 10px; border: 1px solid var(--vscode-editorHoverWidget-border, #555); border-radius: 4px; background: var(--vscode-editorHoverWidget-background, #252526); color: var(--vscode-editorHoverWidget-foreground, #ccc); font-size: 11px; font-weight: 400; line-height: 1.5; text-align: left; visibility: hidden; opacity: 0; pointer-events: none; }
+      #codex-decision-settings-panel .decision-help:hover .decision-help-text, #codex-decision-settings-panel .decision-help:focus-within .decision-help-text { display: block; visibility: visible; opacity: 1; pointer-events: auto; }
+      #codex-decision-settings-panel .decision-help.help-dismissed .decision-help-text { display: none; visibility: hidden; opacity: 0; pointer-events: none; }
+      #codex-decision-settings-panel .metric > span { display: flex; align-items: center; }
+      #codex-decision-settings-panel .metric .decision-help { display: inline-flex; margin: 0 0 0 5px; }
       #codex-decision-settings-panel .actions { display: flex; align-items: center; gap: 12px; margin-top: 16px; }
       #codex-decision-settings-panel .save-actions { flex-wrap: wrap; }
       #codex-decision-settings-reset { margin-left: auto; }
@@ -328,15 +379,25 @@
     panel = document.createElement("div");
     panel.id = "codex-decision-settings-panel";
     panel.innerHTML = `<div class="header"><h1>Decision</h1><button id="codex-decision-settings-open-logs" type="button">Open logs</button></div><section aria-label="Installation totals"><h2>All sessions</h2><div class="metrics"><div class="metric"><strong id="codex-decision-settings-lifetime-tokens">—</strong><span>Lines judged</span></div><div class="metric"><strong id="codex-decision-settings-lifetime-replaced">—</strong><span>Lines omitted by hook</span></div><div class="metric"><strong id="codex-decision-settings-lifetime-protected">—</strong><span>Protected locally</span></div><div class="metric"><strong id="codex-decision-settings-lifetime-calls">—</strong><span>Decision requests</span></div><div class="metric"><strong id="codex-decision-settings-lifetime-time">—</strong><span>Avg. request time</span></div></div></section><section><h2>Decision provider</h2><div class="field connection-field"><label for="codex-decision-settings-provider">Provider</label><select id="codex-decision-settings-provider" class="connection-input"><option value="openai">OpenAI Decisions</option><option value="typesafe">TypeSafe Jev</option><option value="custom">Custom provider</option></select></div><p class="connection-description" id="codex-decision-settings-connection-help"></p><div class="field connection-field connection-custom" hidden><label for="codex-decision-settings-name">Connection name</label><input id="codex-decision-settings-name" class="connection-input" type="text" maxlength="80" autocomplete="off" spellcheck="false" placeholder="My model provider"></div><div class="field connection-field connection-custom" hidden><label for="codex-decision-settings-protocol">JSON schema</label><select id="codex-decision-settings-protocol" class="connection-input"><option value="openai">OpenAI Decisions</option><option value="jev">TypeSafe Jev</option></select></div><div class="field connection-field connection-custom" hidden><label for="codex-decision-settings-endpoint">Endpoint URL</label><input id="codex-decision-settings-endpoint" class="connection-input" type="url" maxlength="2048" autocomplete="off" spellcheck="false" placeholder="https://provider.example/v1/decisions"></div><div class="field connection-field connection-custom" hidden><label for="codex-decision-settings-model">Model ID</label><input id="codex-decision-settings-model" class="connection-input" type="text" maxlength="128" autocomplete="off" spellcheck="false" placeholder="provider-model-id"></div><div class="field connection-field connection-custom" hidden><label for="codex-decision-settings-auth">Authentication</label><select id="codex-decision-settings-auth" class="connection-input"><option value="bearer">Bearer API key</option><option value="basic">Username and password</option><option value="header">API key header</option><option value="none">No authentication</option></select></div><div class="field connection-field connection-custom connection-username" hidden><label for="codex-decision-settings-username">Username</label><input id="codex-decision-settings-username" class="connection-input" type="text" maxlength="256" autocomplete="off" spellcheck="false" placeholder=""></div><div class="field connection-field connection-custom connection-header" hidden><label for="codex-decision-settings-header-name">Header name</label><input id="codex-decision-settings-header-name" class="connection-input" type="text" maxlength="128" autocomplete="off" spellcheck="false" placeholder="X-API-Key"></div><div class="field connection-field connection-key"><label for="codex-decision-settings-key">API key</label><input id="codex-decision-settings-key" class="connection-input" type="password" maxlength="4096" autocomplete="off" spellcheck="false" placeholder=""></div><div class="field connection-field connection-custom connection-password" hidden><label for="codex-decision-settings-password">Password</label><input id="codex-decision-settings-password" class="connection-input" type="password" maxlength="4096" autocomplete="off" spellcheck="false" placeholder=""></div><p class="connection-credential-help" id="codex-decision-settings-credential-help">Credentials stay private on this computer. Leave blank to keep the saved credential.</p><div class="provider-key-status"><small id="codex-decision-settings-openai-key-status"></small><small id="codex-decision-settings-typesafe-key-status"></small><small id="codex-decision-settings-custom-key-status"></small></div><div class="fallback-setting"><label for="codex-decision-settings-fallback"><input id="codex-decision-settings-fallback" type="checkbox">Use the other provider if needed</label><small>If the selected provider fails, allow tool output to be sent to the other provider with its saved key. Off by default.</small></div><div class="actions"><button id="codex-decision-settings-test" type="button">Test connection</button><span id="codex-decision-settings-test-status" role="status" aria-live="polite"></span></div></section><section><h2>Log retention</h2><div class="log-retention"><label for="codex-decision-settings-log-limit">Storage limit (MB)</label><input id="codex-decision-settings-log-limit" class="log-limit-input" type="text" inputmode="numeric" maxlength="4" aria-label="Log storage limit in MB"><label for="codex-decision-settings-never-delete"><input id="codex-decision-settings-never-delete" type="checkbox">Never delete logs</label></div><small>Oldest session log files are removed when the limit is reached.</small></section><section><h2>Behavior</h2><div class="field"><label for="codex-decision-settings-mode">Mode<small>Monitor previews per-line Decision decisions while leaving tool output unchanged. Filter shortens approved results.</small></label><select id="codex-decision-settings-mode"><option value="observe">Monitor</option><option value="replace">Filter</option></select></div><div id="codex-decision-settings-thresholds"></div></section><div class="actions save-actions"><button id="codex-decision-settings-save" type="button" class="primary">Save settings</button><button id="codex-decision-settings-reset" type="button" class="subtle" title="Restore the default settings in this form. Save to apply." disabled>Reset defaults</button></div><p id="codex-decision-settings-message" role="status" aria-live="polite"></p>`;
+    moveHelp(".connection-description", panel.querySelector('label[for="codex-decision-settings-provider"]'), "provider");
+    moveHelp(".connection-credential-help", panel.querySelector('label[for="codex-decision-settings-key"]'),
+      "saved credentials", "Credentials stay on this device. Leave blank to keep the saved value.");
+    moveHelp(".fallback-setting > small", panel.querySelector(".fallback-setting"), "provider fallback",
+      "If this provider fails, send output to the other saved provider. Off by default.");
+    moveHelp('section > small', panel.querySelector('label[for="codex-decision-settings-log-limit"]'),
+      "log storage", "Remove the oldest logs at this limit. Saved originals stay available.");
+    moveHelp('label[for="codex-decision-settings-mode"] small', panel.querySelector('label[for="codex-decision-settings-mode"]'),
+      "mode", "Monitor keeps full output and shows line decisions. Filter shortens approved output. Delivery to Codex is unverified.");
+    for (const metric of panel.querySelectorAll(".metric")) {
+      const caption = metric.querySelector("span");
+      caption.append(helpTip("Recorded activity across all sessions.", caption.textContent));
+    }
     const thresholds = panel.querySelector("#codex-decision-settings-thresholds");
     for (const [hook, heading, fields] of sections) {
       const title = document.createElement("h2");
       title.textContent = heading;
+      title.append(helpTip(sectionDescriptions[hook], heading, "", "section-description"));
       thresholds.append(title);
-      const description = document.createElement("p");
-      description.className = "section-description";
-      description.textContent = sectionDescriptions[hook];
-      thresholds.append(description);
       for (const [name, label, help] of fields) {
         const id = `codex-decision-settings-${hook}-${name}`;
         const row = document.createElement("div");
@@ -344,7 +405,7 @@
         const caption = document.createElement("label");
         caption.htmlFor = id;
         caption.textContent = label;
-        caption.title = help;
+        caption.append(helpTip(help, label));
         const input = document.createElement("input");
         input.id = id;
         input.type = "text";

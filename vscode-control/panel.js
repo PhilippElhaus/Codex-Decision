@@ -2,7 +2,7 @@
 
 const vscode = require("vscode");
 const { readLatestPanelDecision, readPanelActivity } = require("./panel-state");
-const { writeRawSkipPreference } = require("./raw-skip-state");
+const { readRawSkipPreference, writeRawSkipPreference } = require("./raw-skip-state");
 
 const VIEW_ID = "codexDecisionDecision";
 const MIN_SETTLED_MS = 1000;
@@ -12,23 +12,27 @@ const PERCENT_FADE_MS = 180;
 const MIN_DISPLAY_MS = BAR_FILL_MS + PERCENT_FADE_MS + MIN_SETTLED_MS;
 
 class LatestDecisionProvider {
-  constructor(extensionUri, dataDirectory, now = () => Date.now(), onFault = () => {}) {
+  constructor(extensionUri, dataDirectory, now = () => Date.now(), onFault = () => {}, options = {}) {
     this.extensionUri = extensionUri;
     this.dataDirectory = dataDirectory;
     this.now = now;
     this.onFault = onFault;
+    this.rootDataDirectory = options.rootDataDirectory || (() => null);
+    this.workComplete = options.workComplete || null;
     this.view = null;
     this.timer = null;
     this.pending = null;
     this.cache = {};
     this.rawCache = {};
     this.rawTogglePending = false;
+    this.rawToggle = null;
     this.lastMessage = "";
     this.lastActivity = "";
     this.displayedDecision = null;
     this.lastDecisionId = null;
     this.nextDecisionAt = 0;
     this.directory = undefined;
+    this.rootDirectory = undefined;
     this.generation = 0;
     this.awaitingReady = false;
   }
@@ -57,10 +61,14 @@ class LatestDecisionProvider {
       }
       if (this.view === view && !this.awaitingReady && message?.type === "set-raw-skips" &&
           typeof message.enabled === "boolean") {
-        let selected;
-        try { selected = this.dataDirectory(); } catch { selected = null; }
+        let selected, root;
+        try { selected = this.dataDirectory(); root = this.rootDataDirectory(); } catch { return; }
         // A click on a stale panel must not enable capture for a newly selected thread.
-        if (message.scope === this.generation && selected === this.directory) void this.setRawSkips(message.enabled);
+        const pendingScope = this.rawTogglePending && message.scope === this.rawToggle?.scope;
+        if ((message.scope === this.generation || pendingScope) &&
+            selected === this.directory && root === this.rootDirectory) {
+          void this.setRawSkips(message.enabled);
+        }
         else void this.refresh();
       }
     });
@@ -96,15 +104,17 @@ class LatestDecisionProvider {
 
   async refresh() {
     if (!this.view?.visible || this.awaitingReady || this.rawTogglePending) return;
-    let directory;
+    let directory, rootDirectory;
     let directoryFault = false;
-    try { directory = this.dataDirectory(); }
+    try { directory = this.dataDirectory(); rootDirectory = this.rootDataDirectory(); }
     catch {
       directoryFault = true;
       directory = null;
+      rootDirectory = null;
     }
-    if (directory !== this.directory) {
+    if (directory !== this.directory || rootDirectory !== this.rootDirectory) {
       this.directory = directory;
+      this.rootDirectory = rootDirectory;
       this.generation += 1;
       this.cache = {};
       this.rawCache = {};
@@ -119,7 +129,7 @@ class LatestDecisionProvider {
     const view = this.view;
     const current = () => {
       if (generation !== this.generation || view !== this.view) return false;
-      try { return directory === this.dataDirectory(); }
+      try { return directory === this.dataDirectory() && rootDirectory === this.rootDataDirectory(); }
       catch { return directoryFault; }
     };
     const task = (async () => {
@@ -129,12 +139,16 @@ class LatestDecisionProvider {
       try {
         if (directoryFault) throw new Error("Decision data directory is unavailable");
         const refreshDecision = this.now() >= this.nextDecisionAt;
-        const [decision, activity] = await Promise.all([
+        const [decision, activity, workComplete] = await Promise.all([
           directory ? refreshDecision ? readLatestPanelDecision(directory, this.cache) : this.displayedDecision : null,
-          directory ? readPanelActivity(directory, this.rawCache) : null,
+          directory ? readPanelActivity(directory, this.rawCache) : rootDirectory ?
+            readRawSkipPreference(rootDirectory).then(enabled => ({ rawSkips: { enabled: enabled ?? false, entries: [] } }))
+              .catch(() => ({ rawSkips: { enabled: false, entries: [], unavailable: true } })) : null,
+          directory && this.workComplete ? Promise.resolve().then(() => this.workComplete()).catch(() => false) : false,
         ]);
         if (!current()) return;
         if (activity?.rawSkips) activity.rawSkips.scope = generation;
+        if (activity && this.workComplete) activity.workComplete = workComplete === true;
         this.onFault(null);
         serialized = refreshDecision ? JSON.stringify(decision) : this.lastMessage;
         activitySerialized = JSON.stringify(activity);
@@ -176,25 +190,37 @@ class LatestDecisionProvider {
   }
 
   async setRawSkips(enabled) {
-    if (this.rawTogglePending) return;
-    let directory;
-    try { directory = this.dataDirectory(); } catch { return; }
-    if (!directory || !this.view?.visible) return;
+    let directory, rootDirectory;
+    try { directory = this.dataDirectory(); rootDirectory = this.rootDataDirectory(); } catch { return; }
+    if ((!directory && !rootDirectory) || !this.view?.visible) return;
     const view = this.view;
+    if (this.rawTogglePending) {
+      if (directory === this.rawToggle.directory && rootDirectory === this.rawToggle.rootDirectory &&
+          view === this.rawToggle.view) this.rawToggle.enabled = enabled;
+      return;
+    }
+    const toggle = { directory, rootDirectory, view, scope: this.generation, enabled };
+    this.rawToggle = toggle;
     this.rawTogglePending = true;
     this.generation += 1;
     try {
-      await writeRawSkipPreference(directory, enabled);
+      for (;;) {
+        const desired = toggle.enabled;
+        if (directory) await writeRawSkipPreference(directory, desired);
+        if (rootDirectory && rootDirectory !== directory) await writeRawSkipPreference(rootDirectory, desired);
+        if (toggle.enabled === desired) break;
+      }
       this.rawCache = {};
     } catch {
       if (view === this.view) {
         try {
           await view.webview.postMessage({ type: "raw-skips-error",
-            message: "The raw skipped-output preference could not be saved." });
+            message: "Cannot save the skipped output setting." });
         } catch { /* The webview may have closed while saving. */ }
       }
     } finally {
       this.rawTogglePending = false;
+      this.rawToggle = null;
       this.lastActivity = "";
       void this.refresh();
     }

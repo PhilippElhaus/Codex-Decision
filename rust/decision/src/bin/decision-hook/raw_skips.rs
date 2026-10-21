@@ -72,9 +72,12 @@ fn read_optional_private(path: &Path, limit: usize) -> Result<Option<Vec<u8>>, S
         .map_err(|_| "skipped payload read failed".into())
 }
 
-fn enabled(logs: &Path) -> Result<bool, String> {
+fn preference(data_dir: &Path) -> Result<Option<bool>, String> {
+    check_dir_if_exists(data_dir)?;
+    let logs = data_dir.join("logs");
+    check_dir_if_exists(&logs)?;
     let Some(bytes) = read_optional_private(&logs.join("skipped-raw-enabled.json"), 256)? else {
-        return Ok(false);
+        return Ok(None);
     };
     let value = strict_json::parse(&bytes).map_err(|_| "invalid skipped payload preference")?;
     if value["version"] != 1 || value.as_object().map_or(0, |object| object.len()) != 2 {
@@ -82,7 +85,34 @@ fn enabled(logs: &Path) -> Result<bool, String> {
     }
     value["enabled"]
         .as_bool()
+        .map(Some)
         .ok_or_else(|| "invalid skipped payload preference".into())
+}
+
+fn enabled(data_dir: &Path) -> Result<bool, String> {
+    if let Some(value) = preference(data_dir)? {
+        return Ok(value);
+    }
+    let Some(sessions) = data_dir.parent() else {
+        return Ok(false);
+    };
+    let valid_session = data_dir
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| {
+            name.len() == 64
+                && name
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        });
+    if sessions.file_name().and_then(|name| name.to_str()) != Some("sessions") || !valid_session {
+        return Ok(false);
+    }
+    check_dir_if_exists(sessions)?;
+    match sessions.parent() {
+        Some(root) => Ok(preference(root)?.unwrap_or(false)),
+        None => Ok(false),
+    }
 }
 
 fn capture(
@@ -92,13 +122,13 @@ fn capture(
     detail: Option<&str>,
 ) -> Result<(), String> {
     let logs = data_dir.join("logs");
-    if !enabled(&logs)? {
+    if !enabled(data_dir)? {
         return Ok(());
     }
     ensure_dir(&logs)?;
     let _lock = lock_logs(&logs)?;
     // A second read respects a pause while another hook held the log lock.
-    if !enabled(&logs)? {
+    if !enabled(data_dir)? {
         return Ok(());
     }
     let path = logs.join("skipped-raw.json");

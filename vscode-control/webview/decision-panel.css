@@ -16,6 +16,23 @@ body:is(.vscode-light, .light) .batch-layout { --batch-keep: #895900; --batch-cu
 .raw-skips-toggle { display: inline-flex; align-items: center; gap: 5px; color: var(--vscode-descriptionForeground, #aaa); font-size: 11px; cursor: pointer; }
 .raw-skips-toggle input { margin: 2px 0; accent-color: var(--vscode-checkbox-background, #376eaa); }
 .raw-skips-toggle input:focus-visible { outline: 1px solid var(--vscode-focusBorder, #69aef0); outline-offset: 2px; }
+.raw-skips-controls { display: flex; align-items: center; gap: 6px; max-width: 100%; min-height: 20px; }
+.raw-skips-help-wrap { position: relative; display: inline-flex; }
+.raw-skips-help { display: inline-grid; place-items: center; width: 18px; height: 18px; padding: 0; border: 0; border-radius: 3px; background: transparent; color: var(--vscode-descriptionForeground, #aaa); font: inherit; font-size: 13px; cursor: help; }
+.raw-skips-help:focus-visible { outline: 1px solid var(--vscode-focusBorder, #69aef0); }
+.raw-skips-tooltip { display: none; position: fixed; z-index: 3; width: min(290px, calc(100vw - 32px)); padding: 8px 10px; border: 1px solid var(--vscode-editorHoverWidget-border, #555); border-radius: 4px; background: var(--vscode-editorHoverWidget-background, var(--vscode-panel-background, #252526)); color: var(--vscode-editorHoverWidget-foreground, var(--vscode-foreground, #ccc)); box-shadow: 0 3px 8px #0004; text-align: left; font-size: 11px; line-height: 1.5; visibility: hidden; opacity: 0; pointer-events: none; }
+.raw-skips-help-wrap:hover .raw-skips-tooltip, .raw-skips-help-wrap:focus-within .raw-skips-tooltip { display: block; visibility: visible; opacity: 1; }
+.raw-skips-help-wrap.help-dismissed .raw-skips-tooltip { display: none; visibility: hidden; opacity: 0; pointer-events: none; }
+.raw-queue-count { color: var(--vscode-descriptionForeground, #aaa); font-size: 11px; white-space: nowrap; }
+.raw-resume { padding: 0 4px; border: 0; border-radius: 3px; color: var(--vscode-button-foreground, #fff); background: var(--vscode-button-background, #376eaa); font: inherit; font-size: 11px; line-height: 18px; white-space: nowrap; cursor: pointer; }
+.raw-resume:focus-visible { outline: 1px solid var(--vscode-focusBorder, #69aef0); outline-offset: 1px; }
+.decision-help { position: relative; display: inline-flex; margin-left: 5px; vertical-align: baseline; }
+.decision-help-button { display: inline-grid; place-items: center; width: 17px; height: 17px; padding: 0; border: 0; border-radius: 3px; background: transparent; color: var(--vscode-descriptionForeground, #aaa); font: inherit; font-size: 12px; cursor: help; }
+.decision-help-button::before { content: "ⓘ"; }
+.decision-help-button:focus-visible { outline: 1px solid var(--vscode-focusBorder, #69aef0); }
+.decision-help-text { display: none; position: absolute; top: calc(100% + 4px); left: 0; z-index: 4; width: min(270px, calc(100vw - 40px)); padding: 8px 10px; border: 1px solid var(--vscode-editorHoverWidget-border, #555); border-radius: 4px; background: var(--vscode-editorHoverWidget-background, var(--vscode-panel-background, #252526)); color: var(--vscode-editorHoverWidget-foreground, var(--vscode-foreground, #ccc)); box-shadow: 0 3px 8px #0004; font-size: 11px; font-weight: 400; line-height: 1.5; text-align: left; visibility: hidden; opacity: 0; pointer-events: none; }
+.decision-help:hover .decision-help-text, .decision-help:focus-within .decision-help-text { display: block; visibility: visible; opacity: 1; }
+.decision-help.help-dismissed .decision-help-text { display: none; visibility: hidden; opacity: 0; pointer-events: none; }
 .activity-status { flex-basis: 100%; margin-top: 2px; color: var(--vscode-descriptionForeground, #aaa); font-size: 11px; line-height: 1.4; overflow-wrap: anywhere; }
 .batch-status { color: var(--vscode-descriptionForeground, #888); font-size: 11px; white-space: nowrap; }
 .batch-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 290px), 1fr)); grid-auto-rows: var(--batch-row-height); gap: 0 12px; min-width: 0; }
@@ -33,8 +50,9 @@ body:is(.vscode-light, .light) .batch-layout { --batch-keep: #895900; --batch-cu
 .batch-row.omit .batch-bar-fill { color: var(--batch-cut); }
 .batch-value { grid-column: 4; opacity: 0; text-align: right; color: var(--batch-keep); }
 .batch-row.omit .batch-value { color: var(--batch-cut); }
-.empty { display: grid; min-height: 180px; place-content: center; text-align: center; }
-.empty-status { max-width: 480px; margin: 10px 0; font-size: 13px; line-height: 1.5; }
+.empty { min-width: 0; padding: 7px 0; }
+.empty:empty { display: none; }
+.empty-status { margin: 0; font-size: 12px; line-height: 1.4; }
 .totals-layout { padding: 14px 0; max-width: 1180px; }
 .totals-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr)); gap: 12px; margin: 0; }
 .totals-metric { padding: 10px 12px; background: var(--vscode-list-hoverBackground, #5552); border-radius: 4px; }
@@ -44,12 +62,10 @@ body:is(.vscode-light, .light) .batch-layout { --batch-keep: #895900; --batch-cu
 .totals-heading { margin: 20px 0 8px; font-size: 14px; }
 .totals-reasons { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 12px; line-height: 1.5; }
 .totals-reasons th, .totals-reasons td { padding: 8px 6px; text-align: left; vertical-align: top; overflow-wrap: anywhere; border-bottom: 1px solid var(--vscode-panel-border, #5553); }
-.totals-reasons th:nth-child(1) { width: 27%; }
-.totals-reasons th:nth-child(2) { width: 14%; }
+.totals-reasons th:nth-child(2) { width: 90px; }
 .totals-reasons .reason-count { font-variant-numeric: tabular-nums; }
 .totals-reasons .reason-detail { color: var(--vscode-descriptionForeground, #aaa); }
-.raw-skips { min-width: 0; margin-top: 12px; padding: 0 0 12px; }
-.raw-skips-heading { margin: 0 0 6px; font-size: 14px; }
+.raw-skips { min-width: 0; margin-top: 4px; padding: 0 0 8px; }
 .raw-skips-note { margin: 5px 0 9px; color: var(--vscode-descriptionForeground, #aaa); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
 .raw-skips-error { color: var(--vscode-errorForeground, #f88); }
 .raw-skip-entry { min-width: 0; padding: 8px 0; border-top: 1px solid var(--vscode-panel-border, #5553); }

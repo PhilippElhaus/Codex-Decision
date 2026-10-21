@@ -7,6 +7,7 @@ const { ensureIntegratedInstall } = require("./integrated-install");
 const { activateIntegration } = require("./integration");
 const EXPECTED_HOOK_VERSION = require("./package.json").codexDecisionHookVersion;
 const { LatestDecisionProvider, VIEW_ID } = require("./panel");
+const { readSessionWorkComplete } = require("./session-work");
 const { provider } = require("./providers");
 const {
   checkHealth, decisionSummary, defaultDataDirectory, estimateTokensSaved,
@@ -493,7 +494,18 @@ function activate(context) {
   };
   const decisionPanel = new LatestDecisionProvider(context.extensionUri,
     () => active?.state.sessionId ? active.activeDirectory() : null, () => Date.now(),
-    (fault) => { if (active) active.state.panelFault = fault; });
+    (fault) => { if (active) active.state.panelFault = fault; }, {
+      rootDataDirectory: dataDirectory,
+      workComplete: async () => {
+        const controller = active;
+        const sessionId = controller?.state.sessionId;
+        if (!sessionId) return false;
+        const directory = dataDirectory();
+        const complete = await readSessionWorkComplete(sessionId, { dataDirectory: directory });
+        return active === controller && controller.state.sessionId === sessionId &&
+          dataDirectory() === directory && complete;
+      },
+    });
   context.subscriptions.push(vscode.window.registerWebviewViewProvider(VIEW_ID, decisionPanel));
   context.subscriptions.push(decisionPanel);
   context.subscriptions.push(vscode.commands.registerCommand("codexDecision.showLatestDecision", () =>

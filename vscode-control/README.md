@@ -8,7 +8,7 @@ Build and install one package from WSL:
 
 ```bash
 ../scripts/build_control.sh
-code --install-extension "$(wslpath -w ../.local/submission/codex-decision-0.14.0.vsix)" --force
+code --install-extension "$(wslpath -w ../.local/submission/codex-decision-0.14.1.vsix)" --force
 ```
 
 On activation, the package installs or updates the bundled Codex plugin and checks the Codex UI integration. It uses the configured WSL data path or the default WSL distribution for a fresh installation. It sets `codexDecision.dataDirectory` when that setting is empty. Existing plugin identity, credentials, logs, and thread settings remain in place.
@@ -29,7 +29,7 @@ Keep the previous complete package and the per-build patch rollback directory. R
 
 Connect through **OpenAI Decisions**, **TypeSafe Jev**, or **Custom provider** in onboarding or Decision settings. Custom connections accept either decision schema, a full endpoint URL, a model, and bearer, Basic, named-header, or no authentication. Saved secrets stay private and are reused only for the same endpoint and authentication identity. Custom connections do not use automatic fallback. See [provider setup](https://github.com/PhilippElhaus/Codex-Decision/blob/main/docs/setup/setup_credentials.md).
 
-Enable **Show raw skipped outputs** next to the panel's skip count to capture future skipped tool calls for the selected thread. Expand an entry to inspect its reason, input, and original response. The bounded private capture stays local. Older skips have no raw payload. Disable the checkbox to stop recording.
+Use **Show skipped output** to capture future skips. You can change it before you open a thread. This sets the default for new threads; each thread keeps its own choice. Expand an entry to see the tool input and full response. Hover over the info button for storage details. Each new raw result stays visible for at least three seconds. Later results wait in a queue. When work ends, the panel shows a long remaining queue together. Click or focus an entry to pause live updates while you inspect it. Select **Resume live** to continue. Capture and its queue stay local, with a limit of 20 calls and 4 MiB. Older queued captures can expire while inspection is paused. Turn the switch off to stop capture.
 
 Click **decision** to turn filtering on or off for all supported tool output in the current thread. There is no integration popup. Each Codex session has its own enabled flag, decisions, counters, and hook status. The pinned patch reads the active session ID from Codex's internal router, even when the webview URL does not change. State lives under `PLUGIN_DATA/sessions/<session-hash>/`; a new local session starts enabled, and later choices are preserved. On the home screen, the button is disabled until a thread opens. A local thread with an unreadable ID cannot change another session's state. The API key in `PLUGIN_DATA/.env` and behavior settings in `PLUGIN_DATA/settings.json` are shared across this installation.
 

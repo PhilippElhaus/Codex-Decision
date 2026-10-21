@@ -616,9 +616,16 @@
       check(settingsScreen.querySelector("#codex-decision-settings-mode").options[0].textContent === "Monitor" &&
         settingsScreen.querySelector("#codex-decision-settings-mode").options[1].textContent === "Filter" &&
         settingsScreen.querySelector("#codex-decision-settings-mode").value === "replace", "mode names preserve config values");
-      check(settingsScreen.querySelector('label[for="codex-decision-settings-mode"] small').textContent.includes("leaving tool output unchanged") &&
-        settingsScreen.querySelector('label[for="codex-decision-settings-mode"] small').textContent.includes("per-line"),
-        "Monitor explains the preview behavior");
+      const modeHelp = settingsScreen.querySelector('label[for="codex-decision-settings-mode"] .decision-help-text');
+      check(modeHelp.textContent.includes("Monitor keeps full output") && modeHelp.textContent.includes("line decisions") &&
+        getComputedStyle(modeHelp).visibility === "hidden", "Monitor help stays in a tooltip");
+      const modeHelpButton = settingsScreen.querySelector('label[for="codex-decision-settings-mode"] .decision-help-button');
+      modeHelpButton.focus();
+      check(getComputedStyle(modeHelp).visibility === "visible" &&
+        modeHelpButton.getAttribute("aria-describedby") === modeHelp.id, "keyboard focus opens linked help");
+      modeHelpButton.dispatchEvent(new KeyboardEvent("keydown", { key:"Escape", bubbles:true }));
+      check(getComputedStyle(modeHelp).visibility === "hidden", "Escape closes settings help");
+      modeHelpButton.blur();
       const openLogs = settingsScreen.querySelector("#codex-decision-settings-open-logs");
       check(getComputedStyle(openLogs).borderRadius === "10px" &&
         getComputedStyle(openLogs).borderTopWidth === "1px", "Codex-sized button corners and border");
@@ -634,9 +641,10 @@
         "percent sign moves into the field and slider track is painted");
       const descriptions = [...settingsScreen.querySelectorAll("#codex-decision-settings-thresholds .section-description")];
       check(descriptions.length === 1 &&
-        descriptions[0].textContent.includes("Validated logs receive line relevance judgments directly") &&
-        descriptions[0].textContent.includes("Unknown formats first pass an excerptability check"),
-        "settings explain direct log relevance and the unknown-format gate");
+        descriptions[0].textContent.includes("Check validated logs by line") &&
+        descriptions[0].textContent.includes("Check unknown formats first") &&
+        getComputedStyle(descriptions[0]).visibility === "hidden",
+        "output help stays in a tooltip");
       check(!settingsScreen.querySelector("#codex-decision-settings-relevance-guard") &&
         !settingsScreen.querySelector("#codex-decision-settings-test_build-exact_max") &&
         !settingsScreen.querySelector("#codex-decision-settings-search_listing-exact_max"), "category controls are absent");
@@ -670,8 +678,10 @@
         settingsScreen.querySelector("#codex-decision-settings-typesafe-key-status").textContent === "TypeSafe Jev: no saved key",
         "both providers show saved status without disclosing credentials");
       const fallback = settingsScreen.querySelector("#codex-decision-settings-fallback");
-      check(!fallback.checked && settingsScreen.textContent.includes("allow tool output to be sent to the other provider"),
-        "fallback starts off and explains the second provider data transfer");
+      const fallbackHelp = settingsScreen.querySelector(".fallback-setting .decision-help-text");
+      check(!fallback.checked && fallbackHelp.textContent.includes("send output to the other saved provider") &&
+        fallbackHelp.textContent.includes("Off by default") && getComputedStyle(fallbackHelp).visibility === "hidden",
+        "fallback starts off and explains the second provider data transfer in its tooltip");
       fallback.checked = true;
       const settingsProvider = settingsScreen.querySelector("#codex-decision-settings-provider");
       const providerKey = settingsScreen.querySelector("#codex-decision-settings-key");
@@ -1061,6 +1071,9 @@
         modelLeft: document.querySelector(".model").getBoundingClientRect().left,
         buttonWidth: button?.getBoundingClientRect().width, compact: control?.dataset.compact,
         display: control?.style.display, tooltip: document.getElementById("codex-decision-tip")?.textContent,
+        settingsOverflow: [...document.querySelectorAll("#codex-decision-settings-panel, #codex-decision-settings-panel *")]
+          .filter(node => node.getBoundingClientRect().right > (document.getElementById("codex-decision-settings-panel")?.getBoundingClientRect().right || Infinity) + 1)
+          .map(node => ({tag:node.tagName,id:node.id,classes:node.className,width:node.getBoundingClientRect().width,right:node.getBoundingClientRect().right})),
         buttonRight: button?.getBoundingClientRect().right });
       document.title = "DECISION_BROWSER_FAIL";
     });

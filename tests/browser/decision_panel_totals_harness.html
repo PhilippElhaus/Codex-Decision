@@ -36,17 +36,20 @@
     const report = {initialRestored,
       persistedMode:saved.panelMode === "totals",
       totalsForA:metric("calls") === "9" && metric("seen") === "147" && metric("linesActuallyOmitted") === "70",
-      deliveryStatusClear:document.querySelector(".batch-status").textContent === "Hook totals · delivery unverified" &&
-        document.querySelector('[data-metric="replaced"] dt').textContent === "Hook replacements" &&
-        document.querySelector('[data-metric="linesActuallyOmitted"] dt').textContent === "Lines omitted by hook",
+      deliveryStatusClear:document.querySelector(".batch-status").textContent === "Saved totals" &&
+        document.querySelector(".batch-status").title.includes("not verified") &&
+        document.querySelector('[data-metric="replaced"] .metric-label').textContent === "Hook replacements" &&
+        document.querySelector('[data-metric="linesActuallyOmitted"] .metric-label').textContent === "Lines omitted by hook",
       requestStages:metric("responsesReceived") === "8" && metric("responsesValidated") === "7" &&
         metric("requestFailures") === "1" && metric("requestCancelled") === "1",
-      recordedSkipDefinition:document.querySelector('[data-metric="skipped"]').title.includes("Named skip entries persisted in the health ledger.") &&
-        document.querySelector('[data-metric="skipped"]').title.includes("Termination before the health write leaves no recorded skip entry."),
+      recordedSkipDefinition:document.querySelector('[data-metric="skipped"] .decision-help-text').textContent.includes("Named skip entries persisted in the health ledger.") &&
+        document.querySelector('[data-metric="skipped"] .decision-help-text').textContent.includes("Termination before the health write leaves no recorded skip entry."),
       reasonsForA:document.querySelector('[data-reason="unsupported_result"] .reason-count')?.textContent === "40",
       privacyDetails:document.querySelector('[data-reason="sensitive"] .reason-detail')?.textContent.includes("output 3 · command 4 · other input 2"),
       previewReasonsForA:document.querySelector('[data-reason="observe"] .reason-count')?.textContent === "1",
-      conciseTotals:document.querySelector(".totals-note") === null,
+      conciseTotals:document.querySelector(".totals-note") === null &&
+        document.querySelectorAll(".totals-reasons th").length === 4,
+      helpHiddenUntilFocus:getComputedStyle(document.querySelector('.reason-detail')).visibility === "hidden",
       headerForA:document.querySelector(".activity-counts").textContent === "9 API requests · 144 skipped outputs"};
     send(make("b".repeat(32)),activityB);
     report.switchToB = metric("calls") === "2" && metric("skipped") === "30" &&
@@ -58,15 +61,16 @@
       document.querySelector(".activity-counts").textContent === "2 API requests · 30 skipped outputs";
     const retainedRow = document.querySelector(".batch-row");
     const skippedAfterDecision = {...activityB,skipped:31,
-      message:"The latest output was too short to evaluate.",
-      hookActivity:{kind:"skip",message:"The latest output was too short to evaluate."}};
+      message:"Output too short to check.",
+      hookActivity:{kind:"skip",message:"Output too short to check."}};
     window.dispatchEvent(new MessageEvent("message",{data:{type:"activity",activity:skippedAfterDecision}}));
     report.latestSkipVisible = !document.querySelector(".activity-status").hidden &&
-      document.querySelector(".activity-status").textContent === "Latest hook: The latest output was too short to evaluate." &&
+      document.querySelector(".activity-status").textContent === "Output too short to check." &&
       document.querySelector(".activity-counts").textContent === "2 API requests · 31 skipped outputs";
     report.latestSkipPreservesDecision = document.querySelector(".batch-row") === retainedRow &&
       document.querySelector(".batch-title").textContent === "0 / 1 removed" &&
-      document.querySelector(".batch-status").textContent === "Hook replacement · delivery unverified";
+      document.querySelector(".batch-status").textContent === "Filtered" &&
+      document.querySelector(".batch-status").title.includes("not verified");
     select("totals");
     send(make("a".repeat(32)),activityA);
     report.returnToA = metric("calls") === "9" && metric("seen") === "147";
@@ -107,7 +111,7 @@
     send(null,{calls:null,skipped:null,unavailable:true,message:"Saved activity could not be read for this thread."});
     report.failedReadRetainsScope = document.querySelector(".batch-status").textContent === "Saved activity unavailable" && metric("calls") === "—";
     send(null,activityB);
-    report.failedReadRecovers = document.querySelector(".batch-status").textContent === "Hook totals · delivery unverified" && metric("calls") === "2";
+    report.failedReadRecovers = document.querySelector(".batch-status").textContent === "Saved totals" && metric("calls") === "2";
     send(null,{...activityB,totals:{...activityB.totals,replaced:0,linesActuallyOmitted:0}});
     report.emptyReplacementsStayNeutral = document.querySelector(".batch-status").textContent === "Saved totals";
     send(null,null);

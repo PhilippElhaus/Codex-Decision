@@ -65,12 +65,11 @@ def chromium_capture() -> None:
                     assert abs(layout['buttonTop'] - layout['anchorTop'] - layout['screenshotOffset']) <= 10
                     if state == 'classification':
                         page.evaluate('window.dispatchEvent(new Event("focus"))')
-                        page.wait_for_function('document.getElementById("codex-decision").dataset.classifying === "true"')
-                        assert page.locator('#codex-decision-button').evaluate('node => node.style.color') == 'rgb(105, 174, 240)'
+                        page.wait_for_function('document.getElementById("codex-decision").dataset.classifying === "true" && document.getElementById("codex-decision-button").style.color === "rgb(105, 174, 240)"')
                 elif state == 'tooltip':
                     assert page.locator('#codex-decision-tip').is_visible()
                     assert page.locator('#codex-decision-requests').inner_text() == '2 API requests · 14 skipped outputs'
-                    assert 'too short to evaluate' in page.locator('#codex-decision-hook-activity').inner_text()
+                    assert 'too short to check' in page.locator('#codex-decision-hook-activity').inner_text()
                 elif state == 'onboarding':
                     assert page.locator('#codex-decision-connect').is_visible()
                     assert page.locator('#codex-decision-key').input_value() == ''
@@ -181,7 +180,7 @@ def main() -> None:
             if state == 'classification' and 'data-classifying="true"' not in result.stdout:
                 raise RuntimeError('Classification did not light up the composer')
             if state == 'tooltip' and ('2 API requests · 14 skipped outputs' not in result.stdout or
-                                       'The latest output was too short to evaluate.' not in result.stdout):
+                                       'Output too short to check.' not in result.stdout):
                 raise RuntimeError('Composer activity counts and latest hook outcome were not rendered')
             if state == 'tooltip':
                 crop_activity(output, layout)
@@ -191,7 +190,7 @@ def main() -> None:
                                         'id="codex-decision-settings-lifetime-tokens"' not in result.stdout or
                                         '87,320' not in result.stdout or
                                         'All sessions' not in result.stdout or
-                                        'Relevance, maximum for omission' not in result.stdout or
+                                        'Omit cutoff' not in result.stdout or
                                         '>Filter</option>' not in result.stdout):
                 raise RuntimeError('Decision settings were not rendered in Codex settings')
             print(f'{name}: {output.stat().st_size} bytes; layout={layout}')

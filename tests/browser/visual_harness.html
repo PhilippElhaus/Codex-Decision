@@ -54,6 +54,7 @@
     } : null;
     const disabled = demo === "disabled" || demo === "disabled-pending";
     const history = ["judged 50 lines · omitted 47 · synthetic search matches"];
+    let classificationPulse = 0;
     window.acquireVsCodeApi = () => ({ postMessage(request) {
       const settings = request.action === "settingsRead" ? { action: "ready", hasKey: true, keyLength: 32, providerKeys: { openai: { hasKey: true }, typesafe: { hasKey: true } },
         lifetime: { calls: 126, completed: 124, replaced: 41, linesJudged: 87320, linesOmitted: 915,
@@ -77,10 +78,10 @@
             { version: 1, hook_version: "0.13.0", last_seen_ms: Date.now(), last_success_ms: Date.now() - 100,
               last_skip_ms: Date.now(), last_skip: "small" },
           hookActivity: disabled || demo === "pending" ? null :
-            { kind: "skip", message: "The latest output was too short to evaluate." },
+            { kind: "skip", message: "Output too short to check." },
           expectedHookVersion: "0.13.0",
           viewStartedAt: Date.now() - 1000,
-          classificationPulse: demo === "classification" ? 1 : 0, mode: "replace", recent: history[0], history: disabled ? [] : history,
+          classificationPulse: demo === "classification" ? ++classificationPulse : 0, mode: "replace", recent: history[0], history: disabled ? [] : history,
           stats: disabled ? {} : { calls: 2, skipped: 14, candidates: 1, kept: 0, replaced: 1, checkedChars: 6367, savedChars: 6058,
             estimatedTokensSaved: 1515, elapsedMs: 1264, timed: 2, averageMs: 632, completed: 2 },
           settings,

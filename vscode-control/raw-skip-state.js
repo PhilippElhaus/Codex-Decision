@@ -3,7 +3,7 @@
 const fs = require("node:fs/promises");
 const crypto = require("node:crypto");
 const path = require("node:path");
-const { readFileRecord, parseUniqueJson, validateSessionPath, validateDirectoryPath } = require("./private-records");
+const { readFileRecord, parseUniqueJson, validateSessionPath } = require("./private-records");
 const { restrictWslPath } = require("./private-paths");
 
 const MAX_RAW_BYTES = 4 * 1024 * 1024;
@@ -32,20 +32,33 @@ function parseRawSkips(value) {
   });
 }
 
-async function readRawSkipState(directory, cache = null) {
+function installationDirectory(directory) {
+  const sessions = path.dirname(directory);
+  return path.basename(sessions) === "sessions" && /^[a-f0-9]{64}$/.test(path.basename(directory)) ?
+    path.dirname(sessions) : null;
+}
+
+async function readRawSkipPreference(directory) {
   await validateSessionPath(directory);
   const logs = path.join(directory, "logs");
-  await validateDirectoryPath(logs);
+  await validateSessionPath(logs);
   const flag = await readFileRecord(path.join(logs, FLAG_NAME), 256, { strict: true });
-  if (!flag) { if (cache) { cache.identity = null; cache.entries = []; } return { enabled: false, entries: [] }; }
+  if (!flag) return null;
   const value = parseUniqueJson(flag.bytes);
   if (value?.version !== 1 || typeof value.enabled !== "boolean" || Object.keys(value).length !== 2) {
     throw new Error("Invalid Decision skipped payload preference");
   }
+  return value.enabled;
+}
+
+async function readRawSkipState(directory, cache = null) {
+  let enabled = await readRawSkipPreference(directory);
+  const root = installationDirectory(directory);
+  if (enabled === null && root) enabled = await readRawSkipPreference(root);
   // An unchecked panel never reads tool text into the extension host or webview.
-  if (!value.enabled) { if (cache) { cache.identity = null; cache.entries = []; } return { enabled: false, entries: [] }; }
+  if (!enabled) { if (cache) { cache.identity = null; cache.entries = []; } return { enabled: false, entries: [] }; }
   try {
-    const filename = path.join(logs, "skipped-raw.json");
+    const filename = path.join(directory, "logs", "skipped-raw.json");
     const details = await fs.lstat(filename).catch(error => { if (error.code !== "ENOENT") throw error; return null; });
     if (!details) return { enabled: true, entries: [] };
     if (!details.isFile() || details.isSymbolicLink() || details.nlink !== 1 || details.size > MAX_RAW_BYTES ||
@@ -72,10 +85,10 @@ async function writeRawSkipPreference(directory, enabled) {
   await restrictWslPath(directory, true);
   await validateSessionPath(directory);
   const logs = path.join(directory, "logs");
-  await validateDirectoryPath(logs);
+  await validateSessionPath(logs);
   await fs.mkdir(logs, { mode: 0o700 }).catch(error => { if (error.code !== "EEXIST") throw error; });
   await restrictWslPath(logs, true);
-  await validateDirectoryPath(logs);
+  await validateSessionPath(logs);
   const target = path.join(logs, FLAG_NAME);
   // Reject links and non-private existing records before replacing them.
   await readFileRecord(target, 256, { strict: true });
@@ -91,4 +104,5 @@ async function writeRawSkipPreference(directory, enabled) {
   } finally { if (owned) await fs.rm(temporary, { force: true }); }
 }
 
-module.exports = { readRawSkipState, writeRawSkipPreference, parseRawSkips, MAX_RAW_BYTES, MAX_PAYLOAD_BYTES, MAX_ENTRIES };
+module.exports = { readRawSkipState, readRawSkipPreference, writeRawSkipPreference, parseRawSkips,
+  MAX_RAW_BYTES, MAX_PAYLOAD_BYTES, MAX_ENTRIES };

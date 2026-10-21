@@ -73,3 +73,36 @@ test("raw reader rejects oversized, linked, duplicate and malformed local record
     assert.equal(parseRawSkips({ version: 1, entries: [unavailable] })[0].payload, null);
   } finally { await fs.rm(directory, { recursive: true, force: true }); }
 });
+
+test("new threads inherit the installation capture preference and keep explicit overrides", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "decision-raw-default-"));
+  const first = path.join(root, "sessions", "a".repeat(64));
+  const second = path.join(root, "sessions", "b".repeat(64));
+  try {
+    await writeRawSkipPreference(root, true);
+    assert.deepEqual(await readRawSkipState(first), { enabled: true, entries: [] });
+    await writeRawSkipPreference(first, false);
+    assert.deepEqual(await readRawSkipState(first), { enabled: false, entries: [] });
+    assert.deepEqual(await readRawSkipState(second), { enabled: true, entries: [] });
+    await writeRawSkipPreference(second, true);
+    await writeRawSkipPreference(root, false);
+    assert.deepEqual(await readRawSkipState(second), { enabled: true, entries: [] });
+    assert.deepEqual(await readRawSkipState(first), { enabled: false, entries: [] });
+    await writeRawSkipPreference(root, true);
+    assert.deepEqual(await readRawSkipState(path.join(root, "sessions", "unknown")), { enabled: false, entries: [] },
+      "only hashed session directories inherit the installation default");
+    await fs.writeFile(path.join(first, "logs", "skipped-raw-enabled.json"), "{broken");
+    await assert.rejects(readRawSkipState(first), /JSON/,
+      "a broken thread preference must not fall back to enabled capture");
+    await fs.rm(path.join(first, "logs", "skipped-raw-enabled.json"));
+    if (process.platform !== "win32") {
+      await fs.chmod(path.join(root, "logs"), 0o755);
+      await assert.rejects(readRawSkipState(first), /Unsafe/);
+      await fs.chmod(path.join(root, "logs"), 0o700);
+      const flag = path.join(root, "logs", "skipped-raw-enabled.json");
+      await fs.rename(flag, path.join(root, "flag.json"));
+      await fs.symlink(path.join(root, "flag.json"), flag);
+      await assert.rejects(readRawSkipState(first), /Unsafe/);
+    }
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
+});

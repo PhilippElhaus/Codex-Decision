@@ -76,6 +76,22 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Linux native fixture initialization failed.' }
     & wsl.exe -d $Distro -e python3 -c 'import pathlib,sys;pathlib.Path(sys.argv[1]).write_text(sys.argv[2])' ($linuxRoot + '/owner') $runId
     if ($LASTEXITCODE -ne 0) { throw 'Linux native fixture ownership record failed.' }
+    # Some managed sandboxes expose an empty /tmp/.git marker.
+    # It is not a repository. Verify it before adjusting only this disposable installer.
+    $markerCheck = @'
+import pathlib
+p = pathlib.Path("/tmp/.git")
+assert not p.is_symlink(), "Linked temporary-root Git marker"
+if p.exists():
+    assert p.is_dir() and not any(p.iterdir()), "Unexpected temporary-root Git content"
+    print("empty-marker")
+else:
+    print("absent")
+'@
+    $temporaryGitMarker = ((& wsl.exe -d $Distro -e python3 -c $markerCheck) -join '').Trim()
+    if ($LASTEXITCODE -ne 0 -or $temporaryGitMarker -notin @('absent', 'empty-marker')) {
+        throw 'Native installer fixture cannot use the temporary-root Git marker safely.'
+    }
     $unpacked = Join-Path $taskRoot 'package'
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     [IO.Compression.ZipFile]::ExtractToDirectory($Vsix, $unpacked)
@@ -137,6 +153,11 @@ try {
     }
     Replace-One (Join-Path $control 'install-plugin.py') 'root = safe_path(Path.home() / ".local/state/codex-decision")' 'root = safe_path(Path(os.environ["DECISION_TEST_HOME"]) / ".local/state/codex-decision")'
     Replace-One (Join-Path $control 'install-plugin.py') 'install(args.payload, args.codex, data_directory=args.data_directory,' 'install(args.payload, args.codex, home=Path(os.environ["DECISION_TEST_HOME"]), codex_home=Path(os.environ["CODEX_HOME"]), data_directory=args.data_directory,'
+    if ($temporaryGitMarker -eq 'empty-marker') {
+        # Keep every repository check inside and below the owned fixture.
+        # Production package code retains its complete ancestor guard.
+        Replace-One (Join-Path $control 'install-plugin.py') 'any((root / ".git").exists() for root in (source, *source.parents))' 'any((root / ".git").exists() for root in (source, *source.parents) if root != Path("/tmp"))'
+    }
     $temporaryFailure = @'
 fcntl.flock(stream, fcntl.LOCK_EX)
             marker = Path(os.environ["DECISION_TEST_HOME"]) / "startup-retry-verified"
@@ -150,11 +171,10 @@ fcntl.flock(stream, fcntl.LOCK_EX)
     Replace-One (Join-Path $control 'panel.js') 'this.extensionUri = extensionUri;' 'this.extensionUri = extensionUri; globalThis.__decisionIntegratedPanel = this;'
     $renderer = Join-Path $control 'webview\decision-panel.js'
     $text = [IO.File]::ReadAllText($renderer)
-    $needle = '    showSelectedView();'
+    $needle = '    receiveResult(event.data);'
     if (-not $text.Contains($needle)) { throw 'Native panel acknowledgement anchor changed.' }
-    $ack = ' vscode.postMessage({type:"decision-integrated-rendered", id:event.data.decision?.id || null, rows:document.querySelectorAll(".batch-row").length, title:document.querySelector(".batch-title")?.textContent, activity:(document.querySelector(".activity-counts")?.textContent || "") + " " + (document.querySelector(".empty")?.textContent || ""), layout:document.querySelector(".batch-list") ? getComputedStyle(document.querySelector(".batch-list")).display : null});'
+    $ack = ' vscode.postMessage({type:"decision-integrated-rendered", id:latestDecision?.id || null, rows:document.querySelectorAll(".batch-row").length, title:document.querySelector(".batch-title")?.textContent, activity:(document.querySelector(".activity-counts")?.textContent || "") + " " + (document.querySelector(".empty")?.textContent || ""), layout:document.querySelector(".batch-list") ? getComputedStyle(document.querySelector(".batch-list")).display : null});'
     $text = $text.Insert($text.LastIndexOf($needle) + $needle.Length, $ack)
-    $text = $text.Replace('if (emptyStatus && event.data.activity?.message) emptyStatus.textContent = event.data.activity.message;', 'if (emptyStatus && event.data.activity?.message) emptyStatus.textContent = event.data.activity.message;' + $ack)
     [IO.File]::WriteAllText($renderer, $text, $utf8)
     [IO.File]::WriteAllText((Join-Path $profile 'User\settings.json'), (@{
         'telemetry.telemetryLevel' = 'off'; 'update.mode' = 'none'; 'extensions.autoUpdate' = $false;

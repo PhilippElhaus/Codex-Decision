@@ -23,14 +23,14 @@ test("empty panel explains real API requests and skipped outputs for its selecte
     const activity = await readPanelActivity(directory);
     assert.equal(activity.calls, 11);
     assert.equal(activity.skipped, 341);
-    assert.match(activity.message, /Decision classified.*No line judgments/);
+    assert.match(activity.message, /Complete output kept\./);
     health.api_requests = 14;
     await fs.writeFile(path.join(directory, "logs", "hook-health.json"), JSON.stringify(health));
     assert.equal((await readPanelActivity(directory)).calls, 14,
       "in-flight and failed API attempts are included independently of completed decisions");
     health.last_skip = "unsupported_route";
     await fs.writeFile(path.join(directory, "logs", "hook-health.json"), JSON.stringify(health));
-    assert.match((await readPanelActivity(directory)).message, /before calling Decision/);
+    assert.match((await readPanelActivity(directory)).message, /Tool format not supported\. Full output kept\./);
     await fs.writeFile(path.join(directory, "config.json"), JSON.stringify({ ...config, enabled: false }));
     assert.match((await readPanelActivity(directory)).message, /off for this thread/);
   } finally { await fs.rm(directory, { recursive: true, force: true }); }
@@ -118,6 +118,68 @@ test("a stale raw checkbox click cannot enable capture for a newly selected thre
     assert.notEqual(messages.at(-1).activity.rawSkips.scope, scope);
     for (const directory of [first, second]) await assert.rejects(
       fs.stat(path.join(directory, "logs", "skipped-raw-enabled.json")), { code: "ENOENT" });
+  } finally { provider.dispose(); await fs.rm(root, { recursive: true, force: true }); }
+});
+
+test("the raw checkbox saves a default without a session and new sessions inherit it", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "decision-panel-raw-default-"));
+  const first = path.join(root, "sessions", "a".repeat(64));
+  const second = path.join(root, "sessions", "b".repeat(64));
+  const originalLoad = Module._load;
+  let LatestDecisionProvider;
+  try {
+    Module._load = function (request, parent, isMain) {
+      return request === "vscode" ? { Uri: { joinPath: (_root, ...parts) => parts.join("/") } } :
+        originalLoad.call(this, request, parent, isMain);
+    };
+    delete require.cache[require.resolve("../../vscode-control/panel")];
+    ({ LatestDecisionProvider } = require("../../vscode-control/panel"));
+  } finally { Module._load = originalLoad; }
+  const messages = [];
+  let selected = null, onMessage, workComplete = false;
+  const provider = new LatestDecisionProvider({}, () => selected, () => Date.now(), () => {},
+    { rootDataDirectory: () => root, workComplete: async () => workComplete });
+  const view = { visible: true, webview: { cspSource: "vscode-resource:", asWebviewUri: uri => uri,
+    onDidReceiveMessage: callback => { onMessage = callback; return { dispose() {} }; },
+    postMessage: async message => { messages.push(message); return true; } },
+    onDidChangeVisibility: () => ({ dispose() {} }), onDidDispose() {} };
+  try {
+    provider.resolveWebviewView(view);
+    onMessage({ type: "ready" });
+    await provider.refresh();
+    const idleScope = messages.at(-1).activity.rawSkips.scope;
+    assert.equal(messages.at(-1).activity.rawSkips.enabled, false);
+    onMessage({ type: "set-raw-skips", enabled: true, scope: idleScope });
+    onMessage({ type: "set-raw-skips", enabled: false, scope: idleScope });
+    while (provider.rawTogglePending) await new Promise(resolve => setImmediate(resolve));
+    await provider.refresh();
+    assert.equal(messages.at(-1).activity.rawSkips.enabled, false,
+      "rapid checkbox changes save the latest intent while the first write is pending");
+    const settledScope = messages.at(-1).activity.rawSkips.scope;
+    onMessage({ type: "set-raw-skips", enabled: true, scope: settledScope });
+    while (provider.rawTogglePending) await new Promise(resolve => setImmediate(resolve));
+    await provider.refresh();
+    assert.equal(messages.at(-1).activity.rawSkips.enabled, true);
+    const enabledIdleScope = messages.at(-1).activity.rawSkips.scope;
+    selected = first;
+    onMessage({ type: "set-raw-skips", enabled: false, scope: enabledIdleScope });
+    await provider.refresh();
+    assert.equal(messages.at(-1).activity.rawSkips.enabled, true,
+      "the selected session inherits the default and ignores a stale idle click");
+    await assert.rejects(fs.stat(path.join(first, "logs", "skipped-raw-enabled.json")), { code: "ENOENT" });
+    await provider.setRawSkips(false);
+    await provider.refresh();
+    assert.equal(messages.at(-1).activity.rawSkips.enabled, false);
+    assert.equal(JSON.parse(await fs.readFile(path.join(root, "logs", "skipped-raw-enabled.json"))).enabled, false,
+      "a session toggle also changes the default for later sessions");
+    workComplete = true;
+    await provider.refresh();
+    assert.equal(messages.at(-1).activity.workComplete, true);
+    selected = second;
+    workComplete = false;
+    await provider.refresh();
+    assert.equal(messages.at(-1).activity.rawSkips.enabled, false);
+    assert.equal(messages.at(-1).activity.workComplete, false);
   } finally { provider.dispose(); await fs.rm(root, { recursive: true, force: true }); }
 });
 

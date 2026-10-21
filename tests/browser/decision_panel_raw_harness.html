@@ -11,6 +11,29 @@
       --vscode-font-family: "Segoe UI", sans-serif; --vscode-editor-font-family: Consolas, monospace; }
   </style>
   <script>
+    // Drive the reading timer without slowing the browser suite.
+    let clockNow = Date.parse("2026-10-20T10:15:00Z");
+    let timerId = 0;
+    const timers = new Map();
+    Date.now = () => clockNow;
+    window.setTimeout = (callback, delay = 0) => {
+      const id = ++timerId;
+      timers.set(id, { callback, at: clockNow + delay });
+      return id;
+    };
+    window.clearTimeout = id => timers.delete(id);
+    const advance = milliseconds => {
+      const target = clockNow + milliseconds;
+      while (true) {
+        const next = [...timers.entries()].filter(([, timer]) => timer.at <= target)
+          .sort((a, b) => a[1].at - b[1].at)[0];
+        if (!next) break;
+        clockNow = next[1].at;
+        timers.delete(next[0]);
+        next[1].callback();
+      }
+      clockNow = target;
+    };
     let saved = { panelMode: "latest" };
     const sent = [];
     window.acquireVsCodeApi = () => ({ postMessage: message => sent.push(message),
@@ -23,52 +46,184 @@
   <script src="../../vscode-control/webview/decision-panel.js"></script>
   <script>
     const app = document.getElementById("app");
-    const activity = { calls: 11, skipped: 341, message: "The latest output was too short to evaluate.",
-      rawSkips: { enabled: false, entries: [] }, totals: { seen: 352, skipped: 341, calls: 11 } };
-    const send = value => window.dispatchEvent(new MessageEvent("message", {
-      data: { type: "decision", decision: null, activity: value } }));
-    send(activity);
-    const report = { initialOff: !app.querySelector("#raw-skips-toggle").checked &&
-      app.textContent.includes("Earlier raw payloads are unavailable.") };
+    const activity = { calls: 11, skipped: 341, message: "Output too short to check.",
+      rawSkips: { enabled: false, entries: [], scope: 1 }, totals: { seen: 352, skipped: 341, calls: 11 } };
+    const send = (value, type = "decision", decision = null) => window.dispatchEvent(new MessageEvent("message", {
+      data: { type, decision, activity: value } }));
+    const state = (entries = [], extra = {}) => ({ ...activity, ...extra,
+      rawSkips: { enabled: true, scope: 2, entries, ...(extra.rawSkips || {}) } });
+    const entry = (index, text = `Synthetic tool output ${index}`) => ({
+      id: index.toString(16).padStart(32, "0"), at: `2026-10-20T10:15:${String(index % 60).padStart(2, "0")}Z`,
+      reason: "exact_content", detail: null, tool_name: "tools.exec_command", tool_use_id: `synthetic-call-${index}`,
+      payload_unavailable: null, payload: { tool_input_json: '{"cmd":"synthetic"}', tool_response_json: JSON.stringify(text) }
+    });
+    const first = entry(1);
+    first.payload.tool_input_json = '{"request_id":18446744073709551615}';
+    const second = entry(2, " M src/example.rs\n?? tests/example.test.js\n");
+    const rawItem = id => app.querySelector(`.raw-skip-entry[data-raw-id="${id}"]`);
+    const currentRaw = () => app.querySelector(".raw-skip-entry[open]");
+    const report = { noSessionClickable: !app.querySelector("#raw-skips-toggle").disabled };
+    send({ rawSkips: { enabled: false, scope: 0, entries: [] } }, "activity");
     app.querySelector("#raw-skips-toggle").click();
-    report.explicitOptIn = sent.at(-1).type === "set-raw-skips" && sent.at(-1).enabled === true &&
-      app.querySelector("#raw-skips-toggle").disabled;
-    send({ ...activity, rawSkips: { enabled: true, entries: [] } });
-    report.futureOnly = app.textContent.includes("Waiting for future skips.");
-    const entries = [
-      { id: "a".repeat(32), at: "2026-10-20T10:15:02Z", reason: "unsupported_result", detail: null,
-        tool_name: "tools.exec_command", tool_use_id: "synthetic-call-01", payload_unavailable: null,
-        payload: { tool_input_json: '{\n  "cmd": "printf synthetic",\n  "request_id": 18446744073709551615\n}',
-          tool_response_json: '{\n  "output": "synthetic tool output",\n  "exit_code": 0\n}' } },
-      { id: "b".repeat(32), at: "2026-10-20T10:15:08Z", reason: "small", detail: null,
-        tool_name: "tools.exec_command", tool_use_id: "synthetic-call-02", payload_unavailable: null,
-        payload: { tool_input_json: '{\n  "cmd": "git status --short",\n  "workdir": "/synthetic/project"\n}',
-          tool_response_json: '" M src/example.rs\\n?? tests/example.test.js\\n"' } },
-    ];
-    send({ ...activity, skipped: 343, rawSkips: { enabled: true, entries } });
-    report.inspectable = app.querySelectorAll(".raw-skip-entry").length === 2 &&
-      app.querySelector(".raw-skip-entry").open &&
-      app.querySelectorAll(".raw-payload")[1].textContent === " M src/example.rs\n?? tests/example.test.js\n";
-    report.exactInteger = app.textContent.includes("18446744073709551615");
-    report.localLabel = app.textContent.includes("Stored locally for this thread.") &&
-      app.textContent.includes("Filtering stays active.");
-    const htmlEntry = { ...entries[0], id: "c".repeat(32), payload: {
-      tool_input_json: '{"cmd":"synthetic"}', tool_response_json: '"<img src=x onerror=alert(1)>"' } };
-    send({ ...activity, rawSkips: { enabled: true, entries: [htmlEntry] } });
-    report.inertRawText = app.querySelector("img") === null && app.textContent.includes("<img src=x");
-    const unavailable = { ...entries[0], payload: null, payload_unavailable: "size_limit" };
-    send({ ...activity, rawSkips: { enabled: true, entries: [unavailable] } });
-    report.oversizeExplained = app.textContent.includes("exceeded the capture size limit") && !app.querySelector(".raw-payload");
-    send({ ...activity, rawSkips: { enabled: true, entries } });
-    app.querySelector("#raw-skips-toggle").click();
-    report.explicitOff = sent.at(-1).type === "set-raw-skips" && sent.at(-1).enabled === false;
+    report.noSessionPreference = sent.at(-1).type === "set-raw-skips" && sent.at(-1).enabled === true &&
+      sent.at(-1).scope === 0;
     send(activity);
-    report.offClearsRaw = !app.querySelector(".raw-payload");
+    report.initialOff = !app.querySelector("#raw-skips-toggle").checked && !app.querySelector(".raw-skips");
+    app.querySelector("#raw-skips-toggle").click();
+    report.explicitOptIn = sent.at(-1).enabled === true && sent.at(-1).scope === 1 &&
+      !app.querySelector("#raw-skips-toggle").disabled;
+    app.querySelector("#raw-skips-toggle").click();
+    report.pendingStillClickable = sent.at(-1).enabled === false && !app.querySelector("#raw-skips-toggle").disabled;
+    app.querySelector("#raw-skips-toggle").click();
+    send(state());
+    report.futureOnly = !app.querySelector(".raw-skips") && app.querySelector("#raw-skips-toggle").checked;
+    const tip = app.querySelector(".raw-skips-tooltip");
+    report.helpHidden = getComputedStyle(tip).visibility === "hidden" && !app.querySelector(".raw-skips-heading");
+    app.querySelector(".raw-skips-help").focus();
+    report.focusHelp = getComputedStyle(tip).visibility === "visible" && tip.getAttribute("role") === "tooltip" &&
+      tip.textContent.includes("Filtering stays on") && tip.textContent.includes("512 KiB") &&
+      tip.textContent.includes("waiting queue");
+    app.querySelector(".raw-skips-help").blur();
+    report.compactStatus = app.querySelector(".empty").getBoundingClientRect().height < 50 &&
+      getComputedStyle(app.querySelector(".empty")).textAlign !== "center";
+    send(state([first, second], { skipped: 343 }));
+    report.burstStartsInOrder = currentRaw()?.dataset.rawId === first.id && !rawItem(second.id) &&
+      app.querySelector(".raw-queue-count").textContent === "1 queued";
+    const held = currentRaw();
+    advance(2999);
+    send(state([first, second], { calls: 17, skipped: 343 }), "activity");
+    report.holdsThreeSeconds = currentRaw() === held && !rawItem(second.id) &&
+      app.querySelector(".activity-counts").textContent === "17 API requests · 343 skipped outputs";
+    advance(1);
+    report.inspectable = app.querySelectorAll(".raw-skip-entry").length === 2 && currentRaw()?.dataset.rawId === second.id &&
+      rawItem(second.id).querySelectorAll(".raw-payload")[1].textContent === " M src/example.rs\n?? tests/example.test.js\n";
+    report.exactInteger = rawItem(first.id).textContent.includes("18446744073709551615");
+    const htmlEntry = entry(3, "<img src=x onerror=alert(1)>");
+    send(state([first, second, htmlEntry]));
+    advance(3000);
+    report.inertRawText = app.querySelector("img") === null && rawItem(htmlEntry.id).textContent.includes("<img src=x");
+    const unavailable = { ...entry(4), payload: null, payload_unavailable: "size_limit" };
+    send(state([first, second, htmlEntry, unavailable]));
+    advance(3000);
+    report.oversizeExplained = rawItem(unavailable.id).textContent.includes("Capture size limit exceeded") &&
+      !rawItem(unavailable.id).querySelector(".raw-payload");
+
+    // Engaging any entry freezes its DOM and scroll position until Resume live.
+    const inspect = rawItem(first.id);
+    inspect.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    inspect.open = true;
+    inspect.dispatchEvent(new Event("toggle"));
+    const section = app.querySelector(".raw-skips");
+    const payload = inspect.querySelector(".raw-payload");
+    payload.scrollTop = 10;
+    const before = { top: inspect.getBoundingClientRect().top, scroll: payload.scrollTop };
+    const more = Array.from({ length: 6 }, (_, index) => entry(index + 5));
+    send(state([first, second, htmlEntry, unavailable, ...more], { calls: 23, workComplete: true }));
+    advance(60000);
+    report.inspectFreezesContent = app.querySelector(".raw-skips") === section && rawItem(first.id) === inspect &&
+      inspect.open && inspect.querySelector(".raw-payload") === payload && payload.scrollTop === before.scroll &&
+      inspect.getBoundingClientRect().top === before.top && !rawItem(more[0].id) &&
+      !app.querySelector(".raw-resume").hidden && app.querySelector(".activity-counts").textContent.includes("23 API");
+    app.querySelector(".raw-resume").click();
+    report.resumeReleasesBacklog = more.every(item => rawItem(item.id)?.open) && rawItem(first.id).open &&
+      app.querySelector(".raw-resume").hidden && !app.querySelector(".raw-queue-count").textContent;
+    // Automatic refreshes keep a manually expanded historical entry expanded.
+    send(state([first, second, htmlEntry, unavailable, ...more]), "activity");
+    report.expansionPreserved = rawItem(first.id).open;
+
+    // Completion waits for the active result, then exposes a long queue together.
+    send(state([], { rawSkips: { scope: 3 } }));
+    const completion = Array.from({ length: 7 }, (_, index) => entry(index + 20));
+    send(state(completion, { rawSkips: { scope: 3 } }));
+    const active = currentRaw();
+    send(state(completion, { rawSkips: { scope: 3 }, workComplete: true }), "activity");
+    advance(2999);
+    report.completionKeepsCurrentHold = currentRaw() === active && !rawItem(completion.at(-1).id);
+    advance(1);
+    report.completionFlushesAll = completion.every(item => rawItem(item.id)) &&
+      completion.slice(1).every(item => rawItem(item.id).open) && !app.querySelector(".raw-queue-count").textContent;
+
+    // Waiting payloads follow the same 20-call / 4 MiB limits as capture storage.
+    send(state([], { rawSkips: { scope: 4 } }));
+    const pin = entry(40);
+    send(state([pin], { rawSkips: { scope: 4 } }));
+    currentRaw().dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    const pinned = currentRaw();
+    const retained = [pin];
+    for (let index = 41; index <= 65; index += 1) {
+      retained.push(entry(index));
+      send(state(retained.slice(-20), { rawSkips: { scope: 4 } }), "activity");
+    }
+    report.queueCountBound = currentRaw() === pinned && app.querySelector(".raw-resume").textContent === "Resume live (20)" &&
+      app.querySelector(".raw-queue-count").textContent === "5 expired" &&
+      app.querySelector(".raw-queue-count").title.includes("Current inspection is unchanged");
+    send(state([], { rawSkips: { scope: 5 } }));
+    send(state([pin], { rawSkips: { scope: 5 } }));
+    currentRaw().dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    const large = [];
+    for (let index = 70; index < 82; index += 1) {
+      large.push(entry(index, "x".repeat(400000)));
+      send(state(large.slice(-10), { rawSkips: { scope: 5 } }), "activity");
+    }
+    report.queueBytesBound = app.querySelector(".raw-resume").textContent === "Resume live (10)" &&
+      app.querySelector(".raw-queue-count").textContent === "2 expired" && currentRaw().dataset.rawId === pin.id;
+    app.querySelector("#raw-skips-toggle").click();
+    report.explicitOff = sent.at(-1).enabled === false;
+    send({ ...activity, rawSkips: { enabled: false, scope: 6, entries: [] } });
+    report.offClearsRaw = !app.querySelector(".raw-payload") && app.querySelector(".raw-resume").hidden &&
+      !app.querySelector(".raw-queue-count").textContent;
+    app.querySelector("#raw-skips-toggle").click();
+    send({ rawSkips: { enabled: false, scope: 7, entries: [] } });
+    report.switchClearsPending = !app.querySelector("#raw-skips-toggle").checked &&
+      !app.querySelector("#raw-skips-toggle").disabled && !app.querySelector(".raw-skips");
     send(null);
-    report.switchClearsRaw = app.querySelector("#raw-skips-toggle").disabled && !app.querySelector(".raw-skips");
-    send({ ...activity, skipped: 343, rawSkips: { enabled: true, entries } });
+    report.switchClearsRaw = !app.querySelector("#raw-skips-toggle").disabled && !app.querySelector(".raw-skips");
+
+    // Inspection also freezes scored lines; a raw hold defers a newer line result.
+    const lineResult = { version: 6, id: "d".repeat(32), status: "keep",
+      rows: [{ line: 1, excerpt: "Synthetic line one", action: "keep", reason: "task_relevant",
+        protected_reason: null, can_omit: null, exact_needed: null, task_relevant: .8, retention_index: .8 }],
+      totals: { seen: 1, judged: 1, omitted: 0 } };
+    const lineState = state([], { rawSkips: { scope: 8 } });
+    send(lineState, "decision", lineResult);
+    const inspectedLine = app.querySelector(".batch-row");
+    inspectedLine.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    const nextLine = { ...lineResult, id: "e".repeat(32), rows: [{ ...lineResult.rows[0], excerpt: "Synthetic line two" }] };
+    send(lineState, "decision", nextLine);
+    advance(5000);
+    report.inspectionFreezesLines = app.querySelector(".batch-row") === inspectedLine &&
+      inspectedLine.querySelector(".batch-excerpt").textContent === "Synthetic line one";
+    app.querySelector(".raw-resume").click();
+    report.resumeUpdatesLines = app.querySelector(".batch-excerpt").textContent === "Synthetic line two";
+    const clockState = entries => state(entries, { rawSkips: { scope: 9 } });
+    send(clockState([]));
+    send(clockState([pin]));
+    send(clockState([pin]), "decision", lineResult);
+    advance(2999);
+    report.rawHoldDefersLines = !app.querySelector(".batch-row");
+    advance(1);
+    report.linesFollowRawHold = app.querySelector(".batch-excerpt").textContent === "Synthetic line one";
+
+    // Hidden time does not count as reading time.
+    send(state([], { rawSkips: { scope: 10 } }));
+    send(state([first, second], { rawSkips: { scope: 10 } }));
+    let hidden = true;
+    Object.defineProperty(document, "hidden", { configurable: true, get: () => hidden });
+    document.dispatchEvent(new Event("visibilitychange"));
+    advance(6000);
+    report.hiddenQueueWaits = currentRaw()?.dataset.rawId === first.id && !rawItem(second.id);
+    hidden = false;
+    document.dispatchEvent(new Event("visibilitychange"));
+    advance(2999);
+    report.visibleReadingRestarts = currentRaw()?.dataset.rawId === first.id && !rawItem(second.id);
+    advance(1);
+    report.visibleQueueResumes = currentRaw()?.dataset.rawId === second.id;
+    delete document.hidden;
+
+    // Leave a small, key-free fixture for documentation captures.
+    send(state([first, second], { rawSkips: { scope: 99 } }));
     const priorWidth = app.style.maxWidth;
-    app.style.maxWidth = "360px";
+    app.style.maxWidth = "336px";
     report.noOverflowAt360 = app.scrollWidth <= app.clientWidth + 1 &&
       document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1;
     app.style.maxWidth = priorWidth;

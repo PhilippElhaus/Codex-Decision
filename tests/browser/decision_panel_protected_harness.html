@@ -71,7 +71,7 @@
         Number(getComputedStyle(node.querySelector(".batch-value")).opacity) === 1);
     send({...complete,id:"1".repeat(32),status:"replace"});
     report.actualRemovals = document.querySelector(".batch-title").textContent === "69 / 72 removed";
-    report.deliveryUnverified = document.querySelector(".batch-status").textContent === "Hook replacement · delivery unverified";
+    report.deliveryUnverified = document.querySelector(".batch-status").textContent === "Filtered" && document.querySelector(".batch-status").title.includes("not verified");
     document.body.dataset.result = JSON.stringify(report);
     document.title = Object.values(report).every(Boolean) ? "DECISION_PROTECTED_READY" : "DECISION_PROTECTED_FAILED";
   </script>

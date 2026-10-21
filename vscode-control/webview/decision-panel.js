@@ -5,6 +5,10 @@
   const app = document.getElementById("app");
   const BAR_FILL_MS = 900;
   const PERCENT_FADE_MS = 180;
+  const RAW_DISPLAY_MS = 3000;
+  const RAW_FLUSH_COUNT = 5;
+  const RAW_QUEUE_COUNT = 20;
+  const RAW_QUEUE_BYTES = 4 * 1024 * 1024;
   let currentId = null;
   let animation = 0;
   let cachedLayout = null;
@@ -12,10 +16,26 @@
   const cachedRows = [];
   let visibleRows = 0;
   let currentActivity = null;
+  let presentedActivity = null;
   let latestDecision = null;
+  let receivedDecision = null;
   let rawPreferencePending = false;
+  let rawPreferenceDesired = false;
   let rawPreferenceError = "";
   let rawContentKey = "";
+  let presentationScope;
+  let presentationStarted = false;
+  let receivedRawIds = new Set();
+  let presentedRawId = null;
+  let expandedRawIds = new Set();
+  let rawHoldUntil = 0;
+  let rawTimer = 0;
+  let presentationRevision = 0;
+  let inspectionPaused = false;
+  const expandedStates = new Map();
+  const resultQueue = [];
+  const rawEntries = new Map();
+  let expiredRawCount = 0;
   let panelMode = vscode.getState?.()?.panelMode === "totals" ? "totals" : "latest";
 
   function element(tag, className, label) {
@@ -37,7 +57,6 @@
     cachedRows.length = 0;
     visibleRows = 0;
     cancelAnimationFrame(animation);
-    currentActivity = activity || null;
     const { header } = makeHeader("Decision");
     const empty = element("section", "empty");
     if (activity && typeof activity.message === "string") {
@@ -54,10 +73,37 @@
     rawToggle.type = "checkbox";
     rawToggle.id = "raw-skips-toggle";
     const rawLabel = append(element("label", "raw-skips-toggle"), rawToggle,
-      element("span", "", "Show raw skipped outputs"));
-    rawLabel.title = "Capture and inspect future skipped tool calls locally for this thread. Filtering stays active.";
+      element("span", "", "Show skipped output"));
+    const helpButton = element("button", "raw-skips-help", "ⓘ");
+    helpButton.type = "button";
+    helpButton.setAttribute("aria-label", "About skipped output");
+    helpButton.setAttribute("aria-describedby", "raw-skips-tooltip");
+    const help = element("span", "raw-skips-tooltip",
+      "Capture future skipped output on this computer. Earlier data is unavailable. May contain private text. " +
+      "Filtering stays on. Applies to this thread. With no thread, sets the default. " +
+      "Store and waiting queue: 20 calls or 4 MiB. Payload limit: 512 KiB. Select an entry to pause updates.");
+    help.id = "raw-skips-tooltip";
+    help.setAttribute("role", "tooltip");
+    const helpWrap = append(element("span", "raw-skips-help-wrap"), helpButton, help);
+    const showHelp = () => {
+      helpWrap.classList.remove("help-dismissed");
+      const box = helpButton.getBoundingClientRect();
+      const width = Math.min(290, innerWidth - 32);
+      help.style.left = `${Math.max(16, Math.min(box.left, innerWidth - width - 16))}px`;
+      help.style.top = `${Math.max(8, Math.min(box.bottom + 5, innerHeight - help.offsetHeight - 8))}px`;
+    };
+    helpWrap.addEventListener("mouseenter", showHelp);
+    helpWrap.addEventListener("focusin", showHelp);
+    helpWrap.addEventListener("keydown", event => {
+      if (event.key === "Escape") helpWrap.classList.add("help-dismissed");
+    });
+    const rawControls = append(element("div", "raw-skips-controls"), rawLabel, helpWrap, element("span", "raw-queue-count"));
+    const resume = element("button", "raw-resume", "Resume live");
+    resume.type = "button";
+    resume.hidden = true;
+    append(rawControls, resume);
     const status = element("span", "batch-status");
-    const meta = append(element("div", "batch-meta"), counts, rawLabel, status);
+    const meta = append(element("div", "batch-meta"), counts, rawControls, status);
     const tabs = element("nav", "panel-tabs");
     tabs.setAttribute("aria-label", "Decision view");
     for (const [mode, name] of [["latest", "Latest"], ["totals", "Totals"]]) {
@@ -86,10 +132,20 @@
     counts.textContent = `${callLabel} API request${calls === 1 ? "" : "s"} · ${skipLabel} skipped output${skipped === 1 ? "" : "s"}`;
     counts.title = `${activity?.message || "Activity for the selected thread"} API requests are recorded attempts; they do not establish provider receipt. ≥ marks an incomplete historical baseline.`;
     const summary = app.querySelector(".activity-status");
-    const message = activity?.hookActivity?.message || activity?.message;
+    const message = presentedActivity?.hookActivity?.message || presentedActivity?.message;
     if (summary) {
       summary.hidden = typeof message !== "string" || !message || (!latestDecision && panelMode !== "totals");
-      summary.textContent = summary.hidden ? "" : `Latest hook: ${message}`;
+      summary.textContent = summary.hidden ? "" : message;
+      summary.title = presentedActivity?.hookActivity?.detail || "";
+    }
+    let emptyStatus = app.querySelector(".empty-status");
+    if (!emptyStatus && typeof message === "string" && message && app.querySelector(".empty")) {
+      emptyStatus = element("p", "empty-status");
+      app.querySelector(".empty").appendChild(emptyStatus);
+    }
+    if (emptyStatus) {
+      emptyStatus.textContent = message || "";
+      emptyStatus.title = presentedActivity?.hookActivity?.detail || "";
     }
     updateRawSkips();
   }
@@ -103,35 +159,44 @@
   }
 
   function updateRawSkips() {
-    const raw = currentActivity?.rawSkips;
+    const raw = presentedActivity?.rawSkips;
     const toggle = app.querySelector("#raw-skips-toggle");
     if (toggle) {
-      toggle.checked = raw?.enabled === true;
-      toggle.disabled = rawPreferencePending || !currentActivity || currentActivity.unavailable;
+      toggle.checked = rawPreferencePending ? rawPreferenceDesired : currentActivity?.rawSkips?.enabled === true;
+      toggle.disabled = false;
     }
+    const queued = app.querySelector(".raw-queue-count");
+    if (queued) {
+      const count = resultQueue.filter(item => item.rawId).length;
+      queued.textContent = [!inspectionPaused && count ? `${count} queued` : "",
+        expiredRawCount ? `${expiredRawCount} expired` : ""].filter(Boolean).join(" · ");
+      queued.title = expiredRawCount ? "Older queued captures exceeded local retention. Current inspection is unchanged." : "";
+    }
+    const resume = app.querySelector(".raw-resume");
+    if (resume) {
+      resume.hidden = !inspectionPaused;
+      resume.textContent = resultQueue.length ? `Resume live (${resultQueue.length})` : "Resume live";
+    }
+    if (inspectionPaused) return;
     const existing = app.querySelector(".raw-skips");
-    if (!currentActivity || currentActivity.unavailable) { existing?.remove(); return; }
+    if (!presentedActivity || presentedActivity.unavailable) { existing?.remove(); return; }
     const entries = raw?.entries || [];
     const key = JSON.stringify([raw?.enabled, raw?.unavailable, entries.map(entry => entry.id),
-      currentActivity.skipped, rawPreferenceError]);
+      presentedRawId, [...expandedRawIds], rawPreferenceError]);
     if (existing && key === rawContentKey) return;
     rawContentKey = key;
     const section = element("section", "raw-skips");
     section.setAttribute("aria-label", "Raw skipped tool calls");
     if (rawPreferenceError) append(section, element("p", "raw-skips-note raw-skips-error", rawPreferenceError));
     if (raw?.unavailable) {
-      append(section, element("p", "raw-skips-note", "Saved raw skipped outputs could not be read for this thread."));
-    } else if (!raw?.enabled) {
-      append(section, element("p", "raw-skips-note", "Enable to capture future skips locally for this thread. Earlier raw payloads are unavailable."));
-    } else {
-      append(section, element("h2", "raw-skips-heading", "Skipped tool calls"),
-        element("p", "raw-skips-note", "Stored locally for this thread. Raw data can contain sensitive text. Filtering stays active."));
-      if (!entries.length) append(section, element("p", "raw-skips-note", "Waiting for future skips. Earlier raw payloads are unavailable."));
-      else {
-        append(section, element("p", "raw-skips-note", "Recent captures only: up to 20 calls and 4 MiB. Payloads above 512 KiB are unavailable."));
+      append(section, element("p", "raw-skips-note", "Saved skipped output is unavailable."));
+    } else if (raw?.enabled && entries.length) {
         for (const [index, entry] of [...entries].reverse().entries()) {
           const item = element("details", "raw-skip-entry");
-          item.open = index === 0;
+          item.dataset.rawId = entry.id;
+          item.open = expandedStates.has(entry.id) ? expandedStates.get(entry.id) :
+            expandedRawIds.has(entry.id) || (presentedRawId ? entry.id === presentedRawId : index === 0);
+          item.dataset.presentedOpen = String(item.open);
           const summary = element("summary", "raw-skip-summary");
           const time = element("time", "raw-skip-time", new Date(entry.at).toLocaleTimeString());
           time.dateTime = entry.at;
@@ -140,20 +205,17 @@
             element("span", "raw-skip-reason", (entry.detail || entry.reason).replaceAll("_", " ")));
           append(item, summary);
           if (entry.tool_use_id) append(item, element("p", "raw-skips-note raw-skip-id", `Tool call: ${entry.tool_use_id}`));
-          if (!entry.payload) append(item, element("p", "raw-skips-note", "Raw payload unavailable: this tool call exceeded the capture size limit."));
+          if (!entry.payload) append(item, element("p", "raw-skips-note", "Output unavailable. Capture size limit exceeded."));
           else {
             append(item, element("h3", "raw-payload-heading", "Tool input"),
               element("pre", "raw-payload", payloadText(entry.payload.tool_input_json)),
-              element("h3", "raw-payload-heading", "Original tool response"),
+              element("h3", "raw-payload-heading", "Tool output"),
               element("pre", "raw-payload", payloadText(entry.payload.tool_response_json)));
           }
           section.appendChild(item);
         }
-        if (!Number.isSafeInteger(currentActivity.skipped) || currentActivity.skipped > entries.length) {
-          append(section, element("p", "raw-skips-note", "Raw payloads from before capture or outside this recent history are unavailable."));
-        }
-      }
     }
+    if (!section.childNodes.length) { existing?.remove(); return; }
     if (existing) existing.replaceWith(section);
     else app.appendChild(section);
   }
@@ -166,8 +228,13 @@
   }
 
   function batchStatus(decision) {
-    return decision.status === "candidate" ? "Preview · full output kept" :
-      decision.status === "replace" ? "Hook replacement · delivery unverified" : decision.status === "processing" ? "Evaluating" : "Full output kept";
+    return decision.status === "candidate" ? "Preview" :
+      decision.status === "replace" ? "Filtered" : decision.status === "processing" ? "Evaluating" : "Full output kept";
+  }
+
+  function batchStatusDetail(decision) {
+    return decision.status === "candidate" ? "Preview only. Full output kept." :
+      decision.status === "replace" ? "The hook shortened the output. Delivery to Codex is not verified." : "";
   }
 
   function showTotals() {
@@ -175,23 +242,35 @@
     cancelAnimationFrame(animation);
     const { header, status } = makeHeader(currentActivity ? "This thread" : "Decision");
     status.textContent = currentActivity?.unavailable ? "Saved activity unavailable" :
-      currentActivity?.totals?.replaced > 0 ? "Hook totals · delivery unverified" :
       currentActivity ? "Saved totals" : "No thread selected";
+    status.title = currentActivity?.totals?.replaced > 0 ? "Delivery of shortened output to Codex is not verified." : "";
+    if (status.title) status.tabIndex = 0;
     app.replaceChildren(header, window.DecisionTotals.render(currentActivity));
     updateActivity(currentActivity);
   }
 
   function showSelectedView() {
+    const inspectedRaw = inspectionPaused ? app.querySelector(".raw-skips") : null;
     if (panelMode === "totals") showTotals();
     else if (latestDecision) renderBatchDecision(latestDecision);
-    else showEmpty(currentActivity);
+    else showEmpty(presentedActivity);
     updateActivity(currentActivity);
+    if (inspectedRaw && inspectedRaw.parentNode !== app) app.appendChild(inspectedRaw);
     for (const button of app.querySelectorAll(".panel-tab")) {
       button.setAttribute("aria-pressed", String(button.dataset.panelMode === panelMode));
     }
   }
 
   app.addEventListener("click", (event) => {
+    if (event.target.closest(".raw-resume")) {
+      inspectionPaused = false;
+      if (!resultQueue.length && Date.now() >= rawHoldUntil) {
+        presentedActivity = currentActivity;
+        showSelectedView();
+      }
+      drainResults();
+      return;
+    }
     const button = event.target.closest("button[data-panel-mode]");
     if (!button || button.dataset.panelMode === panelMode) return;
     panelMode = button.dataset.panelMode;
@@ -199,11 +278,38 @@
     showSelectedView();
   });
 
+  function pauseInspection() {
+    if (inspectionPaused) return;
+    inspectionPaused = true;
+    clearTimeout(rawTimer);
+    rawTimer = 0;
+    updateRawSkips();
+  }
+
+  for (const name of ["pointerdown", "focusin", "wheel"]) {
+    app.addEventListener(name, event => {
+      if (event.target.closest(".raw-skip-entry, .batch-row")) pauseInspection();
+    }, { passive: true });
+  }
+  app.addEventListener("toggle", event => {
+    const item = event.target;
+    if (!item.matches(".raw-skip-entry") || item.dataset.presentedOpen === String(item.open)) return;
+    expandedStates.set(item.dataset.rawId, item.open);
+    item.dataset.presentedOpen = String(item.open);
+    pauseInspection();
+  }, true);
+  document.addEventListener("selectionchange", () => {
+    const selection = document.getSelection();
+    const node = selection?.anchorNode;
+    const target = node?.nodeType === Node.ELEMENT_NODE ? node : node?.parentElement;
+    if (selection && !selection.isCollapsed && target?.closest(".raw-skips, .batch-list")) pauseInspection();
+  });
+
   app.addEventListener("change", (event) => {
-    if (event.target.id !== "raw-skips-toggle" || rawPreferencePending) return;
+    if (event.target.id !== "raw-skips-toggle") return;
     rawPreferencePending = true;
+    rawPreferenceDesired = event.target.checked;
     rawPreferenceError = "";
-    event.target.disabled = true;
     vscode.postMessage({ type: "set-raw-skips", enabled: event.target.checked,
       scope: currentActivity?.rawSkips?.scope });
   });
@@ -214,6 +320,9 @@
       if (title && title.textContent !== batchTitle(decision)) title.textContent = batchTitle(decision);
       const status = app.querySelector(".batch-status");
       if (status && status.textContent !== batchStatus(decision)) status.textContent = batchStatus(decision);
+      if (status) status.title = batchStatusDetail(decision);
+      if (status?.title) status.tabIndex = 0;
+      else status?.removeAttribute("tabindex");
       return;
     }
     currentId = decision.id;
@@ -228,6 +337,9 @@
     const { title, status, list } = cachedHeader;
     if (title.textContent !== batchTitle(decision)) title.textContent = batchTitle(decision);
     if (status.textContent !== batchStatus(decision)) status.textContent = batchStatus(decision);
+    status.title = batchStatusDetail(decision);
+    if (status.title) status.tabIndex = 0;
+    else status.removeAttribute("tabindex");
     const fills = [];
     const values = [];
     list.setAttribute("role", "list");
@@ -294,6 +406,185 @@
     animation = requestAnimationFrame(frame);
   }
 
+  function clearPresentationQueue() {
+    clearTimeout(rawTimer);
+    rawTimer = 0;
+    rawHoldUntil = 0;
+    presentationRevision += 1;
+    resultQueue.length = 0;
+    receivedRawIds = new Set();
+    presentedRawId = null;
+    expandedRawIds = new Set();
+    inspectionPaused = false;
+    expandedStates.clear();
+    rawEntries.clear();
+    expiredRawCount = 0;
+    presentedActivity = null;
+  }
+
+  function present(snapshot) {
+    if (snapshot.activity?.rawSkips?.enabled && !snapshot.activity.rawSkips.unavailable) {
+      const history = new Map();
+      for (const entry of presentedActivity?.rawSkips?.entries || []) history.set(entry.id, entry);
+      for (const entry of snapshot.activity.rawSkips.entries || []) history.set(entry.id, entry);
+      // A completion flush can expose all retained waiting entries together.
+      // Normal history follows the capture limits without discarding the new item.
+      if (!snapshot.expandedIds) {
+        let bytes = [...history.values()].reduce((sum, entry) => sum + rawEntryBytes(entry), 0);
+        while (history.size > RAW_QUEUE_COUNT || (bytes > RAW_QUEUE_BYTES && history.size > 1)) {
+          const oldest = history.values().next().value;
+          bytes -= rawEntryBytes(oldest);
+          history.delete(oldest.id);
+        }
+      }
+      snapshot = { ...snapshot, activity: { ...snapshot.activity,
+        rawSkips: { ...snapshot.activity.rawSkips, entries: [...history.values()] } } };
+    }
+    latestDecision = snapshot.decision;
+    presentedActivity = snapshot.activity;
+    presentedRawId = snapshot.rawId || null;
+    expandedRawIds = new Set(snapshot.expandedIds || []);
+    const revision = ++presentationRevision;
+    showSelectedView();
+    if (presentedRawId) {
+      rawHoldUntil = Date.now() + RAW_DISPLAY_MS;
+      requestAnimationFrame(() => {
+        if (revision === presentationRevision) rawHoldUntil = Math.max(rawHoldUntil, Date.now() + RAW_DISPLAY_MS);
+      });
+    }
+    pruneRawReferences();
+  }
+
+  function rawEntryBytes(entry) {
+    return rawEntries.get(entry.id)?.bytes || new TextEncoder().encode(JSON.stringify(entry)).length;
+  }
+
+  function pruneRawReferences() {
+    const ids = new Set([...(currentActivity?.rawSkips?.entries || []).map(entry => entry.id),
+      ...(presentedActivity?.rawSkips?.entries || []).map(entry => entry.id),
+      ...resultQueue.filter(item => item.rawId).map(item => item.rawId)]);
+    for (const id of rawEntries.keys()) if (!ids.has(id)) rawEntries.delete(id);
+    for (const id of expandedStates.keys()) if (!ids.has(id)) expandedStates.delete(id);
+    receivedRawIds = ids;
+  }
+
+  function trimWaitingQueue() {
+    let count = 0;
+    let bytes = 0;
+    for (const item of resultQueue) {
+      if (item.rawId) { count += 1; bytes += rawEntryBytes(item.activity.rawSkips.entries[0]); }
+    }
+    while (count > RAW_QUEUE_COUNT || bytes > RAW_QUEUE_BYTES) {
+      const index = resultQueue.findIndex(item => item.rawId);
+      const [expired] = resultQueue.splice(index, 1);
+      bytes -= rawEntryBytes(expired.activity.rawSkips.entries[0]);
+      count -= 1;
+      expiredRawCount = Math.min(Number.MAX_SAFE_INTEGER, expiredRawCount + 1);
+    }
+    for (let index = resultQueue.length - 2; index >= 0; index -= 1) {
+      if (!resultQueue[index].rawId && !resultQueue[index + 1].rawId) resultQueue.splice(index, 1);
+    }
+    pruneRawReferences();
+  }
+
+  function queuedActivity(raw, entries) {
+    return { message: currentActivity?.message, hookActivity: currentActivity?.hookActivity,
+      rawSkips: raw ? { ...raw, entries } : undefined };
+  }
+
+  function drainResults() {
+    clearTimeout(rawTimer);
+    rawTimer = 0;
+    if (inspectionPaused || document.hidden) { updateRawSkips(); return; }
+    const remaining = rawHoldUntil - Date.now();
+    if (remaining > 0) {
+      if (resultQueue.length) rawTimer = setTimeout(drainResults, remaining);
+      updateRawSkips();
+      return;
+    }
+    // A completed turn can release a long queue together. The active result
+    // still gets its full reading time. Keep every queued payload, even if the
+    // capture file has already rotated it out of its bounded history.
+    if (currentActivity?.workComplete && resultQueue.filter(item => item.rawId).length >= RAW_FLUSH_COUNT) {
+      const pending = resultQueue.splice(0);
+      const entries = new Map();
+      for (const entry of presentedActivity?.rawSkips?.entries || []) entries.set(entry.id, entry);
+      for (const snapshot of pending) {
+        for (const entry of snapshot.activity?.rawSkips?.entries || []) entries.set(entry.id, entry);
+      }
+      const last = pending.at(-1);
+      present({ decision: last.decision,
+        activity: { ...currentActivity, rawSkips: { ...currentActivity.rawSkips, entries: [...entries.values()] } },
+        expandedIds: pending.filter(item => item.rawId).map(item => item.rawId) });
+      return;
+    }
+    while (resultQueue.length) {
+      const next = resultQueue.shift();
+      present(next);
+      if (next.rawId) break;
+    }
+    if (resultQueue.length) rawTimer = setTimeout(drainResults, Math.max(0, rawHoldUntil - Date.now()));
+    updateRawSkips();
+  }
+
+  function receiveResult(data) {
+    if (data.type === "decision") receivedDecision = data.decision || null;
+    const previousActivity = currentActivity;
+    currentActivity = data.activity ?? (data.type === "activity" || !receivedDecision ? null : currentActivity);
+    let raw = currentActivity?.rawSkips;
+    if (rawPreferencePending && raw?.enabled === rawPreferenceDesired) rawPreferencePending = false;
+    const scope = raw?.scope;
+    if (scope !== presentationScope) {
+      rawPreferencePending = false;
+      rawPreferenceError = "";
+    }
+    const reset = !presentationStarted || scope !== presentationScope || !currentActivity ||
+      currentActivity.unavailable || raw?.unavailable ||
+      (previousActivity?.rawSkips?.enabled === true && !raw?.enabled);
+    const entries = raw?.entries || [];
+    if (reset) {
+      clearPresentationQueue();
+      raw = currentActivity?.rawSkips;
+      for (const entry of raw?.entries || []) rawEntries.set(entry.id, { entry,
+        bytes: new TextEncoder().encode(JSON.stringify(entry)).length });
+      presentationStarted = true;
+      presentationScope = scope;
+      receivedRawIds = new Set(entries.map(entry => entry.id));
+      present({ decision: receivedDecision, activity: currentActivity,
+        rawId: raw?.enabled && !raw.unavailable ? entries.at(-1)?.id : null });
+      return;
+    }
+    if (raw?.entries) {
+      const entries = raw.entries.map(entry => {
+        if (!rawEntries.has(entry.id)) rawEntries.set(entry.id, { entry,
+          bytes: new TextEncoder().encode(JSON.stringify(entry)).length });
+        return rawEntries.get(entry.id).entry;
+      });
+      raw = { ...raw, entries };
+      currentActivity = { ...currentActivity, rawSkips: raw };
+    }
+    const fresh = (raw?.entries || []).filter(entry => !receivedRawIds.has(entry.id));
+    for (const entry of fresh) {
+      resultQueue.push({ decision: receivedDecision,
+        activity: queuedActivity(raw, [entry]), rawId: entry.id });
+    }
+    // Only retain IDs that remain in storage or in the presentation queue.
+    receivedRawIds = new Set([...entries.map(entry => entry.id),
+      ...resultQueue.filter(item => item.rawId).map(item => item.rawId)]);
+    if (!fresh.length && data.type === "decision") {
+      const snapshot = { decision: receivedDecision, activity: queuedActivity(raw, []) };
+      if (!resultQueue.at(-1)?.rawId && resultQueue.length) resultQueue[resultQueue.length - 1] = snapshot;
+      else resultQueue.push(snapshot);
+    } else if (!fresh.length && !resultQueue.length && !inspectionPaused && Date.now() >= rawHoldUntil) {
+      presentedActivity = currentActivity;
+      if (panelMode === "totals") showTotals();
+    }
+    trimWaitingQueue();
+    // Counters and the capture preference stay current while result content waits.
+    updateActivity(currentActivity);
+    if (fresh.length || resultQueue.length || currentActivity?.workComplete !== previousActivity?.workComplete) drainResults();
+  }
+
   window.addEventListener("message", (event) => {
     if (event.data?.type === "raw-skips-error") {
       rawPreferencePending = false;
@@ -301,19 +592,16 @@
       updateRawSkips();
       return;
     }
-    if (event.data?.type === "activity") {
-      rawPreferencePending = false;
-      updateActivity(event.data.activity);
-      if (panelMode === "totals") { showTotals(); return; }
-      const emptyStatus = app.querySelector(".empty-status");
-      if (emptyStatus && event.data.activity?.message) emptyStatus.textContent = event.data.activity.message;
-      return;
+    if (event.data?.type !== "activity" && event.data?.type !== "decision") return;
+    receiveResult(event.data);
+  });
+  document.addEventListener("visibilitychange", () => {
+    clearTimeout(rawTimer);
+    rawTimer = 0;
+    if (!document.hidden) {
+      if (presentedRawId) rawHoldUntil = Date.now() + RAW_DISPLAY_MS;
+      drainResults();
     }
-    if (event.data?.type !== "decision") return;
-    rawPreferencePending = false;
-    latestDecision = event.data.decision || null;
-    currentActivity = event.data.activity ?? (latestDecision ? currentActivity : null);
-    showSelectedView();
   });
   showSelectedView();
   vscode.postMessage({ type: "ready" });

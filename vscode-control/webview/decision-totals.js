@@ -1,6 +1,7 @@
 "use strict";
 
 (() => {
+  let helpId = 0;
   const reasons = {
     sensitive: ["Protected text or input", "Credential markers or ambiguous structured text prevented safe forwarding."],
     unsafe_task_context: ["Task context unavailable", "The latest task could not be safely read. Earlier skips stay in the saved totals."],
@@ -36,6 +37,32 @@
     return Number.isSafeInteger(value) && value >= 0 ? `${partial ? "≥" : ""}${value.toLocaleString("en-US")}` : "—";
   }
 
+  function help(text, label, className = "") {
+    const wrap = node("span", "decision-help");
+    const button = node("button", "decision-help-button");
+    const tip = node("span", `decision-help-text ${className}`.trim(), text);
+    tip.id = `decision-totals-help-${++helpId}`;
+    tip.setAttribute("role", "tooltip");
+    button.type = "button";
+    button.setAttribute("aria-label", `About ${label}`);
+    button.setAttribute("aria-describedby", tip.id);
+    const place = () => {
+      wrap.classList.remove("help-dismissed");
+      const target = button.getBoundingClientRect();
+      const size = tip.getBoundingClientRect();
+      tip.style.position = "fixed";
+      tip.style.left = `${Math.max(8, Math.min(target.left, innerWidth - size.width - 8))}px`;
+      tip.style.top = `${target.bottom + size.height + 12 > innerHeight ? Math.max(8, target.top - size.height - 5) : target.bottom + 5}px`;
+    };
+    wrap.addEventListener("mouseenter", place);
+    button.addEventListener("focus", place);
+    button.addEventListener("keydown", event => {
+      if (event.key === "Escape") { wrap.classList.add("help-dismissed"); event.stopPropagation(); }
+    });
+    wrap.append(button, tip);
+    return wrap;
+  }
+
   function reasonTable(section, title, counts, details = {}, partial = false, detailsPartial = false) {
     const entries = Object.entries(counts || {}).filter(([, value]) => Number.isSafeInteger(value) && value > 0)
       .sort(([a, countA], [b, countB]) => countB - countA || a.localeCompare(b));
@@ -46,7 +73,7 @@
     const table = node("table", "totals-reasons");
     const head = node("thead");
     const heading = node("tr");
-    for (const label of ["Reason", "Outputs", "What happened"]) {
+    for (const label of ["Reason", "Outputs"]) {
       const cell = node("th", "", label); cell.scope = "col"; heading.appendChild(cell);
     }
     head.appendChild(heading);
@@ -57,7 +84,9 @@
         `Recorded protection: output ${count(details.protected_output || 0, detailsPartial)} · command ${count(details.protected_command || 0, detailsPartial)} · other input ${count(details.protected_input || 0, detailsPartial)}.` : description;
       const row = node("tr");
       row.dataset.reason = reason;
-      row.append(node("td", "", label), node("td", "reason-count", count(value, partial)), node("td", "reason-detail", detail));
+      const caption = node("td", "reason-label", label);
+      caption.appendChild(help(detail, label, "reason-detail"));
+      row.append(caption, node("td", "reason-count", count(value, partial)));
       body.appendChild(row);
     }
     table.append(head, body); section.appendChild(table);
@@ -104,8 +133,10 @@
       const metric = node("div", "totals-metric");
       metric.dataset.metric = name;
       const partial = totals.partialCounters?.includes(name) || false;
-      metric.title = meanings[name] + (partial ? " Incomplete coverage: known counts are lower bounds; unresolved attempts can still change stage totals." : "");
-      metric.append(node("dt", "", label), node("dd", "", count(value, partial)));
+      const meaning = meanings[name] + (partial ? " Counts are incomplete. Known values are lower bounds." : "");
+      const caption = node("dt");
+      caption.append(node("span", "metric-label", label), help(meaning, label));
+      metric.append(caption, node("dd", "", count(value, partial)));
       metrics.appendChild(metric);
     }
     section.appendChild(metrics);

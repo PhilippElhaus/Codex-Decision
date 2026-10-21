@@ -529,6 +529,7 @@
         seen && hook?.last_skip && Number(hook.last_skip_ms || 0) >= Number(hook.last_success_ms || 0)
           ? `Hook ran; latest output skipped: ${hook.last_skip.replaceAll("_", " ")}.` :
           seen ? "Waiting for the next line decision." : "Waiting for tool output.");
+    hookActivity.title = state.hookActivity?.detail || "";
     hookActivity.style.display = state.enabled ? "block" : "none";
     const activity = state.enabled
       ? `This session: ${recordedCount("calls")} API attempts, ${recordedCount("skipped")} skipped outputs. ${totals}. ${tokens}.${delivery} ${hookActivity.textContent} ${history.join(". ") || state.recent}.`

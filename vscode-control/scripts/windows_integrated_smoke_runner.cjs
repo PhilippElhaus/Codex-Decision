@@ -182,7 +182,9 @@ exports.run = async () => {
       const pending = globalThis.__decisionIntegratedInstallation;
       try { installation = await pending; }
       catch (error) {
-        assert.equal(error.retryable, true, "only the injected transient startup failure can retry");
+        const detail = String(error?.message || "Unknown installation failure")
+          .replace(/[\r\n\t\x00-\x1f\x7f]/g, " ").slice(0, 240);
+        assert.equal(error.retryable, true, `only the injected transient startup failure can retry: ${detail}`);
         temporaryFailures += 1;
         assert.equal(temporaryFailures, 1, "the owned fixture fails only once");
         await until(() => globalThis.__decisionIntegratedInstallation !== pending, "automatic startup retry");

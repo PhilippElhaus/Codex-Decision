@@ -68,7 +68,8 @@ test("composer and panel restore the same thread outcomes and request counts aft
       return composer;
     };
     const failed = await check("error");
-    assert.match(failed.hookActivity.message, /invalid Decision response/);
+    assert.equal(failed.hookActivity.message, "Hook error. Full output kept.");
+    assert.match(failed.hookActivity.detail, /invalid Decision response/);
     Object.assign(health, { last_seen_ms: savedAt + 1000, last_skip_ms: savedAt + 1000,
       last_skip: "small", skipped: 42 });
     const skipped = await check("skip");

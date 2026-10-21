@@ -4,14 +4,14 @@
 
 Codex Decision selects repetitive lines for removal from supported local tool output. Errors and useful evidence stay visible. Every shortened result links to the complete original.
 
-**Codex Decision 0.14.0** — [Download the integrated VSIX](https://github.com/PhilippElhaus/Codex-Decision/releases/latest).
+**Codex Decision 0.14.1** — [Download the integrated VSIX](https://github.com/PhilippElhaus/Codex-Decision/releases/latest).
 
 ## Get started
 
 Install the single VSIX in Windows VS Code with a Linux x86_64 WSL environment:
 
 ```bash
-code --install-extension codex-decision-0.14.0.vsix --force
+code --install-extension codex-decision-0.14.1.vsix --force
 ```
 
 The package contains the hook, skill, session controls, settings, and verified Codex UI patch. On activation it installs or updates the local plugin and repairs supported Codex builds. Existing plugin data and thread choices remain in place. Run **Developer: Reload Window** after the integration repair, then open your Codex thread. Review the hook in `/hooks` if Codex requests trust. No second package or manual composer patch is needed.
@@ -56,7 +56,7 @@ Open the **Decision** panel beside **Terminal** and **Output**. Blue rows mark p
 
 Select **Latest** for the current result or **Totals** for the selected thread’s saved request attempts, validated responses, evaluations, removals, and skip reasons. Switching threads restores their own counters. Incomplete older history shows a lower bound (`≥`) or an unknown count (`—`).
 
-Select **Show raw skipped outputs** beside the skip count to capture and inspect future skipped tool calls for that thread. Expand an entry to see its skip reason, tool input, and original response. Captured data stays in private local storage with bounded retention. Older skips have no saved raw payload. Turn the checkbox off to stop capture.
+Use **Show skipped output** to capture future skips. You can change it before you open a thread. This sets the default for new threads; each thread keeps its own choice. Expand an entry to see the tool input and full response. Hover over the info button for storage details. Each new raw result stays visible for at least three seconds. Later results wait in a queue. When work ends, the panel shows a long remaining queue together. Click or focus an entry to pause live updates while you inspect it. Select **Resume live** to continue. Capture and its queue stay local, with a limit of 20 calls and 4 MiB. Older queued captures can expire while inspection is paused. Turn the switch off to stop capture.
 
 <img src="docs/images/decision-skipped-raw.png" width="1000" alt="Decision panel showing the raw skipped outputs checkbox and a captured tool call with input and original response">
 
