@@ -1,6 +1,8 @@
 # Install and verify
 
-For Windows x86_64 VS Code, install the integrated VSIX from the [latest release](https://github.com/PhilippElhaus/Codex-Decision/releases/latest):
+Download the integrated VSIX from the [latest release](https://github.com/PhilippElhaus/Codex-Decision/releases/latest). In **Visual Studio Code** on Windows x86_64, open **Extensions** (`Ctrl+Shift+X`), select **… → Install from VSIX…**, and choose `codex-decision-0.15.0.vsix`.
+
+If double-clicking the file opens **Visual Studio VSIX Installer**, close that installer and use the VS Code menu. You can also install from a terminal:
 
 ```bash
 code --install-extension codex-decision-0.15.0.vsix --force

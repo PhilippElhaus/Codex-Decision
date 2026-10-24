@@ -8,7 +8,9 @@ Codex Decision selects repetitive lines for removal from supported local tool ou
 
 ## Get started
 
-Install the single VSIX in Windows x86_64 VS Code:
+Install the downloaded VSIX in **Visual Studio Code**. Open **Extensions** (`Ctrl+Shift+X`), select **… → Install from VSIX…**, and choose `codex-decision-0.15.0.vsix`. If double-clicking the file opens **Visual Studio VSIX Installer**, close that installer and use the VS Code menu.
+
+You can also install it from a terminal:
 
 ```bash
 code --install-extension codex-decision-0.15.0.vsix --force

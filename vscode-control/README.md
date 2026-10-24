@@ -4,7 +4,9 @@ This integrated extension contains the local Decision hook, skill, composer cont
 
 ## Install
 
-Install the release VSIX in Windows VS Code. To build the combined package, first build the native Windows binaries with `scripts/build_hook_windows.ps1`, then build and package from Linux or WSL:
+Install the release VSIX in **Visual Studio Code** on Windows. Open **Extensions** (`Ctrl+Shift+X`), select **… → Install from VSIX…**, and choose the downloaded file. If double-clicking the file opens **Visual Studio VSIX Installer**, close that installer and use the VS Code menu.
+
+To build the combined package, first build the native Windows binaries with `scripts/build_hook_windows.ps1`, then build and package from Linux or WSL:
 
 ```bash
 ../scripts/build_control.sh
