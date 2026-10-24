@@ -95,7 +95,7 @@ fn sid_string(sid: Handle) -> Result<String, String> {
     }
 }
 
-fn current_sid() -> Result<String, String> {
+fn token_sid(class: u32) -> Result<String, String> {
     let mut token = null_mut();
     // SAFETY: token is an output handle, TOKEN_QUERY grants read-only access.
     if unsafe { OpenProcessToken(GetCurrentProcess(), 8, &mut token) } == 0 {
@@ -103,21 +103,22 @@ fn current_sid() -> Result<String, String> {
     }
     let result = (|| {
         let mut needed = 0;
-        // SAFETY: the first call obtains the required TOKEN_USER buffer size.
+        // SAFETY: the first call obtains the required TOKEN_USER or TOKEN_OWNER size.
         unsafe {
-            GetTokenInformation(token, 1, null_mut(), 0, &mut needed);
+            GetTokenInformation(token, class, null_mut(), 0, &mut needed);
         }
         if needed == 0 || needed > 4096 {
             return Err("Windows user identity unavailable".into());
         }
         let mut bytes = vec![0usize; (needed as usize).div_ceil(size_of::<usize>())];
-        // SAFETY: aligned buffer holds the complete TOKEN_USER structure and SID.
-        if unsafe { GetTokenInformation(token, 1, bytes.as_mut_ptr().cast(), needed, &mut needed) }
-            == 0
+        // SAFETY: aligned buffer holds the complete requested structure and SID.
+        if unsafe {
+            GetTokenInformation(token, class, bytes.as_mut_ptr().cast(), needed, &mut needed)
+        } == 0
         {
             return Err("Windows user identity unavailable".into());
         }
-        // SAFETY: TOKEN_USER starts with SID_AND_ATTRIBUTES, whose first member is PSID.
+        // SAFETY: TOKEN_USER and TOKEN_OWNER both start with a PSID member.
         sid_string(unsafe { *(bytes.as_ptr().cast::<Handle>()) })
     })();
     // SAFETY: OpenProcessToken returned this owned handle.
@@ -125,6 +126,27 @@ fn current_sid() -> Result<String, String> {
         CloseHandle(token);
     }
     result
+}
+
+fn current_sid() -> Result<String, String> {
+    token_sid(1)
+}
+
+fn accepts_owner(owner: &str, user: &str, default_owner: &str) -> bool {
+    // Elevated Windows tokens can create files owned by Administrators. Accept
+    // that group only when Windows selected it as this token's default owner.
+    owner == user || owner == "S-1-5-32-544" && owner == default_owner
+}
+
+fn owned_by_current_token(owner: Handle, user: &str) -> Result<bool, String> {
+    if owner.is_null() {
+        return Ok(false);
+    }
+    let owner = sid_string(owner)?;
+    if owner == user {
+        return Ok(true);
+    }
+    Ok(accepts_owner(&owner, user, &token_sid(4)?))
 }
 
 pub fn identity(file: &File) -> Result<(u32, u64, u32), String> {
@@ -178,7 +200,7 @@ pub fn private(file: &File, max_links: u32) -> Result<(), String> {
     }
     let _memory = Memory(descriptor);
     let user = current_sid()?;
-    if owner.is_null() || dacl.is_null() || sid_string(owner)? != user {
+    if dacl.is_null() || !owned_by_current_token(owner, &user)? {
         return Err("unsafe Windows file owner or permissions".into());
     }
     // SAFETY: GetSecurityInfo returns a validated ACL in the owned descriptor.
@@ -233,7 +255,7 @@ pub fn secure(path: &Path, directory: bool) -> Result<(), String> {
         return Err("Windows private permissions unavailable".into());
     }
     let _previous = Memory(previous);
-    if owner.is_null() || sid_string(owner)? != user {
+    if !owned_by_current_token(owner, &user)? {
         return Err("Windows Decision state belongs to another account".into());
     }
     let text: Vec<u16> = format!("D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;{user})")
@@ -314,6 +336,23 @@ pub fn lock(file: &File, timeout: Duration) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn token_default_owner_accepts_elevated_administrators_but_rejects_foreign_owners() {
+        let actual_user = current_sid().unwrap();
+        assert!(accepts_owner(
+            &actual_user,
+            &actual_user,
+            &token_sid(4).unwrap()
+        ));
+        let user = "S-1-5-21-7-8-9-1001";
+        assert!(accepts_owner("S-1-5-32-544", user, "S-1-5-32-544"));
+        assert!(!accepts_owner("S-1-5-32-544", user, user));
+        for foreign in ["S-1-5-18", "S-1-5-21-1-2-3-999", "S-1-5-32-545"] {
+            assert!(!accepts_owner(foreign, user, "S-1-5-32-544"));
+            assert!(!accepts_owner(foreign, user, foreign));
+        }
+    }
 
     #[test]
     fn private_tree_restricts_existing_files_and_locks_contend() {

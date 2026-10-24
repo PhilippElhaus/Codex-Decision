@@ -21,8 +21,9 @@ from another runtime. Credential writes now use the same no-follow WSL
 permission helper as other private records. A permission failure preserves the
 previous credential file.
 
-Native storage uses private Windows ACLs, file identities, reparse and hardlink
-checks, and kernel locks. A real synthetic provider test found a missing
+Native storage accepts Administrators ownership only when it matches the current
+token’s default owner. It retains foreign-owner rejection. It uses private
+Windows ACLs, file identities, reparse and hardlink checks, and kernel locks. A real synthetic provider test found a missing
 timestamp-write permission on staged batches. The corrected Windows handle
 supports completed publication and repeated calls with exact readable and typed
 originals.
@@ -31,7 +32,7 @@ originals.
 
 - Linux: 301 Rust tests passed, with one ignored subprocess fixture. Formatting
   and Clippy passed.
-- Windows: 35 Rust tests passed. Native library and binary Clippy passed. The
+- Windows: 36 Rust tests passed. Native library and binary Clippy passed. The
   process tests include concurrent hook calls, invalid configuration, synthetic
   relevance requests, exact originals, completed panels, and repeated
   publication.
@@ -53,9 +54,9 @@ originals.
   stopped at the user's request. Final checks used background processes.
 
 The final VSIX SHA-256 is
-`df0e08dfe1c7e80fc087089e7c7abb4550479fc60d8825b060cb3598766cc592`.
+`52638f18450213b1a58fdc51489e15f104a093500963c7cf63ba306f8599d2af`.
 The standalone ZIP SHA-256 is
-`26653fb716ab14dacc5b3762a53b61b695ab9bf780123b03ad7685996a9411ab`.
+`62eb45d47f26bd3278ce58a659a95f7c0b8f7f3cd224d9d6255e1e912d0e96c0`.
 Both archives passed exact-entry, source-byte, version, ELF, PE, and production
 binary checks. Reports remain in ignored `.local/quality/` directories.
 
