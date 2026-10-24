@@ -17,8 +17,12 @@ function sessionWorkDirectory({ dataDirectory = "", codexHome = process.env.CODE
   const location = wslLocation(dataDirectory);
   let root;
   if (typeof codexHome === "string" && codexHome) {
-    if (platform === "win32" && location && path.posix.isAbsolute(codexHome)) {
-      root = `\\\\wsl.localhost\\${location.distro}${codexHome.replaceAll("/", "\\")}`;
+    if (platform === "win32") {
+      const homeLocation = wslLocation(codexHome);
+      if (location && /^\/(?!\/)/.test(codexHome)) {
+        root = `\\\\wsl.localhost\\${location.distro}${codexHome.replaceAll("/", "\\")}`;
+      } else if ((location && homeLocation?.distro.toLowerCase() === location.distro.toLowerCase()) ||
+          (!location && /^[A-Za-z]:[\\/]/.test(codexHome))) root = codexHome;
     } else if (paths.isAbsolute(codexHome)) root = codexHome;
   }
   if (!root && typeof dataDirectory === "string") {

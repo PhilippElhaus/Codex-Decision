@@ -21,6 +21,11 @@ pub(super) fn lock(directory: &Path) -> Result<File, String> {
     if !metadata.is_file() || metadata.len() != 0 {
         return Err("unsafe original lock".into());
     }
+    #[cfg(windows)]
+    {
+        codex_decision::windows::private(&file, 1)?;
+        codex_decision::windows::lock(&file, remaining()?.min(Duration::from_secs(2)))?;
+    }
     #[cfg(unix)]
     {
         use std::os::fd::AsRawFd;

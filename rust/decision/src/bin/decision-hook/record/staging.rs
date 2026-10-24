@@ -47,7 +47,17 @@ impl PreparedBatches {
                 use std::os::unix::fs::OpenOptionsExt;
                 options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
             }
+            #[cfg(windows)]
+            {
+                use std::os::windows::fs::OpenOptionsExt;
+                // SetFileTime needs FILE_WRITE_ATTRIBUTES even for an immutable payload.
+                options
+                    .access_mode(0x8000_0000 | 0x100)
+                    .custom_flags(0x0020_0000);
+            }
             let mut file = options.open(source).map_err(|_| "batch stage open")?;
+            #[cfg(windows)]
+            codex_decision::windows::private(&file, 1)?;
             if !file.metadata().map_err(|_| "batch stage stat")?.is_file() {
                 return Err("unsafe staged batch".into());
             }

@@ -77,6 +77,37 @@ pub fn check_binary(path: &Path, name: &str, version: &str) -> Result<(), String
     Ok(())
 }
 
+pub fn check_windows_binary(path: &Path, name: &str, version: &str) -> Result<(), String> {
+    let bytes = fs::read(path).map_err(|_| format!("missing Windows {name} binary"))?;
+    let offset = bytes
+        .get(60..64)
+        .map(|field| u32::from_le_bytes(field.try_into().unwrap()) as usize);
+    if bytes.get(..2) != Some(b"MZ")
+        || !offset.is_some_and(|offset| {
+            bytes.get(offset..offset + 6) == Some(b"PE\0\0d\x86")
+                && bytes.get(offset + 24..offset + 26) == Some(b"\x0b\x02")
+        })
+        || !bytes
+            .windows(version.len())
+            .any(|part| part == version.as_bytes())
+    {
+        return Err(format!(
+            "{name} must be a matching Windows x86_64 PE binary"
+        ));
+    }
+    #[cfg(windows)]
+    {
+        let result = Command::new(path)
+            .arg("--version")
+            .output()
+            .map_err(|error| error.to_string())?;
+        if !result.status.success() || result.stdout != format!("{name} {version}\n").as_bytes() {
+            return Err(format!("Windows {name} version differs from package"));
+        }
+    }
+    Ok(())
+}
+
 pub fn cachebust(root: &Path) -> Result<(), String> {
     let path = root.join(".codex-plugin/plugin.json");
     if root.is_symlink() || path.is_symlink() {

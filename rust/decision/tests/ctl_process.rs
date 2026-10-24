@@ -110,6 +110,7 @@ fn simultaneous_key_updates_preserve_both_maximum_length_credentials() {
 }
 
 #[test]
+#[cfg(unix)]
 fn key_cli_respects_the_extension_write_lock_and_rejects_unsafe_locks() {
     use std::io::Write;
     use std::os::unix::fs::PermissionsExt;
@@ -178,6 +179,8 @@ fn packager_rejects_a_mislabeled_binary_before_creating_an_archive() {
         "hooks/hooks.json",
         "hooks/bin/linux-x86_64/decision-hook",
         "hooks/bin/linux-x86_64/decisionctl",
+        "hooks/bin/windows-x86_64/decision-hook.exe",
+        "hooks/bin/windows-x86_64/decisionctl.exe",
         "assets/logo.png",
         "assets/icon.png",
         "config.example.json",

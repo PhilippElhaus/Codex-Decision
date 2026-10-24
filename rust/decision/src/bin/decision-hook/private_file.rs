@@ -39,6 +39,12 @@ pub(super) fn read_bounded(path: &Path, limit: usize) -> std::io::Result<Vec<u8>
 }
 
 fn private_reader(path: &Path) -> std::io::Result<(File, fs::Metadata)> {
+    #[cfg(windows)]
+    check_ancestors(
+        path.parent()
+            .ok_or_else(|| std::io::Error::other("invalid private path"))?,
+    )
+    .map_err(std::io::Error::other)?;
     let mut options = OpenOptions::new();
     options.read(true);
     #[cfg(unix)]
@@ -46,7 +52,15 @@ fn private_reader(path: &Path) -> std::io::Result<(File, fs::Metadata)> {
         use std::os::unix::fs::OpenOptionsExt;
         options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
     }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        options.custom_flags(0x0020_0000);
+    }
     let file = options.open(path)?;
+    #[cfg(windows)]
+    codex_decision::windows::private(&file, 2)
+        .map_err(|message| std::io::Error::new(std::io::ErrorKind::PermissionDenied, message))?;
     let metadata = file.metadata()?;
     if !metadata.is_file() {
         return Err(std::io::Error::new(

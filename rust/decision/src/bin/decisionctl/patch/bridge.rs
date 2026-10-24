@@ -90,6 +90,14 @@ pub(super) fn marketplace_bridge(
 }
 
 pub(super) fn bridges(repo: &Path) -> Result<Bridges, String> {
+    // Only WSL needs host-side image and marketplace path conversion.
+    // Native Windows and Unix installations use their own paths directly.
+    if cfg!(windows) || std::env::var_os("WSL_DISTRO_NAME").is_none() {
+        return Ok(Bridges {
+            image: String::new(),
+            marketplace: String::new(),
+        });
+    }
     let home = std::env::var("HOME").map_err(|_| "HOME is unavailable")?;
     let personal = PathBuf::from(&home).join(".agents/plugins/marketplace.json");
     let chosen = std::env::var_os("CODEX_DECISION_MARKETPLACE_PATH")

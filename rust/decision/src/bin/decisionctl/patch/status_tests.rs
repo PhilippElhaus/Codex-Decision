@@ -215,3 +215,21 @@ fn october_host_profile_pins_every_mutated_asset() {
         assert!(spec.hash(path).bytes().all(|byte| byte.is_ascii_hexdigit()));
     }
 }
+
+#[test]
+fn october_21_host_profile_pins_split_modules_and_refuses_nearby_builds() {
+    let spec = Spec::production("26.1021.22027").unwrap();
+    assert_eq!(
+        spec.physical(IMAGE),
+        "webview/assets/use-plugins-74ac3ed173d4.js"
+    );
+    assert_eq!(
+        spec.physical(ROUTE),
+        "webview/assets/chunk-KS7C4IRE-c36c021bd659.js"
+    );
+    for path in [HOST, INDEX, IMAGE, ROUTE] {
+        assert_eq!(spec.hash(path).len(), 64);
+        assert!(spec.hash(path).bytes().all(|byte| byte.is_ascii_hexdigit()));
+    }
+    assert!(Spec::production("26.1021.22028").is_err());
+}

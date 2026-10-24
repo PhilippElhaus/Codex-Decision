@@ -122,7 +122,46 @@ fn matching_original(path: &Path, expected: &[u8]) -> Result<Option<File>, Strin
     Ok(Some(file))
 }
 
-#[cfg(not(unix))]
+#[cfg(windows)]
+fn matching_original(path: &Path, expected: &[u8]) -> Result<Option<File>, String> {
+    let initial = match fs::symlink_metadata(path) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Ok(metadata)
+            if metadata.is_file()
+                && !codex_decision::is_link(&metadata)
+                && metadata.len() == expected.len() as u64 =>
+        {
+            metadata
+        }
+        _ => return Err("original already exists".into()),
+    };
+    let mut file = File::open(path).map_err(|_| "original already exists")?;
+    codex_decision::windows::private(&file, 1)?;
+    let identity = codex_decision::windows::identity(&file)?;
+    if codex_decision::windows::path_identity(path)? != identity {
+        return Err("original already exists".into());
+    }
+    let mut bytes = Vec::with_capacity(expected.len());
+    Read::by_ref(&mut file)
+        .take(expected.len() as u64 + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|_| "original already exists")?;
+    remaining()?;
+    if bytes != expected
+        || codex_decision::windows::path_identity(path)? != identity
+        || file
+            .metadata()
+            .map_err(|_| "original already exists")?
+            .modified()
+            .ok()
+            != initial.modified().ok()
+    {
+        return Err("original already exists".into());
+    }
+    Ok(Some(file))
+}
+
+#[cfg(not(any(unix, windows)))]
 fn matching_original(path: &Path, _expected: &[u8]) -> Result<Option<File>, String> {
     match fs::symlink_metadata(path) {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),

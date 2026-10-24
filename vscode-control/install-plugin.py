@@ -16,6 +16,7 @@ PLUGIN = "codex-decision"
 FILES = (
     ".codex-plugin/plugin.json", "skills/decision-output/SKILL.md", "hooks/hooks.json",
     "hooks/bin/linux-x86_64/decision-hook", "hooks/bin/linux-x86_64/decisionctl",
+    "hooks/bin/windows-x86_64/decision-hook.exe", "hooks/bin/windows-x86_64/decisionctl.exe",
     "assets/logo.png", "assets/icon.png", "config.example.json", "LICENSE",
 )
 

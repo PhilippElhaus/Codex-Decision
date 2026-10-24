@@ -53,7 +53,7 @@ function patchStatus(stdout, version) {
   return { version: result.version, status: result.status };
 }
 
-async function runIntegration({ host, controlRoot, dataDirectory, distro, localAppData, marketplacePath,
+async function runIntegration({ host, controlRoot, dataDirectory, distro, backend, localAppData, marketplacePath,
   repair = true, platform = process.platform, io = fs, run = runFile }) {
   if (platform !== "win32") return { status: "unsupported-platform" };
   if (!host) throw new Error("Install the Codex extension to use Decision integration");
@@ -63,17 +63,20 @@ async function runIntegration({ host, controlRoot, dataDirectory, distro, localA
   }
   const location = wslLocation(dataDirectory || "");
   const distribution = location?.distro || distro;
-  if (typeof distribution !== "string" || !/^[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}$/.test(distribution)) {
+  const useWsl = backend ? backend === "wsl" : Boolean(distribution);
+  if (useWsl && (typeof distribution !== "string" || !/^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$/.test(distribution))) {
     throw new Error("Decision integration needs an installed WSL distribution");
   }
   if (marketplacePath != null && (typeof marketplacePath !== "string" ||
-      !path.posix.isAbsolute(marketplacePath) || /[\r\n\0]/.test(marketplacePath) ||
-      path.posix.normalize(marketplacePath) !== marketplacePath)) {
+      /[\r\n\0]/.test(marketplacePath) || (useWsl
+        ? !path.posix.isAbsolute(marketplacePath) || path.posix.normalize(marketplacePath) !== marketplacePath
+        : !/^[A-Za-z]:[\\/]/.test(marketplacePath) || path.win32.normalize(marketplacePath) !== marketplacePath))) {
     throw new Error("Decision integration marketplace path is invalid");
   }
   const extension = await directoryPath(host.extensionPath, false, io);
   const source = await directoryPath(controlRoot, false, io);
-  const binary = path.win32.join(source, "plugin", "hooks", "bin", "linux-x86_64", "decisionctl");
+  const binary = path.win32.join(source, "plugin", "hooks", "bin",
+    useWsl ? "linux-x86_64" : "windows-x86_64", useWsl ? "decisionctl" : "decisionctl.exe");
   await directoryPath(path.win32.dirname(binary), false, io);
   const binaryInfo = await io.lstat(binary);
   if (!binaryInfo.isFile() || binaryInfo.isSymbolicLink()) {
@@ -87,24 +90,29 @@ async function runIntegration({ host, controlRoot, dataDirectory, distro, localA
   const backup = path.win32.join(parent, version);
   try { await directoryPath(backup, false, io); }
   catch (error) { if (error.code !== "ENOENT") throw error; }
-  const execute = (program, args) => run("wsl.exe", ["-d", distribution, "-e", program, ...args],
-    { timeout: 30_000, maxBuffer: 16_384, windowsHide: true });
+  const execute = (program, args) => useWsl
+    ? run("wsl.exe", ["-d", distribution, "-e", program, ...args],
+      { timeout: 30_000, maxBuffer: 16_384, windowsHide: true })
+    : run(program, args, { timeout: 30_000, maxBuffer: 16_384, windowsHide: true,
+      ...(marketplacePath ? { env: { ...process.env, CODEX_DECISION_MARKETPLACE_PATH: marketplacePath } } : {}) });
   // Pass each path as an argument. Never interpolate a shell program.
   const convert = async (filename) => {
     const result = await execute("wslpath", ["-u", filename]);
     const converted = result.stdout?.trim();
-    if (typeof converted !== "string" || !converted.startsWith("/") || /[\r\n\0]/.test(converted)) {
+    if (typeof converted !== "string" || !converted.startsWith("/") || /[\r\n\0]/.test(converted) ||
+        path.posix.normalize(converted) !== converted) {
       throw new Error("Decision integration path could not be converted for WSL");
     }
     return converted;
   };
-  const converted = await Promise.all([binary, source, extension, backup].map(convert));
+  const converted = useWsl ? await Promise.all([binary, source, extension, backup].map(convert))
+    : [binary, source, extension, backup];
   const argumentsFor = (action) => ["patch-webview", action, "--root", converted[1],
     "--extension", converted[2], "--backup", converted[3]];
   const invoke = async (action) => {
     for (let attempt = 0; ; attempt += 1) {
       try {
-        return await execute(marketplacePath ? "env" : converted[0], marketplacePath
+        return await execute(useWsl && marketplacePath ? "env" : converted[0], useWsl && marketplacePath
           ? [`CODEX_DECISION_MARKETPLACE_PATH=${marketplacePath}`, converted[0], ...argumentsFor(action)]
           : argumentsFor(action));
       }
@@ -188,6 +196,7 @@ function activateIntegration(vscode, context, { dataDirectory, ready = Promise.r
           controlRoot: context.extensionUri.fsPath,
           dataDirectory: dataDirectory?.() || installation?.dataDirectory,
           distro: installation?.distro,
+          backend: installation?.backend,
           marketplacePath: installation?.marketplacePath,
           localAppData, repair, platform, run, io,
         });
@@ -257,7 +266,8 @@ function activateIntegration(vscode, context, { dataDirectory, ready = Promise.r
     vscode.commands.registerCommand("codexDecision.repairIntegration", () => inspect(true, true)),
     vscode.extensions.onDidChange(() => schedule()),
     vscode.workspace.onDidChangeConfiguration((event) => {
-      if (event.affectsConfiguration("codexDecision")) schedule();
+      if (event.affectsConfiguration("codexDecision") ||
+          event.affectsConfiguration("chatgpt.runCodexInWindowsSubsystemForLinux")) schedule();
     }),
     { dispose() { disposed = true; clearTimeout(timer); clearTimeout(retryTimer); } });
   schedule();

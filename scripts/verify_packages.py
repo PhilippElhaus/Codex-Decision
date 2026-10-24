@@ -11,11 +11,12 @@ ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_FILES = (
     ".codex-plugin/plugin.json", "skills/decision-output/SKILL.md", "hooks/hooks.json",
     "hooks/bin/linux-x86_64/decision-hook", "hooks/bin/linux-x86_64/decisionctl",
+    "hooks/bin/windows-x86_64/decision-hook.exe", "hooks/bin/windows-x86_64/decisionctl.exe",
     "assets/logo.png", "assets/icon.png", "config.example.json", "LICENSE",
 )
 CONTROL_FILES = (
     "config-contract.json", "core.js", "extension.js", "icon.png", "package.json",
-    "integration.js", "integrated-install.js", "install-plugin.py",
+    "integration.js", "integrated-install.js", "install-plugin.py", "install-plugin-native.js",
     "patch-assets/host-bridge.jsfrag", "patch-assets/route-bridge.jsfrag",
     "panel-state.js", "panel.js", "raw-skip-state.js", "session-work.js", "schema.js", "providers.js", "private-paths.js", "private-records.js", "publication-journal.js", "media/decision-panel.svg",
     "webview/decision-control.js", "webview/decision-panel.css", "webview/decision-panel.js",
@@ -44,6 +45,25 @@ def check_elf(data):
         raise ValueError("Package requires Linux x86_64 ELF binaries")
 
 
+def check_pe(data):
+    if len(data) < 64 or data[:2] != b"MZ":
+        raise ValueError("Package requires Windows x86_64 PE binaries")
+    offset = int.from_bytes(data[60:64], "little")
+    if offset > len(data) - 26 or data[offset:offset + 6] != b"PE\0\0d\x86" or data[offset + 24:offset + 26] != b"\x0b\x02":
+        raise ValueError("Package requires Windows x86_64 PE binaries")
+
+
+def check_windows_binaries(archive, prefix):
+    version = json.loads(archive.read(f"{prefix}/.codex-plugin/plugin.json"))["version"].split("+", 1)[0].encode()
+    for binary in ("decision-hook", "decisionctl"):
+        data = archive.read(f"{prefix}/hooks/bin/windows-x86_64/{binary}.exe")
+        check_pe(data)
+        if version not in data:
+            raise ValueError("Windows binary version differs from package")
+        if binary == "decision-hook" and b"CODEX_DECISION_TEST_ENDPOINT" in data:
+            raise ValueError("Production package contains a verification hook")
+
+
 def verify_plugin(path, root=ROOT):
     mapping = {f"codex-decision/{name}": name for name in PLUGIN_FILES}
     with zipfile.ZipFile(path) as archive:
@@ -53,6 +73,7 @@ def verify_plugin(path, root=ROOT):
         control = json.loads((root / "vscode-control/package.json").read_text())
         if manifest["name"] != "codex-decision" or manifest["version"].split("+", 1)[0] != control["codexDecisionHookVersion"]:
             raise ValueError("Plugin and control hook versions differ")
+        check_windows_binaries(archive, "codex-decision")
         for binary in ("decision-hook", "decisionctl"):
             name = f"codex-decision/hooks/bin/linux-x86_64/{binary}"
             data = archive.read(name)
@@ -78,6 +99,7 @@ def verify_control(path, root=ROOT):
         plugin = json.loads(archive.read("extension/plugin/.codex-plugin/plugin.json"))
         if plugin["version"].split("+", 1)[0] != package["codexDecisionHookVersion"]:
             raise ValueError("Bundled hook and integrated control versions differ")
+        check_windows_binaries(archive, "extension/plugin")
         for binary in ("decision-hook", "decisionctl"):
             data = archive.read(f"extension/plugin/hooks/bin/linux-x86_64/{binary}")
             check_elf(data)

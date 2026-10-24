@@ -36,6 +36,7 @@ fn lock(data_dir: &Path) -> Result<WriteLock, String> {
     codex_decision::check_ancestors(data_dir)?;
     let path = data_dir.join(".decision-write.lock");
     let deadline = Instant::now() + Duration::from_secs(2);
+    #[allow(unused_mut)]
     let mut builder = fs::DirBuilder::new();
     #[cfg(unix)]
     {
@@ -100,6 +101,8 @@ pub(super) fn save(
                 options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
             }
             let file = options.open(&path).map_err(|_| "credential read failed")?;
+            #[cfg(windows)]
+            codex_decision::windows::private(&file, 1)?;
             if !file
                 .metadata()
                 .map_err(|_| "credential stat failed")?

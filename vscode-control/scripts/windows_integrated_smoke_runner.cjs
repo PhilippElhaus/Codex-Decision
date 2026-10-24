@@ -6,14 +6,18 @@ const path = require("node:path");
 const vm = require("node:vm");
 const crypto = require("node:crypto");
 const fsSync = require("node:fs");
+const { execFile } = require("node:child_process");
 const vscode = require("vscode");
 
 const root = process.env.DECISION_INTEGRATED_TEST_CONTROL;
 const linux = process.env.DECISION_INTEGRATED_TEST_LINUX;
 const distro = process.env.DECISION_INTEGRATED_TEST_DISTRO;
+const native = process.env.DECISION_INTEGRATED_TEST_MODE === "native";
 const core = require(path.join(root, "core.js"));
 const separator = path.win32.sep;
-const toWindows = (filename) => separator.repeat(2) + "wsl.localhost" + separator + distro + filename.replaceAll("/", separator);
+const toWindows = (filename) => native ? filename : separator.repeat(2) + "wsl.localhost" + separator + distro + filename.replaceAll("/", separator);
+const binaryDirectory = native ? "windows-x86_64" : "linux-x86_64";
+const executableSuffix = native ? ".exe" : "";
 
 async function until(predicate, label, timeout = 30_000) {
   const deadline = Date.now() + timeout;
@@ -28,6 +32,34 @@ async function fingerprint(files) {
     const metadata = await fs.stat(filename);
     return [filename, metadata.size, metadata.mtimeMs, crypto.createHash("sha256").update(await fs.readFile(filename)).digest("hex")];
   }));
+}
+
+async function nativeHookSmoke(installation, checks) {
+  const selected = core.sessionDirectory(installation.dataDirectory, "native-hook-stdin");
+  await core.writeSelection(selected, false);
+  const manifest = JSON.parse(await fs.readFile(path.join(installation.pluginRoot, "hooks/hooks.json"), "utf8"));
+  const command = manifest.hooks.PostToolUse[0].hooks[0].commandWindows;
+  assert.equal(typeof command, "string");
+  const event = JSON.stringify({ hook_event_name: "PostToolUse", session_id: "native-hook-stdin",
+    tool_name: "exec_command", tool_use_id: "native-stdin-fixture", tool_input: { cmd: "printf routine" },
+    tool_response: "Synthetic disabled-session result" });
+  const shells = ["pwsh.exe", path.join(process.env.SystemRoot, "System32/WindowsPowerShell/v1.0/powershell.exe")];
+  for (const shell of shells) {
+    const reply = await new Promise((resolve, reject) => {
+      const child = execFile(shell, ["-NoProfile", "-NonInteractive", "-Command", command], {
+        env: { ...process.env, PLUGIN_ROOT: installation.pluginRoot, PLUGIN_DATA: installation.dataDirectory,
+          OPENAI_API_KEY: "", JEV_API_KEY: "" },
+        timeout: 30_000, maxBuffer: 8192, windowsHide: true,
+      }, (error, stdout, stderr) => error ? reject(new Error(`Packaged native hook failed in ${path.basename(shell)}: ${error.code}`))
+        : resolve({ stdout, stderr }));
+      child.stdin.end(event);
+    });
+    assert.equal(reply.stderr, "");
+    assert.deepEqual(JSON.parse(reply.stdout), {});
+  }
+  assert.equal((await core.readConfig(selected)).enabled, false);
+  await assert.rejects(fs.access(path.join(selected, "logs")), { code: "ENOENT" });
+  checks.push("packaged Windows hook receives stdin and preserves disabled output under PowerShell 7 and the Windows PowerShell fallback");
 }
 
 async function providerBridge(checks) {
@@ -135,6 +167,12 @@ async function actualPanel(dataDirectory, checks) {
     skipped: 341, errors: 0, responses_received: 8, responses_validated: 8,
     request_cancelled: 0, request_failures: 1, skip_reasons_partial: false, skip_details_partial: false,
   }));
+  const panelState = require(path.join(root, "panel-state.js"));
+  assert.equal((await panelState.readLatestPanelDecision(selected))?.id, id,
+    "native panel reader accepts the fixture snapshot before rendering");
+  const activity = await panelState.readPanelActivity(selected);
+  assert.equal(activity.calls, 9);
+  assert.equal(activity.skipped, 341);
   await vscode.commands.executeCommand("codexDecision.showLatestDecision");
   await until(() => globalThis.__decisionIntegratedPanel?.view && !globalThis.__decisionIntegratedPanel.awaitingReady, "panel readiness");
   const provider = globalThis.__decisionIntegratedPanel;
@@ -147,7 +185,13 @@ async function actualPanel(dataDirectory, checks) {
     provider.lastMessage = "";
     provider.nextDecisionAt = 0;
     await provider.refresh();
-    await until(() => rendered?.id === id, "actual synthetic decision render");
+    try { await until(() => rendered?.id === id, "actual synthetic decision render"); }
+    catch (error) {
+      throw new Error(`${error.message}: ${JSON.stringify({ rendered, visible: provider.view?.visible,
+        awaitingReady: provider.awaitingReady, generation: provider.generation,
+        selectedDirectoryMatches: provider.directory === selected,
+        displayedId: provider.displayedDecision?.id || null, lastDecisionId: provider.lastDecisionId })}`);
+    }
     assert.equal(rendered.rows, 2);
     assert.equal(rendered.layout, "grid", "packaged CSS loads under the real CSP");
     assert.equal(rendered.title, "0 / 2 removed");
@@ -194,8 +238,10 @@ exports.run = async () => {
     result.checks.push("native activation recovers automatically from one temporary installer access failure and stays ready on restart");
     assert.equal(installation.status, result.phase === "first" ? "installed" : "ready");
     assert.equal(installation.version, extension.packageJSON.codexDecisionHookVersion);
-    assert(installation.pluginRoot.startsWith(`${linux}/codex/plugins/cache/`));
-    assert(installation.linuxDataDirectory.startsWith(`${linux}/codex/plugins/data/`));
+    const expectedCodex = native ? process.env.CODEX_HOME : `${linux}/codex`;
+    const runtimePath = native ? path.win32 : path.posix;
+    assert(installation.pluginRoot.startsWith(runtimePath.join(expectedCodex, "plugins", "cache") + runtimePath.sep));
+    assert((native ? installation.dataDirectory : installation.linuxDataDirectory).startsWith(runtimePath.join(expectedCodex, "plugins", "data") + runtimePath.sep));
     assert.equal(installation.pluginId, "codex-decision@codex-decision-integrated");
     result.controlVersion = extension.packageJSON.version;
     result.hookVersion = installation.version;
@@ -203,18 +249,19 @@ exports.run = async () => {
     assert(host, "isolated native Codex extension is discoverable");
     result.codexVersion = host.packageJSON.version;
     const listed = JSON.parse((await installation.execute(
-      path.posix.join((await installation.convert(host.extensionPath)), "bin/linux-x86_64/codex"),
+      runtimePath.join((await installation.convert(host.extensionPath)), "bin", binaryDirectory, `codex${executableSuffix}`),
       ["plugin", "list", "--json"], { timeout: 30_000, maxBuffer: 2_000_000 })).stdout);
     const plugins = listed.installed.filter((item) => item.name === "codex-decision");
     assert.equal(plugins.length, 1, "exactly one hook registration");
     assert.equal(plugins[0].enabled, true);
     assert.equal(plugins[0].version, installation.version);
-    for (const filename of [".codex-plugin/plugin.json", "hooks/hooks.json", "hooks/bin/linux-x86_64/decision-hook",
-      "hooks/bin/linux-x86_64/decisionctl", "skills/decision-output/SKILL.md", "assets/logo.png", "assets/icon.png", "LICENSE", "config.example.json"]) {
+    for (const filename of [".codex-plugin/plugin.json", "hooks/hooks.json", `hooks/bin/${binaryDirectory}/decision-hook${executableSuffix}`,
+      `hooks/bin/${binaryDirectory}/decisionctl${executableSuffix}`, "skills/decision-output/SKILL.md", "assets/logo.png", "assets/icon.png", "LICENSE", "config.example.json"]) {
       assert.deepEqual(await fs.readFile(path.join(toWindows(installation.pluginRoot), filename)),
         await fs.readFile(path.join(root, "plugin", filename)), `cache exactness: ${filename}`);
     }
     result.checks.push("native activation installs the exact bundled hook, discovers its data directory, and creates one enabled registration");
+    if (native) await nativeHookSmoke(installation, result.checks);
         await checkpoint();
     await until(() => globalThis.__decisionIntegratedIntegration, "startup repair service");
     const backupManifest = path.join(process.env.LOCALAPPDATA, "Codex", "codex-decision", "rollback", host.packageJSON.version, "manifest.json");
@@ -225,7 +272,7 @@ exports.run = async () => {
         await checkpoint();
     const watched = [path.join(host.extensionPath, "out", "extension.js"), path.join(host.extensionPath, "webview", "index.html"),
       backupManifest,
-      path.join(toWindows(installation.pluginRoot), "hooks/bin/linux-x86_64/decisionctl")];
+      path.join(toWindows(installation.pluginRoot), `hooks/bin/${binaryDirectory}/decisionctl${executableSuffix}`)];
     const before = await fingerprint(watched);
     const repeated = await require(path.join(root, "integrated-install.js")).ensureIntegratedInstall(vscode,
       { extensionPath: root, extensionUri: vscode.Uri.file(root) },

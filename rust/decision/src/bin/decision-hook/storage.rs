@@ -24,6 +24,8 @@ pub(super) fn ensure_dir(path: &Path) -> Result<(), String> {
     if !metadata.is_dir() || metadata.file_type().is_symlink() {
         return Err("unsafe directory".into());
     }
+    #[cfg(windows)]
+    codex_decision::windows::secure(path, true)?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -71,6 +73,8 @@ pub(super) fn write_private(path: &Path, bytes: &[u8], replace: bool) -> Result<
         options.mode(0o600);
     }
     let mut file = options.open(&temp).map_err(|_| "file create failed")?;
+    #[cfg(windows)]
+    codex_decision::windows::secure(&temp, false)?;
     let operation = (|| -> Result<(), String> {
         file.write_all(bytes).map_err(|_| "file write failed")?;
         file.sync_all().map_err(|_| "file sync failed")?;
@@ -111,6 +115,8 @@ pub(super) fn open_event_log(logs: &Path) -> Result<File, String> {
             .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
     }
     let file = options.open(path).map_err(|_| "event log")?;
+    #[cfg(windows)]
+    codex_decision::windows::private(&file, 1)?;
     if !file.metadata().map_err(|_| "event log stat")?.is_file() {
         return Err("unsafe event log".into());
     }
@@ -139,6 +145,11 @@ fn lock_logs_with_timeout(logs: &Path, timeout: Duration) -> Result<File, String
     let file = options.open(path).map_err(|_| "log lock open")?;
     if !file.metadata().map_err(|_| "log lock stat")?.is_file() {
         return Err("unsafe log lock".into());
+    }
+    #[cfg(windows)]
+    {
+        codex_decision::windows::private(&file, 1)?;
+        codex_decision::windows::lock(&file, timeout)?;
     }
     #[cfg(unix)]
     {

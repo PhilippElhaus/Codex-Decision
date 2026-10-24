@@ -8,6 +8,7 @@
           {
             "type": "command",
             "command": "\"$PLUGIN_ROOT/hooks/bin/linux-x86_64/decision-hook\"",
+            "commandWindows": "& \"$env:PLUGIN_ROOT/hooks/bin/windows-x86_64/decision-hook.exe\"",
             "timeout": 60,
             "statusMessage": "Evaluating large tool output"
           }

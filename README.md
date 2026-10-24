@@ -4,21 +4,21 @@
 
 Codex Decision selects repetitive lines for removal from supported local tool output. Errors and useful evidence stay visible. Every shortened result links to the complete original.
 
-**Codex Decision 0.14.1** — [Download the integrated VSIX](https://github.com/PhilippElhaus/Codex-Decision/releases/latest).
+**Codex Decision 0.15.0** — [Download the integrated VSIX](https://github.com/PhilippElhaus/Codex-Decision/releases/latest).
 
 ## Get started
 
-Install the single VSIX in Windows VS Code with a Linux x86_64 WSL environment:
+Install the single VSIX in Windows x86_64 VS Code:
 
 ```bash
-code --install-extension codex-decision-0.14.1.vsix --force
+code --install-extension codex-decision-0.15.0.vsix --force
 ```
 
-The package contains the hook, skill, session controls, settings, and verified Codex UI patch. On activation it installs or updates the local plugin and repairs supported Codex builds. Existing plugin data and thread choices remain in place. Run **Developer: Reload Window** after the integration repair, then open your Codex thread. Review the hook in `/hooks` if Codex requests trust. No second package or manual composer patch is needed.
+The package contains native Windows and Linux x86_64 hooks, the skill, session controls, settings, and a verified Codex UI patch. It follows Codex’s Windows/WSL execution setting. Native Windows needs no WSL or Python installation. On activation it installs or updates the local plugin and repairs supported Codex builds. Existing plugin data and thread choices remain in place. Run **Developer: Reload Window** after the integration repair, then open your Codex thread. Review the hook in `/hooks` if Codex requests trust. No second package or manual composer patch is needed.
 
 Use **Decision: Check Integration** for status and **Decision: Repair Integration** to restore the controls and reopen a hidden Decision panel. Unsupported Codex builds produce a visible diagnostic. See [installation and upgrades](docs/setup/setup_installation.md) for details and standalone CLI setup.
 
-Temporary WSL or installer access failures retry automatically after 2, 5, and 15 seconds. Persistent failures identify the installation phase without exposing private process output. Configuration and security refusals remain visible immediately.
+Temporary installer or WSL access failures retry automatically after 2, 5, and 15 seconds. Persistent failures identify the installation phase without exposing private process output. Configuration and security refusals remain visible immediately.
 
 ### 1. Connect Decision
 
@@ -68,4 +68,4 @@ The [October 18 investigation](docs/development/participation_evaluation_2026-10
 
 ## Documentation
 
-[API key](docs/setup/setup_credentials.md) · [Filtering rules](docs/architecture/design_integrations.md) · [Privacy and safeguards](docs/architecture/design_data.md) · [Tests](tests/README.md) · [Startup and UI verification](docs/development/startup_ui_repair_2026-10-17.md) · [Request reliability audit](docs/development/reliability_audit_2026-10-08.md) · [Usage verification](docs/development/usage_optimization_2026-10-05.md) · [Provider benchmarks](docs/development/provider_benchmarks_2026-10-07.md)
+[API key](docs/setup/setup_credentials.md) · [Filtering rules](docs/architecture/design_integrations.md) · [Privacy and safeguards](docs/architecture/design_data.md) · [Tests](tests/README.md) · [Windows and WSL verification](docs/development/windows_wsl_0.15.0.md) · [Startup and UI verification](docs/development/startup_ui_repair_2026-10-17.md) · [Request reliability audit](docs/development/reliability_audit_2026-10-08.md) · [Usage verification](docs/development/usage_optimization_2026-10-05.md) · [Provider benchmarks](docs/development/provider_benchmarks_2026-10-07.md)

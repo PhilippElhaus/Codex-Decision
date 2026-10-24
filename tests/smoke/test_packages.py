@@ -87,6 +87,16 @@ class PackageTests(unittest.TestCase):
             binary.write_bytes(data[:18] + b"\xb7\x00" + data[20:])
             with self.assertRaisesRegex(ValueError, "Linux x86_64"):
                 verify_plugin(archive(), root)
+            binary.write_bytes(data)
+            native = root / "hooks/bin/windows-x86_64/decision-hook.exe"
+            windows = native.read_bytes()
+            native.write_bytes(windows + b"CODEX_DECISION_TEST_ENDPOINT")
+            with self.assertRaisesRegex(ValueError, "verification hook"):
+                verify_plugin(archive(), root)
+            offset = int.from_bytes(windows[60:64], "little")
+            native.write_bytes(windows[:offset + 4] + b"\x64\xaa" + windows[offset + 6:])
+            with self.assertRaisesRegex(ValueError, "Windows x86_64"):
+                verify_plugin(archive(), root)
 
     def test_submission_rejects_unsupported_host_before_cargo(self):
         # Some Lab data mounts are noexec. Keep this executable fixture in an

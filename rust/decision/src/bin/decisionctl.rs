@@ -7,7 +7,7 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashSet};
 use std::fs::{self, OpenOptions};
-use std::io::{self, Read, Write};
+use std::io::{self, IsTerminal, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -36,6 +36,8 @@ fn write_private(path: &Path, data: &[u8]) -> Result<(), String> {
         options.mode(0o600);
     }
     let mut file = options.open(&temp).map_err(|error| error.to_string())?;
+    #[cfg(windows)]
+    codex_decision::windows::secure(&temp, false)?;
     let result = (|| -> Result<(), String> {
         file.write_all(data).map_err(|error| error.to_string())?;
         file.sync_all().map_err(|error| error.to_string())?;
@@ -51,8 +53,7 @@ fn set_key(data_dir: &Path, provider: codex_decision::provider::Provider) -> Res
     if provider == codex_decision::provider::Provider::Custom {
         return Err("configure custom provider credentials in the Decision control".into());
     }
-    #[cfg(unix)]
-    if unsafe { libc::isatty(libc::STDIN_FILENO) } != 0 {
+    if io::stdin().is_terminal() {
         return Err("pipe the key on stdin; interactive echo is disabled".into());
     }
     let mut input = String::new();
@@ -81,6 +82,8 @@ fn package(root: &Path) -> Result<(), String> {
         "hooks/hooks.json",
         "hooks/bin/linux-x86_64/decision-hook",
         "hooks/bin/linux-x86_64/decisionctl",
+        "hooks/bin/windows-x86_64/decision-hook.exe",
+        "hooks/bin/windows-x86_64/decisionctl.exe",
         "assets/logo.png",
         "assets/icon.png",
         "config.example.json",
@@ -116,6 +119,13 @@ fn package(root: &Path) -> Result<(), String> {
     for name in ["decision-hook", "decisionctl"] {
         release::check_binary(
             &root.join("hooks/bin/linux-x86_64").join(name),
+            name,
+            version.split('+').next().ok_or("invalid package version")?,
+        )?;
+        release::check_windows_binary(
+            &root
+                .join("hooks/bin/windows-x86_64")
+                .join(format!("{name}.exe")),
             name,
             version.split('+').next().ok_or("invalid package version")?,
         )?;
@@ -601,6 +611,10 @@ fn run() -> Result<(), String> {
     if args.len() == 2 && args[1] == "--version" {
         println!("decisionctl {}", env!("CARGO_PKG_VERSION"));
         return Ok(());
+    }
+    #[cfg(windows)]
+    if args.len() == 4 && args[1] == "secure-directory" && args[2] == "--path" {
+        return codex_decision::windows::secure_tree(Path::new(&args[3]));
     }
     if args.len() == 6 && args[1] == "activity" && args[2] == "--data-dir" && args[4] == "--session"
     {

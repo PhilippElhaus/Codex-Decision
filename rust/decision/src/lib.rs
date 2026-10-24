@@ -8,6 +8,8 @@ pub mod semantic;
 mod source;
 #[path = "bin/decision-hook/strict_json.rs"]
 pub(crate) mod strict_json;
+#[cfg(windows)]
+pub mod windows;
 pub use source::{protect_neighbors, source_lines, strip_ansi};
 
 use serde::{Deserialize, Serialize};
@@ -37,7 +39,7 @@ pub fn check_ancestors(path: &std::path::Path) -> Result<(), String> {
         }
         current.push(component);
         match std::fs::symlink_metadata(&current) {
-            Ok(metadata) if !metadata.is_dir() || metadata.file_type().is_symlink() => {
+            Ok(metadata) if !metadata.is_dir() || is_link(&metadata) => {
                 return Err("unsafe directory path".into())
             }
             Ok(_) => {}
@@ -46,6 +48,18 @@ pub fn check_ancestors(path: &std::path::Path) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+pub fn is_link(metadata: &std::fs::Metadata) -> bool {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        metadata.file_type().is_symlink() || metadata.file_attributes() & 0x400 != 0
+    }
+    #[cfg(not(windows))]
+    {
+        metadata.file_type().is_symlink()
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]

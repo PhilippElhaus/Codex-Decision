@@ -59,6 +59,10 @@ fn load(
     let mut file = options
         .open(path)
         .map_err(|_| "activity publication open")?;
+    #[cfg(windows)]
+    if strict {
+        codex_decision::windows::private(&file, 1)?;
+    }
     let opened = file.metadata().map_err(|_| "activity publication stat")?;
     check(&opened)?;
     let fingerprint = {

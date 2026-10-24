@@ -95,3 +95,16 @@ test("session directory resolution supports Linux, custom Codex homes, and WSL U
     "\\\\wsl.localhost\\Ubuntu\\home\\alex\\.codex\\sessions");
   assert.equal(sessionWorkDirectory({ ...windows, dataDirectory: "", codexHome: "C:\\Codex" }), "C:\\Codex\\sessions");
 });
+
+test("session directories ignore CODEX_HOME inherited from the other runtime", () => {
+  const native = { platform: "win32", home: "C:\\Users\\Alex",
+    dataDirectory: "C:\\Users\\Alex\\.codex\\plugins\\data\\decision-personal" };
+  for (const codexHome of ["/home/alex/.codex", "\\\\wsl$\\Ubuntu\\home\\alex\\.codex"]) {
+    assert.equal(sessionWorkDirectory({ ...native, codexHome }), "C:\\Users\\Alex\\.codex\\sessions");
+  }
+  const wsl = { ...native,
+    dataDirectory: "\\\\wsl.localhost\\Ubuntu\\home\\alex\\.codex\\plugins\\data\\decision-personal" };
+  for (const codexHome of ["C:\\Users\\Alex\\.codex", "\\\\wsl$\\Other\\home\\alex\\.codex"]) {
+    assert.equal(sessionWorkDirectory({ ...wsl, codexHome }), "\\\\wsl.localhost\\Ubuntu\\home\\alex\\.codex\\sessions");
+  }
+});

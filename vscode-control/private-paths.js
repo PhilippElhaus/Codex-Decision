@@ -5,8 +5,13 @@ const { promisify } = require("node:util");
 const runFile = promisify(execFile);
 
 function wslLocation(filename) {
-  const match = /^\\\\(?:wsl\.localhost|wsl\$)\\([A-Za-z0-9_][A-Za-z0-9_.-]{0,63})\\(.+)$/i.exec(filename);
-  return match ? { distro: match[1], filename: `/${match[2].replaceAll("\\", "/")}` } : null;
+  if (typeof filename !== "string" || /[\r\n\0]/.test(filename)) return null;
+  const unc = filename.replaceAll("/", "\\").replace(/^\\\\\?\\UNC\\/i, "\\\\");
+  const match = /^\\\\(?:wsl\.localhost|wsl\$)\\([A-Za-z0-9_][A-Za-z0-9_.-]{0,127})\\(.+)$/i.exec(unc);
+  if (!match) return null;
+  const parts = match[2].split("\\");
+  if (parts.some((part) => !part || part === "." || part === "..")) return null;
+  return { distro: match[1], filename: `/${parts.join("/")}` };
 }
 
 // Windows mkdir/write mode flags do not reach the WSL filesystem through UNC.

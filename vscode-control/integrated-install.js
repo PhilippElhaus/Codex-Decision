@@ -6,10 +6,16 @@ const { execFile } = require("node:child_process");
 const { promisify } = require("node:util");
 const { wslLocation } = require("./private-paths");
 const runFile = promisify(execFile);
+const MANAGED_DATA_KEY = "codexDecision.installation.managedDataDirectory";
 
 function cleanJson(stdout) {
   try { return JSON.parse(stdout.trim()); }
   catch { throw new Error("Decision installation returned invalid metadata"); }
+}
+
+function linuxPath(filename) {
+  return typeof filename === "string" && filename.startsWith("/") &&
+    !/[\r\n\0]/.test(filename) && path.posix.normalize(filename) === filename;
 }
 
 async function ensureIntegratedInstall(vscode, context, options = {}) {
@@ -37,7 +43,40 @@ async function ensureIntegratedInstall(vscode, context, options = {}) {
   catch { return { status: "not-packaged" }; }
   const host = vscode.extensions?.getExtension("openai.chatgpt");
   if (!host?.extensionPath) throw new Error("Install the Codex VS Code extension before repairing Decision");
-  const configured = typeof options.dataDirectory === "function" ? options.dataDirectory() : options.dataDirectory;
+  const selectedDirectory = typeof options.dataDirectory === "function" ? options.dataDirectory() : options.dataDirectory;
+  const useWsl = platform === "win32" &&
+    vscode.env?.remoteName !== "wsl" &&
+    vscode.workspace.getConfiguration("chatgpt")?.get?.("runCodexInWindowsSubsystemForLinux", false) === true;
+  const backend = platform === "win32" ? useWsl ? "wsl" : "native" : "linux";
+  const managed = context.globalState?.get?.(MANAGED_DATA_KEY);
+  const ownsDirectory = typeof managed?.dataDirectory === "string" &&
+    managed.dataDirectory === selectedDirectory && ["native", "wsl", "linux"].includes(managed.backend);
+  // Automatically discovered locations belong to their Codex runtime. Switching
+  // runtimes selects that runtime's store; each installation keeps its own data.
+  const configured = ownsDirectory && managed.backend !== backend ? undefined : selectedDirectory;
+  const saveDirectory = async (directory, verifiedCanonical = false) => {
+    if (directory !== selectedDirectory) await vscode.workspace.getConfiguration("codexDecision").update("dataDirectory", directory,
+      vscode.ConfigurationTarget.Global);
+    if (!selectedDirectory || ownsDirectory || verifiedCanonical) await context.globalState?.update?.(MANAGED_DATA_KEY,
+      { dataDirectory: directory, backend });
+  };
+  if (platform === "win32" && !useWsl) {
+    if (configured && (!path.win32.isAbsolute(configured) || /^[\\/]/.test(configured))) {
+      throw new Error("Codex runs in Windows, but Decision dataDirectory is not a local Windows path; clear the Decision dataDirectory setting or enable Codex WSL integration");
+    }
+    const installNative = options.installNative || require("./install-plugin-native").install;
+    const result = await installNative({ payload,
+      codex: path.join(host.extensionPath, "bin", "windows-x86_64", "codex.exe"),
+      dataDirectory: configured });
+    if (!["ready", "installed"].includes(result.status) ||
+        typeof result.dataDirectory !== "string" || !path.win32.isAbsolute(result.dataDirectory) ||
+        /[\r\n\0]/.test(result.dataDirectory) || typeof result.decisionctl !== "string") {
+      throw new Error("Decision installation returned incomplete metadata");
+    }
+    await saveDirectory(configured || result.dataDirectory,
+      Boolean(configured) && path.win32.normalize(configured) === path.win32.normalize(result.dataDirectory));
+    return { ...result, backend: "native", distro: null, execute: run, convert: async (filename) => filename };
+  }
   let distro = null;
   let execute;
   let convert = async (filename) => filename;
@@ -56,8 +95,15 @@ async function ensureIntegratedInstall(vscode, context, options = {}) {
         if (location.distro.toLowerCase() !== distro.toLowerCase()) throw new Error("Decision and Codex must use the same WSL distribution");
         return location.filename;
       }
+      // A copied Linux setting is already in the selected Codex filesystem.
+      if (filename === configured && linuxPath(filename)) return filename;
+      if (!path.win32.isAbsolute(filename) || /[\r\n\0]/.test(filename)) {
+        throw new Error("Decision installation needs an absolute Windows or WSL path");
+      }
       const result = await execute("wslpath", ["-u", filename], { timeout: 10_000, maxBuffer: 4096 });
-      return result.stdout.trim();
+      const converted = result.stdout?.trim();
+      if (!linuxPath(converted)) throw new Error("Decision installation path could not be converted for WSL");
+      return converted;
     };
   } else if (platform === "linux") {
     execute = run;
@@ -87,15 +133,20 @@ async function ensureIntegratedInstall(vscode, context, options = {}) {
     throw new Error("Decision could not install its bundled hook in the Codex environment");
   }
   if (!["ready", "installed"].includes(result.status) || typeof result.dataDirectory !== "string" ||
-      !result.dataDirectory.startsWith("/") || typeof result.decisionctl !== "string") {
+      !linuxPath(result.dataDirectory) || !linuxPath(result.decisionctl)) {
     throw new Error("Decision installation returned incomplete metadata");
   }
   const discovered = platform === "win32"
     ? `\\\\wsl.localhost\\${distro}${result.dataDirectory.replaceAll("/", "\\")}` : result.dataDirectory;
-  if (!configured) await vscode.workspace.getConfiguration("codexDecision").update("dataDirectory", discovered,
-    vscode.ConfigurationTarget.Global);
-  return { ...result, dataDirectory: configured || discovered, linuxDataDirectory: result.dataDirectory,
-    distro, execute, convert };
+  // Windows consumers cannot read /home paths directly. Persist the matching UNC
+  // path even when an old setting was copied from a Linux/remote window.
+  const directory = platform === "win32" && linuxPath(configured) ? discovered : configured || discovered;
+  // Older controls stored discovered paths without an ownership marker. The
+  // installer verifies the configured directory against Codex's canonical store
+  // before success, so that exact verified location can join automatic switching.
+  await saveDirectory(directory, Boolean(linuxConfigured) && linuxConfigured === result.dataDirectory);
+  return { ...result, dataDirectory: directory, linuxDataDirectory: result.dataDirectory,
+    backend: platform === "win32" ? "wsl" : "linux", distro, execute, convert };
 }
 
 module.exports = { ensureIntegratedInstall };

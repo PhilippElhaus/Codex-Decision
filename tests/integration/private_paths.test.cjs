@@ -14,6 +14,14 @@ test("Windows UNC permission commands use the selected distro and report failure
   assert.equal(wslLocation("D:\\workspace\\state"), null);
   assert.deepEqual(wslLocation("\\\\wsl.localhost\\Ubuntu-24.04\\home\\fixture\\state"),
     { distro: "Ubuntu-24.04", filename: "/home/fixture/state" });
+  for (const filename of ["//wsl.localhost/Ubuntu-24.04/home/fixture/state",
+    "\\\\WSL$\\Ubuntu-24.04/home/fixture/state", "\\\\?\\UNC\\wsl.localhost\\Ubuntu-24.04\\home\\fixture\\state"]) {
+    assert.deepEqual(wslLocation(filename), { distro: "Ubuntu-24.04", filename: "/home/fixture/state" });
+  }
+  for (const filename of ["\\\\wsl$\\Ubuntu\\home\\..\\state", "\\\\wsl$\\Ubuntu\\home\\.\\state",
+    "\\\\wsl$\\Ubuntu\\home\\\\state", "\\\\wsl$\\Ubuntu\\home\\state\nother"]) {
+    assert.equal(wslLocation(filename), null);
+  }
   for (const distro of ["..", "-distribution", "Ubuntu;command"]) {
     assert.equal(wslLocation(`\\\\wsl.localhost\\${distro}\\home\\fixture`), null);
   }

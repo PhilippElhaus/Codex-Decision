@@ -4,9 +4,6 @@ const fs = require("node:fs/promises");
 const crypto = require("node:crypto");
 const { constants } = require("node:fs");
 const path = require("node:path");
-const { execFile } = require("node:child_process");
-const { promisify } = require("node:util");
-const runFile = promisify(execFile);
 const { restrictWslPath, wslLocation } = require("./private-paths");
 const securedWslPaths = new Map();
 const { provider, wireRequest, parseHealthResult } = require("./providers");
@@ -1032,10 +1029,7 @@ async function updateCredentials(directory, values) {
     owned = true;
     try { await file.writeFile(content); await file.sync(); } finally { await file.close(); }
     await fs.chmod(temporary, 0o600);
-    if (process.platform === "win32") {
-      const match = /^\\\\(?:wsl\.localhost|wsl\$)\\([A-Za-z0-9_-]+)\\(.+)$/i.exec(temporary);
-      if (match) await runFile("wsl.exe", ["-d", match[1], "-e", "chmod", "600", `/${match[2].replaceAll("\\", "/")}`]);
-    }
+    await restrictWslPath(temporary, false);
     await fs.rename(temporary, target);
   } finally {
     if (owned) await fs.rm(temporary, { force: true });

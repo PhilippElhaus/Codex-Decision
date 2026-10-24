@@ -46,9 +46,9 @@ pub(super) fn acquire_with_timeout(backup: &Path, timeout: Duration) -> Result<F
     if !parent.is_dir() {
         return Err("rollback parent must be an existing directory".into());
     }
-    let file = File::open(parent).map_err(|error| error.to_string())?;
     #[cfg(unix)]
     {
+        let file = File::open(parent).map_err(|error| error.to_string())?;
         use std::os::unix::io::AsRawFd;
         use std::time::Instant;
         let deadline = Instant::now() + timeout;
@@ -71,10 +71,25 @@ pub(super) fn acquire_with_timeout(backup: &Path, timeout: Duration) -> Result<F
         }
         Ok(file)
     }
-    #[cfg(not(unix))]
+    #[cfg(windows)]
     {
-        let _ = (file, timeout);
-        Err("Decision patch requires the WSL or Unix executable".into())
+        let path = parent.join(".decision-patch.lock");
+        reject_links(&path)?;
+        let file = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(&path)
+            .map_err(|_| "Decision patch lock open failed")?;
+        codex_decision::windows::secure(&path, false)?;
+        codex_decision::windows::lock(&file, timeout)?;
+        Ok(file)
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = timeout;
+        Err("Decision patch platform is unsupported".into())
     }
 }
 
@@ -89,7 +104,8 @@ pub(super) fn paths(repo: &Path, extension: &Path, backup: &Path) -> Result<(), 
     let backup_parent = fs::canonicalize(backup.parent().ok_or("rollback parent missing")?)
         .map_err(|_| "rollback parent must be an existing directory")?;
     for path in [&extension, &backup_parent] {
-        let text = path.to_string_lossy().to_ascii_lowercase();
+        let raw = path.to_string_lossy().to_ascii_lowercase();
+        let text = raw.strip_prefix("\\\\?\\").unwrap_or(&raw);
         if text == "/mnt/d" || text.starts_with("/mnt/d/") || text.starts_with("d:\\") {
             return Err("extension and rollback must be valid paths off D:".into());
         }

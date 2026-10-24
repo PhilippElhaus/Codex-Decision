@@ -1,19 +1,19 @@
 # Codex Decision control for VS Code
 
-This integrated extension contains the local Decision hook, skill, composer control, settings, and bottom-panel view. Windows VS Code uses a Linux x86_64 WSL environment for the hook. Existing Decision data and per-thread choices remain in place.
+This integrated extension contains the local Decision hook, skill, composer control, settings, and bottom-panel view. Windows VS Code runs the native Windows x86_64 hook by default. It uses the Linux x86_64 hook when Codex runs in WSL. Existing Decision data and per-thread choices remain in place.
 
 ## Install
 
-Build and install one package from WSL:
+Install the release VSIX in Windows VS Code. To build the combined package, first build the native Windows binaries with `scripts/build_hook_windows.ps1`, then build and package from Linux or WSL:
 
 ```bash
 ../scripts/build_control.sh
-code --install-extension "$(wslpath -w ../.local/submission/codex-decision-0.14.1.vsix)" --force
+code --install-extension "$(wslpath -w ../.local/submission/codex-decision-0.15.0.vsix)" --force
 ```
 
-On activation, the package installs or updates the bundled Codex plugin and checks the Codex UI integration. It uses the configured WSL data path or the default WSL distribution for a fresh installation. It sets `codexDecision.dataDirectory` when that setting is empty. Existing plugin identity, credentials, logs, and thread settings remain in place.
+On activation, the package installs or updates the bundled Codex plugin and checks the Codex UI integration. It follows `chatgpt.runCodexInWindowsSubsystemForLinux` and uses a matching native or WSL data directory. Native Windows needs no Python or WSL. WSL uses its own plugin registration and data. It sets `codexDecision.dataDirectory` when that setting is empty. Automatically discovered data directories follow the selected Codex runtime. Each runtime retains its own settings and credentials. A successful repair adopts an existing canonical data directory for automatic runtime switching. Mismatched overrides stay unchanged. If they point to another runtime, clear `codexDecision.dataDirectory` and run **Decision: Repair Integration**. Existing plugin identity, credentials, logs, and thread settings remain in place.
 
-The integrated patch supports Codex builds `26.928.31416`, `26.930.21537`, `26.930.31730`, `26.930.41038`, `26.930.51102`, `26.930.61225`, `26.1002.51308`, and `26.1007.21434`. It verifies exact host hashes, serializes repairs, and retains rollback files under the user's local Codex directory. Unknown or modified builds produce a diagnostic and remain unchanged. A healthy patch causes no rewrite.
+The integrated patch supports Codex builds `26.928.31416`, `26.930.21537`, `26.930.31730`, `26.930.41038`, `26.930.51102`, `26.930.61225`, `26.1002.51308`, `26.1007.21434`, and `26.1021.22027`. It verifies exact host hashes, serializes repairs, and retains rollback files under the user's local Codex directory. Unknown or modified builds produce a diagnostic and remain unchanged. A healthy patch causes no rewrite.
 
 After the repair, run **Developer: Reload Window**. Open a local Codex thread. Review the hook in `/hooks` if its definition needs trust; the installer does not edit Codex trust records.
 

@@ -7,6 +7,9 @@ const rawRun = promisify(execFile);
 
 async function run(program, args, options) {
   let isolated = [...args];
+  if (process.env.DECISION_INTEGRATED_TEST_MODE === "native" && program.toLowerCase() === "wsl.exe") {
+    throw new Error("Native Windows integration must not invoke WSL");
+  }
   if (program.toLowerCase() === "wsl.exe") {
     const index = isolated.indexOf("-e");
     if (index < 0) throw new Error("Native integration test requires an explicit WSL executable");

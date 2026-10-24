@@ -26,6 +26,8 @@ pub(super) struct Lease {
     file: File,
     links: u64,
     fingerprint: std::cell::Cell<Option<(u64, std::time::SystemTime)>>,
+    #[cfg(windows)]
+    identity: (u32, u64),
 }
 
 impl Lease {
@@ -46,16 +48,29 @@ impl Lease {
             options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
         }
         let file = options.open(path).map_err(|_| "publication file open")?;
+        #[cfg(windows)]
+        codex_decision::windows::private(&file, links as u32)?;
         let opened = file.metadata().map_err(|_| "publication file stat")?;
         private(&opened, links)?;
         if !same(&initial, &opened) {
             return Err("publication file changed".into());
         }
+        #[cfg(windows)]
+        let identity = {
+            let (volume, index, _) = codex_decision::windows::identity(&file)?;
+            let (current_volume, current_index, _) = codex_decision::windows::path_identity(path)?;
+            if (volume, index) != (current_volume, current_index) {
+                return Err("publication file changed".into());
+            }
+            (volume, index)
+        };
         Ok(Some(Self {
             path: path.to_owned(),
             file,
             links,
             fingerprint: std::cell::Cell::new(None),
+            #[cfg(windows)]
+            identity,
         }))
     }
 
@@ -65,6 +80,14 @@ impl Lease {
         let opened = self.file.metadata().map_err(|_| "publication file stat")?;
         private(&current, self.links)?;
         private(&opened, self.links)?;
+        #[cfg(windows)]
+        {
+            codex_decision::windows::private(&self.file, self.links as u32)?;
+            let (volume, index, _) = codex_decision::windows::path_identity(&self.path)?;
+            if self.identity != (volume, index) {
+                return Err("publication file changed".into());
+            }
+        }
         if !same(&current, &opened) {
             return Err("publication file changed".into());
         }
@@ -149,6 +172,11 @@ impl Lease {
     }
 
     pub(super) fn same_inode(&self, other: &Self) -> Result<bool, String> {
+        #[cfg(windows)]
+        {
+            Ok(self.identity == other.identity)
+        }
+        #[cfg(not(windows))]
         Ok(same(
             &self.file.metadata().map_err(|_| "publication file stat")?,
             &other.file.metadata().map_err(|_| "publication file stat")?,
@@ -165,7 +193,11 @@ impl Lease {
                 .map_err(|_| "publication file stat")?
                 .nlink())
         }
-        #[cfg(not(unix))]
+        #[cfg(windows)]
+        {
+            codex_decision::windows::identity(&self.file).map(|(_, _, links)| u64::from(links))
+        }
+        #[cfg(not(any(unix, windows)))]
         {
             Ok(1)
         }
@@ -242,6 +274,8 @@ fn signature(metadata: &fs::Metadata) -> Result<(u64, std::time::SystemTime), St
 }
 
 fn private(metadata: &fs::Metadata, links: u64) -> Result<(), String> {
+    #[cfg(not(unix))]
+    let _ = links;
     if !metadata.is_file() || metadata.file_type().is_symlink() {
         return Err("unsafe publication file".into());
     }

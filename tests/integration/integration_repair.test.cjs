@@ -69,6 +69,33 @@ test("managed outdated controls update while healthy controls and diagnostics do
   assert.deepEqual(diagnostic.actions(), ["status"]);
 });
 
+test("native Windows patches with the native checker and literal Windows paths without WSL", async () => {
+  const setup = fixture();
+  const binary = path.win32.join(setup.options.controlRoot, "plugin", "hooks", "bin", "windows-x86_64", "decisionctl.exe");
+  const originalStat = setup.options.io.lstat;
+  setup.options.io.lstat = async (filename) => filename === binary
+    ? { isDirectory: () => false, isFile: () => true, isSymbolicLink: () => false } : originalStat(filename);
+  const marketplacePath = "C:\\Users\\Fixture User\\AppData\\Local\\Decision $(`literal`)\\marketplace.json";
+  const states = ["unpatched", "applied", "ready"];
+  const calls = [];
+  const result = await runIntegration({ ...setup.options, backend: "native", distro: null,
+    dataDirectory: "C:\\Users\\Fixture User\\.codex\\plugins\\data\\decision", marketplacePath,
+    run: async (command, args, limits) => {
+      calls.push({ command, args, limits });
+      assert.equal(command, binary);
+      assert.equal(limits.env.CODEX_DECISION_MARKETPLACE_PATH, marketplacePath);
+      assert.equal(limits.windowsHide, true);
+      const next = states.shift();
+      return { stdout: args[1] === "status"
+        ? JSON.stringify({ status: next, version: setup.options.host.packageJSON.version }) : "applied" };
+    } });
+  assert.equal(result.status, "ready");
+  assert.equal(result.changed, true);
+  assert.deepEqual(calls.map((call) => call.args[1]), ["status", "apply", "status"]);
+  assert.deepEqual(calls[0].args, ["patch-webview", "status", "--root", setup.options.controlRoot,
+    "--extension", setup.options.host.extensionPath, "--backup", setup.backup]);
+});
+
 test("unknown versions, changed hosts, and malformed checker output cannot trigger a mutation", async () => {
   for (const error of ["unsupported Codex extension version; revalidate the composer patch",
     "patched file changed: out/extension.js"]) {
@@ -427,6 +454,39 @@ test("Codex extension changes repair the new selected installation after the ini
     assert.ok(update.args[9].endsWith("openai.chatgpt-26.1008.12345"));
     assert.ok(update.args[11].endsWith("/rollback/26.1008.12345"));
     assert.deepEqual(extension.executed, ["codexDecision.showLatestDecision"]);
+  } finally { extension.dispose(); }
+});
+
+test("changing Codex's WSL runtime setting reruns installation and selects the new checker", async () => {
+  const setup = fixture(["ready"]);
+  const nativeBinary = path.win32.join(setup.options.controlRoot, "plugin", "hooks", "bin", "windows-x86_64", "decisionctl.exe");
+  const originalStat = setup.options.io.lstat;
+  setup.options.io.lstat = async (filename) => filename === nativeBinary
+    ? { isDirectory: () => false, isFile: () => true, isSymbolicLink: () => false } : originalStat(filename);
+  const originalRun = setup.options.run;
+  let nativeChecks = 0;
+  setup.options.run = async (command, args, limits) => {
+    if (command !== nativeBinary) return originalRun(command, args, limits);
+    assert.deepEqual(args.slice(0, 2), ["patch-webview", "status"]);
+    nativeChecks += 1;
+    return { stdout: JSON.stringify({ status: "ready", version: setup.options.host.packageJSON.version }) };
+  };
+  let useWsl = true;
+  let installations = 0;
+  const extension = extensionFixture(setup, async () => {
+    installations += 1;
+    if (!useWsl) setup.options.dataDirectory = "C:\\Users\\Fixture User\\.codex\\plugins\\data\\decision";
+    return { status: "ready", backend: useWsl ? "wsl" : "native", distro: useWsl ? "Ubuntu" : null };
+  });
+  try {
+    assert.equal((await extension.integration.inspect(true, false)).status, "ready");
+    assert.equal(installations, 1);
+    useWsl = false;
+    extension.listeners.config({ affectsConfiguration: (key) => key === "chatgpt.runCodexInWindowsSubsystemForLinux" });
+    await waitFor(() => nativeChecks === 1);
+    assert.equal(installations, 2, "runtime changes must rerun the installation factory");
+    assert.deepEqual(setup.actions(), ["status"], "the new runtime must not reuse the WSL checker");
+    assert.deepEqual(extension.notifications, []);
   } finally { extension.dispose(); }
 });
 

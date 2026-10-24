@@ -2,6 +2,7 @@ param(
     [string]$Vsix,
     [string]$HostExtension,
     [string]$HostRollback,
+    [switch]$Native,
     [ValidatePattern('^[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}$')][string]$Distro = 'Ubuntu',
     [string]$CodeExecutable = (Join-Path $env:LOCALAPPDATA 'Programs\Microsoft VS Code\Code.exe')
 )
@@ -11,12 +12,12 @@ if (-not $Vsix) {
     $version = (Get-Content -LiteralPath (Join-Path $repository 'vscode-control\package.json') -Raw | ConvertFrom-Json).version
     $Vsix = Join-Path $repository ('.local\submission\codex-decision-' + $version + '.vsix')
 }
-if (-not $HostExtension) { $HostExtension = Join-Path $env:USERPROFILE '.vscode\extensions\openai.chatgpt-26.1007.21434-win32-x64' }
+if (-not $HostExtension) { $HostExtension = Join-Path $env:USERPROFILE '.vscode\extensions\openai.chatgpt-26.1021.22027-win32-x64' }
 $Vsix = [IO.Path]::GetFullPath($Vsix)
 $HostExtension = [IO.Path]::GetFullPath($HostExtension)
 $hostVersion = (Get-Content -LiteralPath (Join-Path $HostExtension 'package.json') -Raw | ConvertFrom-Json).version
 $supportedHosts = @('26.928.31416', '26.930.21537', '26.930.31730', '26.930.41038',
-    '26.930.51102', '26.930.61225', '26.1002.51308', '26.1007.21434')
+    '26.930.51102', '26.930.61225', '26.1002.51308', '26.1007.21434', '26.1021.22027')
 if ($hostVersion -notin $supportedHosts) { throw 'Native smoke requires a version-pinned supported Codex host.' }
 if (-not $HostRollback) { $HostRollback = Join-Path $env:LOCALAPPDATA ('Codex\codex-decision\rollback\' + $hostVersion) }
 $HostRollback = [IO.Path]::GetFullPath($HostRollback)
@@ -34,7 +35,8 @@ $taskRoot = Join-Path $temporary ('decision-vscode-integrated-' + $runId)
 $profile = Join-Path $taskRoot 'profile'
 $extensions = Join-Path $taskRoot 'extensions'
 $localState = Join-Path $taskRoot 'local-state'
-$report = Join-Path $repository '.local\quality\windows-integrated-smoke.json'
+$reportName = if ($Native) { 'windows-integrated-native-smoke.json' } else { 'windows-integrated-smoke.json' }
+$report = Join-Path $repository ('.local\quality\' + $reportName)
 $utf8 = [Text.UTF8Encoding]::new($false)
 $linuxRoot = $null
 $codeProcess = $null
@@ -70,6 +72,11 @@ try {
     New-Item -ItemType Directory -Path $taskRoot, (Join-Path $profile 'User'), $extensions, $localState -Force | Out-Null
     [IO.File]::WriteAllText((Join-Path $taskRoot 'owner.json'), (@{ runId = $runId; purpose = 'Codex Decision isolated integrated VSIX smoke' } | ConvertTo-Json), $utf8)
     New-Item -ItemType Directory -Path (Split-Path $report) -Force | Out-Null
+    $nativeHome = Join-Path $taskRoot 'home'
+    $nativeCodex = Join-Path $taskRoot 'codex'
+    if ($Native) {
+        New-Item -ItemType Directory -Path $nativeHome, $nativeCodex -Force | Out-Null
+    } else {
     $linuxRoot = (& wsl.exe -d $Distro -e mktemp -d -p /tmp decision-vscode-integrated-XXXXXXXX).Trim()
     if ($LASTEXITCODE -ne 0 -or $linuxRoot -notmatch '^/tmp/decision-vscode-integrated-[A-Za-z0-9]{8}$') { throw 'Unexpected Linux native fixture root.' }
     & wsl.exe -d $Distro -e mkdir -m 700 -- ($linuxRoot + '/home') ($linuxRoot + '/codex')
@@ -92,12 +99,16 @@ else:
     if ($LASTEXITCODE -ne 0 -or $temporaryGitMarker -notin @('absent', 'empty-marker')) {
         throw 'Native installer fixture cannot use the temporary-root Git marker safely.'
     }
+    }
     $unpacked = Join-Path $taskRoot 'package'
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     [IO.Compression.ZipFile]::ExtractToDirectory($Vsix, $unpacked)
     $control = Join-Path $unpacked 'extension'
     foreach ($filename in @('package.json', 'plugin\.codex-plugin\plugin.json', 'plugin\hooks\bin\linux-x86_64\decisionctl', 'patch-assets\host-bridge.jsfrag')) {
         if (-not (Test-Path -LiteralPath (Join-Path $control $filename) -PathType Leaf)) { throw 'VSIX does not contain the integrated package.' }
+    }
+    if ($Native -and -not (Test-Path -LiteralPath (Join-Path $control 'plugin\hooks\bin\windows-x86_64\decisionctl.exe') -PathType Leaf)) {
+        throw 'VSIX does not contain the native Windows hook runtime.'
     }
     $hostCopy = Join-Path $extensions ([IO.Path]::GetFileName($HostExtension))
     # The Codex host has thousands of small assets. Bounded parallel copies avoid a long setup delay.
@@ -124,11 +135,15 @@ else:
             }
             Assert-PlainPath $owned
         }
+        if ($Native) {
+            & (Join-Path $control 'plugin\hooks\bin\windows-x86_64\decisionctl.exe') patch-webview restore --root $control --extension $hostCopy --backup $copiedRollback | Out-Null
+        } else {
         $binary = Linux-Path (Join-Path $control 'plugin\hooks\bin\linux-x86_64\decisionctl')
         $source = Linux-Path $control
         $target = Linux-Path $hostCopy
         $rollback = Linux-Path $copiedRollback
         & wsl.exe -d $Distro -e $binary patch-webview restore --root $source --extension $target --backup $rollback | Out-Null
+        }
         if ($LASTEXITCODE -ne 0) { throw 'Version-pinned restore of the copied native host failed.' }
         $originalFiles = @(Get-ChildItem -LiteralPath $copiedRollback -Recurse -File | Where-Object { $_.Name -ne 'manifest.json' })
         if ($originalFiles.Count -ne 4) { throw 'Native smoke requires all four exact original Codex rollback files.' }
@@ -148,9 +163,34 @@ else:
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot $file) -Destination (Join-Path $taskRoot $file)
     }
     # Keep production files unchanged. These exact replacements affect only the disposable copy.
-    foreach ($file in @('integrated-install.js', 'integration.js')) {
+    $processFiles = @('integrated-install.js', 'integration.js')
+    if ($Native) { $processFiles += 'install-plugin-native.js' }
+    foreach ($file in $processFiles) {
         Replace-One (Join-Path $control $file) 'const runFile = promisify(execFile);' 'const runFile = require(process.env.DECISION_INTEGRATED_TEST_WRAPPER).run;'
     }
+    if ($Native) {
+        # Force fixture ownership at the native installer boundary in this disposable copy.
+        # The process wrapper also refuses every WSL invocation in this mode.
+        $nativeFixture = @'
+;(() => {
+  const installOwnedFixture = module.exports.install;
+  module.exports.install = async (options) => {
+    const fixtureFs = require("node:fs/promises");
+    const fixturePath = require("node:path");
+    const fixtureHome = process.env.DECISION_INTEGRATED_TEST_HOME;
+    const marker = fixturePath.join(fixtureHome, "startup-retry-verified");
+    try { await fixtureFs.access(marker); }
+    catch (error) {
+      if (error.code !== "ENOENT") throw error;
+      await fixtureFs.writeFile(marker, "owned native startup failure fixture");
+      throw Object.assign(new Error("Synthetic temporary native installer access failure"), { retryable: true });
+    }
+    return installOwnedFixture({ ...options, home: fixtureHome, codexHome: process.env.CODEX_HOME });
+  };
+})();
+'@
+        [IO.File]::AppendAllText((Join-Path $control 'install-plugin-native.js'), $nativeFixture, $utf8)
+    } else {
     Replace-One (Join-Path $control 'install-plugin.py') 'root = safe_path(Path.home() / ".local/state/codex-decision")' 'root = safe_path(Path(os.environ["DECISION_TEST_HOME"]) / ".local/state/codex-decision")'
     Replace-One (Join-Path $control 'install-plugin.py') 'install(args.payload, args.codex, data_directory=args.data_directory,' 'install(args.payload, args.codex, home=Path(os.environ["DECISION_TEST_HOME"]), codex_home=Path(os.environ["CODEX_HOME"]), data_directory=args.data_directory,'
     if ($temporaryGitMarker -eq 'empty-marker') {
@@ -166,6 +206,7 @@ fcntl.flock(stream, fcntl.LOCK_EX)
                 raise BlockingIOError(errno.EAGAIN, "synthetic temporary startup access failure")
 '@
     Replace-One (Join-Path $control 'install-plugin.py') 'fcntl.flock(stream, fcntl.LOCK_EX)' $temporaryFailure
+    }
     Replace-One (Join-Path $control 'extension.js') '    ready: () => ensureIntegratedInstall(vscode, context, {' '    ready: () => globalThis.__decisionIntegratedInstallation = ensureIntegratedInstall(vscode, context, {'
     Replace-One (Join-Path $control 'extension.js') '  activateIntegration(vscode, context, {' '  globalThis.__decisionIntegratedIntegration = activateIntegration(vscode, context, {'
     Replace-One (Join-Path $control 'panel.js') 'this.extensionUri = extensionUri;' 'this.extensionUri = extensionUri; globalThis.__decisionIntegratedPanel = this;'
@@ -173,13 +214,13 @@ fcntl.flock(stream, fcntl.LOCK_EX)
     $text = [IO.File]::ReadAllText($renderer)
     $needle = '    receiveResult(event.data);'
     if (-not $text.Contains($needle)) { throw 'Native panel acknowledgement anchor changed.' }
-    $ack = ' vscode.postMessage({type:"decision-integrated-rendered", id:latestDecision?.id || null, rows:document.querySelectorAll(".batch-row").length, title:document.querySelector(".batch-title")?.textContent, activity:(document.querySelector(".activity-counts")?.textContent || "") + " " + (document.querySelector(".empty")?.textContent || ""), layout:document.querySelector(".batch-list") ? getComputedStyle(document.querySelector(".batch-list")).display : null});'
+    $ack = ' vscode.postMessage({type:"decision-integrated-rendered", id:latestDecision?.id || null, rows:document.querySelectorAll(".batch-row").length, title:document.querySelector(".batch-title")?.textContent, activity:(document.querySelector(".activity-counts")?.textContent || "") + " " + (document.querySelector(".empty")?.textContent || ""), layout:document.querySelector(".batch-list") ? getComputedStyle(document.querySelector(".batch-list")).display : null, hidden:document.hidden, queued:resultQueue.length, paused:inspectionPaused});'
     $text = $text.Insert($text.LastIndexOf($needle) + $needle.Length, $ack)
     [IO.File]::WriteAllText($renderer, $text, $utf8)
     [IO.File]::WriteAllText((Join-Path $profile 'User\settings.json'), (@{
         'telemetry.telemetryLevel' = 'off'; 'update.mode' = 'none'; 'extensions.autoUpdate' = $false;
         'workbench.startupEditor' = 'none'; 'workbench.enableExperiments' = $false;
-        'chatgpt.openOnStartup' = $false; 'chatgpt.runCodexInWindowsSubsystemForLinux' = $true
+        'chatgpt.openOnStartup' = $false; 'chatgpt.runCodexInWindowsSubsystemForLinux' = (-not $Native)
     } | ConvertTo-Json), $utf8)
     $results = @()
     foreach ($phase in @('first', 'second')) {
@@ -197,10 +238,18 @@ fcntl.flock(stream, fcntl.LOCK_EX)
             $start.Environment.Remove($name) | Out-Null
         }
         $start.Environment['LOCALAPPDATA'] = $localState
-        $start.Environment['CODEX_HOME'] = $linuxRoot + '/codex'
-        $start.Environment['WSLENV'] = (($env:WSLENV -split ':' | Where-Object { $_ -and $_ -notmatch '^CODEX_HOME(?:/|$)' }) + @('CODEX_HOME')) -join ':'
+        if ($Native) {
+            $start.Environment['CODEX_HOME'] = $nativeCodex
+            $start.Environment['USERPROFILE'] = $nativeHome
+            $start.Environment.Remove('WSLENV') | Out-Null
+        } else {
+            $start.Environment['CODEX_HOME'] = $linuxRoot + '/codex'
+            $start.Environment['WSLENV'] = (($env:WSLENV -split ':' | Where-Object { $_ -and $_ -notmatch '^CODEX_HOME(?:/|$)' }) + @('CODEX_HOME')) -join ':'
+        }
         $start.Environment['DECISION_INTEGRATED_TEST_CONTROL'] = $control
         $start.Environment['DECISION_INTEGRATED_TEST_LINUX'] = $linuxRoot
+        $start.Environment['DECISION_INTEGRATED_TEST_MODE'] = if ($Native) { 'native' } else { 'wsl' }
+        $start.Environment['DECISION_INTEGRATED_TEST_HOME'] = $nativeHome
         $start.Environment['DECISION_INTEGRATED_TEST_DISTRO'] = $Distro
         $start.Environment['DECISION_INTEGRATED_TEST_WRAPPER'] = Join-Path $taskRoot 'windows_integrated_smoke_wsl.cjs'
         $start.Environment['DECISION_INTEGRATED_TEST_REPORT'] = $phaseReport
@@ -234,7 +283,7 @@ fcntl.flock(stream, fcntl.LOCK_EX)
         }
         if ((Test-Path -LiteralPath $taskRoot -PathType Container) -and
             [IO.Path]::GetFullPath($taskRoot).StartsWith($temporary + '\', [StringComparison]::OrdinalIgnoreCase)) {
-            $allowed = @('owner.json', 'profile', 'extensions', 'local-state', 'package', 'windows_integrated_smoke_runner.cjs', 'windows_integrated_smoke_wsl.cjs', 'first.json', 'second.json')
+            $allowed = @('owner.json', 'profile', 'extensions', 'local-state', 'home', 'codex', 'package', 'windows_integrated_smoke_runner.cjs', 'windows_integrated_smoke_wsl.cjs', 'first.json', 'second.json')
             $owner = Get-Content -LiteralPath (Join-Path $taskRoot 'owner.json') -Raw | ConvertFrom-Json
             if ($owner.runId -ne $runId -or (Get-ChildItem -LiteralPath $taskRoot -Force | Where-Object { $_.Name -notin $allowed })) { throw 'Native fixture has unknown ownership or content.' }
             if (((Get-Item -LiteralPath $taskRoot -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or
