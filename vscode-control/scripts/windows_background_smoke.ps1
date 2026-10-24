@@ -29,6 +29,29 @@ function Assert-PlainPath([string]$Filename) {
 }
 try {
     if (-not $NodeExecutable) { $NodeExecutable = (Get-Command node.exe -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source }
+    # Resolve shims such as Volta before the runner receives its isolated profile.
+    $nodeProbe = [Diagnostics.ProcessStartInfo]::new()
+    $nodeProbe.FileName = $NodeExecutable
+    $nodeProbe.UseShellExecute = $false
+    $nodeProbe.CreateNoWindow = $true
+    $nodeProbe.RedirectStandardOutput = $true
+    $nodeProbe.RedirectStandardError = $true
+    $nodeProbe.ArgumentList.Add('-p')
+    $nodeProbe.ArgumentList.Add('JSON.stringify(process.execPath)')
+    $nodeProbeProcess = [Diagnostics.Process]::Start($nodeProbe)
+    $nodeProbeOutput = $nodeProbeProcess.StandardOutput.ReadToEndAsync()
+    $nodeProbeError = $nodeProbeProcess.StandardError.ReadToEndAsync()
+    if (-not $nodeProbeProcess.WaitForExit(15000)) {
+        $nodeProbeProcess.Kill($true)
+        $nodeProbeProcess.WaitForExit()
+        throw 'Native Node executable discovery timed out.'
+    }
+    $nodeProbeError.GetAwaiter().GetResult() | Out-Null
+    if ($nodeProbeProcess.ExitCode -ne 0) { throw 'Native Node executable discovery failed.' }
+    try { $resolvedNode = $nodeProbeOutput.GetAwaiter().GetResult() | ConvertFrom-Json }
+    catch { throw 'Native Node executable discovery returned invalid metadata.' }
+    if ($resolvedNode -isnot [string] -or -not [IO.Path]::IsPathFullyQualified($resolvedNode)) { throw 'Native Node executable discovery returned an invalid path.' }
+    $NodeExecutable = $resolvedNode
     # Rust cannot canonicalize this workstation's R: RAM drive. Change only this
     # process's temporary environment, then resolve the Windows temporary API.
     $nativeTemp = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'Temp'
@@ -98,9 +121,13 @@ try {
     $stopped = $true
     $stdout.GetAwaiter().GetResult() | Out-Null
     $stderr.GetAwaiter().GetResult() | Out-Null
-    if (-not (Test-Path -LiteralPath $report -PathType Leaf)) { throw 'Background smoke produced no report.' }
+    if (-not (Test-Path -LiteralPath $report -PathType Leaf)) { throw ('Background runner exited before writing this run''s report (exit ' + $process.ExitCode + ').') }
     $result = Get-Content -LiteralPath $report -Raw | ConvertFrom-Json
-    if ($result.runId -ne $runId -or $process.ExitCode -ne 0 -or -not $result.ok) { throw ('Background smoke failed: ' + $result.error) }
+    if ($result.runId -ne $runId) { throw ('Background runner exited before writing this run''s report (exit ' + $process.ExitCode + ').') }
+    if ($process.ExitCode -ne 0 -or -not $result.ok) {
+        $detail = if ($result.error) { $result.error } else { 'runner failed without a diagnostic' }
+        throw ('Background smoke failed: ' + $detail)
+    }
     Get-Content -LiteralPath $report -Raw
 } finally {
     try {
