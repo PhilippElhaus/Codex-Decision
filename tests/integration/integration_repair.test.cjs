@@ -558,3 +558,27 @@ test("diagnostics expose bounded errors without child process output or private 
     assert.deepEqual(setup.actions(), ["status", "status"]);
   } finally { extension.dispose(); }
 });
+
+test("unsupported-host diagnostics identify the loaded control and explain VSIX recovery without patching", async () => {
+  const setup = fixture([Object.assign(new Error("checker refused"), {
+    stderr: "decisionctl: unsupported Codex extension version; revalidate the composer patch",
+  })]);
+  setup.options.host.packageJSON.version = "26.1021.22027";
+  const extension = extensionFixture(setup, Promise.resolve({ status: "ready", distro: "Ubuntu" }));
+  extension.vscode.window.showWarningMessage = async (...args) => {
+    extension.notifications.push(args);
+    return "Check for Updates";
+  };
+  try {
+    const result = await extension.integration.inspect(true, false);
+    assert.equal(result.status, "failed");
+    const metadata = require("../../vscode-control/package.json");
+    assert.equal(extension.log[0], `Decision control ${metadata.version}; bundled hook ${metadata.codexDecisionHookVersion}.`);
+    assert.ok(extension.log.some((line) => line.includes("Codex 26.1021.22027: unsupported Codex extension version")));
+    assert.match(extension.log.at(-1), /VS Code's Extensions menu \(Install from VSIX\).*reload the window.*Decision: Repair Integration/);
+    assert.match(extension.notifications[0][0], /Install from VSIX/);
+    assert.deepEqual(extension.notifications[0].slice(1), ["Check for Updates", "Show Diagnostics"]);
+    await waitFor(() => extension.executed.includes("codexDecision.checkForUpdates"));
+    assert.deepEqual(setup.actions(), ["status"], "an unsupported checker must not apply or update the patch");
+  } finally { extension.dispose(); }
+});

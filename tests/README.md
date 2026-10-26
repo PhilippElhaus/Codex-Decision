@@ -4,7 +4,7 @@ The integrated VSIX must pass the background native package check before release
 
 ```powershell
 pwsh -NoProfile -File .\vscode-control\scripts\windows_background_smoke.ps1 `
-  -Vsix .\.local\submission\codex-decision-0.15.0.vsix
+  -Vsix .\.local\submission\codex-decision-0.15.1.vsix
 ```
 
 This check opens no editor windows. It uses native Node, the actual packaged
@@ -19,7 +19,7 @@ interactive desktop test is authorized:
 
 ```powershell
 pwsh -NoProfile -File .\vscode-control\scripts\windows_integrated_smoke.ps1 `
-  -Vsix .\.local\submission\codex-decision-0.15.0.vsix -Distro Ubuntu
+  -Vsix .\.local\submission\codex-decision-0.15.1.vsix -Distro Ubuntu
 ```
 
 Add `-Native` to select Windows execution. The native fixture rejects WSL
@@ -28,6 +28,8 @@ this is the same queue behavior checked by the headless browser harness.
 Use the browser checks below for background rendering validation.
 
 Run the current release checks from the repository root. The offline tests use synthetic tool output and provider replies; they do not need an API key.
+
+Updater tests use synthetic GitHub responses and a stub VS Code installer. They check stable-version selection, exact release assets, SHA-256 and size mismatches, HTTPS redirects, response bounds, deadlines, cancellation, daily checks, manual checks, reload behavior, and temporary-file cleanup. Development and test extension hosts must not start automatic downloads. A release check can also download and verify the public VSIX without installing it into the user's VS Code profile.
 
 Provider fallback tests exercise both directions, missing keys, malformed answers, failed later batches, and two maximum-length keys. They verify one complete-provider retry, exact originals, retained attempts, and no fallback across local safety checks. Fallback stays off for existing configurations.
 

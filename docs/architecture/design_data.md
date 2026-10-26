@@ -1,5 +1,7 @@
 # Data handling
 
+The VS Code control can check the fixed public `PhilippElhaus/Codex-Decision` GitHub repository for updates. It sends ordinary release-metadata and asset-download requests without authentication, chat content, tool output, or provider credentials. Downloads stay in a temporary directory until SHA-256 verification and VS Code installation finish. The control removes its temporary download afterward. Set `codexDecision.autoUpdate` to `false` to stop automatic update requests; **Decision: Check for Updates** remains available.
+
 Known independent-line formats use local validation and one or more relevance batches. Unknown formats first use one sampled Choice classification with the existing 95% combined branch gate. The selected provider receives one independent relevance question per eligible line. There is no per-line HTTP call.
 
 One session `enabled` flag covers supported output. One shared `relevance_policy.relevant_max` controls omission and defaults to 5%. Code removes only candidate lines whose probability of being needed is at or below that cutoff. Exact and exhaustive content, prose, coupled structured data, and ambiguous output stay complete.

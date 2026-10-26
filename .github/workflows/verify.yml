@@ -16,7 +16,7 @@ jobs:
           node-version: 22
       - run: cargo test --locked -p codex-decision --lib --test ctl_process --test windows_process
       - run: cargo clippy --locked --lib --bins -- -D warnings
-      - run: node --test tests/unit/native_install.test.cjs tests/unit/integrated_install.test.cjs tests/unit/session_work.test.cjs tests/integration/integration_repair.test.cjs tests/integration/private_paths.test.cjs
+      - run: node --test tests/unit/native_install.test.cjs tests/unit/integrated_install.test.cjs tests/unit/session_work.test.cjs tests/unit/updates.test.cjs tests/integration/integration_repair.test.cjs tests/integration/private_paths.test.cjs
       - run: pwsh -NoProfile -File scripts/build_hook_windows.ps1
   offline:
     runs-on: ubuntu-24.04

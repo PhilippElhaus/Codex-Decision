@@ -6,7 +6,7 @@ const { execFile } = require("node:child_process");
 const { promisify } = require("node:util");
 const { wslLocation } = require("./private-paths");
 const runFile = promisify(execFile);
-const CONTROL_VERSION = require("./package.json").version;
+const { version: CONTROL_VERSION, codexDecisionHookVersion: HOOK_VERSION } = require("./package.json");
 const PANEL_VERSION_KEY = "codexDecision.integration.panelControlVersion";
 
 function windowsPath(filename) {
@@ -151,6 +151,7 @@ function activateIntegration(vscode, context, { dataDirectory, ready = Promise.r
   retryDelaysMs = [2000, 5000, 15000] } = {}) {
   if (!vscode.extensions?.getExtension || !context.extensionUri?.fsPath) return null;
   const output = vscode.window.createOutputChannel("Decision Integration");
+  output.appendLine(`Decision control ${CONTROL_VERSION}; bundled hook ${HOOK_VERSION}.`);
   let inFlight = null;
   let disposed = false;
   let timer = null;
@@ -227,8 +228,13 @@ function activateIntegration(vscode, context, { dataDirectory, ready = Promise.r
         return result;
       } catch (error) {
         if (disposed) return;
-        const message = `${hostVersion ? `Codex ${hostVersion}: ` : ""}${failureMessage(error)}`;
+        const diagnostic = failureMessage(error);
+        const message = `${hostVersion ? `Codex ${hostVersion}: ` : ""}${diagnostic}`;
+        const recovery = diagnostic.startsWith("unsupported Codex extension version")
+          ? "Run Decision: Check for Updates or install the latest Codex Decision VSIX through VS Code's Extensions menu (Install from VSIX), reload the window, then run Decision: Repair Integration."
+          : "";
         output.appendLine(`Decision integration unavailable: ${message}`);
+        if (recovery) output.appendLine(recovery);
         if (!manual && error.retryable === true && retryCount < retryDelaysMs.length &&
             configuration().get("autoRepairIntegration", true) !== false) {
           const delay = retryDelaysMs[retryCount++];
@@ -241,7 +247,9 @@ function activateIntegration(vscode, context, { dataDirectory, ready = Promise.r
         }
         if (manual || reportedFailure !== message) {
           reportedFailure = message;
-          notify("showWarningMessage", `Decision integration is unavailable: ${message}`, ["Show Diagnostics"], (selected) => {
+          notify("showWarningMessage", `Decision integration is unavailable: ${message}${recovery ? `. ${recovery}` : ""}`,
+            recovery ? ["Check for Updates", "Show Diagnostics"] : ["Show Diagnostics"], (selected) => {
+            if (selected === "Check for Updates") return vscode.commands.executeCommand("codexDecision.checkForUpdates");
             if (selected === "Show Diagnostics") output.show(true);
           });
         }

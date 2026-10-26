@@ -5,6 +5,7 @@ const fs = require("node:fs/promises");
 const vscode = require("vscode");
 const { ensureIntegratedInstall } = require("./integrated-install");
 const { activateIntegration } = require("./integration");
+const { activateUpdates } = require("./updates");
 const EXPECTED_HOOK_VERSION = require("./package.json").codexDecisionHookVersion;
 const { LatestDecisionProvider, VIEW_ID } = require("./panel");
 const { readSessionWorkComplete } = require("./session-work");
@@ -593,6 +594,7 @@ function activate(context) {
       dataDirectory: () => settings().get("dataDirectory") || "",
     }),
   });
+  activateUpdates(vscode, context);
 }
 
 function deactivate() {}

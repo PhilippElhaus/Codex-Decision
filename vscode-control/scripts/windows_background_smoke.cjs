@@ -47,7 +47,8 @@ async function main() {
     const options = { payload, codex, home: path.join(taskRoot, "home"), codexHome: process.env.CODEX_HOME };
     const first = await install(options);
     assert.equal(first.status, "installed");
-    const version = JSON.parse(await fs.readFile(path.join(control, "package.json"))).version;
+    const controlPackage = JSON.parse(await fs.readFile(path.join(control, "package.json")));
+    const version = controlPackage.codexDecisionHookVersion;
     assert.equal(first.version, version);
     for (const filename of FILES) assert.deepEqual(await fs.readFile(path.join(first.pluginRoot, filename)),
       await fs.readFile(path.join(payload, filename)), `cache exactness: ${filename}`);
@@ -105,6 +106,7 @@ async function main() {
 
     const hostManifest = JSON.parse(await fs.readFile(path.join(host, "package.json")));
     result.codexVersion = hostManifest.version;
+    result.controlVersion = controlPackage.version;
     result.version = version;
     const assets = ["out/extension.js", "webview/index.html", "webview/assets/use-plugins-74ac3ed173d4.js",
       "webview/assets/chunk-KS7C4IRE-c36c021bd659.js"];

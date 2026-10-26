@@ -4,16 +4,16 @@
 
 Codex Decision selects repetitive lines for removal from supported local tool output. Errors and useful evidence stay visible. Every shortened result links to the complete original.
 
-**Codex Decision 0.15.0** — [Download the integrated VSIX](https://github.com/PhilippElhaus/Codex-Decision/releases/latest).
+**Codex Decision 0.15.1** — [Download the integrated VSIX](https://github.com/PhilippElhaus/Codex-Decision/releases/latest).
 
 ## Get started
 
-Install the downloaded VSIX in **Visual Studio Code**. Open **Extensions** (`Ctrl+Shift+X`), select **… → Install from VSIX…**, and choose `codex-decision-0.15.0.vsix`. If double-clicking the file opens **Visual Studio VSIX Installer**, close that installer and use the VS Code menu.
+Install the downloaded VSIX in **Visual Studio Code**. Open **Extensions** (`Ctrl+Shift+X`), select **… → Install from VSIX…**, and choose `codex-decision-0.15.1.vsix`. If double-clicking the file opens **Visual Studio VSIX Installer**, close that installer and use the VS Code menu.
 
 You can also install it from a terminal:
 
 ```bash
-code --install-extension codex-decision-0.15.0.vsix --force
+code --install-extension codex-decision-0.15.1.vsix --force
 ```
 
 The package contains native Windows and Linux x86_64 hooks, the skill, session controls, settings, and a verified Codex UI patch. It follows Codex’s Windows/WSL execution setting. Native Windows needs no WSL or Python installation. On activation it installs or updates the local plugin and repairs supported Codex builds. Existing plugin data and thread choices remain in place. Run **Developer: Reload Window** after the integration repair, then open your Codex thread. Review the hook in `/hooks` if Codex requests trust. No second package or manual composer patch is needed.
@@ -21,6 +21,10 @@ The package contains native Windows and Linux x86_64 hooks, the skill, session c
 Use **Decision: Check Integration** for status and **Decision: Repair Integration** to restore the controls and reopen a hidden Decision panel. Unsupported Codex builds produce a visible diagnostic. See [installation and upgrades](docs/setup/setup_installation.md) for details and standalone CLI setup.
 
 Temporary installer or WSL access failures retry automatically after 2, 5, and 15 seconds. Persistent failures identify the installation phase without exposing private process output. Configuration and security refusals remain visible immediately.
+
+From `0.15.1`, Decision checks this repository's GitHub Releases daily and installs newer stable VSIX packages automatically. It verifies the download against GitHub's SHA-256 digest, then offers **Reload Window**. Run **Decision: Check for Updates** to check immediately. Turn off `codexDecision.autoUpdate` in VS Code settings to use manual updates. Install `0.15.1` once through VSIX to enable this updater on an older machine.
+
+Decision `0.14.1` cannot integrate with Codex `26.1021.22027`. Install Decision `0.15.0` or later, reload VS Code, and run **Decision: Repair Integration**. See [startup recovery](docs/setup/setup_installation.md#recover-after-a-codex-update) if Codex also reports that its user interface could not start.
 
 ### 1. Connect Decision
 
