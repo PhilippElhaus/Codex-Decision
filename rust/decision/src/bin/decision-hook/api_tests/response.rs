@@ -96,13 +96,14 @@ fn request_outcomes_distinguish_headers_from_valid_typed_answers() {
 fn request_failures_and_successes_are_joined_without_counting_requests_as_outputs() {
     use std::io::{BufRead, BufReader};
     use std::net::TcpListener;
-    let root = tempfile::tempdir().unwrap();
-    ensure_dir(root.path()).unwrap();
-    write_private(&root.path().join("config.json"),
+    let fixture = tempfile::tempdir().unwrap();
+    let root = fixture.path().join("data");
+    ensure_dir(root.as_path()).unwrap();
+    write_private(&root.as_path().join("config.json"),
         br#"{"schema_version":5,"enabled":true,"mode":"observe","provider":"openai","model":"gpt-6-luna","relevance_policy":{"relevant_max":5}}"#,
         false).unwrap();
-    let config = config(root.path()).unwrap().unwrap();
-    usage::start(root.path(), &json!({"tool_name":"exec"}), &config);
+    let config = config(root.as_path()).unwrap().unwrap();
+    usage::start(root.as_path(), &json!({"tool_name":"exec"}), &config);
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let endpoint = format!("http://{}/private-endpoint", listener.local_addr().unwrap());
     let server = std::thread::spawn(move || {
@@ -149,7 +150,7 @@ fn request_failures_and_successes_are_joined_without_counting_requests_as_output
         "questions":{"line_1":{"type":"noul","instructions":"private-question"}}});
     let agent = decision_agent();
     assert!(evaluate(
-        root.path(),
+        root.as_path(),
         &agent,
         &request_value,
         &connection,
@@ -159,7 +160,7 @@ fn request_failures_and_successes_are_joined_without_counting_requests_as_output
     .is_err());
     usage::fallback();
     assert!(evaluate(
-        root.path(),
+        root.as_path(),
         &agent,
         &request_value,
         &connection,
@@ -170,7 +171,7 @@ fn request_failures_and_successes_are_joined_without_counting_requests_as_output
     usage::completed("candidate", "observe", 10, 6, 0);
     usage::finish(&Ok(json!({})));
     server.join().unwrap();
-    let records: Vec<Value> = fs::read_to_string(root.path().join("logs/telemetry.jsonl"))
+    let records: Vec<Value> = fs::read_to_string(root.as_path().join("logs/telemetry.jsonl"))
         .unwrap()
         .lines()
         .map(|line| serde_json::from_str(line).unwrap())
