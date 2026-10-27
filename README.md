@@ -74,6 +74,8 @@ The [October 18 investigation](docs/development/participation_evaluation_2026-10
 
 The [October 27 usage audit](docs/development/usage_effectiveness_2026-10-27.md) examines recent classifications, evaluations, prepared replacements, latency, and measurement limits. Version 0.15.2 adds bounded local invocation and request telemetry plus an [offline metadata audit](tests/README.md). It also reads credentials once per settings request, reuses validated output envelopes, shares unchanged UI activity reads, and records current relevance and guard counts. See the [maintenance notes](docs/development/maintenance_0.15.2.md).
 
+GitHub Actions checks Linux, native Windows, and Chromium before it builds the plugin ZIP and integrated VSIX with both runtimes from the current commit. Verified packages and failure reports are available as run artifacts for seven days. See the [test guide](tests/README.md) for the checks and local commands.
+
 ## Documentation
 
 [API key](docs/setup/setup_credentials.md) · [Filtering rules](docs/architecture/design_integrations.md) · [Privacy and safeguards](docs/architecture/design_data.md) · [Tests](tests/README.md) · [Windows and WSL verification](docs/development/windows_wsl_0.15.0.md) · [Startup and UI verification](docs/development/startup_ui_repair_2026-10-17.md) · [Request reliability audit](docs/development/reliability_audit_2026-10-08.md) · [Usage verification](docs/development/usage_optimization_2026-10-05.md) · [Provider benchmarks](docs/development/provider_benchmarks_2026-10-07.md)

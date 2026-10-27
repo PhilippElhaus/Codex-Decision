@@ -5,6 +5,8 @@ on:
   pull_request:
 permissions:
   contents: read
+env:
+  RUSTUP_TOOLCHAIN: stable
 jobs:
   windows:
     runs-on: windows-2025
@@ -14,10 +16,31 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 22
-      - run: cargo test --locked -p codex-decision --lib --test ctl_process --test windows_process
-      - run: cargo clippy --locked --lib --bins -- -D warnings
-      - run: node --test tests/unit/native_install.test.cjs tests/unit/integrated_install.test.cjs tests/unit/session_work.test.cjs tests/unit/updates.test.cjs tests/integration/integration_repair.test.cjs tests/integration/private_paths.test.cjs
-      - run: pwsh -NoProfile -File scripts/build_hook_windows.ps1
+      - name: Install Rust toolchain
+        run: rustup toolchain install stable --profile minimal --component clippy
+      - name: Test native Windows runtime
+        run: cargo test --locked -p codex-decision --lib --test ctl_process --test windows_process
+      - name: Lint native Windows runtime
+        run: cargo clippy --locked --lib --bins -- -D warnings
+      - name: Test native installation, activity, and private records
+        env:
+          DECISIONCTL_TEST: target/debug/decisionctl.exe
+        run: >-
+          node --test tests/unit/native_install.test.cjs tests/unit/integrated_install.test.cjs
+          tests/unit/session_work.test.cjs tests/unit/updates.test.cjs tests/unit/activity_cache.test.cjs
+          tests/unit/telemetry_audit.test.cjs tests/unit/providers.test.cjs tests/unit/publication.test.cjs
+          tests/unit/retained_activity.test.cjs tests/unit/windows_write.test.cjs
+          tests/integration/integration_repair.test.cjs tests/integration/private_paths.test.cjs
+      - name: Build production Windows runtime
+        run: pwsh -NoProfile -File scripts/build_hook_windows.ps1
+      - name: Save production Windows runtime
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-runtime
+          path: hooks/bin/windows-x86_64/*.exe
+          if-no-files-found: error
+          retention-days: 7
+          overwrite: true
   offline:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -26,12 +49,25 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 22
-      - run: rustup toolchain install stable --profile minimal --component rustfmt --component clippy
-      - run: cargo +stable fmt --all -- --check
-      - run: cargo +stable test --locked -p codex-decision
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+      - name: Install Rust toolchain
+        run: rustup toolchain install stable --profile minimal --component rustfmt --component clippy
+      - name: Check Rust formatting
+        run: cargo fmt --all -- --check
+      - name: Test Rust with standard directory permissions
+        run: |
+          umask 022
+          cargo test --locked -p codex-decision
+      - name: Test telemetry with private directory permissions
+        run: |
+          umask 077
+          cargo test --locked -p codex-decision --bin decision-hook telemetry::usage::tests
+          cargo test --locked -p codex-decision --bin decision-hook api::tests::response::request_failures_and_successes_are_joined_without_counting_requests_as_outputs
       - run: node scripts/dummy_matrix.cjs --hook target/debug/decision-hook --jobs 2 --out .local/quality/dummy-ci
-      - run: cargo +stable clippy --locked --all-targets -- -D warnings
-      - run: cargo +stable build --locked -p codex-decision --profile verification
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      - run: cargo build --locked -p codex-decision --profile verification
       - run: node scripts/pipeline_interrupt.cjs --hook target/verification/decision-hook --out .local/quality/pipeline-ci-interrupt
       - run: node scripts/pipeline_stage_interrupt.cjs --hook target/verification/decision-hook --require-recovered --out .local/quality/pipeline-ci-staged-retry
       - run: node scripts/pipeline_stage_interrupt.cjs --hook target/verification/decision-hook --concurrent-rollback --out .local/quality/pipeline-ci-staged-rollback
@@ -40,16 +76,78 @@ jobs:
       - run: node scripts/pipeline_stress.cjs --hook target/verification/decision-hook --provider typesafe --concurrency 4 --rounds 6 --lines 256,1024 --faults http,json,oversize,probability,model,timeout --jitter-ms 10 --out .local/quality/pipeline-ci-typesafe
       - run: npm test --prefix vscode-control
       - run: python3 -m unittest discover -s tests -p 'test_*.py'
-      - run: ./scripts/build_submission.sh
-      - run: ./scripts/build_control.sh
+      - name: Save offline failure reports
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: offline-failure-reports
+          path: .local/quality/
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 7
+          overwrite: true
   browser:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
       - run: python3 -m pip install playwright==1.63.0
       - run: python3 -m playwright install --with-deps chromium
       - run: python3 vscode-control/scripts/browser_smoke.py --browser chromium
       - run: python3 vscode-control/scripts/browser_quality.py --rounds 50 --seed 7 --fallback-every 5 --out .local/quality/browser-ci
       - run: node -e 'const fs=require("node:fs"); globalThis.window={}; require("./tests/fixtures/reviewed-test-failure-panel.js"); fs.writeFileSync(".local/quality/resident-panel.json", JSON.stringify(window.DECISION_REVIEWED_TEST_FAILURE));'
       - run: python3 vscode-control/scripts/browser_quality.py --rounds 4 --seed 7 --resident-panels --reload-every 2 --settle-every 1 --fallback-every 2 --panel .local/quality/resident-panel.json --panel tests/fixtures/resident-panel.json --out .local/quality/resident-panel-ci
+      - name: Save browser failure reports
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: browser-failure-reports
+          path: .local/quality/
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 7
+          overwrite: true
+  package:
+    needs: [windows, offline, browser]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+      - name: Install Rust toolchain
+        run: rustup toolchain install stable --profile minimal
+      - name: Download this run's production Windows runtime
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: windows-runtime
+          path: .local/ci/windows-runtime
+      - name: Install both production Windows binaries
+        run: |
+          cp .local/ci/windows-runtime/decision-hook.exe hooks/bin/windows-x86_64/decision-hook.exe
+          cp .local/ci/windows-runtime/decisionctl.exe hooks/bin/windows-x86_64/decisionctl.exe
+      - name: Build and verify plugin archive
+        run: ./scripts/build_submission.sh
+      - name: Build and verify integrated VSIX
+        run: ./scripts/build_control.sh
+      - name: Save verified packages
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: verified-packages
+          path: |
+            .local/submission/codex-decision-*.zip
+            .local/submission/codex-decision-*.vsix
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
+          overwrite: true
