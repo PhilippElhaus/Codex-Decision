@@ -1,5 +1,19 @@
 # Tests
 
+[Verify](../.github/workflows/verify.yml) runs on pushes to `main` and pull requests.
+It selects stable Rust, Node 22, and Python 3.12 explicitly. Linux runs the full
+Rust suite with `umask 022` and repeats telemetry checks with `umask 077`.
+Windows covers native installation, activity caching, provider credentials,
+publication, retained records, telemetry, and atomic writes. Chromium checks the
+actual webview scripts and panel fixtures.
+
+After these checks pass, the package job downloads this run's freshly built
+Windows production runtime and builds the Linux production runtime. It verifies
+the plugin ZIP and integrated VSIX against the release allowlists, source bytes,
+versions, and binary targets. GitHub retains verified packages and available
+offline or browser failure reports for seven days. These CI artifacts are
+validation outputs; the workflow does not publish a GitHub release.
+
 The integrated VSIX must pass the background native package check before release:
 
 ```powershell
