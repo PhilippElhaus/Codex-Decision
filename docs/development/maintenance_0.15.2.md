@@ -45,5 +45,6 @@ claim a measured production latency or delivered-context improvement.
 - Both production runtimes were built with locked dependencies. The package
   checks compare exact entries, source bytes, versions, and ELF/PE targets.
 
-The installed hook retains its existing trust definition. Reload the VS Code
-window after installing the VSIX so the running control loads the new modules.
+The installer preserves existing trust records. Codex can require review of the
+newly selected hook in `/hooks`; trust it there, then start a new thread. Reload
+the VS Code window so the running control loads the new modules.
