@@ -13,6 +13,8 @@ pub(super) use gate::record_gate_skip;
 #[path = "telemetry/history.rs"]
 mod history;
 pub(super) use history::load_activity_stats;
+#[path = "telemetry/usage.rs"]
+pub(super) mod usage;
 
 pub(super) fn hook_health(data_dir: &Path, outcome: &str, reason: &str) -> Result<(), String> {
     hook_health_detail(data_dir, outcome, reason, None)

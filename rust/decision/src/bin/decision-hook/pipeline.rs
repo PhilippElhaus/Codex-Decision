@@ -78,8 +78,28 @@ pub(super) fn process_event(
     event: &Value,
     config: &Config,
 ) -> Result<Value, String> {
+    usage::start(scoped, event, config);
+    let result = process_event_inner(data_dir, scoped, event, config);
+    usage::finish(&result);
+    result
+}
+
+fn process_event_inner(
+    data_dir: &Path,
+    scoped: &Path,
+    event: &Value,
+    config: &Config,
+) -> Result<Value, String> {
+    let prepared = PreparedResponse::new(event);
     let mut provider_failed = false;
-    let result = process_event_once(data_dir, scoped, event, config, &mut provider_failed);
+    let result = process_event_once(
+        data_dir,
+        scoped,
+        event,
+        &prepared,
+        config,
+        &mut provider_failed,
+    );
     if result.is_ok() || !config.fallback_enabled || !provider_failed {
         return result;
     }
@@ -91,13 +111,15 @@ pub(super) fn process_event(
     alternate.fallback_from = Some((config.provider, config.model.clone()));
     alternate.provider = config.provider.alternate();
     alternate.model = alternate.provider.default_model().into();
-    process_event_once(data_dir, scoped, event, &alternate, &mut false)
+    usage::fallback();
+    process_event_once(data_dir, scoped, event, &prepared, &alternate, &mut false)
 }
 
 fn process_event_once(
     data_dir: &Path,
     scoped: &Path,
     event: &Value,
+    prepared: &PreparedResponse<'_>,
     config: &Config,
     provider_failed: &mut bool,
 ) -> Result<Value, String> {
@@ -107,9 +129,10 @@ fn process_event_once(
     let Some(route) = route(event, config) else {
         return skip_event(scoped, event, "unsupported_route");
     };
-    let Some(source) = response_text(event) else {
+    let Some(source) = prepared.source() else {
         return skip_event(scoped, event, "unsupported_result");
     };
+    usage::source(source);
     if source.len() < config.min_chars {
         return skip_event(scoped, event, "small");
     }
@@ -125,17 +148,16 @@ fn process_event_once(
         return skip_event(scoped, event, "line_budget");
     }
     remaining()?;
-    let mut lines = source_lines(&source);
+    let mut lines = source_lines(source);
     protect_response_metadata(&mut lines);
-    protect_command_boundaries(event, &mut lines);
-    protect_lab_streams(event, &mut lines);
+    prepared.protect(&mut lines);
     let format = format_decision(event, &mut lines);
     // An exact source read already stays local. Do not mistake source syntax
     // or an unrelated unreadable transcript for an evaluation opportunity.
     if matches!(format, FormatDecision::Keep("exact_content")) {
         return skip_event(scoped, event, "exact_content");
     }
-    let privacy = if sensitive_source(&source) {
+    let privacy = if sensitive_source(source) {
         Some("protected_output")
     } else if sensitive_context(command(event)) {
         Some("protected_command")
@@ -164,7 +186,7 @@ fn process_event_once(
     if config.mode == "replace"
         && !config.allow_mcp_replacement
         && mcp_tool(tool)
-        && !(matches!(format, FormatDecision::Direct(_)) && supported_lab_command(event))
+        && !(matches!(format, FormatDecision::Direct(_)) && prepared.supported_lab_command())
     {
         return skip_event(scoped, event, "mcp_replacement_disabled");
     }
@@ -179,10 +201,10 @@ fn process_event_once(
     }
     if config.mode == "replace"
         && has_user_task
-        && replacement_supported(event)
+        && prepared.replacement_supported()
         && (!preview_only(event) || matches!(format, FormatDecision::Direct(_)))
         && !savings_possible(
-            &source,
+            source,
             &lines,
             &output_path(data_dir, event)?,
             !event["tool_response"].is_string(),
@@ -329,7 +351,7 @@ fn process_event_once(
         .count();
     let candidate = omitted > 0;
     let path = output_path(data_dir, event)?;
-    let mut feedback = render(&source, &lines, &decisions, &path.to_string_lossy());
+    let mut feedback = render(source, &lines, &decisions, &path.to_string_lossy());
     if !event["tool_response"].is_string() {
         feedback.insert_str(
             0,
@@ -339,12 +361,13 @@ fn process_event_once(
             ),
         );
     }
-    let blocker = replacement_blocker(
+    let blocker = replacement_blocker_prepared(
         event,
+        prepared,
         config,
         has_user_task,
         matches!(format, FormatDecision::Direct(_)),
-        &source,
+        source,
         &feedback,
     );
     let replace = candidate && blocker.is_none();
@@ -361,17 +384,13 @@ fn process_event_once(
         ensure_dir(path.parent().ok_or("invalid output path")?)?;
         Some(SavedOriginals::save(
             &path,
-            &source,
+            source,
             &event["tool_response"],
         )?)
     } else {
         None
     };
-    let visible = if replace {
-        feedback.as_str()
-    } else {
-        source.as_ref()
-    };
+    let visible = if replace { feedback.as_str() } else { source };
     record(
         scoped,
         event,
@@ -382,7 +401,7 @@ fn process_event_once(
         } else {
             "no_omissions"
         },
-        &source,
+        source,
         visible,
         &lines,
         &decisions,
@@ -396,6 +415,25 @@ fn process_event_once(
         originals.commit();
     }
     progress.active = false;
+    usage::completed(
+        status,
+        if candidate {
+            blocker.unwrap_or("relevance_policy")
+        } else {
+            "no_omissions"
+        },
+        probabilities.len(),
+        omitted,
+        if replace {
+            source
+                .chars()
+                .count()
+                .saturating_sub(visible.chars().count())
+        } else {
+            0
+        },
+    );
+    usage::line_outcomes(&lines, &decisions, config.policy.relevant_max, replace);
     // The committed output must survive a later telemetry failure.
     if let Err(error) = hook_health(scoped, "success", "") {
         eprintln!("Codex Decision status write failed: {error}");

@@ -33,13 +33,23 @@ fn lab_action(tool: &str) -> Option<&str> {
     .then_some(action)
 }
 
+#[cfg(test)]
 pub(super) fn lab_projection(body: &Value) -> Option<String> {
     lab_view(body).map(|view| view.source)
 }
 
 // This exception applies only to pinned native command contracts. The caller
 // must also prove a local independent-line format before allowing replacement.
+#[cfg(test)]
 pub(super) fn supported_lab_command(event: &Value) -> bool {
+    let view = lab_view(&event["tool_response"]);
+    supported_lab_view(event, || view.as_ref())
+}
+
+pub(super) fn supported_lab_view<'a>(
+    event: &Value,
+    view: impl FnOnce() -> Option<&'a LabView>,
+) -> bool {
     let tool = event["tool_name"].as_str().unwrap_or("");
     let execute = lab_execute(event)
         && event
@@ -50,7 +60,7 @@ pub(super) fn supported_lab_command(event: &Value) -> bool {
     if !execute && !wait {
         return false;
     }
-    lab_view(&event["tool_response"]).is_some_and(|view| execute || wait && view.observation)
+    view().is_some_and(|view| execute || wait && view.observation)
 }
 
 pub(super) struct LabView {
@@ -62,7 +72,12 @@ pub(super) struct LabView {
     pub(super) stderr_end: usize,
 }
 
+#[cfg(test)]
 pub(super) fn lab_view(body: &Value) -> Option<LabView> {
+    lab_view_preparsed(body, decode_envelope(body).as_ref())
+}
+
+pub(super) fn lab_view_preparsed(body: &Value, parsed: Option<&Value>) -> Option<LabView> {
     let object = body.as_object()?;
     if !object.contains_key("content") {
         return payload_view(object);
@@ -82,14 +97,10 @@ pub(super) fn lab_view(body: &Value) -> Option<LabView> {
     if block.len() != 2 || block.get("type")? != "text" {
         return None;
     }
-    let text = block.get("text")?.as_str()?;
-    if text.len() > MAX_PROJECTION * 2 {
-        return None;
-    }
-    let parsed = strict_json::parse(text.as_bytes()).ok()?;
+    let parsed = parsed?;
     if object
         .get("structuredContent")
-        .is_some_and(|value| value != &parsed)
+        .is_some_and(|value| value != parsed)
     {
         return None;
     }

@@ -27,9 +27,9 @@ fn known_command_fields(object: &serde_json::Map<String, Value>) -> bool {
         })
 }
 
-fn command_payload(body: &Value) -> Option<std::borrow::Cow<'_, Value>> {
+fn command_payload<'a>(body: &'a Value, parsed: Option<&'a Value>) -> Option<&'a Value> {
     if known_command_result(body) {
-        return Some(std::borrow::Cow::Borrowed(body));
+        return Some(body);
     }
     let object = body.as_object()?;
     if !object
@@ -47,17 +47,17 @@ fn command_payload(body: &Value) -> Option<std::borrow::Cow<'_, Value>> {
     if block.len() != 2 || block.get("type")? != "text" {
         return None;
     }
-    let text = block.get("text")?.as_str()?;
-    if text.len() > MAX_PROJECTION * 2 {
-        return None;
-    }
-    let parsed = strict_json::parse(text.as_bytes()).ok()?;
-    (object.get("structuredContent")? == &parsed && known_command_result(&parsed))
-        .then_some(std::borrow::Cow::Owned(parsed))
+    let parsed = parsed?;
+    (object.get("structuredContent")? == parsed && known_command_result(parsed)).then_some(parsed)
 }
 
+#[cfg(test)]
 pub(super) fn command_view(body: &Value) -> Option<CommandView> {
-    if let Some(payload) = command_payload(body) {
+    command_view_preparsed(body, decode_envelope(body).as_ref())
+}
+
+pub(super) fn command_view_preparsed(body: &Value, parsed: Option<&Value>) -> Option<CommandView> {
+    if let Some(payload) = command_payload(body, parsed) {
         return Some(CommandView {
             source: command_projection(payload.as_object()?),
             boundaries: vec![],
@@ -116,7 +116,8 @@ pub(super) fn command_view(body: &Value) -> Option<CommandView> {
             ));
             item
         };
-        let payload = command_payload(value)?;
+        let decoded = decode_envelope(value);
+        let payload = command_payload(value, decoded.as_ref())?;
         let projection = command_projection(payload.as_object()?);
         let output = payload["output"].as_str()?;
         let output_lines = physical_lines(output);
@@ -166,7 +167,16 @@ fn physical_lines(text: &str) -> usize {
         + usize::from(!text.is_empty() && !text.ends_with('\n'))
 }
 
+#[cfg(test)]
 pub(super) fn protect_command_boundaries(event: &Value, lines: &mut [SourceLine]) {
+    protect_cached_command_boundaries(event, &ProjectionCache::new(&event["tool_response"]), lines);
+}
+
+pub(super) fn protect_cached_command_boundaries<'a>(
+    event: &'a Value,
+    projections: &ProjectionCache<'a>,
+    lines: &mut [SourceLine],
+) {
     let tool = event["tool_name"].as_str().unwrap_or("");
     if !orchestration_tool(tool) {
         return;
@@ -179,9 +189,9 @@ pub(super) fn protect_command_boundaries(event: &Value, lines: &mut [SourceLine]
         let Some(text) = item["text"].as_str() else {
             return;
         };
-        let parsed = strict_json::parse(text.as_bytes()).ok();
-        let view = parsed.as_ref().and_then(command_view);
-        if let Some(view) = &view {
+        let envelope = projections.serialized(text);
+        let view = envelope.command();
+        if let Some(view) = view {
             for (index, reason) in &view.protected {
                 if let Some(line) = lines.get_mut(offset + index) {
                     line.protected_reason.get_or_insert_with(|| reason.clone());
@@ -196,10 +206,7 @@ pub(super) fn protect_command_boundaries(event: &Value, lines: &mut [SourceLine]
                 }
             }
         }
-        let preview = view
-            .as_ref()
-            .map(|view| std::borrow::Cow::Borrowed(view.source.as_str()))
-            .unwrap_or_else(|| command_preview(text));
+        let preview = envelope.projection().unwrap_or(text);
         // response_text joins blocks with one newline, including a blank line
         // when the preceding block already ends in a newline.
         offset += preview.bytes().filter(|byte| *byte == b'\n').count() + 1;

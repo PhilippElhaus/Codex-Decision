@@ -39,8 +39,29 @@ pub(super) fn savings_possible(
     minimum + 256 < source.len() && minimum * 5 < source.len() * 4
 }
 
+#[cfg(test)]
 pub(super) fn replacement_blocker(
     event: &Value,
+    config: &Config,
+    has_task: bool,
+    direct: bool,
+    source: &str,
+    feedback: &str,
+) -> Option<&'static str> {
+    replacement_blocker_prepared(
+        event,
+        &PreparedResponse::new(event),
+        config,
+        has_task,
+        direct,
+        source,
+        feedback,
+    )
+}
+
+pub(super) fn replacement_blocker_prepared(
+    event: &Value,
+    prepared: &PreparedResponse<'_>,
     config: &Config,
     has_task: bool,
     direct: bool,
@@ -59,11 +80,13 @@ pub(super) fn replacement_blocker(
     {
         return Some("unsupported_command");
     }
-    if mcp_tool(tool) && !config.allow_mcp_replacement && !(direct && supported_lab_command(event))
+    if mcp_tool(tool)
+        && !config.allow_mcp_replacement
+        && !(direct && prepared.supported_lab_command())
     {
         return Some("mcp_replacement_disabled");
     }
-    if !(replacement_supported(event) || mcp_tool(tool) && config.allow_mcp_replacement) {
+    if !(prepared.replacement_supported() || mcp_tool(tool) && config.allow_mcp_replacement) {
         return Some("unsupported_envelope");
     }
     if feedback.len() + 256 >= source.len() || feedback.len() * 5 >= source.len() * 4 {

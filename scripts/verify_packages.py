@@ -15,7 +15,7 @@ PLUGIN_FILES = (
     "assets/logo.png", "assets/icon.png", "config.example.json", "LICENSE",
 )
 CONTROL_FILES = (
-    "config-contract.json", "core.js", "extension.js", "icon.png", "package.json",
+    "config-contract.json", "core.js", "activity-cache.js", "extension.js", "icon.png", "package.json",
     "integration.js", "integrated-install.js", "install-plugin.py", "install-plugin-native.js", "updates.js",
     "patch-assets/host-bridge.jsfrag", "patch-assets/route-bridge.jsfrag",
     "panel-state.js", "panel.js", "raw-skip-state.js", "session-work.js", "schema.js", "providers.js", "private-paths.js", "private-records.js", "publication-journal.js", "media/decision-panel.svg",

@@ -13,7 +13,7 @@ const { provider } = require("./providers");
 const {
   checkHealth, decisionSummary, defaultDataDirectory, estimateTokensSaved,
   outcomeLine, readConfig, readEventCursor, readEventsSince,
-  readApiKey, readProviderKeys, saveProviderSettings, writeSelection,
+  readApiKey, readProviderKeys, readProviderKeySnapshot, saveProviderSettings, writeSelection,
   completeRelevancePolicy,
   sessionDirectory, readSessionActivity, readRecentOutcomes, ensureSessionDefaults, describeHookActivity,
   DEFAULT_SETTINGS, readGlobalSettings, writeGlobalSettings, readInstallationStats,
@@ -368,12 +368,11 @@ function createController(dataDirectory) {
       const directory = dataDirectory();
       if (request.action === "settingsRead") {
         const config = await readSettings();
-        let keyLength = 0;
-        try { keyLength = (await readApiKey(dataDirectory(), config.provider)).length; } catch { /* no usable key */ }
+        const { providerKeys, keyLength } = await readProviderKeySnapshot(directory, config.provider, config.custom_provider);
         const lifetime = await readInstallationStats(directory);
         return { action: "ready", config,
           defaults: DEFAULT_SETTINGS,
-          hasKey: (await readProviderKeys(directory, config.custom_provider))[config.provider]?.hasKey === true, keyLength, providerKeys: await readProviderKeys(directory, config.custom_provider), lifetime };
+          hasKey: providerKeys[config.provider]?.hasKey === true, keyLength, providerKeys, lifetime };
       }
       if (request.action === "settingsOpenLogs") {
         const parent = await fs.lstat(directory);

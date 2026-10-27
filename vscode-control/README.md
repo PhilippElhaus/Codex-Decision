@@ -10,7 +10,7 @@ To build the combined package, first build the native Windows binaries with `scr
 
 ```bash
 ../scripts/build_control.sh
-code --install-extension "$(wslpath -w ../.local/submission/codex-decision-0.15.1.vsix)" --force
+code --install-extension "$(wslpath -w ../.local/submission/codex-decision-0.15.2.vsix)" --force
 ```
 
 On activation, the package installs or updates the bundled Codex plugin and checks the Codex UI integration. It follows `chatgpt.runCodexInWindowsSubsystemForLinux` and uses a matching native or WSL data directory. Native Windows needs no Python or WSL. WSL uses its own plugin registration and data. It sets `codexDecision.dataDirectory` when that setting is empty. Automatically discovered data directories follow the selected Codex runtime. Each runtime retains its own settings and credentials. A successful repair adopts an existing canonical data directory for automatic runtime switching. Mismatched overrides stay unchanged. If they point to another runtime, clear `codexDecision.dataDirectory` and run **Decision: Repair Integration**. Existing plugin identity, credentials, logs, and thread settings remain in place.
@@ -23,7 +23,9 @@ Use **Decision: Check Integration** to inspect the installed build. Use **Decisi
 
 Temporary WSL or installer access failures receive three automatic retries after 2, 5, and 15 seconds. A successful retry ends recovery. Disposal or disabling automatic repair cancels pending retries. Deterministic configuration, permission, and security refusals do not retry. Diagnostics identify a bounded installation phase and failure category without forwarding OS paths or child-process output.
 
-Version `0.15.1` adds the loaded control and bundled hook versions to **Decision Integration** diagnostics. The bundled hook remains `0.15.0`. An unsupported Codex version reports the VSIX update, reload, and repair steps. Decision `0.14.1` needs this update for Codex `26.1021.22027`; updating only the hook plugin cannot replace the VS Code extension's checker. See [startup recovery](https://github.com/PhilippElhaus/Codex-Decision/blob/main/docs/setup/setup_installation.md#recover-after-a-codex-update).
+Version `0.15.2` bundles hook `0.15.2`. Settings use one credential snapshot, composer and panel share unchanged activity reads, and the hook reuses validated output envelopes. Private bounded telemetry records request outcomes, timings, sizes, and current relevance counts. See the [maintenance notes](https://github.com/PhilippElhaus/Codex-Decision/blob/main/docs/development/maintenance_0.15.2.md).
+
+Version `0.15.1` added the loaded control and bundled hook versions to **Decision Integration** diagnostics. An unsupported Codex version reports the VSIX update, reload, and repair steps. Decision `0.14.1` needs an update for Codex `26.1021.22027`; updating only the hook plugin cannot replace the VS Code extension's checker. See [startup recovery](https://github.com/PhilippElhaus/Codex-Decision/blob/main/docs/setup/setup_installation.md#recover-after-a-codex-update).
 
 The control also checks GitHub Releases daily and automatically installs newer stable VSIX packages after size and SHA-256 verification. It offers **Reload Window** after installation. Use **Decision: Check for Updates** to check now, or disable `codexDecision.autoUpdate` in user settings for manual updates. The first update from an older control requires a manual VSIX install. Automatic checks do not run in development or extension-test instances. Offline checks leave the installed version in place. See **Decision Updates** in Output for status.
 

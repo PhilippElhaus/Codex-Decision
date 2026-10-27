@@ -28,6 +28,14 @@ fn scoped(data: &Path, session: &str) -> PathBuf {
         .join(format!("{:x}", Sha256::digest(session.as_bytes())))
 }
 
+fn usage_rows(data: &Path, session: &str) -> Vec<Value> {
+    fs::read_to_string(scoped(data, session).join("logs/telemetry.jsonl"))
+        .unwrap()
+        .lines()
+        .map(|row| serde_json::from_str(row).unwrap())
+        .collect()
+}
+
 #[test]
 fn invalid_session_configuration_records_an_actionable_hook_error() {
     let root = tempfile::tempdir().unwrap();
@@ -516,6 +524,14 @@ fn writes_one_original_and_line_receipt_for_valid_batches() {
     let saved = fs::read_to_string(originals[0].as_ref().unwrap().path()).unwrap();
     assert!(saved.starts_with("Compiling module 0000"));
     assert!(reply["reason"].as_str().unwrap().contains("full original:"));
+    let usage = usage_rows(&data_dir, "fixture-session");
+    let completed = usage.last().unwrap();
+    assert_eq!(completed["event"], "invocation");
+    assert_eq!(completed["outcome"], "replace");
+    assert_eq!(completed["request_count"], calls);
+    assert_eq!(completed["lines_judged"], 120);
+    assert!(completed["prepared_saved_chars"].as_u64().unwrap() > 0);
+    assert_eq!(completed["delivery"], "unverified");
 }
 
 #[test]
@@ -553,6 +569,26 @@ fn later_batch_failure_rolls_back_progress_and_keeps_the_entire_original() {
     let health: Value =
         serde_json::from_slice(&fs::read(session.join("logs/hook-health.json")).unwrap()).unwrap();
     assert!(health["last_error_ms"].is_number());
+    let usage = usage_rows(&data, "fixture-session");
+    let requests: Vec<_> = usage
+        .iter()
+        .filter(|row| row["event"] == "request")
+        .collect();
+    assert_eq!(requests.len(), calls);
+    assert!(requests[..2]
+        .iter()
+        .all(|row| row["outcome"] == "validated"));
+    assert_eq!(requests[2]["outcome"], "invalid_response");
+    assert_eq!(requests[2]["http_status"], 200);
+    assert!(requests.iter().all(|row| row["stage"] == "relevance"));
+    let completion = usage.last().unwrap();
+    assert_eq!(completion["outcome"], "error");
+    assert_eq!(completion["request_count"], 3);
+    assert_eq!(completion["prepared_saved_chars"], Value::Null);
+    assert_eq!(completion["proposed_omitted"], Value::Null);
+    assert!(usage
+        .iter()
+        .all(|row| row["invocation_id"] == usage[0]["invocation_id"]));
 }
 
 #[test]

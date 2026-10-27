@@ -1,11 +1,11 @@
 # Install and verify
 
-Download the integrated VSIX from the [latest release](https://github.com/PhilippElhaus/Codex-Decision/releases/latest). In **Visual Studio Code** on Windows x86_64, open **Extensions** (`Ctrl+Shift+X`), select **… → Install from VSIX…**, and choose `codex-decision-0.15.1.vsix`.
+Download the integrated VSIX from the [latest release](https://github.com/PhilippElhaus/Codex-Decision/releases/latest). In **Visual Studio Code** on Windows x86_64, open **Extensions** (`Ctrl+Shift+X`), select **… → Install from VSIX…**, and choose `codex-decision-0.15.2.vsix`.
 
 If double-clicking the file opens **Visual Studio VSIX Installer**, close that installer and use the VS Code menu. You can also install from a terminal:
 
 ```bash
-code --install-extension codex-decision-0.15.1.vsix --force
+code --install-extension codex-decision-0.15.2.vsix --force
 ```
 
 This single package contains Windows x86_64 and Linux x86_64 hooks, the skill, session controls, settings, and verified composer patch. It follows Codex’s `chatgpt.runCodexInWindowsSubsystemForLinux` setting. Native Windows needs no WSL or Python. The WSL backend keeps its own registration and data. Automatically discovered data directories follow the selected Codex runtime. Each runtime retains its own settings and credentials. A successful repair adopts an existing canonical data directory for automatic runtime switching. Mismatched overrides stay unchanged. If they point to another runtime, clear `codexDecision.dataDirectory` and run **Decision: Repair Integration**. Activation updates an existing local plugin without changing its identity or data directory. A fresh install registers the bundled local marketplace. The installer preserves credentials, settings, session flags, saved originals, and Codex hook trust records. It rejects ambiguous plugin registrations instead of creating a duplicate hook.

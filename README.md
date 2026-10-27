@@ -4,16 +4,16 @@
 
 Codex Decision selects repetitive lines for removal from supported local tool output. Errors and useful evidence stay visible. Every shortened result links to the complete original.
 
-**Codex Decision 0.15.1** — [Download the integrated VSIX](https://github.com/PhilippElhaus/Codex-Decision/releases/latest).
+**Codex Decision 0.15.2** — [Download the integrated VSIX](https://github.com/PhilippElhaus/Codex-Decision/releases/latest).
 
 ## Get started
 
-Install the downloaded VSIX in **Visual Studio Code**. Open **Extensions** (`Ctrl+Shift+X`), select **… → Install from VSIX…**, and choose `codex-decision-0.15.1.vsix`. If double-clicking the file opens **Visual Studio VSIX Installer**, close that installer and use the VS Code menu.
+Install the downloaded VSIX in **Visual Studio Code**. Open **Extensions** (`Ctrl+Shift+X`), select **… → Install from VSIX…**, and choose `codex-decision-0.15.2.vsix`. If double-clicking the file opens **Visual Studio VSIX Installer**, close that installer and use the VS Code menu.
 
 You can also install it from a terminal:
 
 ```bash
-code --install-extension codex-decision-0.15.1.vsix --force
+code --install-extension codex-decision-0.15.2.vsix --force
 ```
 
 The package contains native Windows and Linux x86_64 hooks, the skill, session controls, settings, and a verified Codex UI patch. It follows Codex’s Windows/WSL execution setting. Native Windows needs no WSL or Python installation. On activation it installs or updates the local plugin and repairs supported Codex builds. Existing plugin data and thread choices remain in place. Run **Developer: Reload Window** after the integration repair, then open your Codex thread. Review the hook in `/hooks` if Codex requests trust. No second package or manual composer patch is needed.
@@ -71,6 +71,8 @@ Use **Show skipped output** to capture future skips. You can change it before yo
 Screenshots capture the current webview code with synthetic, key-free data. Code-mode scripts can still serialize the original tool result after a hook records a replacement, so the panel’s removal counts do not establish downstream token savings. See the [processing investigation](docs/development/processing_recovery_2026-10-08.md) and [troubleshooting](docs/setup/setup_installation.md).
 
 The [October 18 investigation](docs/development/participation_evaluation_2026-10-18.md) bounds historical API participation at **8.04–8.44% of enabled invocations**. Small outputs and exact source reads account for about 61%. [Version 0.13.0](docs/development/coverage_release_0.13.0.md) fixes 11 missed safe opportunities through validated wrappers, narrower diagnostic matching, and reviewed read-only routes. The paired synthetic cohort improved from **9/20 to 20/20 safe outputs evaluated**, with no labeled evidence loss. A separate classifier holdout still kept all unknown formats. These tests do not predict the new workload rate. The UI labels hook estimates and unverified delivery explicitly.
+
+The [October 27 usage audit](docs/development/usage_effectiveness_2026-10-27.md) examines recent classifications, evaluations, prepared replacements, latency, and measurement limits. Version 0.15.2 adds bounded local invocation and request telemetry plus an [offline metadata audit](tests/README.md). It also reads credentials once per settings request, reuses validated output envelopes, shares unchanged UI activity reads, and records current relevance and guard counts. See the [maintenance notes](docs/development/maintenance_0.15.2.md).
 
 ## Documentation
 

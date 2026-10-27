@@ -8,6 +8,32 @@ const { provider, wireRequest, parseHealthResult } = require("../../vscode-contr
 const { readApiKey, writeApiKey, checkHealth, readGlobalSettings, writeGlobalSettings } = require("../../vscode-control/core");
 const { validate } = require("../../vscode-control/schema");
 
+test("provider status and selected key length use one fresh credential snapshot", async t => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "decision-key-snapshot-"));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const filename = path.join(directory, ".env");
+  await fs.writeFile(filename, "OPENAI_API_KEY=synthetic-openai-key\nJEV_API_KEY=synthetic-typesafe-key\n", { mode: 0o600 });
+  const originalOpen = fs.open;
+  let reads = 0;
+  fs.open = async function (target, ...args) {
+    if (target === filename) reads += 1;
+    return originalOpen.call(this, target, ...args);
+  };
+  try {
+    const { readProviderKeySnapshot } = require("../../vscode-control/core");
+    const first = await readProviderKeySnapshot(directory, "openai");
+    assert.equal(reads, 1);
+    assert.deepEqual(first, { providerKeys: { openai: { hasKey: true }, typesafe: { hasKey: true } },
+      keyLength: "synthetic-openai-key".length });
+    assert.equal(JSON.stringify(first).includes("synthetic-"), false);
+    await fs.writeFile(filename, "OPENAI_API_KEY=short\nJEV_API_KEY=updated-typesafe-key\n");
+    const second = await readProviderKeySnapshot(directory, "typesafe");
+    assert.equal(reads, 2);
+    assert.deepEqual(second, { providerKeys: { openai: { hasKey: false }, typesafe: { hasKey: true } },
+      keyLength: "updated-typesafe-key".length });
+  } finally { fs.open = originalOpen; }
+});
+
 test("default provider uses Decisions predicate API and validates refusals", () => {
   assert.equal(provider().endpoint, "https://api.openai.com/v1/decisions");
   const request = wireRequest({model:"gpt-6-luna",state:{text:"λ"},questions:{ready:{type:"noul",instructions:"Is it ready?"}}});

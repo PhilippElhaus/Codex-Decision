@@ -9,6 +9,27 @@ use support::*;
 mod custom;
 
 #[test]
+fn unavailable_telemetry_never_changes_a_committed_replacement() {
+    let (root, data, event) = fixture("openai", false, BOTH_KEYS, 120);
+    let session = scoped(&data, "fallback");
+    let logs = session.join("logs");
+    fs::create_dir_all(&logs).unwrap();
+    for directory in [data.join("sessions"), session, logs.clone()] {
+        fs::set_permissions(directory, fs::Permissions::from_mode(0o700)).unwrap();
+    }
+    let protected = root.path().join("protected-telemetry-target.txt");
+    fs::write(&protected, b"private sentinel").unwrap();
+    std::os::unix::fs::symlink(&protected, logs.join("telemetry.jsonl")).unwrap();
+    let (endpoint, stop, server) = server("unused", Failure::None, 0, false);
+    assert_replacement(&data, &endpoint, &event);
+    stop.store(true, Ordering::Relaxed);
+    assert!(!server.join().unwrap().is_empty());
+    assert_eq!(fs::read(&protected).unwrap(), b"private sentinel");
+    assert_eq!(health(&data)["errors"], 0);
+    assert_eq!(receipt(&data)["manifest"]["status"], "replace");
+}
+
+#[test]
 fn unavailable_providers_fallback_in_both_directions_with_actual_receipts_and_attempts() {
     for (provider, primary, alternate) in [
         ("openai", "gpt-6-luna", "jev-latest"),
@@ -41,6 +62,35 @@ fn unavailable_providers_fallback_in_both_directions_with_actual_receipts_and_at
                 manifest["requests"].as_u64().unwrap() + 1,
                 models.len() as u64
             );
+            let usage = usage_rows(&data, "fallback");
+            let requests: Vec<_> = usage
+                .iter()
+                .filter(|row| row["event"] == "request")
+                .collect();
+            assert_eq!(requests.len(), models.len());
+            assert_eq!(requests[0]["provider"], provider);
+            assert_eq!(
+                requests[0]["outcome"],
+                match failure {
+                    Failure::Http => "http_error",
+                    Failure::Protocol => "invalid_response",
+                    Failure::Transport => "transport_error",
+                    Failure::None => unreachable!(),
+                }
+            );
+            assert_eq!(
+                requests[0]["http_status"],
+                match failure {
+                    Failure::Http => json!(503),
+                    Failure::Protocol => json!(200),
+                    _ => Value::Null,
+                }
+            );
+            assert!(requests[1..].iter().all(
+                |row| row["outcome"] == "validated" && row["provider"] == manifest["provider"]
+            ));
+            assert_eq!(usage.last().unwrap()["fallback_used"], true);
+            assert_eq!(usage.last().unwrap()["outcome"], "replace");
         }
     }
 }

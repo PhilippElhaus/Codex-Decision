@@ -11,6 +11,8 @@ const { defaults, validate } = require("./schema");
 const { validateStatsRecord, STATS_ACTIVITY_KEYS, readFileRecord,
   validateDirectoryPath,validateSessionPath,parseUniqueJson,parseUnsignedJson } = require("./private-records");
 const {readPublishedRecord,withPublication} = require("./publication-journal");
+const { createActivityReader } = require("./activity-cache");
+const readSessionActivity = createActivityReader(readSessionActivityUncached);
 const DEFAULT_RELEVANCE_POLICY = Object.freeze(defaults("config").relevance_policy);
 const { schema_version: _schemaVersion, ...settingsDefaults } = defaults("settings");
 const DEFAULT_SETTINGS = Object.freeze(settingsDefaults);
@@ -374,7 +376,7 @@ async function readInstallationStats(directory) {
 // Request attempts and completion totals have different commit points. The
 // hook health counter includes pending and failed API requests; completion
 // stats contain only results that published all required artifacts.
-async function readSessionActivity(directory) {
+async function readSessionActivityUncached(directory) {
   const reads = await Promise.allSettled([
     readRecordedStats(directory), readHookHealth(directory),
   ]);
@@ -835,11 +837,16 @@ async function credentialSource(directory) {
 }
 
 async function readApiKey(directory, selected = "openai", custom) {
+  if (selected === "custom") custom ??= (await readGlobalSettings(directory)).custom_provider;
+  if (selected === "custom" && provider(selected, custom).auth === "none") return "";
+  return apiKeyFromSource(await credentialSource(directory), selected, custom);
+}
+
+function apiKeyFromSource(source, selected, custom) {
   if (selected === "custom") {
-    custom ??= (await readGlobalSettings(directory)).custom_provider;
     const spec = provider(selected, custom);
     if (spec.auth === "none") return "";
-    const lines = (await credentialSource(directory)).split(/\r?\n/);
+    const lines = source.split(/\r?\n/);
     const values = name => lines.filter(line => line.split("=", 1)[0] === name).map(line => line.slice(line.indexOf("=") + 1));
     const identity = values("CUSTOM_CREDENTIAL_IDENTITY");
     const secrets = values(spec.keyName);
@@ -849,7 +856,7 @@ async function readApiKey(directory, selected = "openai", custom) {
     catch { throw Object.assign(new Error("Invalid custom credential"), { decisionReason: "DECISION_KEY_INVALID" }); }
   }
   const keyName = provider(selected).keyName;
-  const lines = (await credentialSource(directory)).split(/\r?\n/);
+  const lines = source.split(/\r?\n/);
   const values = lines.filter((line) => line.trim().split("=", 1)[0].trim() === keyName).map((line) => {
     let value = line.slice(line.indexOf("=") + 1).trim();
     if (value.length >= 2 && ["'", '"'].includes(value[0]) && value.at(-1) === value[0]) value = value.slice(1, -1);
@@ -863,16 +870,25 @@ async function readApiKey(directory, selected = "openai", custom) {
 }
 
 async function readProviderKeys(directory, customProvider) {
-  const entries = await Promise.all(["openai", "typesafe"].map(async (selected) => {
-    try { return [selected, { hasKey: Boolean(await readApiKey(directory, selected)) }]; }
-    catch { return [selected, { hasKey: false }]; }
-  }));
+  return (await readProviderKeySnapshot(directory, "openai", customProvider)).providerKeys;
+}
+
+async function readProviderKeySnapshot(directory, selected = "openai", customProvider) {
   customProvider ??= (await readGlobalSettings(directory).catch(() => ({}))).custom_provider;
-  if (customProvider) {
-    try { entries.push(["custom", { hasKey: customProvider.auth === "none" || Boolean(await readApiKey(directory, "custom", customProvider)) }]); }
-    catch { entries.push(["custom", { hasKey: false }]); }
+  let source;
+  try { source = await credentialSource(directory); } catch { /* Report unusable saved credentials without exposing them. */ }
+  const providerKeys = {};
+  let keyLength = 0;
+  for (const name of ["openai", "typesafe", ...(customProvider ? ["custom"] : [])]) {
+    try {
+      const noAuth = name === "custom" && provider(name, customProvider).auth === "none";
+      if (!noAuth && source === undefined) throw new Error("Unusable credential snapshot");
+      const key = noAuth ? "" : apiKeyFromSource(source, name, customProvider);
+      providerKeys[name] = { hasKey: noAuth || Boolean(key) };
+      if (name === selected) keyLength = key.length;
+    } catch { providerKeys[name] = { hasKey: false }; }
   }
-  return Object.fromEntries(entries);
+  return { providerKeys, keyLength };
 }
 
 async function boundedResponse(response, limit) {
@@ -1042,7 +1058,7 @@ module.exports = {
 
   decisionSummary, defaultDataDirectory, estimateTokensSaved,
   isDecisionOutcome, outcomeLine, parseHealthOutput, readConfig,
-  readApiKey, readProviderKeys, readEventOffset, readEventCursor, readEventsSince, readLifetimeStats,
+  readApiKey, readProviderKeys, readProviderKeySnapshot, readEventOffset, readEventCursor, readEventsSince, readLifetimeStats,
   readSessionActivity, readRecentOutcomes, retainedStatsFromEvents,
   describeHookActivity,
   savedCharacters, writeApiKey, writeSelection, saveProviderSettings, customCredentialIdentity,

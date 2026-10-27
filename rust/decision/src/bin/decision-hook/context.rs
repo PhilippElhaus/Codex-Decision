@@ -34,18 +34,29 @@ pub(super) fn fallback_task(event: &Value) -> String {
     format!("Review {detail}. Keep diagnostics, exact values, unique facts, and evidence needed to understand the result.")
 }
 
+#[cfg(test)]
 pub(super) fn response_text(event: &Value) -> Option<Cow<'_, str>> {
+    PreparedResponse::new(event).into_source()
+}
+
+pub(super) fn project_response<'a>(
+    event: &'a Value,
+    projections: &ProjectionCache<'a>,
+) -> Option<Cow<'a, str>> {
     event.get("tool_name")?.as_str()?;
     let body = event.get("tool_response")?;
     if let Some(text) = body.as_str() {
         return Some(Cow::Borrowed(text));
     }
     if lab_execute(event) || lab_poll(event["tool_name"].as_str()?) {
-        return lab_projection(body).map(Cow::Owned);
+        return projections
+            .direct
+            .lab()
+            .map(|view| Cow::Owned(view.source.clone()));
     }
     if orchestration_tool(event["tool_name"].as_str()?) {
-        if let Some(source) = lab_projection(body) {
-            return Some(Cow::Owned(source));
+        if let Some(view) = projections.direct.lab() {
+            return Some(Cow::Owned(view.source.clone()));
         }
     }
     let tool = event["tool_name"].as_str()?;
@@ -53,8 +64,8 @@ pub(super) fn response_text(event: &Value) -> Option<Cow<'_, str>> {
         && body.get("status").is_none()
         && (shell_tool(tool) || polling_tool(event) || orchestration_tool(tool))
     {
-        if let Some(view) = command_view(body) {
-            return Some(Cow::Owned(view.source));
+        if let Some(view) = projections.direct.command() {
+            return Some(Cow::Owned(view.source.clone()));
         }
     }
     // Local function tools serialize their model-facing content items as an
@@ -66,7 +77,7 @@ pub(super) fn response_text(event: &Value) -> Option<Cow<'_, str>> {
         if items.len() == 1 {
             let text = text_block(&items[0], "input_text")?;
             return Some(if orchestration_tool(event["tool_name"].as_str()?) {
-                command_preview(text)
+                projections.preview(text)
             } else {
                 Cow::Borrowed(text)
             });
@@ -76,9 +87,12 @@ pub(super) fn response_text(event: &Value) -> Option<Cow<'_, str>> {
             .map(|item| text_block(item, "input_text"))
             .collect::<Option<Vec<_>>>()?;
         if orchestration_tool(event["tool_name"].as_str()?)
-            && parts.iter().any(|text| supported_serialized_command(text))
+            && parts
+                .iter()
+                .any(|text| projections.serialized(text).projection().is_some())
             && parts.iter().any(|text| {
-                text.trim_start().starts_with(['{', '[']) && !supported_serialized_command(text)
+                text.trim_start().starts_with(['{', '['])
+                    && projections.serialized(text).projection().is_none()
             })
         {
             // A valid printed command does not grant a neighboring unknown
@@ -89,7 +103,7 @@ pub(super) fn response_text(event: &Value) -> Option<Cow<'_, str>> {
             if orchestration_tool(event["tool_name"].as_str()?) {
                 parts
                     .into_iter()
-                    .map(command_preview)
+                    .map(|text| projections.preview(text))
                     .collect::<Vec<_>>()
                     .join("\n")
             } else {
@@ -127,11 +141,6 @@ fn text_block<'a>(item: &'a Value, kind: &str) -> Option<&'a str> {
     (item.get("type")?.as_str()? == kind).then(|| item.get("text")?.as_str())?
 }
 
-fn supported_serialized_command(text: &str) -> bool {
-    strict_json::parse(text.as_bytes())
-        .is_ok_and(|value| command_view(&value).is_some() || lab_projection(&value).is_some())
-}
-
 pub(super) fn orchestration_tool(tool: &str) -> bool {
     matches!(tool, "exec" | "wait" | "functions.exec" | "functions.wait")
 }
@@ -139,35 +148,33 @@ pub(super) fn orchestration_tool(tool: &str) -> bool {
 // Code-mode text(result) serializes command output with escaped newlines.
 // Decode only the known command envelope. Metadata remains an explicit,
 // protected source line, and replacement also saves the typed envelope.
-pub(super) fn command_preview(text: &str) -> Cow<'_, str> {
-    let Ok(value) = strict_json::parse(text.as_bytes()) else {
-        return Cow::Borrowed(text);
-    };
-    if let Some(view) = command_view(&value) {
-        return Cow::Owned(view.source);
-    }
-    lab_projection(&value)
-        .map(Cow::Owned)
-        .unwrap_or(Cow::Borrowed(text))
+#[cfg(test)]
+pub(super) fn replacement_supported(event: &Value) -> bool {
+    PreparedResponse::new(event).replacement_supported()
 }
 
-pub(super) fn replacement_supported(event: &Value) -> bool {
+pub(super) fn supports_replacement<'a>(
+    event: &'a Value,
+    projections: &ProjectionCache<'a>,
+) -> bool {
     let body = &event["tool_response"];
     if body.is_string() {
         return true;
     }
     let tool = event["tool_name"].as_str().unwrap_or("");
     if lab_execute(event) || lab_poll(tool) {
-        return lab_projection(body).is_some();
+        return projections.direct.lab().is_some();
     }
     if shell_tool(tool) || polling_tool(event) {
-        return body.is_object() && body.get("status").is_none() && command_view(body).is_some();
+        return body.is_object()
+            && body.get("status").is_none()
+            && projections.direct.command().is_some();
     }
     if !orchestration_tool(tool) {
         return false;
     }
     if body.is_object() {
-        return body.get("status").is_none() && command_view(body).is_some();
+        return body.get("status").is_none() && projections.direct.command().is_some();
     }
     body.as_array().is_some_and(|items| {
         !items.is_empty()
@@ -181,10 +188,7 @@ pub(super) fn replacement_supported(event: &Value) -> bool {
                 let Some(text) = item["text"].as_str() else {
                     return false;
                 };
-                match strict_json::parse(text.as_bytes()) {
-                    Ok(value) => command_view(&value).is_some() || lab_projection(&value).is_some(),
-                    Err(error) => !error.is_data(),
-                }
+                projections.serialized(text).supports_text_replacement()
             })
     })
 }

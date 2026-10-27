@@ -1,12 +1,21 @@
 //! Protect validated stream ranges using typed data, never source header claims.
 use super::*;
 
+#[cfg(test)]
 pub(super) fn protect_lab_streams(event: &Value, lines: &mut [SourceLine]) {
+    protect_cached_lab_streams(event, &ProjectionCache::new(&event["tool_response"]), lines);
+}
+
+pub(super) fn protect_cached_lab_streams<'a>(
+    event: &'a Value,
+    projections: &ProjectionCache<'a>,
+    lines: &mut [SourceLine],
+) {
     let body = &event["tool_response"];
     let tool = event["tool_name"].as_str().unwrap_or("");
     if lab_execute(event) || lab_poll(tool) || orchestration_tool(tool) {
-        if let Some(view) = lab_result::lab_view(body) {
-            protect_view(&view, 0, lines);
+        if let Some(view) = projections.direct.lab() {
+            protect_view(view, 0, lines);
             return;
         }
     }
@@ -21,15 +30,14 @@ pub(super) fn protect_lab_streams(event: &Value, lines: &mut [SourceLine]) {
         let Some(text) = item["text"].as_str() else {
             return;
         };
-        let parsed = strict_json::parse(text.as_bytes()).ok();
-        let view = parsed.as_ref().and_then(lab_result::lab_view);
-        if let Some(view) = &view {
+        let envelope = projections.serialized(text);
+        let view = envelope.lab();
+        if let Some(view) = view {
             protect_view(view, offset, lines);
         }
         let preview = view
-            .as_ref()
-            .map(|view| std::borrow::Cow::Borrowed(view.source.as_str()))
-            .unwrap_or_else(|| command_preview(text));
+            .map(|view| view.source.as_str())
+            .unwrap_or_else(|| envelope.projection().unwrap_or(text));
         offset += preview.bytes().filter(|byte| *byte == b'\n').count() + 1;
     }
 }

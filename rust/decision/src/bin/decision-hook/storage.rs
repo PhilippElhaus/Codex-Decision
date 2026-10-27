@@ -128,8 +128,18 @@ pub(super) fn cleanup_log_lock(logs: &Path) -> Result<File, String> {
     lock_logs_with_timeout(logs, Duration::from_secs(2))
 }
 
+pub(super) fn try_telemetry_lock(logs: &Path) -> Result<File, String> {
+    lock_file_with_timeout(&logs.join(".telemetry.lock"), Duration::ZERO)
+}
+
 fn lock_logs_with_timeout(logs: &Path, timeout: Duration) -> Result<File, String> {
-    let path = logs.join(".lock");
+    let file = lock_file_with_timeout(&logs.join(".lock"), timeout)?;
+    // The permanent log inode serializes recovery and every producer write.
+    recover_publication(logs)?;
+    Ok(file)
+}
+
+fn lock_file_with_timeout(path: &Path, timeout: Duration) -> Result<File, String> {
     if path.is_symlink() {
         return Err("linked log lock".into());
     }
@@ -167,8 +177,6 @@ fn lock_logs_with_timeout(logs: &Path, timeout: Duration) -> Result<File, String
             std::thread::sleep(Duration::from_millis(10));
         }
     }
-    // The permanent log inode serializes recovery and every producer write.
-    recover_publication(logs)?;
     Ok(file)
 }
 

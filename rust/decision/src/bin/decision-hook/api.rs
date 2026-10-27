@@ -119,8 +119,9 @@ fn evaluate_prepared_inner<T>(
     // Count attempts before sending, including requests whose answers fail.
     // Completion statistics still roll back with an unsuccessful result.
     hook_health(scoped, "request", "")?;
+    let started = Instant::now();
     let mut outcome = RequestOutcome::default();
-    let result = (|| {
+    let result: Result<(Value, T), EvaluationFailure> = (|| {
         let body = send_request(
             scoped,
             agent,
@@ -159,6 +160,26 @@ fn evaluate_prepared_inner<T>(
         }
         Ok((response, judgment))
     })();
+    usage::request(
+        request,
+        if connection.custom {
+            "custom"
+        } else {
+            connection.protocol.name()
+        },
+        connection.protocol.name(),
+        usage::milliseconds(started),
+        encoded.len(),
+        outcome.response_bytes,
+        outcome.http_status,
+        outcome.received,
+        outcome.cancelled,
+        result.as_ref().err().map(|error| error.reason.as_str()),
+        result
+            .as_ref()
+            .ok()
+            .and_then(|(response, _)| response.get("usage")),
+    );
     if !outcome.cancelled {
         request_result(scoped, outcome.received, result.is_ok())?;
     }
@@ -169,6 +190,8 @@ fn evaluate_prepared_inner<T>(
 struct RequestOutcome {
     received: bool,
     cancelled: bool,
+    http_status: Option<u16>,
+    response_bytes: usize,
 }
 
 fn send_request(
@@ -200,23 +223,26 @@ fn send_request(
     let response = match outgoing.send_bytes(encoded) {
         Ok(response) => {
             outcome.received = true;
+            outcome.http_status = Some(response.status());
             if !(200..300).contains(&response.status()) {
                 return Err("Decision request failed".into());
             }
             response
         }
-        Err(ureq::Error::Status(_, _)) => {
+        Err(ureq::Error::Status(status, _)) => {
             outcome.received = true;
+            outcome.http_status = Some(status);
             return Err("Decision request failed".into());
         }
         Err(_) => return Err("Decision request failed".into()),
     };
     let mut body = Vec::new();
-    response
+    let read = response
         .into_reader()
         .take(1_000_001)
-        .read_to_end(&mut body)
-        .map_err(|_| "Decision response read failed")?;
+        .read_to_end(&mut body);
+    outcome.response_bytes = body.len();
+    read.map_err(|_| "Decision response read failed")?;
     if body.len() > 1_000_000 {
         return Err("Decision response too large".into());
     }

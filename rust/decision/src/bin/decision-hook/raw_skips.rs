@@ -35,6 +35,7 @@ struct Payload {
 
 pub(super) fn skip_event(data_dir: &Path, event: &Value, reason: &str) -> Result<Value, String> {
     let answer = skip(data_dir, reason)?;
+    usage::skipped(reason);
     // Optional inspection must not alter filtering, the original response, or skip accounting.
     let _ = capture(data_dir, event, reason, None);
     Ok(answer)
@@ -47,6 +48,7 @@ pub(super) fn skip_event_with_detail(
     detail: &str,
 ) -> Result<Value, String> {
     let answer = skip_with_detail(data_dir, reason, detail)?;
+    usage::skipped(reason);
     let _ = capture(data_dir, event, reason, Some(detail));
     Ok(answer)
 }
