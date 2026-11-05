@@ -2,6 +2,8 @@
 
 This integrated extension contains the local Decision hook, skill, composer control, settings, and bottom-panel view. Windows VS Code runs the native Windows x86_64 hook by default. It uses the Linux x86_64 hook when Codex runs in WSL. Existing Decision data and per-thread choices remain in place.
 
+Custom connections can pin a response model separately from a request alias and trust a supplied public PEM CA certificate for private HTTPS. See the [provider setup](https://github.com/PhilippElhaus/Codex-Decision/blob/main/docs/setup/setup_credentials.md#model-aliases-and-private-https).
+
 ## Install
 
 Install the release VSIX in **Visual Studio Code** on Windows. Open **Extensions** (`Ctrl+Shift+X`), select **… → Install from VSIX…**, and choose the downloaded file. If double-clicking the file opens **Visual Studio VSIX Installer**, close that installer and use the VS Code menu.
@@ -10,7 +12,7 @@ To build the combined package, first build the native Windows binaries with `scr
 
 ```bash
 ../scripts/build_control.sh
-code --install-extension "$(wslpath -w ../.local/submission/codex-decision-0.15.2.vsix)" --force
+code --install-extension "$(wslpath -w ../.local/submission/codex-decision-0.16.0.vsix)" --force
 ```
 
 On activation, the package installs or updates the bundled Codex plugin and checks the Codex UI integration. It follows `chatgpt.runCodexInWindowsSubsystemForLinux` and uses a matching native or WSL data directory. Native Windows needs no Python or WSL. WSL uses its own plugin registration and data. It sets `codexDecision.dataDirectory` when that setting is empty. Automatically discovered data directories follow the selected Codex runtime. Each runtime retains its own settings and credentials. A successful repair adopts an existing canonical data directory for automatic runtime switching. Mismatched overrides stay unchanged. If they point to another runtime, clear `codexDecision.dataDirectory` and run **Decision: Repair Integration**. Existing plugin identity, credentials, logs, and thread settings remain in place.
@@ -22,6 +24,8 @@ After the repair, run **Developer: Reload Window**. Open a local Codex thread. R
 Use **Decision: Check Integration** to inspect the installed build. Use **Decision: Repair Integration** to retry and reopen the Decision panel. Automatic repair runs at startup and after a Codex extension change. Set `codexDecision.autoRepairIntegration` to `false` to use manual repair only. No separate plugin ZIP or manual patch command is required.
 
 Temporary WSL or installer access failures receive three automatic retries after 2, 5, and 15 seconds. A successful retry ends recovery. Disposal or disabling automatic repair cancels pending retries. Deterministic configuration, permission, and security refusals do not retry. Diagnostics identify a bounded installation phase and failure category without forwarding OS paths or child-process output.
+
+Version `0.16.0` adds optional response-model validation and scoped public CA trust to custom providers. Provider endpoint, model, authentication, and certificate values are entered by the user. See the [verification notes](https://github.com/PhilippElhaus/Codex-Decision/blob/main/docs/development/custom_providers_0.16.0.md).
 
 Version `0.15.2` bundles hook `0.15.2`. Settings use one credential snapshot, composer and panel share unchanged activity reads, and the hook reuses validated output envelopes. Private bounded telemetry records request outcomes, timings, sizes, and current relevance counts. See the [maintenance notes](https://github.com/PhilippElhaus/Codex-Decision/blob/main/docs/development/maintenance_0.15.2.md).
 

@@ -143,6 +143,8 @@ fn request_failures_and_successes_are_joined_without_counting_requests_as_output
         protocol: codex_decision::provider::Provider::OpenAi,
         endpoint,
         model: "private-model-name".into(),
+        response_model: String::new(),
+        tls_config: None,
         header: Some(("Authorization".into(), "Bearer private-test-key".into())),
         custom: false,
     };

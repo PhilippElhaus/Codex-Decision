@@ -7,6 +7,7 @@ const path = require("node:path");
 const { restrictWslPath, wslLocation } = require("./private-paths");
 const securedWslPaths = new Map();
 const { provider, wireRequest, parseHealthResult } = require("./providers");
+const { certificateFetch } = require("./provider-transport");
 const { defaults, validate } = require("./schema");
 const { validateStatsRecord, STATS_ACTIVITY_KEYS, readFileRecord,
   validateDirectoryPath,validateSessionPath,parseUniqueJson,parseUnsignedJson } = require("./private-records");
@@ -294,10 +295,10 @@ async function readGlobalSettings(directory, fallback = {}) {
   const filename = path.join(directory, "settings.json");
   try {
     const details = await fs.lstat(filename);
-    if (!details.isFile() || details.isSymbolicLink() || details.size > 8192) {
+    if (!details.isFile() || details.isSymbolicLink() || details.size > 65536) {
       throw new Error("Unsafe Decision settings file");
     }
-    const record = await readFileRecord(filename, 8192);
+    const record = await readFileRecord(filename, 65536);
     if (!record) return completeSettings(fallback);
     const raw = parseUniqueJson(record.bytes);
     if (![1, 2, 3, 4].includes(raw?.schema_version)) throw new Error("Invalid Decision settings version");
@@ -814,7 +815,9 @@ function parseHealthOutput(stdout, selected = "openai", custom) {
 
 function customCredentialIdentity(custom) {
   const spec = provider("custom", custom);
-  return crypto.createHash("sha256").update(JSON.stringify([spec.endpoint, spec.auth, spec.username, spec.header_name])).digest("hex");
+  const identity = [spec.endpoint, spec.auth, spec.username, spec.header_name];
+  if (spec.ca_certificate) identity.push(spec.ca_certificate);
+  return crypto.createHash("sha256").update(JSON.stringify(identity)).digest("hex");
 }
 
 function validateCustomSecret(secret, password = false) {
@@ -946,7 +949,9 @@ async function checkHealth(dataDirectory, send = globalThis.fetch, suppliedKey =
   else if (spec.auth === "header") headers[spec.header_name] = key;
   let response;
   try {
-    response = await send(spec.endpoint, {
+    const transport = spec.ca_certificate && send === globalThis.fetch ?
+      (url, init) => certificateFetch(url, init, spec.ca_certificate) : send;
+    response = await transport(spec.endpoint, {
       method: "POST", headers,
       body, signal, redirect: "error",
     });

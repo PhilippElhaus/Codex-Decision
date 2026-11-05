@@ -10,6 +10,10 @@ pub struct CustomProvider {
     pub protocol: String,
     pub endpoint: String,
     pub model: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub response_model: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub ca_certificate: String,
     pub auth: String,
     #[serde(default)]
     pub username: String,
@@ -36,10 +40,15 @@ impl CustomProvider {
             || self.name.len() > 80
             || self.name.chars().any(char::is_control)
             || !valid_custom_model(&self.model)
+            || !self.response_model.is_empty() && !valid_custom_model(&self.response_model)
         {
             return Err("invalid custom provider name or model".into());
         }
         validate_endpoint(&self.endpoint)?;
+        if !self.ca_certificate.is_empty() && !self.endpoint.starts_with("https://") {
+            return Err("custom provider CA certificate requires HTTPS".into());
+        }
+        self.tls_config()?;
         if self.username.len() > 256
             || self.username.chars().any(char::is_control)
             || self.username.contains(':')
@@ -60,9 +69,21 @@ impl CustomProvider {
 
     /// Bind persisted secrets to their intended endpoint and authentication.
     pub fn credential_identity(&self) -> String {
-        let identity =
+        let mut identity =
             serde_json::json!([self.endpoint, self.auth, self.username, self.header_name]);
+        if !self.ca_certificate.is_empty() {
+            identity
+                .as_array_mut()
+                .unwrap()
+                .push(self.ca_certificate.clone().into());
+        }
         format!("{:x}", Sha256::digest(identity.to_string().as_bytes()))
+    }
+
+    /// Extra trust applies only to this custom connection. An empty certificate
+    /// keeps the ordinary public roots. Explicit certificates replace those roots.
+    pub fn tls_config(&self) -> Result<Option<std::sync::Arc<ureq::rustls::ClientConfig>>, String> {
+        super::tls::config(&self.ca_certificate)
     }
 
     pub fn authorization(

@@ -216,7 +216,7 @@ fn process_event_once(
         *provider_failed = error == "missing credential";
         error
     })?;
-    let agent = decision_agent();
+    let agent = connection.agent();
     classification_start(scoped, config.never_delete_logs)?;
     let (kind, gate_record) = if let FormatDecision::Direct(kind) = format {
         (kind.to_owned(), None)

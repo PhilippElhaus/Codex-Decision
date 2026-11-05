@@ -142,6 +142,55 @@ fn custom_protocols_and_all_auth_modes_preserve_actual_models_in_receipts() {
 }
 
 #[test]
+fn custom_aliases_require_the_pinned_response_model_and_record_the_resolved_model() {
+    for protocol in ["openai", "jev"] {
+        for expected_model in ["private-model-v2", "unexpected-model"] {
+            let (_root, data, event) = fixture("openai", false, BOTH_KEYS, 120);
+            let (endpoint, stop, server) = custom_server(protocol, "");
+            configure(&data, &endpoint, protocol, "none");
+            fs::remove_file(data.join(".env")).unwrap();
+            let mut config: Value =
+                serde_json::from_slice(&fs::read(data.join("config.json")).unwrap()).unwrap();
+            config["custom_provider"]["model"] = "team/decision-alias".into();
+            config["custom_provider"]["response_model"] = expected_model.into();
+            let config = codex_decision::contract::validate("config", &config).unwrap();
+            fs::write(data.join("config.json"), config.to_string()).unwrap();
+            let valid = expected_model == "private-model-v2";
+            if valid {
+                assert_replacement(&data, &endpoint, &event);
+            } else {
+                assert_eq!(invoke(&data, &endpoint, &event), json!({}));
+            }
+            stop.store(true, Ordering::Relaxed);
+            let captured = server.join().unwrap();
+            assert!(!captured.is_empty());
+            assert!(captured
+                .iter()
+                .all(|(request, _)| request["model"] == "team/decision-alias"));
+            if valid {
+                let manifest = receipt(&data)["manifest"].clone();
+                assert_eq!(manifest["provider"], "custom");
+                assert_eq!(manifest["model"], "private-model-v2");
+                assert_eq!(manifest["configured_model"], "team/decision-alias");
+                assert_eq!(manifest["custom_provider"]["model"], "team/decision-alias");
+                assert_eq!(manifest["custom_provider"]["protocol"], protocol);
+            } else {
+                assert_eq!(captured.len(), 1);
+                assert!(!data.join("outputs").exists());
+                assert!(!scoped(&data, "fallback")
+                    .join("logs/latest-decision.json")
+                    .exists());
+                let stats: Value = serde_json::from_slice(
+                    &fs::read(scoped(&data, "fallback").join("stats.json")).unwrap(),
+                )
+                .unwrap();
+                assert_eq!(stats["completed"], 0);
+            }
+        }
+    }
+}
+
+#[test]
 fn invalid_custom_answers_or_retargeted_credentials_keep_the_full_output() {
     for scenario in ["model", "probability", "credential_target"] {
         let (_root, data, event) = fixture("openai", false, BOTH_KEYS, 120);

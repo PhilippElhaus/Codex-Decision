@@ -7,6 +7,7 @@ mod connection;
 mod endpoint;
 pub(super) use connection::Connection;
 
+#[cfg(test)]
 pub(super) fn decision_agent() -> ureq::Agent {
     // Decision POSTs use fixed endpoints. Redirects would add untracked GETs.
     ureq::AgentBuilder::new().redirects(0).build()
@@ -89,6 +90,8 @@ fn evaluate_prepared<T>(
         )?,
         endpoint: endpoint.into(),
         model: request["model"].as_str().unwrap().into(),
+        response_model: String::new(),
+        tls_config: None,
         header: Some(("Authorization".into(), format!("Bearer {key}"))),
         custom: false,
     };
@@ -140,8 +143,13 @@ fn evaluate_prepared_inner<T>(
         let response = strict_json::parse(&body)
             .map_err(|_| EvaluationFailure::provider("invalid decision response".into()))?;
         let mut response = if connection.custom {
+            let mut expected_request = std::borrow::Cow::Borrowed(wire_source);
+            if !connection.response_model.is_empty() {
+                expected_request.to_mut()["model"] =
+                    Value::from(connection.response_model.as_str());
+            }
             codex_decision::provider::normalize_custom_response(
-                wire_source,
+                &expected_request,
                 response,
                 connection.protocol,
             )

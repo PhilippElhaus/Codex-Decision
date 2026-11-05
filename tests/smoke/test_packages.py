@@ -8,13 +8,38 @@ import tempfile
 import unittest
 import zipfile
 
-from scripts.verify_packages import CONTROL_FILES, PLUGIN_FILES, verify_control, verify_plugin
+from scripts.verify_packages import (
+    CONTROL_FILES, PLUGIN_FILES, check_public_metadata, verify_control, verify_plugin,
+)
 
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
 class PackageTests(unittest.TestCase):
+    def test_release_text_rejects_internal_deployment_urls(self):
+        with tempfile.TemporaryDirectory(prefix="decision-public-package-") as directory:
+            filename = Path(directory) / "fixture.zip"
+            for url in ["https://private.example.lan/v1/decisions",
+                        "https://provider.example.internal:8443/api",
+                        "HTTPS://PRIVATE.EXAMPLE.LOCAL/api"]:
+                for name in ["extension/readme.md", "plugin/skills/decision-output/SKILL.md",
+                             "plugin/.codex-plugin/plugin.json", "extension/providers.js"]:
+                    with zipfile.ZipFile(filename, "w") as archive:
+                        archive.writestr(name, url)
+                    with zipfile.ZipFile(filename) as archive:
+                        with self.assertRaisesRegex(ValueError, "internal deployment URL"):
+                            check_public_metadata(archive)
+
+    def test_public_examples_preserve_user_configurable_private_connections(self):
+        with tempfile.TemporaryDirectory(prefix="decision-public-package-") as directory:
+            filename = Path(directory) / "fixture.zip"
+            with zipfile.ZipFile(filename, "w") as archive:
+                archive.writestr("extension/readme.md", "https://provider.example.com/v1/decisions")
+                archive.writestr("extension/providers.js", (ROOT / "vscode-control/providers.js").read_bytes())
+            with zipfile.ZipFile(filename) as archive:
+                check_public_metadata(archive)
+
     def test_integrated_control_requires_the_complete_matching_hook(self):
         with tempfile.TemporaryDirectory(prefix="decision-integrated-package-") as directory:
             root = Path(directory)

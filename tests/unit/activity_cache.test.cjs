@@ -142,8 +142,12 @@ test("a transient journal cannot cache a prior image under unchanged staged ledg
   const read = createActivityReader(async () => {
     reads += 1;
     if (reads === 1) {
+      const logs = path.join(directory, "logs"), before = await fs.stat(logs);
       await write("logs/.decision-publication.json", publication.prepared);
       await fs.rm(path.join(directory, "logs/.decision-publication.json"));
+      // Filesystems can coalesce directory updates within one clock tick.
+      // Keep the journal's metadata change distinct from the initial image.
+      await fs.utimes(logs, before.atime, new Date(before.mtimeMs + 2000));
       return { completed: 1 };
     }
     return { completed: 2 };

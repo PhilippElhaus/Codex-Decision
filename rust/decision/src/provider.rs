@@ -127,3 +127,4 @@ mod encoding;
 pub use encoding::{encode_request, encode_request_for};
 mod custom;
 pub use custom::{valid_custom_model, CustomProvider};
+mod tls;

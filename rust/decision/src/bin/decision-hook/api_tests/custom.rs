@@ -4,74 +4,87 @@ use codex_decision::provider::Provider;
 #[test]
 fn custom_choice_answers_keep_strict_distribution_validation_for_both_schemas() {
     for protocol in [Provider::OpenAi, Provider::TypeSafe] {
-        for invalid in [false, true] {
-            let root = tempfile::tempdir().unwrap();
-            let data = root.path().join("data");
-            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-            let connection = Connection {
-                endpoint: format!("http://{}/", listener.local_addr().unwrap()),
-                protocol,
-                model: "custom-choice-model".into(),
-                header: None,
-                custom: true,
-            };
-            let response = choice_response(protocol, invalid).to_string();
-            let server = std::thread::spawn(move || {
-                let (mut stream, _) = listener.accept().unwrap();
-                stream
-                    .set_read_timeout(Some(Duration::from_secs(2)))
-                    .unwrap();
-                let mut reader = BufReader::new(&mut stream);
-                let mut length = 0;
-                loop {
-                    let mut header = String::new();
-                    assert!(reader.read_line(&mut header).unwrap() > 0);
-                    if header == "\r\n" {
-                        break;
+        for (model, response_model) in [
+            ("custom-choice-model", ""),
+            ("team/decision-alias", "custom-choice-model"),
+            ("team/decision-alias", "unexpected-model"),
+        ] {
+            for invalid in [false, true] {
+                let root = tempfile::tempdir().unwrap();
+                let data = root.path().join("data");
+                let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+                let connection = Connection {
+                    endpoint: format!("http://{}/", listener.local_addr().unwrap()),
+                    protocol,
+                    model: model.into(),
+                    response_model: response_model.into(),
+                    tls_config: None,
+                    header: None,
+                    custom: true,
+                };
+                let response = choice_response(protocol, invalid).to_string();
+                let server = std::thread::spawn(move || {
+                    let (mut stream, _) = listener.accept().unwrap();
+                    stream
+                        .set_read_timeout(Some(Duration::from_secs(2)))
+                        .unwrap();
+                    let mut reader = BufReader::new(&mut stream);
+                    let mut length = 0;
+                    loop {
+                        let mut header = String::new();
+                        assert!(reader.read_line(&mut header).unwrap() > 0);
+                        if header == "\r\n" {
+                            break;
+                        }
+                        if let Some(value) =
+                            header.to_ascii_lowercase().strip_prefix("content-length:")
+                        {
+                            length = value.trim().parse().unwrap();
+                        }
                     }
-                    if let Some(value) = header.to_ascii_lowercase().strip_prefix("content-length:")
-                    {
-                        length = value.trim().parse().unwrap();
-                    }
-                }
-                let mut body = vec![0; length];
-                reader.read_exact(&mut body).unwrap();
-                let wire: Value = serde_json::from_slice(&body).unwrap();
-                assert_eq!(wire["model"], "custom-choice-model");
-                assert_eq!(wire["questions"].is_array(), protocol == Provider::OpenAi);
-                write!(
+                    let mut body = vec![0; length];
+                    reader.read_exact(&mut body).unwrap();
+                    let wire: Value = serde_json::from_slice(&body).unwrap();
+                    assert_eq!(wire["model"], model);
+                    assert_eq!(wire["questions"].is_array(), protocol == Provider::OpenAi);
+                    write!(
                     stream,
                     "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{response}",
                     response.len()
                 )
-                .unwrap();
-            });
-            let request = classification_request(
-                "Find the failure",
-                "Bash",
-                "worker",
-                &Value::Null,
-                &source_lines("INFO routine\nERROR failure\n"),
-                protocol.default_model(),
-            );
-            let result = evaluate(
-                &data,
-                &decision_agent(),
-                &request,
-                &connection,
-                2.0,
-                classification,
-            );
-            server.join().unwrap();
-            if invalid {
-                let failure = result.unwrap_err();
-                assert_eq!(failure.reason, "invalid Decision class distribution");
-                assert!(failure.provider_unavailable);
-            } else {
-                let (response, (kind, excerptable)) = result.unwrap();
-                assert_eq!(response["model"], "custom-choice-model");
-                assert_eq!(kind, "repetitive_log");
-                assert!(excerptable);
+                    .unwrap();
+                });
+                let request = classification_request(
+                    "Find the failure",
+                    "Bash",
+                    "worker",
+                    &Value::Null,
+                    &source_lines("INFO routine\nERROR failure\n"),
+                    protocol.default_model(),
+                );
+                let result = evaluate(
+                    &data,
+                    &decision_agent(),
+                    &request,
+                    &connection,
+                    2.0,
+                    classification,
+                );
+                server.join().unwrap();
+                if response_model == "unexpected-model" {
+                    let failure = result.unwrap_err();
+                    assert_eq!(failure.reason, "response model mismatch");
+                    assert!(failure.provider_unavailable);
+                } else if invalid {
+                    let failure = result.unwrap_err();
+                    assert_eq!(failure.reason, "invalid Decision class distribution");
+                    assert!(failure.provider_unavailable);
+                } else {
+                    let (response, (kind, excerptable)) = result.unwrap();
+                    assert_eq!(response["model"], "custom-choice-model");
+                    assert_eq!(kind, "repetitive_log");
+                    assert!(excerptable);
+                }
             }
         }
     }

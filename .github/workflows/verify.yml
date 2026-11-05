@@ -19,7 +19,7 @@ jobs:
       - name: Install Rust toolchain
         run: rustup toolchain install stable --profile minimal --component clippy
       - name: Test native Windows runtime
-        run: cargo test --locked -p codex-decision --lib --test ctl_process --test windows_process
+        run: cargo test --locked -p codex-decision --lib --test ctl_process --test windows_process --test custom_providers
       - name: Lint native Windows runtime
         run: cargo clippy --locked --lib --bins -- -D warnings
       - name: Test native installation, activity, and private records
@@ -28,7 +28,7 @@ jobs:
         run: >-
           node --test tests/unit/native_install.test.cjs tests/unit/integrated_install.test.cjs
           tests/unit/session_work.test.cjs tests/unit/updates.test.cjs tests/unit/activity_cache.test.cjs
-          tests/unit/telemetry_audit.test.cjs tests/unit/providers.test.cjs tests/unit/publication.test.cjs
+          tests/unit/telemetry_audit.test.cjs tests/unit/providers.test.cjs tests/unit/custom_provider_tls.test.cjs tests/unit/publication.test.cjs
           tests/unit/retained_activity.test.cjs tests/unit/windows_write.test.cjs
           tests/integration/integration_repair.test.cjs tests/integration/private_paths.test.cjs
       - name: Build production Windows runtime

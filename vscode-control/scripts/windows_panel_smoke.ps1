@@ -28,7 +28,7 @@ try {
     $data = '\\wsl.localhost\' + $Distro + $linuxRoot.Replace('/', '\')
     $files = @('package.json', 'config-contract.json', 'core.js', 'extension.js', 'panel.js', 'panel-state.js',
         'integration.js', 'integrated-install.js', 'install-plugin.py',
-        'raw-skip-state.js', 'session-work.js', 'private-paths.js', 'private-records.js', 'publication-journal.js', 'schema.js', 'providers.js', 'icon.png', 'LICENSE', 'README.md', 'media\decision-panel.svg',
+        'raw-skip-state.js', 'session-work.js', 'private-paths.js', 'private-records.js', 'publication-journal.js', 'schema.js', 'providers.js', 'provider-transport.js', 'icon.png', 'LICENSE', 'README.md', 'media\decision-panel.svg',
         'webview\decision-control.js', 'webview\decision-settings.js', 'webview\decision-totals.js', 'webview\decision-panel.js', 'webview\decision-panel.css')
     foreach ($file in $files) {
         $source = Join-Path $repository ('vscode-control\' + $file)

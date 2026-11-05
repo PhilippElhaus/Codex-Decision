@@ -644,6 +644,12 @@
     "header_name": {
       "type": "string",
       "default": ""
+    },
+    "response_model": {
+      "type": "string"
+    },
+    "ca_certificate": {
+      "type": "string"
     }
   }
 }

@@ -835,6 +835,9 @@
       customField("name").value = "Local decisions";
       customField("endpoint").value = "http://127.0.0.1:8080/v1/decisions";
       customField("model").value = "local-model";
+      customField("response-model").value = "resolved-model-v2";
+      const syntheticPublicCa = "-----BEGIN CERTIFICATE-----\nSYNTHETIC-UI-FIXTURE\n-----END CERTIFICATE-----";
+      customField("ca-certificate").value = syntheticPublicCa;
       customField("auth").value = "basic";
       customField("auth").dispatchEvent(new Event("change", { bubbles: true }));
       customField("username").value = "test-user";
@@ -851,6 +854,9 @@
       }
       check(customField("password").value === "", "changing authentication clears an entered custom credential");
       customField("password").value = "synthetic-password";
+      customField("ca-certificate").dispatchEvent(new Event("input", { bubbles: true }));
+      check(customField("password").value === "", "changing CA trust clears an entered custom credential");
+      customField("password").value = "synthetic-password";
       const beforeCustomSave = window.__jevHarnessLastSettingsSave;
       window.__jevHarnessSettingsTestResult = { ok: false, reason: "DECISION_INVALID_RESPONSE" };
       customField("save").click();
@@ -862,7 +868,9 @@
       await until(() => window.__jevHarnessLastSettingsSave?.provider === "custom" && !customField("save").disabled, "custom draft tests then saves");
       check(window.__jevHarnessActions.slice(beforeCustomActions).filter(action => action.startsWith("settings")).join(",") === "settingsTest,settingsSave" &&
         window.__jevHarnessLastSettingsSave.customProvider.username === "test-user" &&
-        window.__jevHarnessLastSettingsSave.customProvider.model === "local-model" && customField("password").value === "",
+        window.__jevHarnessLastSettingsSave.customProvider.model === "local-model" &&
+        window.__jevHarnessLastSettingsSave.customProvider.response_model === "resolved-model-v2" &&
+        window.__jevHarnessLastSettingsSave.customProvider.ca_certificate === syntheticPublicCa && customField("password").value === "",
         "verified custom connection is saved with private password and clears the password field");
       const customPanel = settingsScreen.querySelector("#codex-decision-settings-panel");
       check(customPanel.scrollWidth <= customPanel.clientWidth + 1, "custom settings contain all fields at this viewport");
@@ -979,11 +987,15 @@
       setup.querySelector("#codex-decision-auth").dispatchEvent(new Event("change", { bubbles: true }));
       check(key.closest(".field").hidden && setup.querySelector("#codex-decision-password").closest(".field").hidden &&
         setup.querySelector("#codex-decision-connect-link").hidden, "custom anonymous onboarding hides credentials and provider key link");
+      setup.querySelector("#codex-decision-response-model").value = "resolved-model-v3";
+      setup.querySelector("#codex-decision-ca-certificate").value = syntheticPublicCa;
       const beforeConnectActions = window.__jevHarnessActions.length;
       saveButton.click();
       await until(() => setup.style.display === "none" && window.__jevHarnessProvider === "custom", "custom onboarding tests and saves without an API key");
       check(window.__jevHarnessActions.slice(beforeConnectActions).filter(action => ["testApiKey", "saveApiKey"].includes(action)).join(",") === "testApiKey,saveApiKey" &&
-        window.__jevHarnessCustomProvider.auth === "none", "onboarding verifies the complete custom draft before saving");
+        window.__jevHarnessCustomProvider.auth === "none" &&
+        window.__jevHarnessCustomProvider.response_model === "resolved-model-v3" &&
+        window.__jevHarnessCustomProvider.ca_certificate === syntheticPublicCa, "onboarding verifies the complete custom draft before saving");
       window.__jevHarnessHoldNextStatus = true;
       await until(() => window.__jevHarnessHeldStatus?.sessionId === "fixture-session",
         "hold an older reply in the same thread");

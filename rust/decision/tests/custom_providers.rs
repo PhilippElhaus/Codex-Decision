@@ -133,3 +133,50 @@ fn credential_identity_changes_only_with_the_connection_target_or_authentication
     other.endpoint.push_str("/other");
     assert_ne!(provider.credential_identity(), other.credential_identity());
 }
+
+#[test]
+fn custom_response_models_and_public_ca_are_optional_and_strict() {
+    let mut provider = custom();
+    assert!(provider.response_model.is_empty());
+    assert!(provider.ca_certificate.is_empty());
+    assert!(provider.tls_config().unwrap().is_none());
+    let identity = provider.credential_identity();
+    provider.response_model = "gpt-6-luna".into();
+    provider.validate().unwrap();
+    assert_eq!(provider.credential_identity(), identity);
+    for model in ["invalid model", "injected\nmodel", &"x".repeat(129)] {
+        provider.response_model = model.into();
+        assert!(provider.validate().is_err());
+    }
+    provider.response_model.clear();
+    let certificate = include_str!("../../../tests/fixtures/custom-provider-ca.pem");
+    provider.ca_certificate = certificate.into();
+    provider.validate().unwrap();
+    assert!(provider.tls_config().unwrap().is_some());
+    assert_ne!(provider.credential_identity(), identity);
+    provider.endpoint = "http://127.0.0.1:8080/decide".into();
+    assert_eq!(
+        provider.validate().unwrap_err(),
+        "custom provider CA certificate requires HTTPS"
+    );
+    provider.endpoint = custom().endpoint;
+    provider.ca_certificate = format!(" \t\r\n{certificate}\n{certificate}\n");
+    provider.validate().unwrap();
+    for pem in [
+        " ".into(),
+        "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n".into(),
+        format!("untrusted text\n{certificate}"),
+        format!("{certificate}\n-----BEGIN PRIVATE KEY-----\nAAAA\n-----END PRIVATE KEY-----"),
+        format!("{certificate}\ntrailing data"),
+        format!("\u{000b}{certificate}"),
+        format!("\u{000c}{certificate}"),
+        format!("\u{00a0}{certificate}"),
+        format!("\u{0085}{certificate}"),
+        format!("\u{feff}{certificate}"),
+        certificate.replace("-----END CERTIFICATE-----", ""),
+        certificate.repeat(16_384 / certificate.len() + 1),
+    ] {
+        provider.ca_certificate = pem;
+        assert!(provider.validate().is_err());
+    }
+}

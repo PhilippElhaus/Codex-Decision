@@ -6,6 +6,8 @@ pub(crate) struct Connection {
     pub(super) protocol: Provider,
     pub(super) endpoint: String,
     pub(super) model: String,
+    pub(super) response_model: String,
+    pub(super) tls_config: Option<std::sync::Arc<ureq::rustls::ClientConfig>>,
     pub(super) header: Option<(String, String)>,
     pub(super) custom: bool,
 }
@@ -17,6 +19,8 @@ impl Connection {
                 protocol: config.provider,
                 endpoint: endpoint::endpoint(config.provider)?,
                 model: config.model.clone(),
+                response_model: String::new(),
+                tls_config: None,
                 header: Some((
                     "Authorization".into(),
                     format!("Bearer {}", key(data_dir, config.provider)?),
@@ -57,8 +61,18 @@ impl Connection {
             protocol: custom.protocol()?,
             endpoint: custom.endpoint.clone(),
             model: custom.model.clone(),
+            response_model: custom.response_model.clone(),
+            tls_config: custom.tls_config()?,
             header: custom.authorization(&api_key, &password)?,
             custom: true,
         })
+    }
+
+    pub(crate) fn agent(&self) -> ureq::Agent {
+        let builder = ureq::AgentBuilder::new().redirects(0);
+        match &self.tls_config {
+            Some(config) => builder.tls_config(config.clone()).build(),
+            None => builder.build(),
+        }
     }
 }

@@ -88,7 +88,7 @@ def chromium_capture() -> None:
                 page.close()
             (IMAGES / 'decision-settings.png').unlink()
             for state, name, height in (
-                ('onboarding', 'decision-connect-custom.png', 1020),
+                ('onboarding', 'decision-connect-custom.png', 1250),
                 ('settings', 'decision-settings-custom.png', 1800),
             ):
                 page = browser.new_page(viewport={'width': 1100, 'height': height}, device_scale_factor=2)
@@ -99,6 +99,9 @@ def chromium_capture() -> None:
                 assert page.locator(f'#{prefix}-auth').input_value() == 'basic'
                 assert page.locator(f'#{prefix}-password').is_visible()
                 assert page.locator(f'#{prefix}-password').input_value() == ''
+                for field in ('response-model', 'ca-certificate'):
+                    assert page.locator(f'#{prefix}-{field}').is_visible()
+                    assert page.locator(f'#{prefix}-{field}').input_value() == ''
                 assert page.locator(f'#{prefix}-endpoint').input_value() == 'https://decisions.example.com/v1/decisions'
                 if state == 'settings':
                     bottom = page.locator('#codex-decision-settings-panel section').nth(1).evaluate('node => Math.ceil(node.getBoundingClientRect().bottom + 20)')

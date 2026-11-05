@@ -4,16 +4,16 @@
 
 Codex Decision selects repetitive lines for removal from supported local tool output. Errors and useful evidence stay visible. Every shortened result links to the complete original.
 
-**Codex Decision 0.15.2** — [Download the integrated VSIX](https://github.com/PhilippElhaus/Codex-Decision/releases/latest).
+**Codex Decision 0.16.0** — [Download the integrated VSIX](https://github.com/PhilippElhaus/Codex-Decision/releases/latest).
 
 ## Get started
 
-Install the downloaded VSIX in **Visual Studio Code**. Open **Extensions** (`Ctrl+Shift+X`), select **… → Install from VSIX…**, and choose `codex-decision-0.15.2.vsix`. If double-clicking the file opens **Visual Studio VSIX Installer**, close that installer and use the VS Code menu.
+Install the downloaded VSIX in **Visual Studio Code**. Open **Extensions** (`Ctrl+Shift+X`), select **… → Install from VSIX…**, and choose `codex-decision-0.16.0.vsix`. If double-clicking the file opens **Visual Studio VSIX Installer**, close that installer and use the VS Code menu.
 
 You can also install it from a terminal:
 
 ```bash
-code --install-extension codex-decision-0.15.2.vsix --force
+code --install-extension codex-decision-0.16.0.vsix --force
 ```
 
 The package contains native Windows and Linux x86_64 hooks, the skill, session controls, settings, and a verified Codex UI patch. It follows Codex’s Windows/WSL execution setting. Native Windows needs no WSL or Python installation. On activation it installs or updates the local plugin and repairs supported Codex builds. Existing plugin data and thread choices remain in place. Run **Developer: Reload Window** after the integration repair, then open your Codex thread. Review the hook in `/hooks` if Codex requests trust. No second package or manual composer patch is needed.
@@ -34,7 +34,9 @@ Save a separate key for each provider and switch without entering it again. Deci
 
 For a custom provider, choose the **OpenAI Decisions** or **TypeSafe Jev** JSON schema and enter the complete endpoint URL and model ID. Authentication supports a bearer API key, username and password, a named API-key header, or no authentication. HTTPS is required except for a local loopback endpoint. The provider must implement the selected decision schema. A standard chat-completions endpoint needs a compatible adapter. Custom connections use only their configured endpoint and do not use automatic fallback.
 
-<img src="docs/images/decision-connect-custom.png" width="760" alt="Custom connection form with endpoint, model, JSON schema, and username and password fields">
+Custom connections can specify an exact response model when the server resolves an alias, and a public CA certificate for private HTTPS. See the [provider setup](docs/setup/setup_credentials.md#model-aliases-and-private-https) and [custom-provider verification](docs/development/custom_providers_0.16.0.md).
+
+<img src="docs/images/decision-connect-custom.png" width="760" alt="Custom connection form with endpoint, request and response models, public CA, JSON schema, and authentication fields">
 
 <img src="docs/images/decision-connect.png" width="760" alt="Connect Decision screen with an empty API key field">
 

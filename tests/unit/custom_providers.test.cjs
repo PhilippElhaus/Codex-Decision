@@ -29,6 +29,13 @@ test("custom configuration accepts both schemas and keeps the real model separat
     assert.throws(() => validateCustomProvider(custom({ endpoint })), endpoint);
   }
   for (const endpoint of ["https://decision.example/api", "http://127.0.0.1:8080/api", "http://[::1]:8080/api"]) assert.doesNotThrow(() => validateCustomProvider(custom({ endpoint })));
+  const ca_certificate = require("node:fs").readFileSync(path.join(__dirname, "../fixtures/custom-provider-ca.pem"), "utf8");
+  const internal = custom({ endpoint: "https://private.example.lan/v1/decisions", model: "team/decision-alias",
+    response_model: "resolved-model-v2", ca_certificate });
+  const configured = validate("config", { ...defaults("config"), provider: "custom", custom_provider: internal });
+  assert.equal(configured.custom_provider.endpoint, internal.endpoint);
+  assert.equal(configured.custom_provider.response_model, "resolved-model-v2");
+  assert.equal(configured.custom_provider.ca_certificate, ca_certificate);
   for (const header_name of ["Authorization", "Host", "Content-Type", "Connection", "User-Agent", "X-Key\r\nInjected", "bad header"]) {
     assert.throws(() => validateCustomProvider(custom({ auth: "header", header_name })));
   }

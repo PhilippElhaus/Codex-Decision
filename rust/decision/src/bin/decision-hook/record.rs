@@ -134,7 +134,10 @@ pub(super) fn record(
         "lines_omitted":omitted,"lines_protected":protected,"lines_unjudged":unjudged,
         "lines_relevance_judged":relevance_judged,"lines_below_omit_cutoff":below_omit_cutoff,
         "lines_relevance_kept":relevance_kept,"search_relevance_guard":false,
-        "relevance_policy":config.policy,"provider":config.provider.name(),"model":config.actual_model(),
+        "relevance_policy":config.policy,"provider":config.provider.name(),
+        "model":if config.provider == codex_decision::provider::Provider::Custom {
+            last_batch.response["model"].clone()
+        } else { Value::from(config.actual_model()) },
         "fallback_used":config.fallback_from.is_some(),
         "configured_provider":config.fallback_from.as_ref().map_or(config.provider, |(provider, _)| *provider).name(),
         "configured_model":config.fallback_from.as_ref().map_or(config.actual_model(), |(_, model)| model.as_str()),

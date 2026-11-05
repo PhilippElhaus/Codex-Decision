@@ -63,10 +63,10 @@ pub(super) fn apply_shared_settings(data_dir: &Path, config: &mut Config) -> Res
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
         Err(_) => return Err("settings stat failed".into()),
     };
-    if !metadata.is_file() || metadata.file_type().is_symlink() || metadata.len() > 8192 {
+    if !metadata.is_file() || metadata.file_type().is_symlink() || metadata.len() > 65_536 {
         return Err("unsafe shared settings".into());
     }
-    let bytes = read_bounded(&path, 8192).map_err(|_| "settings read failed")?;
+    let bytes = read_bounded(&path, 65_536).map_err(|_| "settings read failed")?;
     let raw = strict_json::parse(&bytes).map_err(|_| "invalid shared settings")?;
     let settings: SharedSettings =
         serde_json::from_value(codex_decision::contract::validate("settings", &raw)?)

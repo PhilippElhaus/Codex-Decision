@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import re
 from pathlib import Path
 import xml.etree.ElementTree as ET
 import zipfile
@@ -18,7 +19,7 @@ CONTROL_FILES = (
     "config-contract.json", "core.js", "activity-cache.js", "extension.js", "icon.png", "package.json",
     "integration.js", "integrated-install.js", "install-plugin.py", "install-plugin-native.js", "updates.js",
     "patch-assets/host-bridge.jsfrag", "patch-assets/route-bridge.jsfrag",
-    "panel-state.js", "panel.js", "raw-skip-state.js", "session-work.js", "schema.js", "providers.js", "private-paths.js", "private-records.js", "publication-journal.js", "media/decision-panel.svg",
+    "panel-state.js", "panel.js", "raw-skip-state.js", "session-work.js", "schema.js", "providers.js", "provider-transport.js", "private-paths.js", "private-records.js", "publication-journal.js", "media/decision-panel.svg",
     "webview/decision-control.js", "webview/decision-panel.css", "webview/decision-panel.js",
     "webview/decision-totals.js",
     "webview/decision-settings.js",
@@ -31,6 +32,19 @@ def check_entries(archive, expected):
         raise ValueError("Archive contents differ from the release allowlist")
     if sum(item.file_size for item in archive.infolist()) > 100_000_000:
         raise ValueError("Archive exceeds the uncompressed size limit")
+    check_public_metadata(archive)
+
+
+def check_public_metadata(archive):
+    """Release text must use public examples, never an internal deployment URL."""
+    internal_url = re.compile(
+        rb"https?://(?:[a-z0-9-]+\.)+(?:lan|internal|local)(?=[:/\s\"'<>]|$)",
+        re.IGNORECASE,
+    )
+    for name in archive.namelist():
+        if name.endswith((".md", ".json", ".js", ".jsfrag", ".xml", ".vsixmanifest")):
+            if internal_url.search(archive.read(name)):
+                raise ValueError(f"Release text contains an internal deployment URL: {name}")
 
 
 def check_bytes(archive, mapping, root):
