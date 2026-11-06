@@ -20,16 +20,17 @@ class PackageTests(unittest.TestCase):
     def test_release_text_rejects_internal_deployment_urls(self):
         with tempfile.TemporaryDirectory(prefix="decision-public-package-") as directory:
             filename = Path(directory) / "fixture.zip"
-            for url in ["https://private.example.lan/v1/decisions",
-                        "https://provider.example.internal:8443/api",
-                        "HTTPS://PRIVATE.EXAMPLE.LOCAL/api"]:
-                for name in ["extension/readme.md", "plugin/skills/decision-output/SKILL.md",
-                             "plugin/.codex-plugin/plugin.json", "extension/providers.js"]:
-                    with zipfile.ZipFile(filename, "w") as archive:
-                        archive.writestr(name, url)
-                    with zipfile.ZipFile(filename) as archive:
-                        with self.assertRaisesRegex(ValueError, "internal deployment URL"):
-                            check_public_metadata(archive)
+            # File selection and URL matching are independent scanner branches.
+            for name, url in [
+                ("extension/readme.md", "https://private.example.lan/v1/decisions"),
+                ("plugin/.codex-plugin/plugin.json", "https://provider.example.internal:8443/api"),
+                ("extension/providers.js", "HTTPS://PRIVATE.EXAMPLE.LOCAL/api"),
+            ]:
+                with zipfile.ZipFile(filename, "w") as archive:
+                    archive.writestr(name, url)
+                with zipfile.ZipFile(filename) as archive:
+                    with self.assertRaisesRegex(ValueError, "internal deployment URL"):
+                        check_public_metadata(archive)
 
     def test_public_examples_preserve_user_configurable_private_connections(self):
         with tempfile.TemporaryDirectory(prefix="decision-public-package-") as directory:

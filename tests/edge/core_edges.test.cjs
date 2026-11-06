@@ -16,7 +16,7 @@ test("health probe classifies failed and malformed replies without exposing a ke
       ["unauthorized", async () => ({ ok: false, status: 401, text: async () => "denied" }), "DECISION_HTTP_401"],
       ["forbidden", async () => ({ ok: false, status: 403, text: async () => "{}" }), "DECISION_HTTP_403"],
       ["rate limited", async () => ({ ok: false, status: 429 }), "DECISION_HTTP_429"],
-      ["timeout", async () => { throw Object.assign(new Error("timeout"), { name: "TimeoutError" }); }, "DECISION_TIMEOUT"],
+      ["DOM timeout", async () => { throw new DOMException("timed out", "TimeoutError"); }, "DECISION_TIMEOUT"],
       ["network", async () => { throw new Error("offline"); }, "DECISION_NETWORK_ERROR"],
       ["missing response", async () => null, "DECISION_INVALID_RESPONSE"],
       ["invalid body", async () => ({ ok: true, text: async () => "not JSON" }), "DECISION_INVALID_RESPONSE"],

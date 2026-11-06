@@ -4,72 +4,6 @@ use super::*;
 mod encoding;
 pub(super) use encoding::prepare_line_snapshot;
 
-#[allow(clippy::too_many_arguments)] // A complete immutable batch record is assembled here.
-#[cfg(test)]
-pub(super) fn line_snapshot(
-    receipt_id: &str,
-    snapshot_id: &str,
-    route: &str,
-    status: &str,
-    lines: &[SourceLine],
-    decisions: &[codex_decision::LineDecision],
-    batch: &BatchRecord,
-    batch_number: usize,
-    batch_count: usize,
-    classification_requests: usize,
-) -> Value {
-    let seen = lines.len();
-    let judged = decisions
-        .iter()
-        .filter(|row| row.batch_id.is_some())
-        .count();
-    let omitted = decisions
-        .iter()
-        .filter(|row| row.action == Action::Omit)
-        .count();
-    let protected = decisions
-        .iter()
-        .filter(|row| row.protected_reason.is_some())
-        .count();
-    let rows: Vec<Value> = lines
-        .iter()
-        .zip(decisions)
-        .map(|(line, decision)| {
-            let mut units = 0usize;
-            let end = line
-                .model_text
-                .char_indices()
-                .find_map(|(index, character)| {
-                    units += character.len_utf16();
-                    (units > 120).then_some(index)
-                })
-                .unwrap_or(line.model_text.len());
-            let excerpt = &line.model_text[..end];
-            json!({"line":line.number,"excerpt":excerpt,
-                "action":if decision.action == Action::Omit { "omit" } else { "keep" },
-                "reason":decision.reason,"can_omit":decision.p_can_omit,
-                "exact_needed":decision.p_exact_needed,"task_relevant":decision.p_task_relevant,
-                "protected_reason":decision.protected_reason})
-        })
-        .collect();
-    let unjudged = lines
-        .iter()
-        .zip(decisions)
-        .filter(|(line, decision)| {
-            line.eligible && line.protected_reason.is_none() && decision.batch_id.is_none()
-        })
-        .count();
-    let mut snapshot = json!({"version":6,"id":snapshot_id,"receipt_id":receipt_id,"at":Utc::now().to_rfc3339(),
-        "filter":route,"status":status,"batch":{"number":batch_number,"count":batch_count,
-            "target_count":batch.target_numbers.len()},"rows":[],
-        "totals":{"seen":seen,"judged":judged,"kept":seen-omitted,"omitted":omitted,
-            "protected":protected,"unjudged":unjudged,"requests":batch_number + classification_requests,
-            "classification_requests":classification_requests},
-        "batch_elapsed_ms":batch.elapsed_ms});
-    snapshot["rows"] = Value::Array(rows);
-    snapshot
-}
-
 pub(super) struct ProgressSnapshot {
     logs: PathBuf,
     receipt_id: String,
@@ -236,7 +170,7 @@ mod excerpt_tests {
                 response: json!({}),
                 elapsed_ms: 1,
             };
-            let snapshot = line_snapshot(
+            let snapshot = prepare_line_snapshot(
                 "receipt",
                 "snapshot",
                 "output",
@@ -247,7 +181,11 @@ mod excerpt_tests {
                 1,
                 1,
                 0,
-            );
+            )
+            .unwrap()
+            .finish("2026-10-07T10:09:11+00:00")
+            .unwrap();
+            let snapshot: Value = serde_json::from_slice(&snapshot).unwrap();
             for (line, row) in lines.iter().zip(snapshot["rows"].as_array().unwrap()) {
                 let expected: String = line
                     .model_text

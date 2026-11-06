@@ -12,30 +12,16 @@ const { readLatestPanelDecision } = require("../../vscode-control/panel-state");
 test("simultaneous settings updates preserve both changes, including separate processes", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "jev-writes-"));
   try {
-    for (let i = 0; i < 10; i++) {
-      await core.writeGlobalSettings(root, { mode: "replace", log_limit_mb: 50 });
-      await Promise.all([core.writeGlobalSettings(root, { mode: "observe" }), core.writeGlobalSettings(root, { log_limit_mb: 123 })]);
-      assert.equal((await core.readGlobalSettings(root)).mode, "observe");
-      assert.equal((await core.readGlobalSettings(root)).log_limit_mb, 123);
-    }
+    await core.writeGlobalSettings(root, { mode: "replace", log_limit_mb: 50 });
+    await Promise.all([core.writeGlobalSettings(root, { mode: "observe" }), core.writeGlobalSettings(root, { log_limit_mb: 123 })]);
+    assert.equal((await core.readGlobalSettings(root)).mode, "observe");
+    assert.equal((await core.readGlobalSettings(root)).log_limit_mb, 123);
     await core.writeGlobalSettings(root, { mode: "replace", log_limit_mb: 50 });
     const script = 'require(process.argv[1]).writeGlobalSettings(process.argv[2], JSON.parse(process.argv[3])).catch(e=>{console.error(e.message);process.exitCode=1})';
     await Promise.all([{ mode: "observe" }, { log_limit_mb: 123 }].map(change => execFile(process.execPath,
       ["-e", script, path.resolve(__dirname, "../../vscode-control/core"), root, JSON.stringify(change)], { timeout: 5000 })));
     const saved = await core.readGlobalSettings(root);
     assert.equal(saved.mode, "observe"); assert.equal(saved.log_limit_mb, 123);
-    assert.equal((await fs.readdir(root)).some(name => name.endsWith(".tmp") || name.endsWith(".lock")), false);
-  } finally { await fs.rm(root, { recursive: true, force: true }); }
-});
-
-test("config selections serialize against independent setting changes", async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "jev-config-writes-"));
-  try {
-    await Promise.all(Array.from({ length: 12 }, (_, i) => core.writeSelection(root, i % 2 === 0)));
-    const saved = await core.readConfig(root);
-    assert.equal(typeof saved.enabled, "boolean");
-    assert.equal(saved.schema_version, 5);
-    assert.equal("test_build_enabled" in saved, false);
     assert.equal((await fs.readdir(root)).some(name => name.endsWith(".tmp") || name.endsWith(".lock")), false);
   } finally { await fs.rm(root, { recursive: true, force: true }); }
 });

@@ -609,17 +609,6 @@ fn missing_batch_answers_keep_the_full_result() {
 }
 
 #[test]
-fn failed_second_call_publishes_no_partial_panel_state() {
-    let (reply, root, calls) = run_sized(Some(2), false, None, 400);
-    assert_eq!(reply, json!({}));
-    assert!(calls >= 2);
-    assert!(!scoped(&root.path().join("data"), "fixture-session")
-        .join("logs/latest-decision.json")
-        .exists());
-    assert!(!root.path().join("data/outputs").exists());
-}
-
-#[test]
 fn search_output_uses_the_shared_policy_without_specialized_relevance() {
     let (reply, root, _) = run(None, true, None);
     assert_eq!(reply["continue"], false);

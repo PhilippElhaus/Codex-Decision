@@ -37,45 +37,40 @@ fn code_mode_commands_publish_real_line_decisions_and_preserve_the_envelope() {
         {"type":"input_text","text":payload}
     ]);
     let (endpoint, stop, server) = mock_server(None);
-    for (i, tool) in ["exec", "wait", "functions.exec", "functions.wait"]
+    // Alias routing is covered by the orchestration text unit test.
+    let session_id = "orchestration";
+    let event = json!({"hook_event_name":"PostToolUse","tool_name":"functions.exec",
+        "session_id":session_id,"tool_use_id":"dummy-call","transcript_path":transcript,
+        "tool_input":{"input":"text(await tools.exec_command({cmd: 'dummy'}))"},
+        "tool_response":response});
+    let reply = send_event(&data, &endpoint, &event);
+    assert_eq!(reply["continue"], false);
+    assert!(reply["reason"]
+        .as_str()
+        .unwrap()
+        .contains("\"exit_code\":1"));
+    assert!(reply["reason"]
+        .as_str()
+        .unwrap()
+        .contains("ERROR: synthetic connection failure"));
+    let session = scoped(&data, session_id);
+    let panel: Value =
+        serde_json::from_slice(&fs::read(session.join("logs/latest-decision.json")).unwrap())
+            .unwrap();
+    assert_eq!(panel["status"], "replace");
+    assert_eq!(panel["totals"]["requests"], 1);
+    assert!(panel["totals"]["judged"].as_u64().unwrap() >= 50);
+    assert!(panel["rows"]
+        .as_array()
+        .unwrap()
         .iter()
-        .enumerate()
-    {
-        let session_id = format!("orchestration-{i}");
-        let event = json!({"hook_event_name":"PostToolUse","tool_name":tool,
-            "session_id":session_id,"tool_use_id":format!("dummy-call-{i}"),"transcript_path":transcript,
-            "tool_input":{"input":"text(await tools.exec_command({cmd: 'dummy'}))"},
-            "tool_response":response});
-        let reply = send_event(&data, &endpoint, &event);
-        assert_eq!(reply["continue"], false);
-        assert!(reply["reason"]
+        .any(|row| row["excerpt"]
             .as_str()
             .unwrap()
-            .contains("\"exit_code\":1"));
-        assert!(reply["reason"]
-            .as_str()
-            .unwrap()
-            .contains("ERROR: synthetic connection failure"));
-        let session = scoped(&data, &session_id);
-        let panel: Value =
-            serde_json::from_slice(&fs::read(session.join("logs/latest-decision.json")).unwrap())
-                .unwrap();
-        assert_eq!(panel["status"], "replace");
-        assert_eq!(panel["totals"]["requests"], 1);
-        assert!(panel["totals"]["judged"].as_u64().unwrap() >= 50);
-        assert!(panel["rows"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|row| row["excerpt"]
-                .as_str()
-                .unwrap()
-                .starts_with("INFO routine heartbeat")));
-        let health: Value =
-            serde_json::from_slice(&fs::read(session.join("logs/hook-health.json")).unwrap())
-                .unwrap();
-        assert!(health["last_success_ms"].is_number());
-    }
+            .starts_with("INFO routine heartbeat")));
+    let health: Value =
+        serde_json::from_slice(&fs::read(session.join("logs/hook-health.json")).unwrap()).unwrap();
+    assert!(health["last_success_ms"].is_number());
     let event = json!({"hook_event_name":"PostToolUse","tool_name":"exec",
         "session_id":"mixed-media","tool_input":{"input":"image(dummy)"},
         "tool_response":[{"type":"input_text","text":payload},{"type":"input_image"}]});
@@ -91,7 +86,7 @@ fn code_mode_commands_publish_real_line_decisions_and_preserve_the_envelope() {
             (path.extension().is_some_and(|ext| ext == "json")).then_some(path)
         })
         .collect::<Vec<_>>();
-    assert_eq!(originals.len(), 4);
+    assert_eq!(originals.len(), 1);
     for original in originals {
         assert_eq!(
             serde_json::from_slice::<Value>(&fs::read(original).unwrap()).unwrap(),
@@ -99,7 +94,7 @@ fn code_mode_commands_publish_real_line_decisions_and_preserve_the_envelope() {
         );
     }
     stop.store(true, Ordering::Relaxed);
-    assert_eq!(server.join().unwrap(), 4);
+    assert_eq!(server.join().unwrap(), 1);
 }
 
 #[test]

@@ -24,13 +24,20 @@ fn command_projection_preserves_complete_baseline_bytes() {
         "INFO poll\nDone",
         "{\"output\":\"decoy\"}",
     ];
+    let exit_codes = [Value::Null, json!(i64::MIN), json!(0)];
     for mask in 0..32 {
         for output in text {
-            for exit_code in [Value::Null, json!(i64::MIN), json!(0)] {
+            // Values cannot vary an input whose exit_code field is absent.
+            let exit_codes = if mask & 2 == 0 {
+                &exit_codes[..1]
+            } else {
+                &exit_codes[..]
+            };
+            for exit_code in exit_codes {
                 let mut object = Map::from_iter([("output".into(), json!(output))]);
                 for (bit, name, value) in [
                     (0, "chunk_id", json!(text[mask % text.len()])),
-                    (1, "exit_code", exit_code),
+                    (1, "exit_code", exit_code.clone()),
                     (2, "wall_time_seconds", json!(-0.0)),
                     (3, "session_id", json!(u64::MAX)),
                     (4, "original_token_count", json!(u64::MAX)),
