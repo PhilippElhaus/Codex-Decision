@@ -1,6 +1,7 @@
 """Install the VSIX's hook payload through Codex without changing private state."""
 
 import argparse
+from contextlib import contextmanager
 import errno
 import fcntl
 import json
@@ -8,6 +9,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import stat
 import tempfile
 import time
 
@@ -234,6 +236,38 @@ def installation_failure(error, phase):
             "retryable": retryable}
 
 
+@contextmanager
+def installation_lock(codex_home, timeout=15):
+    # Both companions mutate the same Codex registration. Keep one kernel lock
+    # per runtime, and retain its inode so waiting processes cannot bypass it.
+    root = safe_path(Path(codex_home) / "plugins")
+    if str(root) == "/mnt/d" or str(root).startswith("/mnt/d/"):
+        raise ValueError("Decision installation state must remain outside D:")
+    root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    descriptor = os.open(safe_path(root / ".companion-install.lock"),
+                         os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(descriptor, "r+b") as stream:
+        if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+            raise ValueError("Decision installation lock must be a regular file")
+        deadline = time.monotonic() + timeout
+        while True:
+            try:
+                fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except OSError as error:
+                if error.errno == errno.EINTR:
+                    continue
+                if error.errno not in {errno.EACCES, errno.EAGAIN}:
+                    raise
+                if time.monotonic() >= deadline:
+                    raise BlockingIOError(errno.EAGAIN, "installation is busy") from None
+                time.sleep(0.1)
+        try:
+            yield
+        finally:
+            fcntl.flock(stream, fcntl.LOCK_UN)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--payload", required=True, type=Path)
@@ -242,15 +276,8 @@ def main():
     args = parser.parse_args()
     phase = "installation lock"
     try:
-        # Serialize different VS Code windows before invoking CLI configuration writes.
-        root = safe_path(Path.home() / ".local/state/codex-decision")
-        if str(root).startswith("/mnt/d/"):
-            raise ValueError("Decision installation state must remain outside D:")
-        root.mkdir(parents=True, exist_ok=True, mode=0o700)
-        lock = safe_path(root / ".integrated-install.lock")
-        descriptor = os.open(lock, os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW, 0o600)
-        with os.fdopen(descriptor, "w") as stream:
-            fcntl.flock(stream, fcntl.LOCK_EX)
+        codex_home = safe_path(os.environ.get("CODEX_HOME", Path.home() / ".codex"))
+        with installation_lock(codex_home):
             def report_phase(value):
                 nonlocal phase
                 phase = value

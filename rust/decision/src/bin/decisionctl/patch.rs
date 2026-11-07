@@ -106,6 +106,8 @@ fn as_text(bytes: &[u8]) -> Result<&str, String> {
 
 #[path = "patch/bridge.rs"]
 mod bridge;
+#[path = "patch/compatibility.rs"]
+mod compatibility;
 #[path = "patch/lifecycle.rs"]
 mod lifecycle;
 #[path = "patch/locking.rs"]

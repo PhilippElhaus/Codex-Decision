@@ -143,6 +143,37 @@ test("concurrent windows retry busy checks and accept only a verified completed 
   await assert.rejects(runIntegration(foreign.options), /changed host/);
 });
 
+test("persistent patch contention remains retryable after the immediate retries", async () => {
+  const busy = Object.assign(new Error("private process details"), { stderr: "Decision patch is busy; retry later" });
+  const setup = fixture([busy, busy, busy, busy]);
+  await assert.rejects(runIntegration(setup.options), (error) => {
+    assert.equal(error.retryable, true);
+    assert.equal(error.message, "Decision patch is busy; retry later");
+    return true;
+  });
+  assert.deepEqual(setup.actions(), ["status", "status", "status", "status"]);
+});
+
+test("temporary patch process failures retry without forwarding process details", async () => {
+  for (const duringConversion of [false, true]) {
+    const setup = fixture();
+    const originalRun = setup.options.run;
+    setup.options.run = async (...args) => {
+      if ((args[1][3] === "wslpath") === duringConversion) {
+        throw Object.assign(new Error("private process details"), { code: "ETIMEDOUT", stderr: "private output" });
+      }
+      return originalRun(...args);
+    };
+    await assert.rejects(runIntegration(setup.options), (error) => {
+      assert.equal(error.retryable, true);
+      assert.match(error.message, duringConversion ? /WSL path conversion/ : /patch verification/);
+      assert.doesNotMatch(failureMessage(error), /private/);
+      return true;
+    });
+    assert.deepEqual(setup.actions(), []);
+  }
+});
+
 function extensionFixture(setup, bootstrap, globalState, options = {}) {
   const commands = new Map();
   const notifications = [];
@@ -561,7 +592,7 @@ test("diagnostics expose bounded errors without child process output or private 
 
 test("unsupported-host diagnostics identify the loaded control and explain VSIX recovery without patching", async () => {
   const setup = fixture([Object.assign(new Error("checker refused"), {
-    stderr: "decisionctl: unsupported Codex extension version; revalidate the composer patch",
+    stderr: "decisionctl: unsupported Codex assets; revalidate the composer patch",
   })]);
   setup.options.host.packageJSON.version = "26.1021.22027";
   const extension = extensionFixture(setup, Promise.resolve({ status: "ready", distro: "Ubuntu" }));
@@ -574,7 +605,7 @@ test("unsupported-host diagnostics identify the loaded control and explain VSIX 
     assert.equal(result.status, "failed");
     const metadata = require("../../vscode-control/package.json");
     assert.equal(extension.log[0], `Decision control ${metadata.version}; bundled hook ${metadata.codexDecisionHookVersion}.`);
-    assert.ok(extension.log.some((line) => line.includes("Codex 26.1021.22027: unsupported Codex extension version")));
+    assert.ok(extension.log.some((line) => line.includes("Codex 26.1021.22027: unsupported Codex assets")));
     assert.match(extension.log.at(-1), /VS Code's Extensions menu \(Install from VSIX\).*reload the window.*Decision: Repair Integration/);
     assert.match(extension.notifications[0][0], /Install from VSIX/);
     assert.deepEqual(extension.notifications[0].slice(1), ["Check for Updates", "Show Diagnostics"]);

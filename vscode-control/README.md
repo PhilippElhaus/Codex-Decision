@@ -12,18 +12,20 @@ To build the combined package, first build the native Windows binaries with `scr
 
 ```bash
 ../scripts/build_control.sh
-code --install-extension "$(wslpath -w ../.local/submission/codex-decision-0.16.0.vsix)" --force
+code --install-extension "$(wslpath -w ../.local/submission/codex-decision-0.16.1.vsix)" --force
 ```
 
 On activation, the package installs or updates the bundled Codex plugin and checks the Codex UI integration. It follows `chatgpt.runCodexInWindowsSubsystemForLinux` and uses a matching native or WSL data directory. Native Windows needs no Python or WSL. WSL uses its own plugin registration and data. It sets `codexDecision.dataDirectory` when that setting is empty. Automatically discovered data directories follow the selected Codex runtime. Each runtime retains its own settings and credentials. A successful repair adopts an existing canonical data directory for automatic runtime switching. Mismatched overrides stay unchanged. If they point to another runtime, clear `codexDecision.dataDirectory` and run **Decision: Repair Integration**. Existing plugin identity, credentials, logs, and thread settings remain in place.
 
-The integrated patch supports Codex builds `26.928.31416`, `26.930.21537`, `26.930.31730`, `26.930.41038`, `26.930.51102`, `26.930.61225`, `26.1002.51308`, `26.1007.21434`, and `26.1021.22027`. It verifies exact host hashes, serializes repairs, and retains rollback files under the user's local Codex directory. Unknown or modified builds produce a diagnostic and remain unchanged. A healthy patch causes no rewrite.
+The integrated patch supports Codex builds `26.928.31416`, `26.930.21537`, `26.930.31730`, `26.930.41038`, `26.930.51102`, `26.930.61225`, `26.1002.51308`, `26.1007.21434`, `26.1021.22027`, and preview `26.51021.22027`. A different package version can use a reviewed profile only when all four original assets match that profile's exact hashes. Repairs remain serialized and retain rollback files under the user's local Codex directory. Unknown or modified assets produce a diagnostic and remain unchanged. A healthy patch causes no rewrite.
 
 After the repair, run **Developer: Reload Window**. Open a local Codex thread. Review the hook in `/hooks` if its definition needs trust; the installer does not edit Codex trust records.
 
 Use **Decision: Check Integration** to inspect the installed build. Use **Decision: Repair Integration** to retry and reopen the Decision panel. Automatic repair runs at startup and after a Codex extension change. Set `codexDecision.autoRepairIntegration` to `false` to use manual repair only. No separate plugin ZIP or manual patch command is required.
 
-Temporary WSL or installer access failures receive three automatic retries after 2, 5, and 15 seconds. A successful retry ends recovery. Disposal or disabling automatic repair cancels pending retries. Deterministic configuration, permission, and security refusals do not retry. Diagnostics identify a bounded installation phase and failure category without forwarding OS paths or child-process output.
+Decision and Chime share the selected runtime's `CODEX_HOME/plugins/.companion-install.lock` before changing plugin registrations. Kernel locks release when the owning process exits. Retained lock files do not block installation. Installer processes allow the bounded Codex CLI transaction to finish before the parent deadline.
+
+Temporary WSL, installer, or patch access failures receive three automatic retries after 2, 5, and 15 seconds. A successful retry ends recovery. Disposal or disabling automatic repair cancels pending retries. Deterministic configuration, permission, and security refusals do not retry. Diagnostics identify a bounded phase and failure category without forwarding OS paths or child-process output.
 
 Version `0.16.0` adds optional response-model validation and scoped public CA trust to custom providers. Provider endpoint, model, authentication, and certificate values are entered by the user. See the [verification notes](https://github.com/PhilippElhaus/Codex-Decision/blob/main/docs/development/custom_providers_0.16.0.md).
 

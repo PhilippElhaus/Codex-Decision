@@ -141,7 +141,11 @@ test("native installer hides private OS errors", async t => {
 
 test("concurrent native installs serialize registration and release the lock", async t => {
   const f = await fixture(t);
-  const results = await Promise.all([install(f.options), install(f.options)]);
+  const options = { ...f.options, run: async (...args) => {
+    assert.equal((await fs.stat(path.join(f.codexHome, "plugins/.companion-install.lock"))).isFile(), true);
+    return f.options.run(...args);
+  } };
+  const results = await Promise.all([install(options), install(options)]);
   assert.deepEqual(results.map(result => result.status).sort(), ["installed", "ready"]);
   assert.equal(f.commands.filter(args => args[0] === "add").length, 1);
   assert.equal((await install(f.options)).status, "ready");
@@ -154,4 +158,47 @@ test("native Windows accepts canonical data paths with different letter case", {
   const result = await install({ ...f.options, dataDirectory });
   assert.equal(result.status, "ready");
   assert.equal(result.dataDirectory.toUpperCase(), dataDirectory);
+});
+
+test("Windows lock contention retries; unavailable and interrupted locks keep distinct diagnostics", async () => {
+  const vm = require("node:vm");
+  const { EventEmitter } = require("node:events");
+  const { PassThrough } = require("node:stream");
+  const source = await fs.readFile(require.resolve("../../vscode-control/install-plugin-native"), "utf8");
+  for (const outcome of ["busy", "unavailable", "spawn-error", "interrupted", "ready"]) {
+    let entered = false, helper;
+    const child = new EventEmitter();
+    child.stdout = new PassThrough();
+    child.stdin = new PassThrough();
+    child.stdin.once("finish", () => child.emit("exit", 0));
+    const context = { module: { exports: {} }, process: { platform: "win32", env: {} }, Buffer, setTimeout, clearTimeout,
+      require(request) {
+        if (request === "node:path") return path.win32;
+        if (request === "node:fs/promises") return { mkdir: async () => {},
+          lstat: async () => ({ isSymbolicLink: () => false, isFile: () => true }) };
+        if (request === "node:child_process") return { execFile: require(request).execFile,
+          spawn(_executable, args) {
+            helper = args.at(-1);
+            queueMicrotask(() => {
+              if (outcome === "spawn-error") child.emit("error", new Error("PRIVATE-process-detail"));
+              else if (outcome === "busy" || outcome === "unavailable") child.emit("exit", outcome === "busy" ? 2 : 3);
+              else child.stdout.write("locked\n");
+            });
+            return child;
+          } };
+        return require(request);
+      } };
+    vm.runInNewContext(`${source}\nmodule.exports.withLock = withLock;`, context);
+    const operation = () => { entered = true; if (outcome === "interrupted") child.emit("exit", 1); return "installed"; };
+    const result = context.module.exports.withLock("C:\\fixture", operation);
+    if (outcome === "ready") assert.equal(await result, "installed");
+    else await assert.rejects(result, error => {
+      assert.equal(error.retryable === true, outcome === "busy" || outcome === "interrupted");
+      assert.match(error.message, outcome === "busy" ? /busy/ : outcome === "interrupted" ? /interrupted/ : /unavailable/);
+      assert.doesNotMatch(error.message, /PRIVATE/);
+      return true;
+    });
+    assert.equal(entered, outcome === "ready" || outcome === "interrupted");
+    assert.match(helper, /-notin @\(32,33\)/);
+  }
 });

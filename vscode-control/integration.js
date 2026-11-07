@@ -90,11 +90,23 @@ async function runIntegration({ host, controlRoot, dataDirectory, distro, backen
   const backup = path.win32.join(parent, version);
   try { await directoryPath(backup, false, io); }
   catch (error) { if (error.code !== "ENOENT") throw error; }
-  const execute = (program, args) => useWsl
-    ? run("wsl.exe", ["-d", distribution, "-e", program, ...args],
-      { timeout: 30_000, maxBuffer: 16_384, windowsHide: true })
-    : run(program, args, { timeout: 30_000, maxBuffer: 16_384, windowsHide: true,
-      ...(marketplacePath ? { env: { ...process.env, CODEX_DECISION_MARKETPLACE_PATH: marketplacePath } } : {}) });
+  const execute = async (program, args) => {
+    try {
+      return await (useWsl
+        ? run("wsl.exe", ["-d", distribution, "-e", program, ...args],
+          { timeout: 30_000, maxBuffer: 16_384, windowsHide: true })
+        : run(program, args, { timeout: 30_000, maxBuffer: 16_384, windowsHide: true,
+          ...(marketplacePath ? { env: { ...process.env, CODEX_DECISION_MARKETPLACE_PATH: marketplacePath } } : {}) }));
+    } catch (error) {
+      if (["EAGAIN", "EBUSY", "EINTR", "EIO", "ETIMEDOUT"].includes(error.code) ||
+          error.killed === true && error.signal === "SIGTERM" && error.code == null) {
+        const phase = program === "wslpath" ? "WSL path conversion" : "patch verification";
+        throw Object.assign(new Error(`Decision integration is temporarily unavailable during ${phase}; retry repair`),
+          { retryable: true });
+      }
+      throw error;
+    }
+  };
   // Pass each path as an argument. Never interpolate a shell program.
   const convert = async (filename) => {
     const result = await execute("wslpath", ["-u", filename]);
@@ -117,7 +129,10 @@ async function runIntegration({ host, controlRoot, dataDirectory, distro, backen
           : argumentsFor(action));
       }
       catch (error) {
-        if (attempt >= 3 || !/Decision patch is busy; retry later/.test(error.stderr || error.message || "")) throw error;
+        if (!/Decision patch is busy; retry later/.test(error.stderr || error.message || "")) throw error;
+        if (attempt >= 3) {
+          throw Object.assign(new Error("Decision patch is busy; retry later"), { retryable: true });
+        }
         await new Promise((resolve) => setTimeout(resolve, 250 * 2 ** attempt));
       }
     }
@@ -230,7 +245,7 @@ function activateIntegration(vscode, context, { dataDirectory, ready = Promise.r
         if (disposed) return;
         const diagnostic = failureMessage(error);
         const message = `${hostVersion ? `Codex ${hostVersion}: ` : ""}${diagnostic}`;
-        const recovery = diagnostic.startsWith("unsupported Codex extension version")
+        const recovery = /^unsupported Codex (?:extension version|assets)/.test(diagnostic)
           ? "Run Decision: Check for Updates or install the latest Codex Decision VSIX through VS Code's Extensions menu (Install from VSIX), reload the window, then run Decision: Repair Integration."
           : "";
         output.appendLine(`Decision integration unavailable: ${message}`);
@@ -238,7 +253,7 @@ function activateIntegration(vscode, context, { dataDirectory, ready = Promise.r
         if (!manual && error.retryable === true && retryCount < retryDelaysMs.length &&
             configuration().get("autoRepairIntegration", true) !== false) {
           const delay = retryDelaysMs[retryCount++];
-          output.appendLine(`Decision will retry the temporary installation failure (${retryCount}/${retryDelaysMs.length}).`);
+          output.appendLine(`Decision will retry the temporary integration failure (${retryCount}/${retryDelaysMs.length}).`);
           clearTimeout(retryTimer);
           retryTimer = setTimeout(() => {
             if (!disposed && configuration().get("autoRepairIntegration", true) !== false) void inspect(true, false);

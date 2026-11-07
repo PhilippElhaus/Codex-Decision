@@ -247,11 +247,11 @@ pub fn run(action: &str, repo: &Path, extension: &Path, backup: &Path) -> Result
     let version = package["version"]
         .as_str()
         .ok_or("Codex extension version missing")?;
-    let spec = Spec::production(version)?;
     if !["apply", "update", "restore", "status"].contains(&action) {
         return Err("unknown patch action".into());
     }
     let _lock = locking::acquire(backup)?;
+    let spec = compatibility::installed(version, extension, backup)?;
     if action == "status" {
         let state = status::read(repo, extension, backup, &spec, &bridge::bridges(repo)?)?;
         println!("{}", json!({"status":state,"version":version}));
@@ -263,6 +263,6 @@ pub fn run(action: &str, repo: &Path, extension: &Path, backup: &Path) -> Result
         "restore" => restore(extension, backup, &spec),
         _ => Err("unknown patch action".into()),
     }?;
-    println!("{action}: {} composer control ready", spec.1.version);
+    println!("{action}: {version} composer control ready");
     Ok(())
 }

@@ -7,6 +7,7 @@ from pathlib import Path
 import shutil
 import tempfile
 import subprocess
+import sys
 import unittest
 
 
@@ -188,6 +189,29 @@ class IntegratedInstall(unittest.TestCase):
         self.install(report_phase=phases.append)
         self.assertEqual(phases, ["package inspection", "Codex plugin discovery", "package update",
                                   "installed package verification"])
+
+    def test_shared_companion_lock_wait_is_bounded_and_kernel_releases_after_exit(self):
+        self.codex_home.joinpath("plugins").mkdir(parents=True)
+        filename = self.codex_home / "plugins/.companion-install.lock"
+        script = ("import fcntl,sys; "
+                  "stream=open(sys.argv[1],'a+b'); "
+                  "fcntl.flock(stream,fcntl.LOCK_EX); "
+                  "print('locked',flush=True); sys.stdin.read()")
+        child = subprocess.Popen([sys.executable, "-c", script, str(filename)],
+                                 stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+        try:
+            self.assertEqual(child.stdout.readline().strip(), "locked")
+            inode = filename.stat().st_ino
+            with self.assertRaises(BlockingIOError) as failure:
+                with INSTALLER.installation_lock(self.codex_home, timeout=0):
+                    self.fail("Another companion owns this runtime")
+            self.assertTrue(INSTALLER.installation_failure(failure.exception, "installation lock")["retryable"])
+            with INSTALLER.installation_lock(self.root / "other-runtime", timeout=0):
+                pass
+        finally:
+            child.communicate(timeout=5)
+        with INSTALLER.installation_lock(self.codex_home, timeout=0):
+            self.assertEqual(filename.stat().st_ino, inode)
 
 
 if __name__ == "__main__":

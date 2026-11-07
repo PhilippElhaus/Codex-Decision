@@ -13,6 +13,7 @@ fn pinned_patch_applies_updates_rejects_tampering_and_restores() {
     patch_cycle(Spec::production("26.1002.51308").unwrap().1);
     patch_cycle(Spec::production("26.1007.21434").unwrap().1);
     patch_cycle(Spec::production("26.1021.22027").unwrap().1);
+    patch_cycle(Spec::production("26.51021.22027").unwrap().1);
 }
 
 fn patch_cycle(profile: profiles::Profile) {
@@ -123,6 +124,7 @@ fn bridge_fragments_publish_routes_and_validate_settings_messages() {
         "26.1002.51308",
         "26.1007.21434",
         "26.1021.22027",
+        "26.51021.22027",
     ] {
         let fragment =
             profiles::route_fragment(route.clone(), Spec::production(version).unwrap().1);
@@ -138,7 +140,7 @@ fn bridge_fragments_publish_routes_and_validate_settings_messages() {
         ] {
             let bindings = if version == VERSION {
                 "let ZK={},TK={useContext:()=>({location:{pathname}})},WG=()=>{},_K=()=>true;"
-            } else if version == "26.1021.22027" {
+            } else if ["26.1021.22027", "26.51021.22027"].contains(&version) {
                 "let ai={},K={useContext:()=>({location:{pathname}})},c=()=>{},Dt=()=>true;"
             } else if version == "26.1002.51308" {
                 "let CK={},ZG={useContext:()=>({location:{pathname}})},hG=()=>{},HG=()=>true;"
@@ -156,7 +158,7 @@ fn bridge_fragments_publish_routes_and_validate_settings_messages() {
                 "26.930.21537" => "KG",
                 "26.1002.51308" => "UG",
                 "26.1007.21434" => "Wq",
-                "26.1021.22027" => "W",
+                "26.1021.22027" | "26.51021.22027" => "W",
                 "26.930.51102" | "26.930.61225" => "nq",
                 _ => "JG",
             };

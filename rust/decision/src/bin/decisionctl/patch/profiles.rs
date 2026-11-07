@@ -93,9 +93,53 @@ const OCTOBER_21: Profile = Profile {
     route_anchor: "function W(){return c(Dt(),`useLocation() may be used only in the context of a <Router> component.`),K.useContext(ai).location}",
 };
 
+// The preview channel changes the entry and plugin modules, even when its host
+// and router are byte-identical to the stable build. Keep their hashes separate.
+const OCTOBER_21_PREVIEW: Profile = Profile {
+    version: "26.51021.22027",
+    image: "webview/assets/use-plugins-52fc2bccd2b9.js",
+    index_anchor:
+        "<script type=\"module\" crossorigin src=\"./assets/index-e622cadf605d.js\"></script>",
+    ..OCTOBER_21
+};
+
+pub(super) const VERSIONS: &[&str] = &[
+    VERSION,
+    CURRENT.version,
+    LATEST.version,
+    OCTOBER_4.version,
+    OCTOBER_5.version,
+    OCTOBER_6.version,
+    OCTOBER_7.version,
+    OCTOBER_9.version,
+    OCTOBER_21.version,
+    OCTOBER_21_PREVIEW.version,
+];
+
 pub(super) fn spec(version: &str) -> Result<Spec, String> {
     let (profile, hashes) = match version {
         VERSION => (LEGACY, ORIGINAL),
+        "26.51021.22027" => (
+            OCTOBER_21_PREVIEW,
+            [
+                (
+                    HOST,
+                    "a9cc6736cd2c2d22f6cf43fc5763d5f8a873e4f741f522b44a600b1926f4e627",
+                ),
+                (
+                    INDEX,
+                    "a78f01df941157dbbfda76f333cd83472ba11c4820a46a377e9dad32b7a39670",
+                ),
+                (
+                    IMAGE,
+                    "2202f37925f74f3a815c6a8eb00b3333fdf67308a4294c9131cb95d7c0d06d9c",
+                ),
+                (
+                    ROUTE,
+                    "10eb7db01b2e65ba9f977a219dfee663fb9ac23fd3dde7c127d0269202ea10e9",
+                ),
+            ],
+        ),
         "26.1021.22027" => (
             OCTOBER_21,
             [
@@ -282,19 +326,20 @@ pub(super) fn route_fragment(source: String, profile: Profile) -> String {
         return source;
     }
     // Rebind only the pinned fragment, never search and replace Codex source.
-    let (router, assert, in_router, react, context) = if profile.version == OCTOBER_21.version {
-        ("W", "c", "Dt", "K", "ai")
-    } else if profile.version == OCTOBER_9.version {
-        ("Wq", "gq", "Uq", "Qq", "wJ")
-    } else if profile.version == OCTOBER_7.version {
-        ("UG", "hG", "HG", "ZG", "CK")
-    } else if [OCTOBER_5.version, OCTOBER_6.version].contains(&profile.version) {
-        ("nq", "OK", "tq", "lq", "Fq")
-    } else if [LATEST.version, OCTOBER_4.version].contains(&profile.version) {
-        ("JG", "bG", "qG", "tK", "DK")
-    } else {
-        ("KG", "vG", "GG", "$G", "TK")
-    };
+    let (router, assert, in_router, react, context) =
+        if [OCTOBER_21.version, OCTOBER_21_PREVIEW.version].contains(&profile.version) {
+            ("W", "c", "Dt", "K", "ai")
+        } else if profile.version == OCTOBER_9.version {
+            ("Wq", "gq", "Uq", "Qq", "wJ")
+        } else if profile.version == OCTOBER_7.version {
+            ("UG", "hG", "HG", "ZG", "CK")
+        } else if [OCTOBER_5.version, OCTOBER_6.version].contains(&profile.version) {
+            ("nq", "OK", "tq", "lq", "Fq")
+        } else if [LATEST.version, OCTOBER_4.version].contains(&profile.version) {
+            ("JG", "bG", "qG", "tK", "DK")
+        } else {
+            ("KG", "vG", "GG", "$G", "TK")
+        };
     source
         .replace("vK", router)
         .replace("WG", assert)

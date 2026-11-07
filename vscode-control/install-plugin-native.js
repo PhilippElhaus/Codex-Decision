@@ -123,16 +123,25 @@ async function updateSource(payload, source, backupRoot) {
 async function withLock(stateRoot, operation) {
   await safePath(stateRoot);
   await fs.mkdir(stateRoot, { recursive: true });
-  const filename = path.join(stateRoot, ".native-install.lock");
+  const filename = path.join(stateRoot, ".companion-install.lock");
   await safePath(filename);
   if (process.platform === "win32") {
-    // A kernel handle releases on host termination; no stale PID lock can block repair.
+    // Match Python companions' byte range. The kernel releases it on host termination.
     const script = `$ErrorActionPreference='Stop'
 $deadline=[DateTime]::UtcNow.AddSeconds(15)
 $lock=$null
 while($null -eq $lock) {
-  try { $lock=[IO.File]::Open($env:DECISION_INSTALL_LOCK,[IO.FileMode]::OpenOrCreate,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None) }
-  catch [IO.IOException] { if([DateTime]::UtcNow -ge $deadline) { exit 2 }; Start-Sleep -Milliseconds 100 }
+  try {
+    $candidate=[IO.File]::Open($env:DECISION_INSTALL_LOCK,[IO.FileMode]::OpenOrCreate,[IO.FileAccess]::ReadWrite,[IO.FileShare]::ReadWrite)
+    try { $candidate.Lock(0,1); $lock=$candidate }
+    catch { $candidate.Dispose(); throw }
+  }
+  catch [IO.IOException] {
+    if(($_.Exception.HResult -band 65535) -notin @(32,33)) { exit 3 }
+    if([DateTime]::UtcNow -ge $deadline) { exit 2 }
+    Start-Sleep -Milliseconds 100
+  }
+  catch { exit 3 }
 }
 try { [Console]::Out.WriteLine('locked'); [Console]::Out.Flush(); [Console]::In.ReadToEnd() | Out-Null }
 finally { $lock.Dispose() }`;
@@ -144,24 +153,39 @@ finally { $lock.Dispose() }`;
     });
     let ended = false;
     child.once("exit", () => { ended = true; });
+    child.once("error", () => { ended = true; });
+    child.stdin.on("error", () => {});
     try {
       await new Promise((resolve, reject) => {
-        const timer = setTimeout(() => reject(refusal("Decision installation lock timed out")), 20_000);
+        let settled = false;
+        const finish = error => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          child.off("error", failed);
+          child.off("exit", exited);
+          child.stdout.off("data", received);
+          if (error) reject(error); else resolve();
+        };
+        const timer = setTimeout(() => finish(Object.assign(refusal("Decision installation lock timed out; retry repair"), { retryable: true })), 20_000);
         let output = "";
-        const failed = () => { clearTimeout(timer); reject(refusal("Decision installation is busy or its lock is unavailable; retry repair")); };
-        child.once("error", failed);
-        child.once("exit", failed);
-        child.stdout.on("data", bytes => {
+        const failed = () => { ended = true; finish(refusal("Decision installation lock is unavailable; check PowerShell and file access")); };
+        const exited = code => finish(code === 2
+          ? Object.assign(refusal("Decision installation is busy; retry repair"), { retryable: true })
+          : refusal("Decision installation lock is unavailable; check PowerShell and file access"));
+        const received = bytes => {
           output += bytes.toString();
-          if (output.trim() === "locked") { clearTimeout(timer); resolve(); }
-          else if (output.length > 128) failed();
-        });
+          if (output.trim() === "locked") finish();
+          else if (output.length > 128) finish(refusal("Decision installation lock returned invalid metadata"));
+        };
+        child.once("error", failed);
+        child.once("exit", exited);
+        child.stdout.on("data", received);
       });
       const result = await operation();
-      if (ended) throw refusal("Decision installation lock was interrupted; retry repair");
+      if (ended) throw Object.assign(refusal("Decision installation lock was interrupted; retry repair"), { retryable: true });
       return result;
     } finally {
-      child.stdin.on("error", () => {});
       child.stdin.end();
       if (!ended) await new Promise(resolve => {
         const timer = setTimeout(() => { child.kill(); resolve(); }, 5000);
@@ -203,7 +227,9 @@ async function install(options) {
           ["secure-directory", "--path", directory], { timeout: 30_000, maxBuffer: 4096, windowsHide: true });
       } catch { throw refusal("Decision could not secure its native installation state"); }
     };
-    return await withLock(path.dirname(stateRoot), async () => {
+    const lockRoot = path.join(codexHome, "plugins");
+    await secureDirectory(lockRoot);
+    return await withLock(lockRoot, async () => {
       await secureDirectory(stateRoot);
       const payload = new Map();
       for (const filename of FILES) {

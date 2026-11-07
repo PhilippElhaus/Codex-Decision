@@ -108,7 +108,9 @@ async function main() {
     result.codexVersion = hostManifest.version;
     result.controlVersion = controlPackage.version;
     result.version = version;
-    const assets = ["out/extension.js", "webview/index.html", "webview/assets/use-plugins-74ac3ed173d4.js",
+    const imageModules = (await fs.readdir(path.join(host, "webview/assets"))).filter(name => /^use-plugins-[a-f0-9]+\.js$/.test(name));
+    assert.equal(imageModules.length, 1, "the fixture must contain one reviewed image module");
+    const assets = ["out/extension.js", "webview/index.html", `webview/assets/${imageModules[0]}`,
       "webview/assets/chunk-KS7C4IRE-c36c021bd659.js"];
     const hostFiles = assets.map(filename => path.join(host, filename));
     const original = await fingerprint(hostFiles);

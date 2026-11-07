@@ -1,18 +1,20 @@
 # Install and verify
 
-Download the integrated VSIX from the [latest release](https://github.com/PhilippElhaus/Codex-Decision/releases/latest). In **Visual Studio Code** on Windows x86_64, open **Extensions** (`Ctrl+Shift+X`), select **… → Install from VSIX…**, and choose `codex-decision-0.16.0.vsix`.
+Download the integrated VSIX from the [latest release](https://github.com/PhilippElhaus/Codex-Decision/releases/latest). In **Visual Studio Code** on Windows x86_64, open **Extensions** (`Ctrl+Shift+X`), select **… → Install from VSIX…**, and choose `codex-decision-0.16.1.vsix`.
 
 If double-clicking the file opens **Visual Studio VSIX Installer**, close that installer and use the VS Code menu. You can also install from a terminal:
 
 ```bash
-code --install-extension codex-decision-0.16.0.vsix --force
+code --install-extension codex-decision-0.16.1.vsix --force
 ```
 
 This single package contains Windows x86_64 and Linux x86_64 hooks, the skill, session controls, settings, and verified composer patch. It follows Codex’s `chatgpt.runCodexInWindowsSubsystemForLinux` setting. Native Windows needs no WSL or Python. The WSL backend keeps its own registration and data. Automatically discovered data directories follow the selected Codex runtime. Each runtime retains its own settings and credentials. A successful repair adopts an existing canonical data directory for automatic runtime switching. Mismatched overrides stay unchanged. If they point to another runtime, clear `codexDecision.dataDirectory` and run **Decision: Repair Integration**. Activation updates an existing local plugin without changing its identity or data directory. A fresh install registers the bundled local marketplace. The installer preserves credentials, settings, session flags, saved originals, and Codex hook trust records. It rejects ambiguous plugin registrations instead of creating a duplicate hook.
 
-The extension repairs supported Codex builds at startup and after extension changes. Repairs verify the build's exact files and keep rollback copies outside the repository. Unknown or changed builds show a diagnostic. Run **Decision: Check Integration** to inspect the installation. Run **Decision: Repair Integration** to retry and reopen the panel. Run **Developer: Reload Window** after a repair.
+The extension repairs supported Codex builds at startup and after extension changes. Repairs verify the build's exact files and keep rollback copies outside the repository. A different package version can reuse a reviewed profile only when all four original assets match. Unknown or changed assets show a diagnostic. Run **Decision: Check Integration** to inspect the installation. Run **Decision: Repair Integration** to retry and reopen the panel. Run **Developer: Reload Window** after a repair.
 
 Temporary installation failures retry after 2, 5, and 15 seconds when automatic repair is enabled. Each retry reruns installation instead of reusing a rejected startup result. Timeouts and recognized temporary access failures can retry. Invalid metadata, conflicting registrations, unsupported builds, and other deterministic refusals report immediately. The **Decision Integration** output channel names the failed phase and a safe diagnostic. It does not print private process output. Manual repair starts a fresh attempt after the underlying problem is corrected.
+
+Decision and Chime use the same `CODEX_HOME/plugins/.companion-install.lock` for the selected runtime. A companion waits up to 15 seconds for the other installer, then retries automatically. The kernel releases ownership when the process exits. Keep the retained lock file in place. The installer deadline allows the existing bounded CLI transaction to finish.
 
 Each patch command waits up to 10 seconds for another Decision check or repair to release its lock. This prevents concurrent VS Code windows from reporting a busy error during normal verification. The kernel releases the lock when its process exits. If contention continues, Decision reports the diagnostic before writing any Codex files. Run **Decision: Repair Integration** to retry.
 
@@ -35,6 +37,8 @@ Build the integrated package with `./scripts/build_control.sh`. Generated packag
 ## Recover after a Codex update
 
 Decision `0.14.1` reports `unsupported Codex extension version` for Codex `26.1021.22027`. Support for that Codex build starts in Decision `0.15.0`. The compatibility checker belongs to the installed **VS Code extension**. Updating only the Codex plugin does not update that checker.
+
+Codex preview `26.51021.22027` requires Decision `0.16.1` or later. This preview changes the webview asset names and hashes. Install the updated VSIX to replace the compatibility checker.
 
 1. Install the latest Decision VSIX through **Extensions → … → Install from VSIX…** in VS Code on the affected machine.
 2. Run **Developer: Reload Window** to load the new extension.
