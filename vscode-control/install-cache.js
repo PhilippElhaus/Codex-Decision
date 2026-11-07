@@ -5,7 +5,13 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const LIMITS = { versions: 32, entries: 4096, file: 32 * 1024 * 1024, total: 512 * 1024 * 1024 };
 
-module.exports = function cachePreservation({ safePath, writeExact, version, refusal }) {
+module.exports = function cachePreservation({ safePath, writeExact, version, refusal, files: payloadFiles }) {
+  const incoming = new Set(payloadFiles);
+  const payloadDirectories = new Set([""]);
+  for (const filename of payloadFiles) {
+    const parts = filename.split("/");
+    for (let index = 1; index < parts.length; index++) payloadDirectories.add(parts.slice(0, index).join("/"));
+  }
   const sensitive = name => /^(?:\.env(?:\..*)?|auth\.json|credentials?.*|token.*|id_rsa|id_ed25519)$/i.test(name) || /\.(?:key|p12|pfx)$/i.test(name);
   const invalid = () => refusal("Decision cache contains unsafe or unknown installation state; preserve it before repair");
   async function metadata(root, budget) {
@@ -95,14 +101,17 @@ module.exports = function cachePreservation({ safePath, writeExact, version, ref
   }
   async function restore(cacheRoot, snapshots, targetVersion) {
     for (const [name, saved] of snapshots) {
-      if (name === targetVersion) continue;
+      const target = name === targetVersion;
+      const retainedFiles = target ? new Map([...saved.files].filter(([relative]) => !incoming.has(relative))) : saved.files;
       const root = await safePath(path.join(cacheRoot, name));
       const present = await metadata(root, { entries: 0, bytes: 0 });
       for (const [relative, mode] of present.directories) {
+        if (target && (payloadDirectories.has(relative) || !saved.directories.has(relative))) continue;
         if (!saved.directories.has(relative) || mode !== saved.directories.get(relative)) throw invalid();
       }
       for (const [relative, record] of present.files) {
-        if (record.mode !== saved.files.get(relative)?.mode || !saved.files.get(relative)?.bytes.equals(await bytes(record))) {
+        if (target && !retainedFiles.has(relative)) continue;
+        if (record.mode !== retainedFiles.get(relative)?.mode || !retainedFiles.get(relative)?.bytes.equals(await bytes(record))) {
           throw refusal("An active Decision cache changed during installation; its rollback was retained");
         }
       }
@@ -114,7 +123,7 @@ module.exports = function cachePreservation({ safePath, writeExact, version, ref
           if (process.platform !== "win32") await fs.chmod(directory, mode);
         } catch (error) { if (error.code !== "EEXIST") throw error; }
       }
-      for (const [relative, record] of saved.files) {
+      for (const [relative, record] of retainedFiles) {
         if (present.files.has(relative)) continue;
         const filename = await safePath(path.join(root, relative));
         let file;

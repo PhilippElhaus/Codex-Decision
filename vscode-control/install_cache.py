@@ -117,12 +117,26 @@ def save(snapshots, backup_root, cache_root, source, safe_path, write_exact):
     return str(rollback)
 
 
-def restore(cache_root, snapshots, target_version, safe_path):
+def restore(cache_root, snapshots, target_version, safe_path, managed_files=()):
+    managed_directories = {""}
+    for name in managed_files:
+        managed_directories.update(parent.as_posix() for parent in Path(name).parents if parent.as_posix() != ".")
     for old_version, state in snapshots.items():
-        if old_version == target_version:
-            continue
+        target = old_version == target_version
+        if target:
+            state = {"files": {name: data for name, data in state["files"].items() if name not in managed_files},
+                     "modes": state["modes"],
+                     "directories": {name: mode for name, mode in state["directories"].items()
+                                     if name not in managed_directories}}
+            if not state["files"] and not state["directories"]:
+                continue
         root = safe_path(cache_root / old_version)
         files, directories = tree(root, safe_path)
+        if target:
+            # The verified incoming payload and new source extras may differ.
+            # Keep only prior cache extras in this restoration comparison.
+            files = {name: info for name, info in files.items() if name in state["files"]}
+            directories = {name: mode for name, mode in directories.items() if name in state["directories"]}
         if (any(name not in state["files"] or read_file(root / name, info, safe_path) != state["files"][name]
                 or info.st_mode & 0o777 != state["modes"][name] for name, info in files.items()) or
                 any(name not in state["directories"] or mode != state["directories"][name]

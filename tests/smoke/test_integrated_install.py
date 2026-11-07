@@ -150,6 +150,25 @@ class IntegratedInstall(unittest.TestCase):
                     self.install()
                 self.assertEqual(self.cache_state(previous), before)
 
+    def test_successful_same_version_refresh_retains_cache_only_extras(self):
+        self.existing()
+        previous = self.cache()
+        extra = previous / "hooks/operator-notes.txt"
+        extra.write_bytes(b"synthetic cache-only content")
+        extra.chmod(0o640)
+        empty = previous / "empty-directory"
+        empty.mkdir(mode=0o700)
+        hook = previous / "hooks/bin/linux-x86_64/decision-hook"
+        hook.write_bytes(b"damaged packaged executable")
+        hook.chmod(0o750)
+        (self.source / "new-source-file.txt").write_bytes(b"retain new source content too")
+        self.install()
+        self.assertEqual(extra.read_bytes(), b"synthetic cache-only content")
+        self.assertEqual(extra.stat().st_mode & 0o777, 0o640)
+        self.assertEqual(empty.stat().st_mode & 0o777, 0o700)
+        self.assertEqual(hook.read_bytes(), (self.payload / "hooks/bin/linux-x86_64/decision-hook").read_bytes())
+        self.assertEqual((previous / "new-source-file.txt").read_bytes(), b"retain new source content too")
+
     def test_cache_links_private_files_and_invalid_ownership_refuse_before_writes(self):
         self.existing("0.9.0")
         previous = self.cache()

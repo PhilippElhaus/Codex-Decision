@@ -224,7 +224,7 @@ def install(payload, codex, home=None, codex_home=None, run=run_codex, data_dire
                 raise RuntimeError("Codex cached Decision package differs from the VSIX")
         verified = True
     finally:
-        cache.restore(cache_root, snapshots, version if verified else None, safe_path)
+        cache.restore(cache_root, snapshots, version if verified else None, safe_path, FILES)
     return {"status": "installed" if refreshed else "ready", "pluginId": plugin_id,
             "version": version, "pluginRoot": str(installed),
             "dataDirectory": str(expected_data_directory),

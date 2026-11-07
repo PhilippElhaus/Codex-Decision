@@ -90,8 +90,13 @@ test("native upgrade preserves plugin identity, credentials, trust, and unknown 
 
 test("native same-version damaged source and cache are repaired", async t => {
   const f = await fixture(t), source = await f.existing();
+  const activeCache = path.join(f.codexHome, "plugins/cache/personal/codex-decision/1.0.0");
+  await fs.writeFile(path.join(activeCache, "cache-only-helper"), "active thread helper");
+  await fs.mkdir(path.join(activeCache, "cache-only-empty-directory"));
   await fs.writeFile(path.join(source, "hooks/hooks.json"), "damaged");
   assert.equal((await install(f.options)).status, "installed");
+  assert.equal(await fs.readFile(path.join(activeCache, "cache-only-helper"), "utf8"), "active thread helper");
+  assert.equal((await fs.stat(path.join(activeCache, "cache-only-empty-directory"))).isDirectory(), true);
   const cache = await f.cache();
   await fs.writeFile(path.join(cache, "hooks/bin/windows-x86_64/decision-hook.exe"), "damaged");
   assert.equal((await install(f.options)).status, "installed");

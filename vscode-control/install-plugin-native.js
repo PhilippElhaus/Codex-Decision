@@ -289,7 +289,7 @@ async function install(options) {
       const cacheRoot = path.join(codexHome, "plugins/cache", marketplace, PLUGIN);
       const installed = path.join(cacheRoot, manifest.version);
       const refreshed = !current || !await matches(source, payload) || !await matches(installed, payload) || current.version !== manifest.version;
-      const caches = require("./install-cache")({ safePath, writeExact, version, refusal });
+      const caches = require("./install-cache")({ safePath, writeExact, version, refusal, files: FILES });
       const snapshots = refreshed ? await caches.snapshot(cacheRoot) : new Map();
       const cacheRollback = await caches.backup(snapshots, path.join(stateRoot, "cache-rollbacks"), cacheRoot);
       phase = "package update";
