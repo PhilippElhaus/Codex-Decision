@@ -19,8 +19,10 @@ test("session and installation averages round exact safe integer ratios",async t
     assert.equal((await core.readLifetimeStats(directory)).averageMs,Number(row.expected),JSON.stringify(row));
     assert.equal((await core.readSessionActivity(directory)).averageMs,Number(row.expected),JSON.stringify(row));
     assert.equal((await core.readInstallationStats(root)).averageMs,Number(row.expected),JSON.stringify(row));
-    await fs.writeFile(path.join(directory,"stats.json"),JSON.stringify({...stats,partial_timed:1}));
-    assert.equal((await core.readSessionActivity(directory)).averageMs,null);
-    assert.equal((await core.readInstallationStats(root)).averageMs,null);
   }
+  // Check partial_timed independently of the numeric rounding fixtures.
+  const timedOnly = {counter_scheme:1,calls:0,completed:0,replaced:0,timed:3,elapsedMs:1000,partial_timed:1};
+  await fs.writeFile(path.join(directory,"stats.json"),JSON.stringify(timedOnly));
+  assert.equal((await core.readSessionActivity(directory)).averageMs,null);
+  assert.equal((await core.readInstallationStats(root)).averageMs,null);
 });

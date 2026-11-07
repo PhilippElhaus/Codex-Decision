@@ -2,7 +2,7 @@
 
 const assert = require("node:assert/strict");
 const fs = require("node:fs/promises");
-const Module = require("node:module");
+const { loadWithVscode } = require("../support/vscode-loader.cjs");
 const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
@@ -28,17 +28,11 @@ test("composer and panel restore the same thread outcomes and request counts aft
       onDidChangeConfiguration: () => ({ dispose() {} }),
     },
   };
-  const originalLoad = Module._load;
   const originalHealth = core.checkHealth;
   core.checkHealth = async () => ({ ok: true, model: "gpt-6-luna" });
-  Module._load = function (request, parent, isMain) {
-    return request === "vscode" ? fake : originalLoad.call(this, request, parent, isMain);
-  };
   try {
-    delete require.cache[require.resolve("../../vscode-control/extension")];
-    require("../../vscode-control/extension").activate(context);
+    loadWithVscode(require.resolve("../../vscode-control/extension"), fake).activate(context);
   } finally {
-    Module._load = originalLoad;
     core.checkHealth = originalHealth;
   }
   try {

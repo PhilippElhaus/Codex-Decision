@@ -5,7 +5,7 @@ const fs = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
 const { provider, wireRequest, parseHealthResult } = require("../../vscode-control/providers");
-const { readApiKey, writeApiKey, checkHealth, readGlobalSettings, writeGlobalSettings } = require("../../vscode-control/core");
+const { readApiKey, writeApiKey, checkHealth, parseHealthOutput, readGlobalSettings, writeGlobalSettings } = require("../../vscode-control/core");
 const { validate } = require("../../vscode-control/schema");
 
 test("provider status and selected key length use one fresh credential snapshot", async t => {
@@ -42,6 +42,7 @@ test("default provider uses Decisions predicate API and validates refusals", () 
   assert.deepEqual(parseHealthResult({model:"gpt-6-luna",answers:[{name:"ready",type:"predicate",probability:0.9}]}),{ok:true,model:"gpt-6-luna"});
   for (const answer of [{name:"ready",type:"refusal"},{name:"other",type:"predicate",probability:.9},{name:"ready",type:"predicate",probability:1.1}])
     assert.throws(()=>parseHealthResult({model:"gpt-6-luna",answers:[answer]}));
+  assert.throws(() => parseHealthOutput('{"state":"unavailable"}'));
 });
 
 test("provider keys coexist and health requests use only the selected credential", async () => {
@@ -52,14 +53,22 @@ test("provider keys coexist and health requests use only the selected credential
     await writeApiKey(directory,"updated-openai-key");
     assert.equal(await readApiKey(directory),"updated-openai-key");
     assert.equal(await readApiKey(directory,"typesafe"),"synthetic-typesafe-key");
-    await writeGlobalSettings(directory,{provider:"typesafe",model:"jev-latest"});
-    const result = await checkHealth(directory, async (url,options)=>{
-      assert.equal(url,provider("typesafe").endpoint);
-      assert.equal(options.headers.Authorization,"Bearer synthetic-typesafe-key");
-      assert.equal(JSON.parse(options.body).questions.ready.type,"noul");
-      return {ok:true,text:async()=>JSON.stringify({model:"jev-latest",answers:{ready:{type:"noul",noul:.9}}})};
-    });
-    assert.equal(result.ok,true);
+    for (const [selected, model, key] of [["openai", "gpt-6-luna", "updated-openai-key"],
+      ["typesafe", "jev-latest", "synthetic-typesafe-key"]]) {
+      await writeGlobalSettings(directory, { provider: selected, model });
+      const result = await checkHealth(directory, async (url, options) => {
+        assert.equal(url, provider(selected).endpoint);
+        assert.equal(options.headers.Authorization, `Bearer ${key}`);
+        assert.equal(options.redirect, "error");
+        const questions = JSON.parse(options.body).questions;
+        assert.equal(selected === "openai" ? questions[0].type : questions.ready.type,
+          selected === "openai" ? "predicate" : "noul");
+        return { ok: true, text: async () => JSON.stringify({ model, answers: selected === "openai" ?
+          [{ name: "ready", type: "predicate", probability: .93 }] : { ready: { type: "noul", noul: .9 } } }) };
+      });
+      assert.deepEqual(result, { ok: true, model });
+      assert.equal(JSON.stringify(result).includes(key), false);
+    }
     const old = validate("settings",{schema_version:3,mode:"replace",relevance_policy:{relevant_max:5},log_limit_mb:50,never_delete_logs:false});
     assert.equal(old.provider,"typesafe");
     assert.throws(()=>validate("settings",{...old,provider:"openai"}));
@@ -118,8 +127,10 @@ test("health distinguishes missing credentials from invalid or unsafe records", 
   const send = async () => { calls += 1; throw new Error("must not call"); };
   try {
     assert.equal((await checkHealth(directory, send)).reason, "DECISION_KEY_MISSING");
-    await fs.writeFile(filename, "JEV_API_KEY=synthetic-jevv-key\n", { mode: 0o600 });
-    assert.equal((await checkHealth(directory, send)).reason, "DECISION_KEY_MISSING");
+    for (const content of ["JEV_API_KEY=synthetic-jevv-key\n", "JEV_API_KEY=short\n"]) {
+      await fs.writeFile(filename, content, { mode: 0o600 });
+      assert.equal((await checkHealth(directory, send)).reason, "DECISION_KEY_MISSING");
+    }
     for (const content of ["OPENAI_API_KEY=short\n", "OPENAI_API_KEY=synthetic-one\nOPENAI_API_KEY=synthetic-two\n"]) {
       await fs.writeFile(filename, content);
       assert.equal((await checkHealth(directory, send)).reason, "DECISION_KEY_INVALID");

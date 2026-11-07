@@ -69,7 +69,8 @@ impl<'de> Visitor<'de> for UniqueVisitor {
     }
 }
 
-pub(super) fn parse(bytes: &[u8]) -> Result<Value, serde_json::Error> {
+/// Parse JSON without accepting duplicate object fields.
+pub fn parse(bytes: &[u8]) -> Result<Value, serde_json::Error> {
     serde_json::from_slice::<UniqueValue>(bytes).map(|value| value.0)
 }
 

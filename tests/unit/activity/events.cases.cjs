@@ -5,7 +5,7 @@ const fs = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
-const { checkHealth, parseHealthOutput, readApiKey, readEventOffset, readEventsSince, readLifetimeStats } = require("../../../vscode-control/core");
+const { readEventOffset, readEventsSince, readLifetimeStats } = require("../../../vscode-control/core");
 
 test("incremental event reader keeps incomplete lines for the next poll", async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "decision-control-test-"));
@@ -97,44 +97,6 @@ test("incremental reader handles log truncation and a burst larger than one read
     await fs.rm(directory, { recursive: true, force: true });
   }
 });
-
-test("health check reads the private .env and keeps the key out of status", async () => {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "decision-health-test-"));
-  const response = JSON.stringify({ model: "gpt-6-luna", answers: [{name:"ready", type:"predicate", probability:0.93}] });
-  try {
-    assert.deepEqual(await checkHealth(directory, async () => { throw new Error("must not call"); }),
-      { ok: false, reason: "DECISION_KEY_MISSING" });
-    await fs.writeFile(path.join(directory, ".env"), "OPENAI_API_KEY=test-key-only\n", { mode: 0o600 });
-    assert.equal(await readApiKey(directory), "test-key-only");
-    const healthy = await checkHealth(directory, async (url, options) => {
-      assert.equal(url, "https://api.openai.com/v1/decisions");
-      assert.equal(options.headers.Authorization, "Bearer test-key-only");
-      assert.equal(JSON.parse(options.body).questions[0].type, "predicate");
-      assert.equal(options.redirect, "error");
-      return { ok: true, text: async () => response };
-    });
-    assert.deepEqual(healthy, { ok: true, model: "gpt-6-luna" });
-    assert.equal(JSON.stringify(healthy).includes("test-key-only"), false);
-    assert.throws(() => parseHealthOutput('{"state":"unavailable"}'));
-    assert.deepEqual(await checkHealth(directory, async () => ({ ok: false, status: 401 })),
-      { ok: false, reason: "DECISION_HTTP_401" });
-    assert.deepEqual(await checkHealth(directory, async () => ({ ok: false, status: 401,
-      text: async () => '{"error":{"code":"expired_api_key"}}' })),
-    { ok: false, reason: "DECISION_KEY_EXPIRED" });
-    assert.deepEqual(await checkHealth(directory, async () => { throw new Error("network"); }),
-      { ok: false, reason: "DECISION_NETWORK_ERROR" });
-    assert.deepEqual(await checkHealth(directory, async () => { throw new DOMException("timed out", "TimeoutError"); }),
-      { ok: false, reason: "DECISION_TIMEOUT" });
-    assert.deepEqual(await checkHealth(directory, async () => ({ ok: true, text: async () => "not json" })),
-      { ok: false, reason: "DECISION_INVALID_RESPONSE" });
-    await fs.writeFile(path.join(directory, ".env"), "JEV_API_KEY=short\n");
-    assert.deepEqual(await checkHealth(directory, async () => { throw new Error("must not call"); }),
-      { ok: false, reason: "DECISION_KEY_MISSING" });
-  } finally {
-    await fs.rm(directory, { recursive: true, force: true });
-  }
-});
-
 
 test("classification activity is free of line outcomes and preserves large batch call totals", async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-stage-events-"));

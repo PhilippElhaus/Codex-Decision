@@ -20,8 +20,8 @@ jobs:
         run: rustup toolchain install stable --profile minimal --component clippy
       - name: Test native Windows runtime
         run: cargo test --locked -p codex-decision --lib --test ctl_process --test windows_process --test custom_providers
-      - name: Lint native Windows runtime
-        run: cargo clippy --locked --lib --bins -- -D warnings
+      - name: Lint native Windows runtime and test targets
+        run: cargo clippy --locked --all-targets -- -D warnings
       - name: Test native installation, activity, and private records
         env:
           DECISIONCTL_TEST: target/debug/decisionctl.exe
@@ -74,7 +74,10 @@ jobs:
       - run: node scripts/pipeline_commit_interrupt.cjs --hook target/verification/decision-hook --out .local/quality/pipeline-ci-publication
       - run: node scripts/pipeline_stress.cjs --hook target/verification/decision-hook --provider openai --concurrency 4 --rounds 6 --lines 256,1024 --faults http,json,oversize,probability,model,timeout --jitter-ms 10 --out .local/quality/pipeline-ci-openai
       - run: node scripts/pipeline_stress.cjs --hook target/verification/decision-hook --provider typesafe --concurrency 4 --rounds 6 --lines 256,1024 --faults http,json,oversize,probability,model,timeout --jitter-ms 10 --out .local/quality/pipeline-ci-typesafe
-      - run: npm test --prefix vscode-control
+      - name: Test Node consumers with the freshly built CLI
+        env:
+          DECISIONCTL_TEST: target/verification/decisionctl
+        run: npm test --prefix vscode-control
       - run: python3 -m unittest discover -s tests -p 'test_*.py'
       - name: Save offline failure reports
         if: failure()

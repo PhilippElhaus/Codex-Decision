@@ -2,7 +2,9 @@ use super::*;
 use codex_decision::Batch;
 use std::io::{BufRead, BufReader};
 use std::net::{TcpListener, TcpStream};
-use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(unix)]
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 #[path = "api_tests/custom.rs"]
@@ -10,6 +12,7 @@ mod custom;
 
 struct ResetDeadline(Option<Instant>);
 
+#[cfg(unix)]
 impl ResetDeadline {
     fn with_remaining(duration: Duration) -> Self {
         let previous = HOOK_STARTED.with(|started| {

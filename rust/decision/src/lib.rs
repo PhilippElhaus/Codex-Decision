@@ -6,8 +6,7 @@ pub mod provider;
 pub mod publication_contract;
 pub mod semantic;
 mod source;
-#[path = "bin/decision-hook/strict_json.rs"]
-pub(crate) mod strict_json;
+pub mod strict_json;
 #[cfg(windows)]
 pub mod windows;
 pub use source::{protect_neighbors, source_lines, strip_ansi};

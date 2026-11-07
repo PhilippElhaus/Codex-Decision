@@ -13,6 +13,8 @@ test("health probe classifies failed and malformed replies without exposing a ke
     await writeApiKey(directory, "synthetic-key-123");
     const cases = [
       ["expired", async () => ({ ok: false, status: 401, text: async () => JSON.stringify({ code: "key_expired" }) }), "DECISION_KEY_EXPIRED"],
+      ["nested expired", async () => ({ ok: false, status: 401, text: async () => '{"error":{"code":"expired_api_key"}}' }), "DECISION_KEY_EXPIRED"],
+      ["body unavailable", async () => ({ ok: false, status: 401 }), "DECISION_HTTP_401"],
       ["unauthorized", async () => ({ ok: false, status: 401, text: async () => "denied" }), "DECISION_HTTP_401"],
       ["forbidden", async () => ({ ok: false, status: 403, text: async () => "{}" }), "DECISION_HTTP_403"],
       ["rate limited", async () => ({ ok: false, status: 429 }), "DECISION_HTTP_429"],

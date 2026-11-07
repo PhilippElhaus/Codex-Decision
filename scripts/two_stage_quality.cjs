@@ -7,13 +7,6 @@ const http = require("node:http");
 const crypto = require("node:crypto");
 const { isDeepStrictEqual } = require("node:util");
 const { spawn, spawnSync } = require("node:child_process");
-const fixtures = require("../tests/fixtures/two-stage-cases.cjs");
-const holdout = require("../tests/fixtures/two-stage-holdout.cjs");
-const batching = require("../tests/fixtures/batching-cases.cjs");
-const precision = require("../tests/fixtures/precision-cases.cjs");
-const precisionHoldout = require("../tests/fixtures/precision-holdout.cjs");
-const coverageCases = require("../tests/fixtures/coverage-cases.cjs");
-const classificationHoldout = require("../tests/fixtures/classification-holdout.cjs");
 const { provider: providerSpec } = require("../vscode-control/providers");
 const { readApiKey, sessionDirectory } = require("../vscode-control/core");
 const { readLatestPanelDecision } = require("../vscode-control/panel-state");
@@ -26,6 +19,16 @@ faults.push("line-late-missing", "line-late-extra", "line-late-http422", "line-l
 faults.push("choice-duplicate-model", "line-duplicate-probability", "line-duplicate-id", "line-late-duplicate-id");
 faults.push("choice-trickle", "line-trickle", "line-late-trickle");
 const arg = (flag, fallback) => process.argv.includes(flag) ? process.argv[process.argv.indexOf(flag) + 1] : fallback;
+// Construct only the requested split. Keep literal imports so each input is visible.
+function selectedCorpus() {
+  if (process.argv.includes("--classification-holdout")) return require("../tests/fixtures/classification-holdout.cjs");
+  if (process.argv.includes("--coverage")) return require("../tests/fixtures/coverage-cases.cjs");
+  if (process.argv.includes("--precision-holdout")) return require("../tests/fixtures/precision-holdout.cjs");
+  if (process.argv.includes("--precision")) return require("../tests/fixtures/precision-cases.cjs");
+  if (process.argv.includes("--batching")) return require("../tests/fixtures/batching-cases.cjs");
+  if (process.argv.includes("--holdout")) return require("../tests/fixtures/two-stage-holdout.cjs");
+  return require("../tests/fixtures/two-stage-cases.cjs");
+}
 async function main() {
   const live = process.argv.includes("--live");
   const provider = arg("--provider", "openai");
@@ -176,10 +179,10 @@ async function main() {
   try {
     await new Promise(resolve => server.listen(0,"127.0.0.1",resolve));
     const holdoutSplit = ["--coverage", "--holdout", "--batching", "--precision-holdout", "--classification-holdout"].some(flag => process.argv.includes(flag));
-    let selected = process.argv.includes("--classification-holdout") ? classificationHoldout : process.argv.includes("--coverage") ? coverageCases : process.argv.includes("--precision-holdout") ? precisionHoldout : process.argv.includes("--precision") ? precision : process.argv.includes("--batching") ? batching : process.argv.includes("--holdout") ? holdout : fixtures;
+    let selected = selectedCorpus();
     if (!live && !process.argv.includes("--skip-faults")) selected = [...selected,
       ...[...faults, ...providerFaults].map(fault => {
-        const fixture=fixtures.find(item => item.id === "log-failure-240");
+        const fixture=require("../tests/fixtures/two-stage-cases.cjs").find(item => item.id === "log-failure-240");
         return {...fixture, id:fault, fault, expect_full:true, expected_calls:fault.startsWith("line-late-") ? 3 : 1,
           expected_classification_calls:Number(fault.startsWith("choice-")), expected_relevance_calls:fault.startsWith("choice-") ? 0 : fault.startsWith("line-late-") ? 3 : 1,
           lines:fault.startsWith("choice-") ? fixture.lines.map(line=>line.replace(/^INFO /,"Routine ")) : fixture.lines};

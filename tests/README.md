@@ -7,6 +7,43 @@ Windows covers native installation, activity caching, provider credentials,
 publication, retained records, telemetry, and atomic writes. Chromium checks the
 actual webview scripts and panel fixtures.
 
+`npm test --prefix vscode-control` discovers Node tests recursively under
+`tests/`, including nested concerns and `end2end`, `edgecase`, or `regression`
+directories when present. Activity concerns live in `tests/unit/activity/`;
+extension scenarios live in `tests/integration/extension/`. The original
+`core.test.cjs` and `extension.test.cjs` workers import their own `.cases.cjs`
+modules in original declaration order. Discovery selects only `.test.cjs`
+entrypoints, so imported cases register once and process globals stay sequential.
+Count authored declarations in the reachable case modules as well as entrypoints.
+Keep the existing `e2e`, `edge`, and `load` names. The long composer scenario
+retains one ordered lifecycle. Shared VS Code loader mocks restore the loader
+in `finally`.
+
+Cargo keeps private-code tests beside their modules and integration discovery
+under `rust/decision/tests/`. Provider budgets, encoding, models, and response
+parity share the `providers` target. Custom-provider and native process targets
+remain separate. Strict JSON parsing has one library owner. Its unit tests run
+once; hook and CLI boundary regressions remain. The example/default contract now
+runs in Node, without starting Node from Python.
+
+Pull requests and main run the complete offline, browser, Windows, and package
+checks. Hook, bridge, webview, configuration, fixtures, and packaging consumers
+cross language and process boundaries. They include dynamic loading and file
+reads. The reviewed impact-analysis prototype selected 44 of 46 Node files and
+all task groups in its three partial real-repository plans; the remaining real
+changes fell back to full validation. Its 3.9–4.3 second WSL inventory overhead
+did not justify maintaining the selector. Both task-level and test-level
+selection therefore fall back to the complete repository suite. Unknown,
+deleted, fixture, and configuration changes receive that same coverage. No
+history fetch, persisted analysis cache, or extra scheduled workflow is needed.
+
+Keep native Cargo, `node:test`, and unittest unless a compatible runner
+experiment shows a measured benefit; rstest's unittest support alone does not
+establish a speedup. Existing permission, publication/interruption, provider
+failure, native-target, and production-package gates remain mandatory.
+Windows lint covers all Cargo targets. Unix-only test imports and helpers use
+the same platform guards as their consumers.
+
 After these checks pass, the package job downloads this run's freshly built
 Windows production runtime and builds the Linux production runtime. It verifies
 the plugin ZIP and integrated VSIX against the release allowlists, source bytes,
@@ -68,6 +105,9 @@ python3 vscode-control/scripts/browser_smoke.py --browser chromium
 ```
 
 In Lab-Control, keep the default temporary directory for installer data. Set `CODEX_DECISION_TEST_EXECUTABLE_TMP_ROOT` to an ignored directory under `/workspace/.local/` for the Python executable fixture; the container's `/tmp` mount does not permit execution.
+Set `DECISIONCTL_TEST` to the freshly built `decisionctl` when using a custom
+Cargo target directory. Otherwise the retained-history differential test can
+skip when its default verification binary is absent.
 
 Rust process tests launch the real hook against a local mock API. They cover routing, exact saved originals, incomplete and failed batches, Choice gate keep/filter/error paths, protected lines, malformed config, shared settings, private hook status, release versions, hook trust inspection, the pinned Codex webview patch, and two simultaneous session IDs with separate enabled flags and records. Node tests carry the pinned host bridge through the extension command to saved selections, cover synchronous command lookup failures and rejected commands, and cover the control bridge, shared settings without a thread, aggregated activity, one-time enabled defaults, preserved per-session choices, configuration and key validation, bounded log reads, panel validation, and connection errors. The browser smoke test renders the actual composer and settings scripts in Edge at four widths and checks internal thread changes without a URL change, plus healthy and failed API states, missing host replies, selection recovery, and home-screen settings. The panel harness renders the current version-6 cumulative relevance view, protected and pending rows, and historical version-3/4 snapshots. It checks result shrink and growth, changed source text and scores, animation restart, and clearing and restoring the panel. Python tests validate documentation links and default config values. The hardening regressions cover concurrent writes in separate processes, linked directory chains, oversized response streams, failed receipt publication, held log locks, physical-line limits, and focused-panel selection. [CI](../.github/workflows/verify.yml) runs the offline Rust, Node, and Python checks, builds and verifies both packages, and runs the real webview harnesses in Chromium. Edge is an optional native desktop check; Chromium supplies the background rendering check. Patch lifecycle tests use explicit fixture path conversion and run their assertions on Linux without WSL. Activity tests cover atomic log replacement, retained tails, and truncation. Settings tests drop replies, reject late replies, and throw from the transport to verify recovery.
 

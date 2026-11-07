@@ -19,8 +19,7 @@ use uuid::Uuid;
 
 #[path = "decision-hook/json_limit.rs"]
 mod json_limit;
-#[path = "decision-hook/strict_json.rs"]
-mod strict_json;
+use codex_decision::strict_json;
 
 #[path = "decision-hook/runtime.rs"]
 mod runtime;

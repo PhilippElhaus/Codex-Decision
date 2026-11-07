@@ -1,7 +1,7 @@
 use codex_decision::provider::normalize_response;
 use serde_json::{json, Value};
 
-#[path = "provider_responses/baseline.rs"]
+#[path = "responses_baseline.rs"]
 mod baseline;
 
 fn compare(request: &Value, response: Value) {

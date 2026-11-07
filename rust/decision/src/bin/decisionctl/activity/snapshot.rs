@@ -4,8 +4,7 @@ use codex_decision::activity_counters::{
     completed_request_minimum, partial_metric_names, validate_health_counters,
     validate_stats_counters, HEALTH_METRICS, STATS_COUNTERS,
 };
-#[path = "../../decision-hook/strict_json.rs"]
-mod strict_json;
+use codex_decision::strict_json;
 
 pub(super) fn load(path: &Path, limit: u64) -> Result<Value, String> {
     if path.file_name().and_then(|value| value.to_str()) == Some("stats.json") {

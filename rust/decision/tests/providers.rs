@@ -1,3 +1,10 @@
+mod providers {
+    pub mod budget;
+    pub mod encoding;
+    pub mod models;
+    pub mod responses;
+}
+
 use codex_decision::{provider::*, semantic::*, source_lines};
 use serde_json::{json, Value};
 

@@ -7,6 +7,17 @@ const test = require("node:test");
 const { defaults, validate } = require("../../vscode-control/schema");
 const core = require("../../vscode-control/core");
 
+test("hook example and control use the same current defaults", async () => {
+  const example = JSON.parse(await fs.readFile(path.join(__dirname, "../../config.example.json"), "utf8"));
+  assert.equal(example.schema_version, 5);
+  assert.deepEqual(example.relevance_policy, core.DEFAULT_RELEVANCE_POLICY);
+  assert.equal("thresholds" in example, false);
+  assert.equal("decision_methods" in example, false);
+  assert.equal(example.mode, "replace");
+  assert.equal(example.log_limit_mb, 50);
+  assert.equal(example.never_delete_logs, false);
+});
+
 test("flat legacy policies migrate conservatively and cannot disable classification", () => {
   const old = {...defaults("config_v3"),enabled:true,choice_gate_enabled:false,
     line_policy:{omit_min:70,exact_max:25}};

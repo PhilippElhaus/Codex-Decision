@@ -2,7 +2,7 @@
 
 const assert = require("node:assert/strict");
 const fs = require("node:fs/promises");
-const Module = require("node:module");
+const { loadWithVscode } = require("../support/vscode-loader.cjs");
 const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
@@ -56,17 +56,11 @@ test("patched host carries the Decision toggle through the extension to session 
       onDidChangeConfiguration: () => ({ dispose() {} }),
     },
   };
-  const originalLoad = Module._load;
   const originalHealth = core.checkHealth;
   core.checkHealth = async () => ({ ok: false, reason: "DECISION_KEY_MISSING" });
-  Module._load = function (request, parent, isMain) {
-    return request === "vscode" ? fake : originalLoad.call(this, request, parent, isMain);
-  };
   try {
-    delete require.cache[require.resolve("../../vscode-control/extension")];
-    require("../../vscode-control/extension").activate(context);
+    loadWithVscode(require.resolve("../../vscode-control/extension"), fake).activate(context);
   } finally {
-    Module._load = originalLoad;
     core.checkHealth = originalHealth;
   }
   try {
