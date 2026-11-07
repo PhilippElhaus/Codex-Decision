@@ -164,6 +164,37 @@ fn status_refuses_host_rollback_and_metadata_tampering() {
     );
 }
 
+#[test]
+fn oversized_codex_assets_fail_before_status_or_apply_creates_rollback_state() {
+    let fixture = Fixture::new();
+    for path in [HOST, INDEX, IMAGE, ROUTE] {
+        let target = fixture.root.join(fixture.spec.physical(path));
+        let original = fs::read(&target).unwrap();
+        fs::File::create(&target)
+            .unwrap()
+            .set_len(ASSET_LIMIT + 1)
+            .unwrap();
+        assert_eq!(
+            fixture.state(&fixture.repo).unwrap_err(),
+            "invalid input size"
+        );
+        assert_eq!(
+            lifecycle::apply(
+                &fixture.repo,
+                &fixture.root,
+                &fixture.backup,
+                &fixture.spec,
+                &fixture.bridges
+            )
+            .unwrap_err(),
+            "invalid input size"
+        );
+        assert!(!fixture.backup.exists());
+        fs::write(&target, original).unwrap();
+    }
+    assert_eq!(fixture.state(&fixture.repo).unwrap(), "unpatched");
+}
+
 #[cfg(unix)]
 #[test]
 fn patch_lock_is_exclusive_released_on_drop_and_rejects_linked_ancestors() {

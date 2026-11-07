@@ -4,7 +4,8 @@
 It selects stable Rust, Node 22, and Python 3.12 explicitly. Linux runs the full
 Rust suite with `umask 022` and repeats telemetry checks with `umask 077`.
 Windows covers native installation, activity caching, provider credentials,
-publication, retained records, telemetry, and atomic writes. Chromium checks the
+publication, retained records, telemetry, and atomic writes. Native CLI checks
+cover bounded reads and oversized Codex patch assets. Chromium checks the
 actual webview scripts and panel fixtures.
 
 `npm test --prefix vscode-control` discovers Node tests recursively under
@@ -55,7 +56,7 @@ The integrated VSIX must pass the background native package check before release
 
 ```powershell
 pwsh -NoProfile -File .\vscode-control\scripts\windows_background_smoke.ps1 `
-  -Vsix .\.local\submission\codex-decision-0.16.1.vsix
+  -Vsix .\.local\submission\codex-decision-0.16.2.vsix
 ```
 
 This check opens no editor windows. It uses native Node, the actual packaged
@@ -70,7 +71,7 @@ interactive desktop test is authorized:
 
 ```powershell
 pwsh -NoProfile -File .\vscode-control\scripts\windows_integrated_smoke.ps1 `
-  -Vsix .\.local\submission\codex-decision-0.16.1.vsix -Distro Ubuntu
+  -Vsix .\.local\submission\codex-decision-0.16.2.vsix -Distro Ubuntu
 ```
 
 Add `-Native` to select Windows execution. The native fixture rejects WSL

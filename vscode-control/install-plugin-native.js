@@ -49,7 +49,7 @@ async function readJson(filename) {
   filename = await safePath(filename);
   const stat = await info(filename);
   if (!stat?.isFile() || stat.size > 128_000) throw refusal("Invalid Decision package metadata");
-  try { return JSON.parse(await fs.readFile(filename, "utf8")); }
+  try { return JSON.parse((await caches.readFile(filename, 128_000)).toString("utf8")); }
   catch (error) { if (error instanceof SyntaxError) throw refusal("Invalid Decision package metadata"); throw error; }
 }
 function version(value) {
@@ -86,11 +86,11 @@ async function matches(root, payload) {
     const target = await safePath(path.join(root, filename));
     const stat = await info(target);
     if (!stat?.isFile() || stat.size !== payload.get(filename).length ||
-        !(await fs.readFile(target)).equals(payload.get(filename))) return false;
+        !(await caches.readFile(target)).equals(payload.get(filename))) return false;
   }
   return true;
 }
-async function updateSource(payload, source, backupRoot) {
+async function validateSource(source) {
   let ancestor = source;
   while (true) {
     if (await info(path.join(ancestor, ".git"))) throw refusal("Decision cannot overwrite a development repository");
@@ -99,28 +99,32 @@ async function updateSource(payload, source, backupRoot) {
     ancestor = parent;
   }
   if (await info(source) && !(await info(source)).isDirectory()) throw refusal("Invalid Decision package destination");
-  const changed = [];
+}
+async function updateSource(payload, source, backupRoot) {
+  await validateSource(source);
+  const changed = new Map();
   for (const filename of FILES) {
     const target = await safePath(path.join(source, filename));
     const stat = await info(target);
     if (stat && !stat.isFile()) throw refusal("Invalid Decision package destination");
-    if (!stat || !(await fs.readFile(target)).equals(payload.get(filename))) changed.push(filename);
+    const previous = stat ? await caches.readFile(target) : null;
+    if (!previous || !previous.equals(payload.get(filename))) changed.set(filename, previous);
   }
   let rollback = null;
-  for (const filename of changed) {
+  for (const [filename, previous] of changed) {
     const target = path.join(source, filename);
-    if (await info(target)) {
+    if (previous) {
       if (!rollback) {
         await safePath(backupRoot);
         await fs.mkdir(backupRoot, { recursive: true });
         rollback = await fs.mkdtemp(path.join(backupRoot, `${Date.now()}-`));
         await writeExact(path.join(rollback, "source.json"), Buffer.from(JSON.stringify({ source })));
       }
-      await writeExact(path.join(rollback, filename), await fs.readFile(target));
+      await writeExact(path.join(rollback, filename), previous);
     }
     await writeExact(target, payload.get(filename));
   }
-  return { changed: !!changed.length, rollback };
+  return { changed: !!changed.size, rollback };
 }
 async function withLock(stateRoot, operation) {
   await safePath(stateRoot);
@@ -210,6 +214,8 @@ finally { $lock.Dispose() }`;
   finally { await handle.close(); await fs.unlink(filename); }
 }
 
+const caches = require("./install-cache")({ safePath, writeExact, version, refusal, files: FILES });
+
 async function install(options) {
   let phase = "package inspection";
   try {
@@ -237,7 +243,7 @@ async function install(options) {
       for (const filename of FILES) {
         const incoming = await safePath(path.join(sourcePayload, filename));
         if (!(await info(incoming))?.isFile()) throw refusal("The Decision VSIX has an incomplete hook payload");
-        payload.set(filename, await fs.readFile(incoming));
+        payload.set(filename, await caches.readFile(incoming));
       }
       const manifest = await readJson(path.join(sourcePayload, ".codex-plugin/plugin.json"));
       if (manifest.name !== PLUGIN) throw refusal("Invalid Decision hook payload");
@@ -288,9 +294,13 @@ async function install(options) {
       await secureDirectory(dataDirectory);
       const cacheRoot = path.join(codexHome, "plugins/cache", marketplace, PLUGIN);
       const installed = path.join(cacheRoot, manifest.version);
+      const result = { pluginId, version: manifest.version, pluginRoot: installed, dataDirectory,
+        decisionctl: path.join(installed, "hooks/bin/windows-x86_64/decisionctl.exe"), marketplacePath };
+      phase = "installed package verification";
+      await validateSource(source);
       const refreshed = !current || !await matches(source, payload) || !await matches(installed, payload) || current.version !== manifest.version;
-      const caches = require("./install-cache")({ safePath, writeExact, version, refusal, files: FILES });
-      const snapshots = refreshed ? await caches.snapshot(cacheRoot) : new Map();
+      if (!refreshed) return { ...result, status: "ready", rollback: null, cacheRollback: null };
+      const snapshots = await caches.snapshot(cacheRoot);
       const cacheRollback = await caches.backup(snapshots, path.join(stateRoot, "cache-rollbacks"), cacheRoot);
       phase = "package update";
       const update = await updateSource(payload, source, path.join(stateRoot, "integrated-rollbacks"));
@@ -309,9 +319,7 @@ async function install(options) {
       } finally {
         if (refreshed) await caches.restore(cacheRoot, snapshots, verified ? manifest.version : null);
       }
-      return { status: refreshed ? "installed" : "ready", pluginId, version: manifest.version,
-        pluginRoot: installed, dataDirectory, decisionctl: path.join(installed, "hooks/bin/windows-x86_64/decisionctl.exe"),
-        marketplacePath, rollback: update.rollback || cacheRollback, cacheRollback };
+      return { ...result, status: "installed", rollback: update.rollback || cacheRollback, cacheRollback };
     });
   } catch (error) {
     if (error.decisionInstaller) throw error;

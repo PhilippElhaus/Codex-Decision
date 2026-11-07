@@ -108,7 +108,8 @@ def verify_control(path, root=ROOT):
         check_bytes(archive, mapping, root)
         package = json.loads(archive.read("extension/package.json"))
         identity = ET.fromstring(archive.read("extension.vsixmanifest")).find(".//{*}Identity")
-        if identity is None or identity.get("Version") != package["version"] or identity.get("Publisher") != package["publisher"]:
+        if (identity is None or identity.get("Id") != package["name"] or
+                identity.get("Version") != package["version"] or identity.get("Publisher") != package["publisher"]):
             raise ValueError("VSIX identity differs from the control package")
         plugin = json.loads(archive.read("extension/plugin/.codex-plugin/plugin.json"))
         if plugin["version"].split("+", 1)[0] != package["codexDecisionHookVersion"]:

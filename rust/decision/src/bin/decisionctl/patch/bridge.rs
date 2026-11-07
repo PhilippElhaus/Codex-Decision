@@ -108,7 +108,7 @@ pub(super) fn bridges(repo: &Path) -> Result<Bridges, String> {
         fs::metadata(&chosen)
             .ok()
             .filter(|details| details.len() <= 64_000)
-            .and_then(|_| fs::read(&chosen).ok())
+            .and_then(|_| crate::files::read(&chosen, 64_000).ok())
             .zip(wslpath(&chosen).ok())
             .map(|(bytes, converted)| {
                 marketplace_bridge(

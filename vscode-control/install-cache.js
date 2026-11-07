@@ -35,7 +35,7 @@ module.exports = function cachePreservation({ safePath, writeExact, version, ref
         } else if (stat.isFile()) {
           budget.bytes += stat.size;
           if (stat.size > LIMITS.file || budget.bytes > LIMITS.total) throw invalid();
-          files.set(name, { filename, size: stat.size, mode: stat.mode & 0o777 });
+          files.set(name, { filename, size: stat.size, mode: stat.mode & 0o777, dev: stat.dev, ino: stat.ino });
         } else throw invalid();
       }
     }
@@ -43,10 +43,12 @@ module.exports = function cachePreservation({ safePath, writeExact, version, ref
     return { directories, files };
   }
   async function bytes(record) {
-    const file = await fs.open(await safePath(record.filename), "r");
+    const flags = fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0) | (fs.constants.O_NONBLOCK || 0);
+    const file = await fs.open(await safePath(record.filename), flags);
     try {
       const stat = await file.stat();
-      if (!stat.isFile() || stat.size !== record.size) throw invalid();
+      if (!stat.isFile() || stat.size !== record.size || stat.size > LIMITS.file ||
+          record.ino != null && (stat.ino !== record.ino || stat.dev !== record.dev)) throw invalid();
       const buffer = Buffer.alloc(record.size + 1);
       let count = 0;
       while (count < buffer.length) {
@@ -57,6 +59,12 @@ module.exports = function cachePreservation({ safePath, writeExact, version, ref
       if (count !== record.size || (await file.stat()).size !== record.size) throw invalid();
       return buffer.subarray(0, count);
     } finally { await file.close(); }
+  }
+  async function readFile(filename, limit = LIMITS.file) {
+    filename = await safePath(filename);
+    const stat = await fs.lstat(filename);
+    if (!stat.isFile() || stat.size > limit) throw refusal("Decision package file is invalid or exceeds its size limit");
+    return bytes({ filename, size: stat.size, dev: stat.dev, ino: stat.ino });
   }
   async function snapshot(cacheRoot) {
     cacheRoot = await safePath(cacheRoot);
@@ -115,12 +123,13 @@ module.exports = function cachePreservation({ safePath, writeExact, version, ref
           throw refusal("An active Decision cache changed during installation; its rollback was retained");
         }
       }
+      const created = [];
       for (const [relative, mode] of saved.directories) {
         if (present.directories.has(relative)) continue;
         const directory = await safePath(path.join(root, relative));
         try {
-          await fs.mkdir(directory, { mode, recursive: !relative });
-          if (process.platform !== "win32") await fs.chmod(directory, mode);
+          await fs.mkdir(directory, { mode: mode | 0o700, recursive: !relative });
+          created.push([directory, mode]);
         } catch (error) { if (error.code !== "EEXIST") throw error; }
       }
       for (const [relative, record] of retainedFiles) {
@@ -141,7 +150,8 @@ module.exports = function cachePreservation({ safePath, writeExact, version, ref
           await file.sync();
         } finally { await file.close(); }
       }
+      if (process.platform !== "win32") for (const [directory, mode] of created.reverse()) await fs.chmod(directory, mode);
     }
   }
-  return { snapshot, backup, restore };
+  return { snapshot, backup, restore, readFile };
 };

@@ -15,6 +15,8 @@ use std::process::Command;
 mod activity;
 #[path = "decisionctl/credentials.rs"]
 mod credentials;
+#[path = "decisionctl/files.rs"]
+mod files;
 #[path = "decisionctl/patch.rs"]
 mod patch;
 #[path = "decisionctl/release.rs"]
@@ -210,23 +212,7 @@ fn package(root: &Path) -> Result<(), String> {
 }
 
 fn read_json(path: &Path, max_bytes: u64) -> Result<Value, String> {
-    codex_decision::check_ancestors(path.parent().ok_or("missing file parent")?)?;
-    if path.is_symlink() {
-        return Err(format!("linked input: {}", path.display()));
-    }
-    let details = fs::metadata(path).map_err(|error| error.to_string())?;
-    if !details.is_file() || details.len() > max_bytes {
-        return Err("invalid input size".into());
-    }
-    let mut bytes = Vec::new();
-    fs::File::open(path)
-        .map_err(|error| error.to_string())?
-        .take(max_bytes + 1)
-        .read_to_end(&mut bytes)
-        .map_err(|error| error.to_string())?;
-    if bytes.len() as u64 > max_bytes {
-        return Err("invalid input size".into());
-    }
+    let bytes = files::read(path, max_bytes)?;
     serde_json::from_slice(&bytes).map_err(|error| error.to_string())
 }
 

@@ -11,12 +11,31 @@ import zipfile
 from scripts.verify_packages import (
     CONTROL_FILES, PLUGIN_FILES, check_public_metadata, verify_control, verify_plugin,
 )
+from scripts.stage_control import stage_control
 
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
 class PackageTests(unittest.TestCase):
+    def test_staging_rejects_missing_sources_before_creating_output(self):
+        with tempfile.TemporaryDirectory(prefix="decision-stage-preflight-") as directory:
+            root = Path(directory)
+            for name in [*("vscode-control/" + name for name in CONTROL_FILES),
+                         "vscode-control/LICENSE", "vscode-control/README.md", *PLUGIN_FILES]:
+                if name == PLUGIN_FILES[-1]:
+                    continue
+                source = root / name
+                source.parent.mkdir(parents=True, exist_ok=True)
+                source.write_bytes(b"fixture")
+            destination = root / "stage"
+            with self.assertRaisesRegex(ValueError, "Missing or linked release source"):
+                stage_control(destination, root)
+            self.assertFalse(destination.exists())
+            (root / PLUGIN_FILES[-1]).write_bytes(b"fixture")
+            stage_control(destination, root)
+            self.assertTrue((destination / "plugin" / PLUGIN_FILES[-1]).is_file())
+
     def test_release_text_rejects_internal_deployment_urls(self):
         with tempfile.TemporaryDirectory(prefix="decision-public-package-") as directory:
             filename = Path(directory) / "fixture.zip"
@@ -50,7 +69,7 @@ class PackageTests(unittest.TestCase):
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes((ROOT / source).read_bytes())
             package = json.loads((root / "vscode-control/package.json").read_text())
-            def archive(with_plugin=True):
+            def archive(with_plugin=True, identity_id=None):
                 output_path = root / "integrated.vsix"
                 with zipfile.ZipFile(output_path, "w") as output:
                     for name in CONTROL_FILES:
@@ -61,10 +80,13 @@ class PackageTests(unittest.TestCase):
                         for name in PLUGIN_FILES:
                             output.write(root / name, "extension/plugin/" + name)
                     output.writestr("[Content_Types].xml", "<Types/>")
-                    output.writestr("extension.vsixmanifest", '<Package><Identity Version="' +
-                                    package["version"] + '" Publisher="' + package["publisher"] + '"/></Package>')
+                    output.writestr("extension.vsixmanifest", '<Package><Identity Id="' +
+                                    (identity_id or package["name"]) + '" Version="' + package["version"] +
+                                    '" Publisher="' + package["publisher"] + '"/></Package>')
                 return output_path
             verify_control(archive(), root)
+            with self.assertRaisesRegex(ValueError, "identity differs"):
+                verify_control(archive(identity_id="another-extension"), root)
             with self.assertRaisesRegex(ValueError, "allowlist"):
                 verify_control(archive(with_plugin=False), root)
             manifest = root / ".codex-plugin/plugin.json"

@@ -13,6 +13,7 @@ const ROUTE: &str = "webview/assets/app-initial-9f7d97690e9b.js";
 const CONTROL: &str = "webview/assets/decision-control.js";
 const SETTINGS: &str = "webview/assets/decision-settings.js";
 const ICON: &str = "webview/assets/decision-icon.png";
+const ASSET_LIMIT: u64 = 32 * 1024 * 1024;
 const HOST_ANCHOR: &str =
     "let a=e.onDidReceiveMessage(u=>{if(s.markMessageReceived(),u.type===\"chunked-message-ack\")";
 const INDEX_ANCHOR: &str =
@@ -73,7 +74,7 @@ fn exact(root: &Path, relative: &str) -> Result<Vec<u8>, String> {
     if path.is_symlink() || !path.is_file() {
         return Err(format!("missing or linked file: {relative}"));
     }
-    fs::read(path).map_err(|error| error.to_string())
+    crate::files::read(&path, ASSET_LIMIT)
 }
 
 fn write_exact(path: &Path, bytes: &[u8]) -> Result<(), String> {

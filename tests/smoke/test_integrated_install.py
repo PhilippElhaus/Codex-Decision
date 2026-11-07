@@ -110,6 +110,42 @@ class IntegratedInstall(unittest.TestCase):
         self.assertFalse(any(args[0] == "add" for args in self.commands))
         self.assertIsNone(result["rollback"])
         self.assertFalse((self.home / ".local/state/codex-decision").exists())
+        self.assertEqual(self.commands, [["list"], ["marketplace", "list"]])
+
+    def test_oversized_package_and_source_files_refuse_before_registration(self):
+        self.existing()
+        for root in [self.payload, self.source, self.cache()]:
+            with self.subTest(location=root.name):
+                target = root / "hooks/bin/linux-x86_64/decision-hook"
+                original = target.read_bytes()
+                try:
+                    with target.open("r+b") as stream:
+                        stream.truncate(INSTALLER.cache.MAX_FILE_BYTES + 1)
+                    with self.assertRaisesRegex(ValueError, "size limit"):
+                        self.install()
+                    self.assertFalse(any(args[0] == "add" for args in self.commands))
+                finally:
+                    target.write_bytes(original)
+
+    def test_cli_metadata_stream_is_bounded_and_failed_children_are_reaped(self):
+        popen = subprocess.Popen
+        for script, expected in [
+            ("import sys; sys.stderr.write('synthetic private text'*200000); sys.stdout.buffer.write('{\\\"installed\\\":[{\\\"path\\\":\\\"/home/例/ä\\\"}]}'.encode('utf-8'))", None),
+            ("import sys,time; sys.stdout.write('x'*2000001); sys.stdout.flush(); time.sleep(5)", RuntimeError),
+            ("import time; time.sleep(5)", subprocess.TimeoutExpired),
+        ]:
+            children = []
+            def launch(_command, **options):
+                child = popen([sys.executable, "-c", script], **options)
+                children.append(child)
+                return child
+            with self.subTest(failure=expected), mock.patch.object(INSTALLER.subprocess, "Popen", side_effect=launch):
+                if expected:
+                    with self.assertRaises(expected):
+                        INSTALLER.run_codex(Path("synthetic"), ["list"], timeout=0.2)
+                else:
+                    self.assertEqual(INSTALLER.run_codex(Path("synthetic"), ["list"], timeout=2), {"installed": [{"path": "/home/例/ä"}]})
+            self.assertTrue(children and all(child.poll() is not None for child in children))
 
     def cache_state(self, root):
         return {str(item.relative_to(root)): (item.stat().st_mode & 0o777,
@@ -175,7 +211,12 @@ class IntegratedInstall(unittest.TestCase):
         source_before = (self.source / ".codex-plugin/plugin.json").read_bytes()
         private = previous / ".env"
         private.write_text("synthetic private file")
-        with mock.patch.object(INSTALLER.cache, "read_file", side_effect=AssertionError("private file must not be read")):
+        read_file = INSTALLER.cache.read_file
+        def public_read(path, *args):
+            if Path(path).is_relative_to(previous):
+                self.fail("Unsafe cache payload must not be read")
+            return read_file(path, *args)
+        with mock.patch.object(INSTALLER.cache, "read_file", side_effect=public_read):
             with self.assertRaisesRegex(ValueError, "private state"):
                 self.install()
         private.unlink()

@@ -55,14 +55,17 @@ def tree(root, safe_path):
 
 
 def read_file(path, expected, safe_path):
+    if not stat.S_ISREG(expected.st_mode) or expected.st_size > MAX_FILE_BYTES:
+        raise ValueError("Decision package file is invalid or exceeds its size limit")
     descriptor = os.open(safe_path(path), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     with os.fdopen(descriptor, "rb") as stream:
         info = os.fstat(stream.fileno())
         if not stat.S_ISREG(info.st_mode) or (info.st_dev, info.st_ino, info.st_size) != (
                 expected.st_dev, expected.st_ino, expected.st_size):
             raise ValueError("Decision cache changed during inspection")
-        data = stream.read(MAX_FILE_BYTES + 1)
-    if len(data) != expected.st_size:
+        data = stream.read(expected.st_size + 1)
+        unchanged = os.fstat(stream.fileno()).st_size == expected.st_size
+    if len(data) != expected.st_size or not unchanged:
         raise ValueError("Decision cache changed during inspection")
     return data
 

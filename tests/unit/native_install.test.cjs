@@ -21,6 +21,7 @@ async function fixture(t) {
   let current = null;
   let source = path.join(home, ".local/share/codex-decision/plugins/codex-decision");
   let roots = [];
+  let beforePrune = async () => {};
   let afterPrune = async () => {};
   async function cache() {
     const destination = path.join(codexHome, "plugins/cache", current.marketplaceName, "codex-decision", current.version);
@@ -37,6 +38,7 @@ async function fixture(t) {
     const manifest = JSON.parse(await fs.readFile(path.join(source, ".codex-plugin/plugin.json")));
     current = { name: "codex-decision", installed: true, enabled: true, pluginId: args[1],
       marketplaceName: marketplace, version: manifest.version, source: { source: "local", path: source } };
+    await beforePrune();
     await fs.rm(path.join(codexHome, "plugins/cache", marketplace, "codex-decision"), { recursive: true, force: true });
     await afterPrune();
     await cache();
@@ -44,7 +46,8 @@ async function fixture(t) {
   };
   const options = { home, codexHome, payload, codex: path.join(root, "codex.exe"), run };
   return { root, home, payload, codexHome, commands, options, cache,
-    get current() { return current; }, set roots(value) { roots = value; }, set afterPrune(value) { afterPrune = value; },
+    get current() { return current; }, set roots(value) { roots = value; },
+    set beforePrune(value) { beforePrune = value; }, set afterPrune(value) { afterPrune = value; },
     async existing(version = "1.0.0") {
       source = path.join(home, "personal/plugins/codex-decision");
       await fs.cp(payload, source, { recursive: true });
@@ -71,6 +74,19 @@ test("native fresh install registers once and repeat verification writes no pack
   assert.equal(second.status, "ready");
   assert.equal((await fs.stat(manifest)).mtimeMs, before);
   assert.equal(f.commands.filter(args => args[0] === "add").length, 0);
+  assert.deepEqual(f.commands, [["list"], ["marketplace", "list"]]);
+});
+
+test("native package and source inspection refuse oversized sparse files before registration", async t => {
+  for (const location of ["payload", "source", "cache"]) await t.test(location, async subtest => {
+    const f = await fixture(subtest), source = await f.existing();
+    const root = location === "payload" ? f.payload : location === "source" ? source
+      : path.join(f.codexHome, "plugins/cache/personal/codex-decision/1.0.0");
+    const filename = path.join(root, "hooks/bin/linux-x86_64/decision-hook");
+    await fs.truncate(filename, 32 * 1024 * 1024 + 1);
+    await assert.rejects(install(f.options), /size limit|unsafe or unknown/);
+    assert.equal(f.commands.filter(args => args[0] === "add").length, 0);
+  });
 });
 
 test("native upgrade preserves plugin identity, credentials, trust, and unknown files", async t => {
@@ -113,12 +129,25 @@ test("native upgrades retain every previous cache, extra files, empty directorie
   await fs.mkdir(path.join(older, "empty-directory"));
   const executable = path.join(previous, "hooks/bin/linux-x86_64/decision-hook");
   await fs.chmod(executable, 0o751);
+  const restrictive = path.join(older, "restricted");
+  if (process.platform !== "win32") {
+    await fs.mkdir(restrictive);
+    await fs.writeFile(path.join(restrictive, "retained"), "read only cache content");
+    await fs.chmod(restrictive, 0o555);
+    f.beforePrune = () => fs.chmod(restrictive, 0o755);
+  }
   const before = await Promise.all(FILES.map(name => fs.readFile(path.join(previous, name))));
   const result = await install(f.options);
   for (let index = 0; index < FILES.length; index++) assert.deepEqual(await fs.readFile(path.join(previous, FILES[index])), before[index]);
   assert.equal(await fs.readFile(path.join(older, "operator-notes"), "utf8"), "retain unique cache content");
   assert.equal((await fs.stat(path.join(older, "empty-directory"))).isDirectory(), true);
-  if (process.platform !== "win32") assert.equal((await fs.stat(executable)).mode & 0o777, 0o751);
+  if (process.platform !== "win32") {
+    try {
+      assert.equal((await fs.stat(executable)).mode & 0o777, 0o751);
+      assert.equal((await fs.stat(restrictive)).mode & 0o777, 0o555);
+      assert.equal(await fs.readFile(path.join(restrictive, "retained"), "utf8"), "read only cache content");
+    } finally { await fs.chmod(restrictive, 0o755); }
+  }
   assert.equal((await fs.stat(path.join(result.cacheRollback, "cache/0.8.0/operator-notes"))).isFile(), true);
   const backups = await fs.readdir(path.dirname(result.cacheRollback));
   await install(f.options);
@@ -259,6 +288,7 @@ test("Windows lock contention retries; unavailable and interrupted locks keep di
     child.stdin.once("finish", () => child.emit("exit", 0));
     const context = { module: { exports: {} }, process: { platform: "win32", env: {} }, Buffer, setTimeout, clearTimeout,
       require(request) {
+        if (request === "./install-cache") return require("../../vscode-control/install-cache");
         if (request === "node:path") return path.win32;
         if (request === "node:fs/promises") return { mkdir: async () => {},
           lstat: async () => ({ isSymbolicLink: () => false, isFile: () => true }) };

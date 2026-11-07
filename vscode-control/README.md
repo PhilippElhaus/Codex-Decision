@@ -12,7 +12,7 @@ To build the combined package, first build the native Windows binaries with `scr
 
 ```bash
 ../scripts/build_control.sh
-code --install-extension "$(wslpath -w ../.local/submission/codex-decision-0.16.1.vsix)" --force
+code --install-extension "$(wslpath -w ../.local/submission/codex-decision-0.16.2.vsix)" --force
 ```
 
 On activation, the package installs or updates the bundled Codex plugin and checks the Codex UI integration. It follows `chatgpt.runCodexInWindowsSubsystemForLinux` and uses a matching native or WSL data directory. Native Windows needs no Python or WSL. WSL uses its own plugin registration and data. It sets `codexDecision.dataDirectory` when that setting is empty. Automatically discovered data directories follow the selected Codex runtime. Each runtime retains its own settings and credentials. A successful repair adopts an existing canonical data directory for automatic runtime switching. Mismatched overrides stay unchanged. If they point to another runtime, clear `codexDecision.dataDirectory` and run **Decision: Repair Integration**. Existing plugin identity, credentials, logs, and thread settings remain in place.
@@ -26,6 +26,8 @@ Use **Decision: Check Integration** to inspect the installed build. Use **Decisi
 Decision and Chime share the selected runtime's `CODEX_HOME/plugins/.companion-install.lock` before changing plugin registrations. Kernel locks release when the owning process exits. Retained lock files do not block installation. Installer processes allow the bounded Codex CLI transaction to finish before the parent deadline.
 
 Decision backs up cached hook versions before refresh and restores older paths after a successful or failed Codex command. Start a new thread to load the selected version. Keep rollback files until verification completes.
+
+Version `0.16.2` reuses the initial verified registration on healthy checks and avoids repeated package comparisons. Installer files are limited to 32 MiB each. Python CLI metadata is limited to 2 MB under the existing command deadline and decodes as UTF-8. Patch assets also have a 32 MiB limit. Failed size or file-type checks leave the host unchanged.
 
 Temporary WSL, installer, or patch access failures receive three automatic retries after 2, 5, and 15 seconds. A successful retry ends recovery. Disposal or disabling automatic repair cancels pending retries. Deterministic configuration, permission, and security refusals do not retry. Diagnostics identify a bounded phase and failure category without forwarding OS paths or child-process output.
 
