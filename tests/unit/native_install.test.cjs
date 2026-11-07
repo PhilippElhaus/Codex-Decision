@@ -21,6 +21,7 @@ async function fixture(t) {
   let current = null;
   let source = path.join(home, ".local/share/codex-decision/plugins/codex-decision");
   let roots = [];
+  let afterPrune = async () => {};
   async function cache() {
     const destination = path.join(codexHome, "plugins/cache", current.marketplaceName, "codex-decision", current.version);
     await fs.cp(source, destination, { recursive: true });
@@ -36,12 +37,14 @@ async function fixture(t) {
     const manifest = JSON.parse(await fs.readFile(path.join(source, ".codex-plugin/plugin.json")));
     current = { name: "codex-decision", installed: true, enabled: true, pluginId: args[1],
       marketplaceName: marketplace, version: manifest.version, source: { source: "local", path: source } };
+    await fs.rm(path.join(codexHome, "plugins/cache", marketplace, "codex-decision"), { recursive: true, force: true });
+    await afterPrune();
     await cache();
     return {};
   };
   const options = { home, codexHome, payload, codex: path.join(root, "codex.exe"), run };
   return { root, home, payload, codexHome, commands, options, cache,
-    get current() { return current; }, set roots(value) { roots = value; },
+    get current() { return current; }, set roots(value) { roots = value; }, set afterPrune(value) { afterPrune = value; },
     async existing(version = "1.0.0") {
       source = path.join(home, "personal/plugins/codex-decision");
       await fs.cp(payload, source, { recursive: true });
@@ -92,6 +95,84 @@ test("native same-version damaged source and cache are repaired", async t => {
   const cache = await f.cache();
   await fs.writeFile(path.join(cache, "hooks/bin/windows-x86_64/decision-hook.exe"), "damaged");
   assert.equal((await install(f.options)).status, "installed");
+});
+
+test("native upgrades retain every previous cache, extra files, empty directories, and executable modes", async t => {
+  const f = await fixture(t);
+  await f.existing("0.9.0");
+  const cacheRoot = path.join(f.codexHome, "plugins/cache/personal/codex-decision");
+  const previous = path.join(cacheRoot, "0.9.0"), older = path.join(cacheRoot, "0.8.0");
+  await fs.cp(previous, older, { recursive: true });
+  await fs.writeFile(path.join(older, ".codex-plugin/plugin.json"), JSON.stringify({ name: "codex-decision", version: "0.8.0" }));
+  await fs.writeFile(path.join(older, "operator-notes"), "retain unique cache content");
+  await fs.mkdir(path.join(older, "empty-directory"));
+  const executable = path.join(previous, "hooks/bin/linux-x86_64/decision-hook");
+  await fs.chmod(executable, 0o751);
+  const before = await Promise.all(FILES.map(name => fs.readFile(path.join(previous, name))));
+  const result = await install(f.options);
+  for (let index = 0; index < FILES.length; index++) assert.deepEqual(await fs.readFile(path.join(previous, FILES[index])), before[index]);
+  assert.equal(await fs.readFile(path.join(older, "operator-notes"), "utf8"), "retain unique cache content");
+  assert.equal((await fs.stat(path.join(older, "empty-directory"))).isDirectory(), true);
+  if (process.platform !== "win32") assert.equal((await fs.stat(executable)).mode & 0o777, 0o751);
+  assert.equal((await fs.stat(path.join(result.cacheRollback, "cache/0.8.0/operator-notes"))).isFile(), true);
+  const backups = await fs.readdir(path.dirname(result.cacheRollback));
+  await install(f.options);
+  assert.deepEqual(await fs.readdir(path.dirname(result.cacheRollback)), backups);
+});
+
+test("failed native same-version refresh restores removed active hook paths and keeps conflict evidence", async t => {
+  const f = await fixture(t), source = await f.existing();
+  const current = path.join(f.codexHome, "plugins/cache/personal/codex-decision/1.0.0");
+  const binary = path.join(current, "hooks/bin/windows-x86_64/decision-hook.exe");
+  const original = await fs.readFile(binary);
+  await fs.writeFile(path.join(source, "hooks/hooks.json"), "repair needed");
+  f.afterPrune = async () => { throw new Error("synthetic add failure"); };
+  await assert.rejects(install(f.options));
+  assert.deepEqual(await fs.readFile(binary), original);
+  f.afterPrune = async () => {
+    await fs.mkdir(path.dirname(binary), { recursive: true });
+    await fs.writeFile(binary, "concurrent unique bytes");
+    throw new Error("synthetic add failure");
+  };
+  await fs.writeFile(path.join(source, "hooks/hooks.json"), "repair needed again");
+  await assert.rejects(install(f.options), /active Decision cache changed/);
+  assert.equal(await fs.readFile(binary, "utf8"), "concurrent unique bytes");
+  const backups = path.join(f.home, ".local/state/codex-decision/cache-rollbacks");
+  assert((await fs.readdir(backups)).length >= 2);
+});
+
+test("native cache refresh rejects sensitive files, inconsistent ownership, and linked extras before source mutation", async t => {
+  const f = await fixture(t), source = await f.existing("0.9.0");
+  const cache = path.join(f.codexHome, "plugins/cache/personal/codex-decision/0.9.0");
+  const before = await fs.readFile(path.join(source, ".codex-plugin/plugin.json"));
+  const sensitive = path.join(cache, ".env");
+  await fs.writeFile(sensitive, "synthetic secret-shaped file");
+  await assert.rejects(install(f.options), /unsafe or unknown/);
+  await fs.unlink(sensitive);
+  const manifest = path.join(cache, ".codex-plugin/plugin.json");
+  await fs.writeFile(manifest, JSON.stringify({ name: "unrelated", version: "0.9.0" }));
+  await assert.rejects(install(f.options), /unsafe or unknown/);
+  await fs.writeFile(manifest, before);
+  await fs.symlink(f.payload, path.join(cache, "linked"), process.platform === "win32" ? "junction" : "dir");
+  await assert.rejects(install(f.options), /links or junctions/);
+  assert.deepEqual(await fs.readFile(path.join(source, ".codex-plugin/plugin.json")), before);
+  assert.equal(f.commands.filter(args => args[0] === "add").length, 0);
+});
+
+test("native cache recovery refuses a surviving hook whose executable mode changed", { skip: process.platform === "win32" }, async t => {
+  const f = await fixture(t);
+  await f.existing("0.9.0");
+  const hook = path.join(f.codexHome, "plugins/cache/personal/codex-decision/0.9.0/hooks/bin/linux-x86_64/decision-hook");
+  const original = await fs.readFile(hook);
+  await fs.chmod(hook, 0o755);
+  f.afterPrune = async () => {
+    await fs.mkdir(path.dirname(hook), { recursive: true });
+    await fs.writeFile(hook, original);
+    await fs.chmod(hook, 0o600);
+    throw new Error("synthetic add failure");
+  };
+  await assert.rejects(install(f.options), /active Decision cache changed/);
+  assert.equal((await fs.stat(hook)).mode & 0o777, 0o600);
 });
 
 test("native mismatched data path, disabled plugin, and downgrade refuse before package writes", async t => {

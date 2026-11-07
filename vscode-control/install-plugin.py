@@ -4,6 +4,7 @@ import argparse
 from contextlib import contextmanager
 import errno
 import fcntl
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -21,6 +22,9 @@ FILES = (
     "hooks/bin/windows-x86_64/decision-hook.exe", "hooks/bin/windows-x86_64/decisionctl.exe",
     "assets/logo.png", "assets/icon.png", "config.example.json", "LICENSE",
 )
+_CACHE_SPEC = importlib.util.spec_from_file_location("decision_install_cache", Path(__file__).with_name("install_cache.py"))
+cache = importlib.util.module_from_spec(_CACHE_SPEC)
+_CACHE_SPEC.loader.exec_module(cache)
 
 
 def safe_path(path):
@@ -84,7 +88,7 @@ def write_exact(path, data, executable=False):
             os.unlink(temporary)
 
 
-def update_source(payload, source, backup_root):
+def source_changes(payload, source):
     source = safe_path(source)
     if source.exists() and not source.is_dir() or any((root / ".git").exists() for root in (source, *source.parents)):
         raise ValueError("Decision cannot overwrite a development repository")
@@ -96,12 +100,17 @@ def update_source(payload, source, backup_root):
             raise ValueError("The Decision VSIX has an incomplete hook payload")
         if target.exists() and not target.is_file():
             raise ValueError("Invalid Decision package destination")
-        if not target.exists() or target.read_bytes() != incoming.read_bytes() or (
+        if not target.exists() or target.stat().st_size != incoming.stat().st_size or target.read_bytes() != incoming.read_bytes() or (
                 filename.startswith("hooks/bin/") and not target.stat().st_mode & 0o111):
             changed.append(filename)
+    return changed
+
+
+def update_source(payload, source, backup_root, changed=None, rollback=None):
+    changed = source_changes(payload, source) if changed is None else changed
     if not changed:
-        return False, None
-    rollback = None
+        return False, rollback
+    rollback = Path(rollback) if rollback else None
     for filename in changed:
         target = source / filename
         if target.exists():
@@ -184,27 +193,38 @@ def install(payload, codex, home=None, codex_home=None, run=run_codex, data_dire
             raise ValueError("Decision installation state must remain outside D:")
     backup_root = safe_path(home / ".local/state/codex-decision/integrated-rollbacks")
     report_phase("package update")
-    changed, rollback = update_source(payload, source, backup_root)
-    if registration_needed:
-        write_exact(path, (json.dumps(metadata, indent=2) + "\n").encode())
-        run(codex, ["marketplace", "add", str(marketplace_root)])
-    installed = safe_path(codex_home / "plugins/cache" / marketplace / PLUGIN / version)
+    planned = source_changes(payload, source)
+    cache_root = safe_path(codex_home / "plugins/cache" / marketplace / PLUGIN)
+    installed = safe_path(cache_root / version)
     cache_matches = all(safe_path(installed / filename).is_file() and
+                        (installed / filename).stat().st_size == (payload / filename).stat().st_size and
                         (installed / filename).read_bytes() == (payload / filename).read_bytes() and
                         (not filename.startswith("hooks/bin/") or (installed / filename).stat().st_mode & 0o111)
                         for filename in FILES)
-    refreshed = registration_needed or changed or not cache_matches or current.get("version") != version
-    if refreshed:
-        report_phase("Codex plugin registration")
-        run(codex, ["add", plugin_id])
-    report_phase("installed package verification")
-    selected = existing_plugin(run(codex, ["list"]))
-    if not selected or selected.get("pluginId") != plugin_id or selected.get("version") != version or selected.get("enabled") is not True:
-        raise RuntimeError("Codex did not activate the packaged Decision version")
-    for filename in FILES:
-        target = safe_path(installed / filename)
-        if not target.is_file() or target.read_bytes() != (payload / filename).read_bytes():
-            raise RuntimeError("Codex cached Decision package differs from the VSIX")
+    refreshed = registration_needed or bool(planned) or not cache_matches or current.get("version") != version
+    snapshots = cache.snapshot(cache_root, safe_path, version_tuple, PLUGIN) if refreshed else {}
+    rollback = cache.save(snapshots, backup_root, cache_root, source, safe_path, write_exact)
+    verified = False
+    try:
+        _, rollback = update_source(payload, source, backup_root, planned, rollback)
+        if registration_needed:
+            write_exact(path, (json.dumps(metadata, indent=2) + "\n").encode())
+            run(codex, ["marketplace", "add", str(marketplace_root)])
+        if refreshed:
+            report_phase("Codex plugin registration")
+            run(codex, ["add", plugin_id])
+        report_phase("installed package verification")
+        selected = existing_plugin(run(codex, ["list"]))
+        if not selected or selected.get("pluginId") != plugin_id or selected.get("version") != version or selected.get("enabled") is not True:
+            raise RuntimeError("Codex did not activate the packaged Decision version")
+        for filename in FILES:
+            target = safe_path(installed / filename)
+            if (not target.is_file() or target.stat().st_size != (payload / filename).stat().st_size or
+                    target.read_bytes() != (payload / filename).read_bytes()):
+                raise RuntimeError("Codex cached Decision package differs from the VSIX")
+        verified = True
+    finally:
+        cache.restore(cache_root, snapshots, version if verified else None, safe_path)
     return {"status": "installed" if refreshed else "ready", "pluginId": plugin_id,
             "version": version, "pluginRoot": str(installed),
             "dataDirectory": str(expected_data_directory),

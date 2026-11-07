@@ -25,6 +25,8 @@ Use **Decision: Check Integration** to inspect the installed build. Use **Decisi
 
 Decision and Chime share the selected runtime's `CODEX_HOME/plugins/.companion-install.lock` before changing plugin registrations. Kernel locks release when the owning process exits. Retained lock files do not block installation. Installer processes allow the bounded Codex CLI transaction to finish before the parent deadline.
 
+Decision backs up cached hook versions before refresh and restores older paths after a successful or failed Codex command. Start a new thread to load the selected version. Keep rollback files until verification completes.
+
 Temporary WSL, installer, or patch access failures receive three automatic retries after 2, 5, and 15 seconds. A successful retry ends recovery. Disposal or disabling automatic repair cancels pending retries. Deterministic configuration, permission, and security refusals do not retry. Diagnostics identify a bounded phase and failure category without forwarding OS paths or child-process output.
 
 Version `0.16.0` adds optional response-model validation and scoped public CA trust to custom providers. Provider endpoint, model, authentication, and certificate values are entered by the user. See the [verification notes](https://github.com/PhilippElhaus/Codex-Decision/blob/main/docs/development/custom_providers_0.16.0.md).

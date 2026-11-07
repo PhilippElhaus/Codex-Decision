@@ -16,6 +16,8 @@ Temporary installation failures retry after 2, 5, and 15 seconds when automatic 
 
 Decision and Chime use the same `CODEX_HOME/plugins/.companion-install.lock` for the selected runtime. A companion waits up to 15 seconds for the other installer, then retries automatically. The kernel releases ownership when the process exits. Keep the retained lock file in place. The installer deadline allows the existing bounded CLI transaction to finish.
 
+The Decision installer backs up cached hook versions before a refresh. It restores older cache paths after Codex completes or fails the refresh. Existing threads can keep their recorded paths; new threads load the selected version. Keep the installation rollback files until the update is verified.
+
 Each patch command waits up to 10 seconds for another Decision check or repair to release its lock. This prevents concurrent VS Code windows from reporting a busy error during normal verification. The kernel releases the lock when its process exits. If contention continues, Decision reports the diagnostic before writing any Codex files. Run **Decision: Repair Integration** to retry.
 
 Open `/hooks` in the environment that runs your tools. Review **Codex Decision → PostToolUse** if Codex requires trust, then open a local thread. Codex binds trust to the hook definition; the integrated installer never edits its trust database. Verify the hook after an update:

@@ -22,6 +22,8 @@ Use **Decision: Check Integration** for status and **Decision: Repair Integratio
 
 Decision and Chime serialize plugin installation through one lock in the selected Codex runtime. Temporary installation, patch, or WSL access failures retry automatically after 2, 5, and 15 seconds. Persistent failures identify the phase without exposing private process output. Configuration and security refusals remain visible immediately.
 
+Decision retains older cached hook versions after a plugin refresh, including a failed refresh. Existing threads can keep their recorded hook paths. Start a new thread to load the updated hook.
+
 From `0.15.1`, Decision checks this repository's GitHub Releases daily and installs newer stable VSIX packages automatically. It verifies the download against GitHub's SHA-256 digest, then offers **Reload Window**. Run **Decision: Check for Updates** to check immediately. Turn off `codexDecision.autoUpdate` in VS Code settings to use manual updates. Install `0.15.1` once through VSIX to enable this updater on an older machine.
 
 Decision `0.14.1` cannot integrate with Codex `26.1021.22027`. Install Decision `0.15.0` or later, reload VS Code, and run **Decision: Repair Integration**. See [startup recovery](docs/setup/setup_installation.md#recover-after-a-codex-update) if Codex also reports that its user interface could not start.

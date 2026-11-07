@@ -84,7 +84,9 @@ async function writeExact(filename, bytes) {
 async function matches(root, payload) {
   for (const filename of FILES) {
     const target = await safePath(path.join(root, filename));
-    if (!(await info(target))?.isFile() || !(await fs.readFile(target)).equals(payload.get(filename))) return false;
+    const stat = await info(target);
+    if (!stat?.isFile() || stat.size !== payload.get(filename).length ||
+        !(await fs.readFile(target)).equals(payload.get(filename))) return false;
   }
   return true;
 }
@@ -284,22 +286,32 @@ async function install(options) {
       if (options.dataDirectory && !samePath(await safePath(options.dataDirectory), dataDirectory)) throw refusal("Decision dataDirectory does not match the active Codex plugin; correct it before repair");
       offWorkspace(source);
       await secureDirectory(dataDirectory);
+      const cacheRoot = path.join(codexHome, "plugins/cache", marketplace, PLUGIN);
+      const installed = path.join(cacheRoot, manifest.version);
+      const refreshed = !current || !await matches(source, payload) || !await matches(installed, payload) || current.version !== manifest.version;
+      const caches = require("./install-cache")({ safePath, writeExact, version, refusal });
+      const snapshots = refreshed ? await caches.snapshot(cacheRoot) : new Map();
+      const cacheRollback = await caches.backup(snapshots, path.join(stateRoot, "cache-rollbacks"), cacheRoot);
       phase = "package update";
       const update = await updateSource(payload, source, path.join(stateRoot, "integrated-rollbacks"));
-      if (!current) {
-        await writeExact(marketplacePath, Buffer.from(JSON.stringify(metadata, null, 2) + "\n"));
-        await run(options.codex, ["marketplace", "add", marketplaceRoot]);
+      let verified = false;
+      try {
+        if (!current) {
+          await writeExact(marketplacePath, Buffer.from(JSON.stringify(metadata, null, 2) + "\n"));
+          await run(options.codex, ["marketplace", "add", marketplaceRoot]);
+        }
+        if (refreshed) { phase = "Codex plugin registration"; await run(options.codex, ["add", pluginId]); }
+        phase = "installed package verification";
+        const selected = existing(await run(options.codex, ["list"]));
+        if (!selected || selected.pluginId !== pluginId || selected.version !== manifest.version || selected.enabled !== true) throw refusal("Codex did not activate the packaged Decision version");
+        if (!await matches(installed, payload)) throw refusal("Codex cached Decision package differs from the VSIX");
+        verified = true;
+      } finally {
+        if (refreshed) await caches.restore(cacheRoot, snapshots, verified ? manifest.version : null);
       }
-      const installed = path.join(codexHome, "plugins/cache", marketplace, PLUGIN, manifest.version);
-      const refreshed = !current || update.changed || !await matches(installed, payload) || current.version !== manifest.version;
-      if (refreshed) { phase = "Codex plugin registration"; await run(options.codex, ["add", pluginId]); }
-      phase = "installed package verification";
-      const selected = existing(await run(options.codex, ["list"]));
-      if (!selected || selected.pluginId !== pluginId || selected.version !== manifest.version || selected.enabled !== true) throw refusal("Codex did not activate the packaged Decision version");
-      if (!await matches(installed, payload)) throw refusal("Codex cached Decision package differs from the VSIX");
       return { status: refreshed ? "installed" : "ready", pluginId, version: manifest.version,
         pluginRoot: installed, dataDirectory, decisionctl: path.join(installed, "hooks/bin/windows-x86_64/decisionctl.exe"),
-        marketplacePath, rollback: update.rollback };
+        marketplacePath, rollback: update.rollback || cacheRollback, cacheRollback };
     });
   } catch (error) {
     if (error.decisionInstaller) throw error;

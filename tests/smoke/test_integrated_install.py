@@ -9,6 +9,7 @@ import tempfile
 import subprocess
 import sys
 import unittest
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -28,6 +29,7 @@ class IntegratedInstall(unittest.TestCase):
         self.source = self.home / "plugins/codex-decision"
         self.current = None
         self.commands = []
+        self.fail_add = False
         for filename in INSTALLER.FILES:
             target = self.payload / filename
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -66,6 +68,12 @@ class IntegratedInstall(unittest.TestCase):
             if not self.current:
                 self.source = self.home / ".local/share/codex-decision/plugins/codex-decision"
             version = json.loads((self.source / ".codex-plugin/plugin.json").read_text())["version"]
+            # Real Codex prunes the plugin's entire cache before adding it.
+            cache_root = self.codex_home / "plugins/cache" / marketplace / "codex-decision"
+            if cache_root.exists():
+                shutil.rmtree(cache_root)
+            if self.fail_add:
+                raise RuntimeError("synthetic add failure after cache pruning")
             self.current = {"pluginId": args[1], "name": "codex-decision", "marketplaceName": marketplace,
                             "version": version, "installed": True, "enabled": True,
                             "source": {"source": "local", "path": str(self.source)}}
@@ -99,6 +107,68 @@ class IntegratedInstall(unittest.TestCase):
         self.existing()
         result = self.install()
         self.assertEqual(result["status"], "ready")
+        self.assertFalse(any(args[0] == "add" for args in self.commands))
+        self.assertIsNone(result["rollback"])
+        self.assertFalse((self.home / ".local/state/codex-decision").exists())
+
+    def cache_state(self, root):
+        return {str(item.relative_to(root)): (item.stat().st_mode & 0o777,
+                item.read_bytes() if item.is_file() else None)
+                for item in [root, *root.rglob("*")]}
+
+    def test_pruned_older_caches_retain_all_bytes_empty_directories_and_modes(self):
+        self.existing("0.9.0")
+        previous = self.cache()
+        (previous / "operator-notes.txt").write_bytes(b"synthetic retained cache extension")
+        (previous / "hooks/bin/linux-x86_64/decision-hook").chmod(0o750)
+        (previous / "empty-directory").mkdir(mode=0o700)
+        older = previous.parent / "0.8.0+retained"
+        shutil.copytree(previous, older)
+        (older / ".codex-plugin/plugin.json").write_text(json.dumps({"name": "codex-decision", "version": older.name}))
+        before = {root.name: self.cache_state(root) for root in [previous, older]}
+        result = self.install()
+        for root in [previous, older]:
+            self.assertEqual(self.cache_state(root), before[root.name])
+        backup = Path(result["rollback"])
+        self.assertEqual((backup / "cache" / previous.name / "operator-notes.txt").read_bytes(),
+                         (previous / "operator-notes.txt").read_bytes())
+        self.assertTrue((backup / "cache-state.json").is_file())
+
+    def test_add_failure_restores_pruned_upgrade_and_same_version_caches(self):
+        for version in ["0.9.0", "1.0.0"]:
+            with self.subTest(version=version):
+                if self.source.exists():
+                    shutil.rmtree(self.source)
+                self.existing(version)
+                previous = self.cache()
+                hook = previous / "hooks/bin/linux-x86_64/decision-hook"
+                hook.write_bytes(b"old active executable")
+                hook.chmod(0o750)
+                before = self.cache_state(previous)
+                self.fail_add = True
+                with self.assertRaisesRegex(RuntimeError, "after cache pruning"):
+                    self.install()
+                self.assertEqual(self.cache_state(previous), before)
+
+    def test_cache_links_private_files_and_invalid_ownership_refuse_before_writes(self):
+        self.existing("0.9.0")
+        previous = self.cache()
+        source_before = (self.source / ".codex-plugin/plugin.json").read_bytes()
+        private = previous / ".env"
+        private.write_text("synthetic private file")
+        with mock.patch.object(INSTALLER.cache, "read_file", side_effect=AssertionError("private file must not be read")):
+            with self.assertRaisesRegex(ValueError, "private state"):
+                self.install()
+        private.unlink()
+        link = previous / "linked-file"
+        link.symlink_to(self.payload / "LICENSE")
+        with self.assertRaisesRegex(ValueError, "symbolic links"):
+            self.install()
+        link.unlink()
+        (previous / ".codex-plugin/plugin.json").write_text(json.dumps({"name": "unrelated", "version": "0.9.0"}))
+        with self.assertRaisesRegex(ValueError, "ownership"):
+            self.install()
+        self.assertEqual((self.source / ".codex-plugin/plugin.json").read_bytes(), source_before)
         self.assertFalse(any(args[0] == "add" for args in self.commands))
 
     def test_same_version_source_and_cache_damage_is_repaired(self):
