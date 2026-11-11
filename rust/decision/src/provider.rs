@@ -110,14 +110,32 @@ pub fn wire_request_for(request: &Value, protocol: Provider) -> Result<Value, St
                 answer["choices"] = Value::Array(choices);
                 answer
             }
+            Some("score") => {
+                let levels = question["criteria"]
+                    .as_array()
+                    .ok_or("missing score levels")?;
+                if !(2..=10).contains(&levels.len()) || levels.iter().any(|v| !v.is_string()) {
+                    return Err("invalid score levels".into());
+                }
+                json!({"name":name,"type":"score","levels":levels.iter().enumerate()
+                    .map(|(i, description)| json!({"label":i.to_string(),"description":description})).collect::<Vec<_>>()})
+            }
             _ => return Err("unsupported decision question".into()),
         };
         answer["instructions"] = Value::String(instructions);
         ordered.push(answer);
     }
     let mut wire = json!({"model":request["model"],"input":null,"questions":[]});
-    wire["input"] = Value::String(request["state"].to_string());
+    wire["input"] = request
+        .get("input")
+        .cloned()
+        .unwrap_or_else(|| Value::String(request["state"].to_string()));
     wire["questions"] = Value::Array(ordered);
+    for field in ["prompt_cache_key", "prompt_cache_options"] {
+        if let Some(value) = request.get(field) {
+            wire[field] = value.clone();
+        }
+    }
     Ok(wire)
 }
 

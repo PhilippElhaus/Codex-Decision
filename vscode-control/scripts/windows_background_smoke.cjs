@@ -104,14 +104,33 @@ async function main() {
     assert.equal((await panel.readPanelActivity(selected)).skipped, 1);
     result.checks.push("packaged panel readers load native snapshots and hook activity without a desktop window");
 
+    const assistance = require(path.join(control, "assistance-client.js"));
+    const nativeRuntime = { command: path.join(first.pluginRoot, "hooks/bin/windows-x86_64/decision-hook.exe"), args: [],
+      env: { ...process.env, PLUGIN_DATA: first.dataDirectory } };
+    const handshake = await assistance.runProcess(nativeRuntime.command, ["--mcp"], { env: nativeRuntime.env,
+      input: [JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18" } }),
+        JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list" })].join("\n") + "\n" });
+    const mcp = handshake.trim().split("\n").map(line => JSON.parse(line));
+    assert.equal(mcp[0].result.serverInfo.version, version);
+    assert.deepEqual(mcp[1].result.tools.map(tool => tool.name), ["rank_context", "triage_failure", "verify_completion"]);
+    await assistance.request(nativeRuntime, { version: 1, completion_verification: "observe" }, { flag: "--assistance-settings" });
+    const review = JSON.parse(await fs.readFile(path.join(first.dataDirectory, "assistance.json")));
+    assert.equal(review.completion_verification, "observe");
+    await assistance.request(nativeRuntime, { version: 1, completion_verification: "off" }, { flag: "--assistance-settings" });
+    const delivery = require(path.join(control, "delivery-report.js"));
+    const measurements = await delivery.readDeliveryReport(selected);
+    assert.equal(measurements.delivery, "unverified");
+    assert.equal(measurements.causal_savings, null);
+    result.checks.push("packaged MCP lists all three advisory tools; native completion settings round-trip; usage report preserves delivery uncertainty");
+
     const hostManifest = JSON.parse(await fs.readFile(path.join(host, "package.json")));
     result.codexVersion = hostManifest.version;
     result.controlVersion = controlPackage.version;
     result.version = version;
     const imageModules = (await fs.readdir(path.join(host, "webview/assets"))).filter(name => /^use-plugins-[a-f0-9]+\.js$/.test(name));
-    assert.equal(imageModules.length, 1, "the fixture must contain one reviewed image module");
-    const assets = ["out/extension.js", "webview/index.html", `webview/assets/${imageModules[0]}`,
-      "webview/assets/chunk-KS7C4IRE-c36c021bd659.js"];
+    const assets = hostManifest.version === "26.1007.21434"
+      ? ["out/extension.js", "webview/index.html", "webview/assets/app-initial-c014f9ee4429.js", "webview/assets/app-initial-97d3534ad35f.js"]
+      : ["out/extension.js", "webview/index.html", `webview/assets/${imageModules[0]}`, "webview/assets/chunk-KS7C4IRE-c36c021bd659.js"];
     const hostFiles = assets.map(filename => path.join(host, filename));
     const original = await fingerprint(hostFiles);
     const rollbackParent = path.join(process.env.LOCALAPPDATA, "Codex/codex-decision/rollback");

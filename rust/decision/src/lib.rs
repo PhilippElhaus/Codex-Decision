@@ -1,6 +1,7 @@
 //! Exact-line Decision decisions and shared input validation. Network and hook I/O live in the binaries.
 
 pub mod activity_counters;
+pub mod assistance;
 pub mod contract;
 pub mod provider;
 pub mod publication_contract;

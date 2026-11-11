@@ -113,8 +113,6 @@ def chromium_capture() -> None:
             for state, name, height, count, expected in (
                 ('fifty', 'decision-panel.png', 900, 50, ('47 / 50 removed',)),
                 ('fifty&totals', 'decision-totals.png', 900, 0, ('This thread', 'Why outputs were skipped', 'Observed outputs')),
-                ('reviewed', 'decision-demo-tests.png', 520, 20,
-                 ('119 / 124 removed', 'actual: 6000')),
             ):
                 page = browser.new_page(viewport={'width': 1200, 'height': height})
                 page.goto((ROOT.parent / 'tests/browser/decision_panel_harness.html').as_uri() + f'?{state}&capture')
@@ -202,8 +200,6 @@ def main() -> None:
         for state, name, height, row_count, expected in (
             ('fifty', 'decision-panel.png', 900, 50, ('47 / 50 removed',)),
                 ('fifty&totals', 'decision-totals.png', 900, 0, ('This thread', 'Why outputs were skipped', 'Observed outputs')),
-            ('reviewed', 'decision-demo-tests.png', 520, 20,
-             ('119 / 124 removed', 'actual: 6000')),
         ):
             panel = IMAGES / name
             result = subprocess.run([

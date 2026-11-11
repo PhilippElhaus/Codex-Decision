@@ -98,6 +98,10 @@ use record::*;
 #[path = "decision-hook/pipeline.rs"]
 mod pipeline;
 use pipeline::*;
+#[path = "decision-hook/assistance_runtime.rs"]
+mod assistance_runtime;
+#[path = "decision-hook/lifecycle.rs"]
+mod lifecycle;
 #[cfg(test)]
 #[path = "decision-hook/tests.rs"]
 mod tests;
@@ -105,6 +109,18 @@ mod tests;
 fn main() {
     if std::env::args().nth(1).as_deref() == Some("--version") {
         println!("decision-hook {}", env!("CARGO_PKG_VERSION"));
+        return;
+    }
+    if let Some(argument) = std::env::args().nth(1) {
+        let result = match argument.as_str() {
+            "--mcp" => assistance_runtime::mcp(),
+            "--assist" | "--assistance-settings" => assistance_runtime::command(&argument),
+            _ => Err("unsupported hook argument".into()),
+        };
+        if result.is_err() {
+            eprintln!("Decision assistance could not complete; check configuration and provider availability.");
+            std::process::exit(2);
+        }
         return;
     }
     let answer = execute().unwrap_or_else(|error| {

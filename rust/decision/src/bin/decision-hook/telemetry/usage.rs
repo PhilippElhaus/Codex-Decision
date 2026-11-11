@@ -185,6 +185,7 @@ pub(crate) fn request(
         } else {
             "invalid_response"
         };
+        let cache = codex_decision::assistance::usage(usage);
         invocation.emit("request", json!({"request_index":invocation.request_count,
             "stage":if request.pointer("/questions/output_kind/type").and_then(Value::as_str) == Some("choice")
                 { "classification" } else { "relevance" },
@@ -193,8 +194,16 @@ pub(crate) fn request(
             "request_bytes":request_bytes,"response_bytes":response_bytes,"http_status":http_status,
             "outcome":outcome,"error_code":error.map(error_code),
             "input_tokens":usage.and_then(|u| u["input_tokens"].as_u64()),
-            "output_tokens":usage.and_then(|u| u["output_tokens"].as_u64())}));
+            "output_tokens":usage.and_then(|u| u["output_tokens"].as_u64()),
+            "cached_tokens":cache["cached_tokens"],"cache_write_tokens":cache["cache_write_tokens"]}));
     });
+}
+
+pub(crate) fn observation(scoped: &Path, mut row: Value, never_delete: bool) {
+    row["version"] = json!(1);
+    row["hook_version"] = json!(env!("CARGO_PKG_VERSION"));
+    row["at"] = json!(Utc::now().to_rfc3339());
+    let _ = log::append_named(scoped, &row, never_delete, "model-requests.jsonl");
 }
 
 fn tool_family(tool: &str) -> &'static str {

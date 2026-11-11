@@ -61,6 +61,12 @@ pub(super) fn execute() -> Result<Value, String> {
     if !config.enabled {
         return Ok(json!({}));
     }
+    if matches!(
+        event["hook_event_name"].as_str(),
+        Some("PreModelRequest" | "PostModelRequest" | "Stop")
+    ) {
+        return lifecycle::process(&data_dir, &scoped, &event, &config);
+    }
     ensure_dir(&data_dir.join("sessions"))?;
     hook_health(&scoped, "seen", "")?;
     let result = process_event(&data_dir, &scoped, &event, &config);
@@ -81,6 +87,7 @@ pub(super) fn process_event(
     usage::start(scoped, event, config);
     let result = process_event_inner(data_dir, scoped, event, config);
     usage::finish(&result);
+    lifecycle::output(scoped, event, config, &result);
     result
 }
 

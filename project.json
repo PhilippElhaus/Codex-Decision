@@ -1,0 +1,25 @@
+{
+  "name": "decision",
+  "root": ".",
+  "targets": {
+    "build-test-runtime": { "command": "cargo test --locked -p codex-decision --no-run" },
+    "test-node": { "command": "python scripts/tia/run.py node", "dependsOn": ["build-test-runtime"] },
+    "test-python": { "command": "python scripts/tia/run.py python" },
+    "test-rust": { "command": "python scripts/tia/run.py rust" },
+    "test-node-full": { "command": "python scripts/tia/run.py node --full", "cache": true, "dependsOn": ["build-test-runtime"] },
+    "test-python-full": { "command": "python scripts/tia/run.py python --full", "cache": true },
+    "test-rust-full": { "command": "python scripts/tia/run.py rust --full", "cache": true },
+    "collect-node": { "command": "python scripts/tia/run.py node --collect", "dependsOn": ["build-test-runtime"] },
+    "collect-python": { "command": "python scripts/tia/run.py python --collect" },
+    "collect-rust": { "command": "python scripts/tia/run.py rust --collect" },
+    "test-browser": {
+      "command": "python scripts/tia/gates.py browser"
+    },
+    "test-quality": {
+      "command": "python scripts/tia/gates.py quality"
+    },
+    "test-package": {
+      "command": "python -m unittest tests.smoke.test_packages tests.smoke.test_integrated_install"
+    }
+  }
+}

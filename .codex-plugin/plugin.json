@@ -1,7 +1,7 @@
 {
   "name": "codex-decision",
-  "version": "0.16.2",
-  "description": "One Decision switch for line-by-line filtering of supported local tool output.",
+  "version": "0.17.0",
+  "description": "Decision output filtering, context ranking, failure triage, and completion evidence review.",
   "author": {
     "name": "Philipp Elhaus",
     "url": "https://github.com/PhilippElhaus"

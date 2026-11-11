@@ -1,6 +1,9 @@
 {
-  "description": "One line-level Codex Decision PostToolUse filter. Controlled by the session enabled flag.",
+  "description": "Decision output filtering, model usage observations, and opt-in completion verification. Controlled by the session enabled flag.",
   "hooks": {
+    "PreModelRequest": [{ "hooks": [{ "type": "command", "command": "\"$PLUGIN_ROOT/hooks/bin/linux-x86_64/decision-hook\"", "commandWindows": "& \"$env:PLUGIN_ROOT/hooks/bin/windows-x86_64/decision-hook.exe\"", "timeout": 5 }] }],
+    "PostModelRequest": [{ "hooks": [{ "type": "command", "command": "\"$PLUGIN_ROOT/hooks/bin/linux-x86_64/decision-hook\"", "commandWindows": "& \"$env:PLUGIN_ROOT/hooks/bin/windows-x86_64/decision-hook.exe\"", "timeout": 5 }] }],
+    "Stop": [{ "hooks": [{ "type": "command", "command": "\"$PLUGIN_ROOT/hooks/bin/linux-x86_64/decision-hook\"", "commandWindows": "& \"$env:PLUGIN_ROOT/hooks/bin/windows-x86_64/decision-hook.exe\"", "timeout": 20, "statusMessage": "Reviewing completion evidence" }] }],
     "PostToolUse": [
       {
         "matcher": "*",

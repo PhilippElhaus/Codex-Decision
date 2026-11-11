@@ -111,7 +111,9 @@ test("failed reads are evicted and unstable captured snapshots are not cached", 
   const read = createActivityReader(async () => {
     reads += 1;
     if (reads === 1) throw new Error("synthetic read failure");
-    if (reads === 2) await write("stats.json", { ...stats, calls: 4 });
+    // Change the size as well as the value. A same-size rewrite can retain
+    // identical timestamps on filesystems with a coarse clock.
+    if (reads === 2) await write("stats.json", { ...stats, calls: 40 });
     return { reads };
   });
   await assert.rejects(read(directory), /synthetic read failure/);

@@ -16,7 +16,27 @@ pub fn encode_request_for(request: &Value, protocol: Provider) -> Result<Vec<u8>
         return Err("missing custom provider protocol".into());
     }
     if protocol == Provider::TypeSafe {
-        return serde_json::to_vec(request).map_err(|_| "request encoding".into());
+        if ["input", "prompt_cache_key", "prompt_cache_options"]
+            .iter()
+            .all(|k| request.get(k).is_none())
+        {
+            return serde_json::to_vec(request).map_err(|_| "request encoding".into());
+        }
+        let mut wire = request.clone();
+        for field in ["input", "prompt_cache_key", "prompt_cache_options"] {
+            wire.as_object_mut().ok_or("invalid request")?.remove(field);
+        }
+        return serde_json::to_vec(&wire).map_err(|_| "request encoding".into());
+    }
+    // Structured assistance requests use the same canonical projection and
+    // exact budget checks. Keep the filtering packer's streaming fast path.
+    if request.get("input").is_some()
+        || request["questions"]
+            .as_object()
+            .is_some_and(|q| q.values().any(|q| q["type"] == "score"))
+    {
+        return serde_json::to_vec(&super::wire_request_for(request, protocol)?)
+            .map_err(|_| "request encoding".into());
     }
     let questions = request["questions"]
         .as_object()

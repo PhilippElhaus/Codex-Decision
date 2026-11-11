@@ -16,6 +16,7 @@ PLUGIN_FILES = (
     "assets/logo.png", "assets/icon.png", "config.example.json", "LICENSE",
 )
 CONTROL_FILES = (
+    "assistance.js", "assistance-client.js", "delivery-report.js",
     "config-contract.json", "core.js", "activity-cache.js", "extension.js", "icon.png", "package.json",
     "integration.js", "integrated-install.js", "install-plugin.py", "install_cache.py", "install-plugin-native.js", "install-cache.js", "updates.js",
     "patch-assets/host-bridge.jsfrag", "patch-assets/route-bridge.jsfrag",

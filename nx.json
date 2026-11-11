@@ -1,0 +1,17 @@
+{
+  "$schema": "./node_modules/nx/schemas/nx-schema.json",
+  "defaultBase": "main",
+  "neverConnectToCloud": true,
+  "analytics": false,
+  "useDaemonProcess": false,
+  "parallel": 2,
+  "namedInputs": {
+    "all": ["{workspaceRoot}/**/*", "!{workspaceRoot}/.local/**/*", "!{workspaceRoot}/target/**/*", "!{workspaceRoot}/node_modules/**/*", "!{workspaceRoot}/.nx/**/*"],
+    "runtime": [
+      { "runtime": "python scripts/tia/context.py" }
+    ]
+  },
+  "targetDefaults": {
+    "nx:run-commands": { "inputs": ["all", "runtime"], "cache": false }
+  }
+}

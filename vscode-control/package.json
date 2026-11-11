@@ -2,8 +2,8 @@
   "name": "codex-decision-control",
   "displayName": "Codex Decision",
   "description": "Integrated Decision hook, session controls, and automatic Codex UI repair",
-  "version": "0.16.2",
-  "codexDecisionHookVersion": "0.16.2",
+  "version": "0.17.0",
+  "codexDecisionHookVersion": "0.17.0",
   "publisher": "elhaus-labs",
   "license": "MIT",
   "icon": "icon.png",
@@ -26,6 +26,12 @@
   ],
   "contributes": {
     "commands": [
+      { "command": "codexDecision.registerMcp", "title": "Decision: Register MCP Tools in Codex" },
+      { "command": "codexDecision.rankContext", "title": "Decision: Rank Context" },
+      { "command": "codexDecision.triageFailure", "title": "Decision: Triage Test Failure" },
+      { "command": "codexDecision.verifyCompletion", "title": "Decision: Verify Completion Claims" },
+      { "command": "codexDecision.configureCompletionReview", "title": "Decision: Configure Completion Verification" },
+      { "command": "codexDecision.showUsageMeasurements", "title": "Decision: Show Usage Measurements" },
       {
         "command": "codexDecision.checkConnection",
         "title": "Decision: Check API and Key"

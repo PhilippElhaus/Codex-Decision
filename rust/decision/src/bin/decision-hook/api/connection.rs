@@ -13,6 +13,9 @@ pub(crate) struct Connection {
 }
 
 impl Connection {
+    pub(crate) fn protocol(&self) -> Provider {
+        self.protocol
+    }
     pub(crate) fn load(data_dir: &Path, config: &Config) -> Result<Self, String> {
         if config.provider != Provider::Custom {
             return Ok(Self {

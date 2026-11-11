@@ -1,89 +1,27 @@
-# Codex Decision control for VS Code
+# Codex Decision for VS Code
 
-This integrated extension contains the local Decision hook, skill, composer control, settings, and bottom-panel view. Windows VS Code runs the native Windows x86_64 hook by default. It uses the Linux x86_64 hook when Codex runs in WSL. Existing Decision data and per-thread choices remain in place.
+The integrated extension contains the native Decision hook, skill, composer control, settings, and bottom panel. Windows runs the native x86_64 hook by default. Codex's WSL execution setting selects the Linux x86_64 runtime and its own data store.
 
-Custom connections can pin a response model separately from a request alias and trust a supplied public PEM CA certificate for private HTTPS. See the [provider setup](https://github.com/PhilippElhaus/Codex-Decision/blob/main/docs/setup/setup_credentials.md#model-aliases-and-private-https).
+Install the release VSIX through **Extensions → … → Install from VSIX…** in Visual Studio Code. Reload after integration repair. Review the current hook in `/hooks` when Codex requires trust. Use **Decision: Check Integration** for diagnostics and **Decision: Repair Integration** to retry or reopen the panel.
 
-## Install
+Connect through OpenAI Decisions, TypeSafe Jev, or a compatible custom endpoint. Saved secrets stay private. Click **decision** to change the selected thread. Settings apply to the installation. The panel provides Latest, Totals, and optional local skipped-output capture.
 
-Install the release VSIX in **Visual Studio Code** on Windows. Open **Extensions** (`Ctrl+Shift+X`), select **… → Install from VSIX…**, and choose the downloaded file. If double-clicking the file opens **Visual Studio VSIX Installer**, close that installer and use the VS Code menu.
+Unknown or changed Codex assets are refused before patching. Repairs preserve runtime rollback copies and cached paths needed by existing threads. Start a new thread to load an updated hook. Automatic stable-release updates verify size and SHA-256, then offer a reload. Disable `codexDecision.autoUpdate` for manual checks.
 
-To build the combined package, first build the native Windows binaries with `scripts/build_hook_windows.ps1`, then build and package from Linux or WSL:
+Prepared hook output does not establish delivered context or token savings. Code-mode wrappers can still print original nested results.
 
-```bash
-../scripts/build_control.sh
-code --install-extension "$(wslpath -w ../.local/submission/codex-decision-0.16.2.vsix)" --force
-```
+Current guides:
 
-On activation, the package installs or updates the bundled Codex plugin and checks the Codex UI integration. It follows `chatgpt.runCodexInWindowsSubsystemForLinux` and uses a matching native or WSL data directory. Native Windows needs no Python or WSL. WSL uses its own plugin registration and data. It sets `codexDecision.dataDirectory` when that setting is empty. Automatically discovered data directories follow the selected Codex runtime. Each runtime retains its own settings and credentials. A successful repair adopts an existing canonical data directory for automatic runtime switching. Mismatched overrides stay unchanged. If they point to another runtime, clear `codexDecision.dataDirectory` and run **Decision: Repair Integration**. Existing plugin identity, credentials, logs, and thread settings remain in place.
+- [Context ranking and Codex MCP registration](https://github.com/PhilippElhaus/Codex-Decision/blob/main/docs/reference/context-ranking.md)
+- [Failure triage in Test Explorer](https://github.com/PhilippElhaus/Codex-Decision/blob/main/docs/reference/failure-triage.md)
+- [Opt-in completion verification](https://github.com/PhilippElhaus/Codex-Decision/blob/main/docs/reference/completion-verification.md)
 
-The integrated patch supports Codex builds `26.928.31416`, `26.930.21537`, `26.930.31730`, `26.930.41038`, `26.930.51102`, `26.930.61225`, `26.1002.51308`, `26.1007.21434`, `26.1021.22027`, and preview `26.51021.22027`. A different package version can use a reviewed profile only when all four original assets match that profile's exact hashes. Repairs remain serialized and retain rollback files under the user's local Codex directory. Unknown or modified assets produce a diagnostic and remain unchanged. A healthy patch causes no rewrite.
+- [Install and recover](https://github.com/PhilippElhaus/Codex-Decision/blob/main/docs/setup/installation.md)
+- [Configure providers](https://github.com/PhilippElhaus/Codex-Decision/blob/main/docs/setup/providers.md)
+- [Use the composer and panel](https://github.com/PhilippElhaus/Codex-Decision/blob/main/docs/reference/usage.md)
+- [Privacy](https://github.com/PhilippElhaus/Codex-Decision/blob/main/docs/reference/privacy.md)
+- [VS Code architecture and supported patch profiles](https://github.com/PhilippElhaus/Codex-Decision/blob/main/docs/architecture/vscode.md)
+- [Measure effectiveness](https://github.com/PhilippElhaus/Codex-Decision/blob/main/docs/operations/measurement.md)
+- [Build and verify](https://github.com/PhilippElhaus/Codex-Decision/blob/main/docs/development/builds.md)
 
-After the repair, run **Developer: Reload Window**. Open a local Codex thread. Review the hook in `/hooks` if its definition needs trust; the installer does not edit Codex trust records.
-
-Use **Decision: Check Integration** to inspect the installed build. Use **Decision: Repair Integration** to retry and reopen the Decision panel. Automatic repair runs at startup and after a Codex extension change. Set `codexDecision.autoRepairIntegration` to `false` to use manual repair only. No separate plugin ZIP or manual patch command is required.
-
-Decision and Chime share the selected runtime's `CODEX_HOME/plugins/.companion-install.lock` before changing plugin registrations. Kernel locks release when the owning process exits. Retained lock files do not block installation. Installer processes allow the bounded Codex CLI transaction to finish before the parent deadline.
-
-Decision backs up cached hook versions before refresh and restores older paths after a successful or failed Codex command. Start a new thread to load the selected version. Keep rollback files until verification completes.
-
-Version `0.16.2` reuses the initial verified registration on healthy checks and avoids repeated package comparisons. Installer files are limited to 32 MiB each. Python CLI metadata is limited to 2 MB under the existing command deadline and decodes as UTF-8. Patch assets also have a 32 MiB limit. Failed size or file-type checks leave the host unchanged.
-
-Temporary WSL, installer, or patch access failures receive three automatic retries after 2, 5, and 15 seconds. A successful retry ends recovery. Disposal or disabling automatic repair cancels pending retries. Deterministic configuration, permission, and security refusals do not retry. Diagnostics identify a bounded phase and failure category without forwarding OS paths or child-process output.
-
-Version `0.16.0` adds optional response-model validation and scoped public CA trust to custom providers. Provider endpoint, model, authentication, and certificate values are entered by the user. See the [verification notes](https://github.com/PhilippElhaus/Codex-Decision/blob/main/docs/development/custom_providers_0.16.0.md).
-
-Version `0.15.2` bundles hook `0.15.2`. Settings use one credential snapshot, composer and panel share unchanged activity reads, and the hook reuses validated output envelopes. Private bounded telemetry records request outcomes, timings, sizes, and current relevance counts. See the [maintenance notes](https://github.com/PhilippElhaus/Codex-Decision/blob/main/docs/development/maintenance_0.15.2.md).
-
-Version `0.15.1` added the loaded control and bundled hook versions to **Decision Integration** diagnostics. An unsupported Codex version reports the VSIX update, reload, and repair steps. Decision `0.14.1` needs an update for Codex `26.1021.22027`; updating only the hook plugin cannot replace the VS Code extension's checker. See [startup recovery](https://github.com/PhilippElhaus/Codex-Decision/blob/main/docs/setup/setup_installation.md#recover-after-a-codex-update).
-
-The control also checks GitHub Releases daily and automatically installs newer stable VSIX packages after size and SHA-256 verification. It offers **Reload Window** after installation. Use **Decision: Check for Updates** to check now, or disable `codexDecision.autoUpdate` in user settings for manual updates. The first update from an older control requires a manual VSIX install. Automatic checks do not run in development or extension-test instances. Offline checks leave the installed version in place. See **Decision Updates** in Output for status.
-
-## Rollback
-
-Keep the previous complete package and the per-build patch rollback directory. Reinstalling an older VSIX replaces the control, but the installer deliberately refuses to downgrade a newer hook. Hook rollback needs a verified restoration of the prior package and Codex registration; no automatic downgrade command is provided. The integrated source backups contain only changed files and are not a complete installation restore. Restore a composer patch with its matching `decisionctl patch-webview restore` and preserved rollback directory. Preserve plugin data, credentials, saved originals, and trust records. Verify the selected plugin version and exact package bytes before using a restored control.
-
-## Use
-
-Connect through **OpenAI Decisions**, **TypeSafe Jev**, or **Custom provider** in onboarding or Decision settings. Custom connections accept either decision schema, a full endpoint URL, a model, and bearer, Basic, named-header, or no authentication. Saved secrets stay private and are reused only for the same endpoint and authentication identity. Custom connections do not use automatic fallback. See [provider setup](https://github.com/PhilippElhaus/Codex-Decision/blob/main/docs/setup/setup_credentials.md).
-
-Use **Show skipped output** to capture future skips. You can change it before you open a thread. This sets the default for new threads; each thread keeps its own choice. Expand an entry to see the tool input and full response. Hover over the info button for storage details. Each new raw result stays visible for at least three seconds. Later results wait in a queue. When work ends, the panel shows a long remaining queue together. Click or focus an entry to pause live updates while you inspect it. Select **Resume live** to continue. Capture and its queue stay local, with a limit of 20 calls and 4 MiB. Older queued captures can expire while inspection is paused. Turn the switch off to stop capture.
-
-Click **decision** to turn filtering on or off for all supported tool output in the current thread. There is no integration popup. Each Codex session has its own enabled flag, decisions, counters, and hook status. The pinned patch reads the active session ID from Codex's internal router, even when the webview URL does not change. State lives under `PLUGIN_DATA/sessions/<session-hash>/`; a new local session starts enabled, and later choices are preserved. On the home screen, the button is disabled until a thread opens. A local thread with an unreadable ID cannot change another session's state. The API key in `PLUGIN_DATA/.env` and behavior settings in `PLUGIN_DATA/settings.json` are shared across this installation.
-
-Legacy schema-2/3/4 session configs and schema-1/2/3 shared settings remain readable. Any enabled old switch enables Decision. Migration starts with a relevance cutoff no higher than 5% and preserves stricter old bounds. The next save writes schema 5 for the session or schema 4 for shared settings. Known formats use local validation. Unknown formats keep the conservative classification gate. The old gate switch is retired.
-
-Each open Codex view keeps its own control state. A home view or another thread in the same VS Code window cannot reset the active thread's color, counters, or selection. Older status replies cannot replace newer ones. Each selection waits for its host acknowledgement before accepting another click. If the host does not reply within ten seconds, the activity tooltip reports the connection failure and the control offers Retry.
-
-When enabled, the indicator reflects API and hook health. It is green when healthy, red for an API, hook, configuration, or view failure, and amber while checking or waiting for verification. The button is gray when off or without a thread. API checks continue in both states and have a separate tooltip label. A newer normal skip or successful evaluation clears an older hook error. Saved same-version activity survives a reload. An earlier-version receipt requests verification in amber; a fresh mismatched receipt reports failure. An API check does not verify hook trust; review `/hooks` after installing or updating the hook. After a minute without recorded hook activity, the tooltip explains recovery. Windows WSL paths receive private Linux permissions, including existing session folders created by older controls. Short, sensitive, and unsupported results are intentionally skipped.
-
-Open **Codex settings → Decision** from any screen to choose Monitor or Filter, adjust the shared relevance cutoff, save and test each provider’s key, switch providers, and open the plugin data directory. Blank key fields preserve saved keys. **Use the other provider if needed** enables one fallback after a missing primary key or a provider failure. It starts off; enabling it permits eligible text to reach either provider. Local safety and storage failures never trigger fallback. These settings apply to every session. Monitor records decisions but leaves full output visible. Filter can shorten only eligible text after the local evidence checks pass; every shortened result links to its exact original.
-
-The **Decision** panel sits beside Output and Terminal. **Latest** shows the selected thread’s latest line decision. **Totals** shows its saved output, request, evaluation, removal, and skip-reason counts. The selected view survives a reload and stays selected when you switch threads. API attempts and completion counters are restored from the same thread records in the panel and composer; they do not reset when you return to a thread. The settings page’s **All sessions** summary aggregates those same request attempts, including pending and failed requests. Reopen it through **View → Open View… → Decision: Latest decision**. It shows every line from the latest result in the active session, including protected lines and cumulative judgments from all batches. The sticky header shows removed/total lines after filtering, or proposed removals for a preview. Its upper-right corner always shows this thread’s API request and skipped-output counts. The counts refresh while a decision is displayed, without restarting the line animation. Blue rows were cut and gold rows were kept. The selected thread's latest decision remains available after reloading VS Code. Switching threads refreshes the panel immediately. Line rows appear after the first relevance batch; a classification that keeps the full output produces no line rows. Check the composer tooltip for the latest skip reason and hook health. Judged rows show the actual Decision task-relevance probability. Protected and pending rows show an em dash and explain why they are kept. Historical rows use a visual retention index; hover for their recorded probabilities. The panel snapshot contains bounded excerpts, not the full output. Replacements and payload estimates describe the hook’s committed output. The UI marks consumer delivery as unverified because code-mode wrappers can still return the original result. These counts do not establish context reduction or billed-token savings.
-
-## Verify
-
-The control packs each judged line into a single row. A ten-character bar and a 0–100% value show its score. Columns adapt to the panel width. Hover for the full excerpt, precise probability, and reason. Known command envelopes in code-mode `exec` and `wait` can be shortened. Metadata stays protected, and a complete typed original is saved. The panel labels previews explicitly.
-
-Version 0.13.0 also validates matching duplicate command envelopes and serialized
-homogeneous command-result batches, including fulfilled `Promise.allSettled`
-results. Each member retains metadata and output boundaries. Unknown or rejected
-members, mismatched duplicates, mixed media, and coupled structures keep the
-complete batch. Passing Cargo test names and exact zero-valued diagnostic
-counters can reach relevance judgments while real diagnostics stay protected.
-
-```bash
-npm test
-python3 scripts/browser_smoke.py
-../hooks/bin/linux-x86_64/decisionctl check-hook-trust --cwd ..
-```
-
-The browser harnesses use the real composer, settings, and panel code with synthetic, key-free data. Each new Codex build requires a verified patch profile. Unsupported updates are reported instead of silently losing the integration.
-
-The header keeps this thread's API request and skipped-output counts visible before and after line decisions. API requests count hook attempts, including pending or failed requests, and exclude the separate connection check. Older sessions retain their recorded count at upgrade. The empty panel explains the latest skip or hook error. A classification that keeps full output is reported explicitly. The tooltip also shows the latest skip reason. A skipped result confirms hook activity; it does not confirm an API request. After a Codex extension update, apply the patch to the new extension directory. Each supported build has its own checked hashes and rollback directory.
-
-The composer briefly glows blue once at the start of output evaluation. Relevance calls, batch completions, and API connection checks do not flash. Each start is consumed once per view, so repeated status replies cannot restart the pulse.
-
-The composer keeps its indicator on the toolbar row. Tight gaps reduce its padding and show only the dot. If the controls leave less than 11 px, the indicator hides until space returns. It never moves over the prompt.
-
-The composer tooltip and panel use the same latest hook outcome and saved request/skip counts. The panel displays that outcome even while retaining an earlier line evaluation. Activity updates preserve the existing rows and animation state. The indicator and tooltip sit below Codex dropdown menu layers.
+From this directory, `npm test` runs the existing Node suite. Repository-level Nx commands and function-coverage collection are documented in the [test guide](https://github.com/PhilippElhaus/Codex-Decision/blob/main/tests/README.md).

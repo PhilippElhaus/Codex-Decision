@@ -95,6 +95,25 @@ pub(super) fn quoted_size<T: serde::Serialize + ?Sized>(value: &T) -> Result<usi
 }
 
 pub(super) fn request_budget(request: &Value) -> Result<RequestBudget, String> {
+    if request.get("input").is_some()
+        || request["questions"]
+            .as_object()
+            .is_some_and(|q| q.values().any(|q| q["type"] == "score"))
+    {
+        let wire = crate::provider::wire_request_for(request, crate::provider::Provider::OpenAi)?;
+        let questions = wire["questions"].as_array().ok_or("missing questions")?;
+        let longest = questions
+            .iter()
+            .map(encoded_size)
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .max()
+            .ok_or("empty questions")?;
+        return Ok(RequestBudget {
+            state_longest_question_bound: encoded_size(&wire["input"])? + longest + TOKEN_HEADROOM,
+            whole_request_bound: encoded_size(&wire)? + TOKEN_HEADROOM,
+        });
+    }
     let questions = request["questions"]
         .as_object()
         .ok_or("missing questions")?;

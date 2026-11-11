@@ -73,6 +73,26 @@ fn normalize_wire_response(
             question["type"].as_str(),
             answer.get("type").and_then(Value::as_str),
         ) {
+            (Some("score"), Some("score")) if answer.len() == 5 => {
+                let rows = answer
+                    .remove("probabilities")
+                    .ok_or("missing score probabilities")?;
+                let mut probabilities = Map::new();
+                for row in rows.as_array().ok_or("invalid score probabilities")? {
+                    let index = row["label"].as_str().ok_or("invalid score label")?;
+                    if row.as_object().is_none_or(|r| r.len() != 3)
+                        || row["value"].as_u64().map(|v| v.to_string()).as_deref() != Some(index)
+                        || probabilities
+                            .insert(index.into(), row["probability"].clone())
+                            .is_some()
+                    {
+                        return Err("invalid score probability".into());
+                    }
+                }
+                answer.remove("name");
+                answer.insert("probabilities".into(), Value::Object(probabilities));
+                named.insert(name.clone(), Value::Object(answer));
+            }
             (Some("noul"), Some("predicate")) if answer.len() == 3 => {
                 let (mut key, probability) = answer
                     .remove_entry("probability")

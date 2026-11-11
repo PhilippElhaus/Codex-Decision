@@ -7,6 +7,18 @@ const RETAINED: usize = 3 * 1024 * 1024;
 const ROW_LIMIT: usize = 4096;
 
 pub(super) fn append(scoped: &Path, value: &Value, never_delete: bool) -> Result<(), String> {
+    append_named(scoped, value, never_delete, "telemetry.jsonl")
+}
+
+pub(super) fn append_named(
+    scoped: &Path,
+    value: &Value,
+    never_delete: bool,
+    name: &str,
+) -> Result<(), String> {
+    if !["telemetry.jsonl", "model-requests.jsonl"].contains(&name) {
+        return Err("invalid metadata log".into());
+    }
     let mut bytes = serde_json::to_vec(value).map_err(|_| "telemetry encoding")?;
     if bytes.len() >= ROW_LIMIT {
         return Err("telemetry row too large".into());
@@ -16,7 +28,7 @@ pub(super) fn append(scoped: &Path, value: &Value, never_delete: bool) -> Result
     ensure_dir(&logs)?;
     // Never wait for a filter transaction or extend its request deadline.
     let _lock = try_telemetry_lock(&logs)?;
-    let path = logs.join("telemetry.jsonl");
+    let path = logs.join(name);
     if path.is_symlink() {
         return Err("linked telemetry".into());
     }

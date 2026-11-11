@@ -1,280 +1,66 @@
 # Tests
 
-[Verify](../.github/workflows/verify.yml) runs on pushes to `main` and pull requests.
-It selects stable Rust, Node 22, and Python 3.12 explicitly. Linux runs the full
-Rust suite with `umask 022` and repeats telemetry checks with `umask 077`.
-Windows covers native installation, activity caching, provider credentials,
-publication, retained records, telemetry, and atomic writes. Native CLI checks
-cover bounded reads and oversized Codex patch assets. Chromium checks the
-actual webview scripts and panel fixtures.
+The [Verify workflow](../.github/workflows/verify.yml) uses stable Rust, Node 22, Python 3.12, Linux, native Windows, and Chromium. Keep Cargo, Node's built-in runner, and unittest. Tests use synthetic provider replies and UI data; offline validation needs no API key.
 
-`npm test --prefix vscode-control` discovers Node tests recursively under
-`tests/`, including nested concerns and `end2end`, `edgecase`, or `regression`
-directories when present. Activity concerns live in `tests/unit/activity/`;
-extension scenarios live in `tests/integration/extension/`. The original
-`core.test.cjs` and `extension.test.cjs` workers import their own `.cases.cjs`
-modules in original declaration order. Discovery selects only `.test.cjs`
-entrypoints, so imported cases register once and process globals stay sequential.
-Count authored declarations in the reachable case modules as well as entrypoints.
-Keep the existing `e2e`, `edge`, and `load` names. The long composer scenario
-retains one ordered lifecycle. Shared VS Code loader mocks restore the loader
-in `finally`.
+## Run native suites
 
-Cargo keeps private-code tests beside their modules and integration discovery
-under `rust/decision/tests/`. Provider budgets, encoding, models, and response
-parity share the `providers` target. Custom-provider and native process targets
-remain separate. Strict JSON parsing has one library owner. Its unit tests run
-once; hook and CLI boundary regressions remain. The example/default contract now
-runs in Node, without starting Node from Python.
-
-Pull requests and main run the complete offline, browser, Windows, and package
-checks. Hook, bridge, webview, configuration, fixtures, and packaging consumers
-cross language and process boundaries. They include dynamic loading and file
-reads. The reviewed impact-analysis prototype selected 44 of 46 Node files and
-all task groups in its three partial real-repository plans; the remaining real
-changes fell back to full validation. Its 3.9–4.3 second WSL inventory overhead
-did not justify maintaining the selector. Both task-level and test-level
-selection therefore fall back to the complete repository suite. Unknown,
-deleted, fixture, and configuration changes receive that same coverage. No
-history fetch, persisted analysis cache, or extra scheduled workflow is needed.
-
-Keep native Cargo, `node:test`, and unittest unless a compatible runner
-experiment shows a measured benefit; rstest's unittest support alone does not
-establish a speedup. Existing permission, publication/interruption, provider
-failure, native-target, and production-package gates remain mandatory.
-Windows lint covers all Cargo targets. Unix-only test imports and helpers use
-the same platform guards as their consumers.
-
-After these checks pass, the package job downloads this run's freshly built
-Windows production runtime and builds the Linux production runtime. It verifies
-the plugin ZIP and integrated VSIX against the release allowlists, source bytes,
-versions, and binary targets. GitHub retains verified packages and available
-offline or browser failure reports for seven days. These CI artifacts are
-validation outputs; the workflow does not publish a GitHub release.
-
-The integrated VSIX must pass the background native package check before release:
-
-```powershell
-pwsh -NoProfile -File .\vscode-control\scripts\windows_background_smoke.ps1 `
-  -Vsix .\.local\submission\codex-decision-0.16.2.vsix
-```
-
-This check opens no editor windows. It uses native Node, the actual packaged
-Windows runtime, isolated Codex state, and copied hash-pinned host files. It
-verifies installation, one registration, exact cached files, concurrent and
-repeated checks, hook stdin under PowerShell 7 and Windows PowerShell 5.1,
-private hook activity, panel data, patch repair, and exact restoration. It
-preserves the user's installed extensions, credentials, and chats.
-
-The optional desktop check launches VS Code windows. Run it only when an
-interactive desktop test is authorized:
-
-```powershell
-pwsh -NoProfile -File .\vscode-control\scripts\windows_integrated_smoke.ps1 `
-  -Vsix .\.local\submission\codex-decision-0.16.2.vsix -Distro Ubuntu
-```
-
-Add `-Native` to select Windows execution. The native fixture rejects WSL
-calls. A minimized webview can defer rendering while its document is hidden;
-this is the same queue behavior checked by the headless browser harness.
-Use the browser checks below for background rendering validation.
-
-Run the current release checks from the repository root. The offline tests use synthetic tool output and provider replies; they do not need an API key.
-
-Updater tests use synthetic GitHub responses and a stub VS Code installer. They check stable-version selection, exact release assets, SHA-256 and size mismatches, HTTPS redirects, response bounds, deadlines, cancellation, daily checks, manual checks, reload behavior, and temporary-file cleanup. Development and test extension hosts must not start automatic downloads. A release check can also download and verify the public VSIX without installing it into the user's VS Code profile.
-
-Provider fallback tests exercise both directions, missing keys, malformed answers, failed later batches, and two maximum-length keys. They verify one complete-provider retry, exact originals, retained attempts, and no fallback across local safety checks. Fallback stays off for existing configurations.
-
-Custom-provider regressions cover both decision schemas, independent request and response model IDs, supported authentication methods, credential identity changes, malformed replies, and full-output preservation. Real loopback HTTPS tests verify scoped public CA trust, certificate and hostname rejection, redirects, deadlines, response bounds, and large shared settings. The synthetic TLS key is public test data with no deployment use. Raw-skip tests cover opt-in capture, per-thread state, exact tool input and response, bounded retention, unavailable payloads, and private path checks. Browser checks exercise the custom connection fields in onboarding and settings, plus the panel checkbox and raw inspector with synthetic data.
-
-Run a read-only effectiveness audit with `node scripts/usage_effectiveness_audit.cjs --data-dir <PLUGIN_DATA> --codex-sessions <CODEX_HOME/sessions> --observation-date YYYY-MM-DD`. Add `--since YYYY-MM-DDTHH:MM:SSZ` for a recent retained-event slice. The report separates partial history, bounded output participation, classification-only API usage, committed hook payloads, and observed omission headers. It does not read credentials, contact a provider, or establish delivered token savings from receipts alone. See the [2026-10-17 audit](../docs/development/usage_effectiveness_2026-10-17.md) for scope and limits.
-
-Run `node scripts/telemetry_audit.cjs --data-dir <absolute-PLUGIN_DATA> [--since <UTC-ISO-timestamp>]` for the metadata-only retained-window audit. It reports invocation and request outcomes, HTTP statuses, byte counts, token usage coverage, fallback, incomplete correlations, and bounded latency distributions. Old installations have no telemetry files; zero retained records do not establish zero activity. Tests cover privacy redaction, partial windows, duplicate and malformed rows, bounded reads, and linked-file rejection. See [data handling](../docs/architecture/design_data.md) for collection and retention limits.
-
-Use `cargo bench --locked -p codex-decision --bench pipeline -- all` for offline CPU and allocation measurements. Use `equivalence` instead of `all` to print fingerprints for 1,000 seeded complete packing cases. Give before and after builds different `CARGO_TARGET_DIR` paths. Compare fingerprints before interpreting timing results.
-
-Run `node scripts/pipeline_stress.cjs --hook <verification-hook> --rounds 32 --concurrency 4` to exercise a shared session through real hook processes. The loopback mock uses synthetic credentials. The runner checks exact readable and typed originals, completed panels, counters, deliberate failures, and a managed-log bound. Use `--minutes 45` for a timed run or `--provider typesafe` for the second wire format. Use `--faults http,json,oversize,probability,model,timeout` to rotate protocol and deadline failures. Use `--jitter-ms 20` to vary response timing. Use `--allow-deadline` only for a constrained debug pressure test; it separately verifies full-result fallback and rollback at request or invocation deadlines. Unexpected mock errors still fail the run. Each group completes before the next begins. Millisecond latency buckets use bounded memory. Its disposable fixture stays off D: and removes only verified task files. See the [pipeline optimization report](../docs/development/pipeline_optimization_2026-10-07.md) for current evidence and limits.
+From the repository root:
 
 ```bash
-CARGO_TARGET_DIR="$HOME/.cache/codex-decision/cargo-target" cargo test --locked -p codex-decision
-CARGO_TARGET_DIR="$HOME/.cache/codex-decision/cargo-target" cargo clippy --locked --all-targets -- -D warnings
+cargo test --locked -p codex-decision
+cargo clippy --locked --all-targets -- -D warnings
 npm test --prefix vscode-control
-python3 -m unittest discover -s tests -p 'test_*.py'
-python3 vscode-control/scripts/browser_smoke.py
-# Linux CI and Lab-Control (requires Playwright with Chromium):
-python3 vscode-control/scripts/browser_smoke.py --browser chromium
+python -m unittest discover -s tests -p 'test_*.py'
 ```
 
-In Lab-Control, keep the default temporary directory for installer data. Set `CODEX_DECISION_TEST_EXECUTABLE_TMP_ROOT` to an ignored directory under `/workspace/.local/` for the Python executable fixture; the container's `/tmp` mount does not permit execution.
-Set `DECISIONCTL_TEST` to the freshly built `decisionctl` when using a custom
-Cargo target directory. Otherwise the retained-history differential test can
-skip when its default verification binary is absent.
+Set `DECISIONCTL_TEST` to the freshly built `decisionctl` when the Cargo target directory is nonstandard. This prevents the retained-history differential check from skipping for a missing verification binary.
 
-Rust process tests launch the real hook against a local mock API. They cover routing, exact saved originals, incomplete and failed batches, Choice gate keep/filter/error paths, protected lines, malformed config, shared settings, private hook status, release versions, hook trust inspection, the pinned Codex webview patch, and two simultaneous session IDs with separate enabled flags and records. Node tests carry the pinned host bridge through the extension command to saved selections, cover synchronous command lookup failures and rejected commands, and cover the control bridge, shared settings without a thread, aggregated activity, one-time enabled defaults, preserved per-session choices, configuration and key validation, bounded log reads, panel validation, and connection errors. The browser smoke test renders the actual composer and settings scripts in Edge at four widths and checks internal thread changes without a URL change, plus healthy and failed API states, missing host replies, selection recovery, and home-screen settings. The panel harness renders the current version-6 cumulative relevance view, protected and pending rows, and historical version-3/4 snapshots. It checks result shrink and growth, changed source text and scores, animation restart, and clearing and restoring the panel. Python tests validate documentation links and default config values. The hardening regressions cover concurrent writes in separate processes, linked directory chains, oversized response streams, failed receipt publication, held log locks, physical-line limits, and focused-panel selection. [CI](../.github/workflows/verify.yml) runs the offline Rust, Node, and Python checks, builds and verifies both packages, and runs the real webview harnesses in Chromium. Edge is an optional native desktop check; Chromium supplies the background rendering check. Patch lifecycle tests use explicit fixture path conversion and run their assertions on Linux without WSL. Activity tests cover atomic log replacement, retained tails, and truncation. Settings tests drop replies, reject late replies, and throw from the transport to verify recovery.
-
-To exercise the installed hook, run `decisionctl check-hook-trust --cwd <repository>` after installation and after every update. Then start a new Codex thread and run a local command with more than 256 characters of ordinary text while Decision is enabled. The control should be green after the API check; a completed decision appears in this session's logs. A key test checks the API only.
-
-Use the reviewed output corpus below for live checks. The runner reads the installed key only in memory and sends synthetic output. Review receipts with `decisionctl evaluate-quality --cases <private JSON>` before changing cutoffs. Old ignored live Rust tests have been replaced by this runner; they assumed the retired request shape and copied a key file into a fixture.
-
-Regenerate README screenshots with `python3 vscode-control/scripts/capture_docs.py`. The capture loads the real webviews through the visual and panel harnesses. It checks current relevance totals and the dated historical failing-test batch. The settings image shows the current 5% relevance cutoff. The fixtures contain no real keys or private conversations.
-
-Composer and panel regressions restore identical saved request/skip counts and latest hook outcomes across reloads and thread switches. Browser checks cover an error followed by a normal skip, retained errors, old-version verification, navigation, and activity-only updates that preserve line rows. Hit tests verify that Codex menu layers cover the indicator and its focused tooltip, then release the control when closed.
-
-Migration checks cover all eight legacy switch combinations, conservative cutoff merging, invalid legacy fields, and saving only the current schema. Browser checks assert the single accessible switch, absence of the popup, and one shared relevance cutoff.
-
-Run the reviewed dummy corpus against the debug hook:
+Use Nx for task and function-level selection:
 
 ```bash
-# All seven splits and one complete fault suite for each provider:
-node scripts/dummy_matrix.cjs --hook <debug-hook> --jobs 2 --out .local/quality/dummy-matrix
-# Individual splits or bounded live checks:
-node scripts/two_stage_quality.cjs --out .local/two-stage/offline
-node scripts/two_stage_quality.cjs --holdout --skip-faults --out .local/two-stage/offline-holdout
-node scripts/two_stage_quality.cjs --batching --skip-faults --out .local/two-stage/offline-batching
-node scripts/two_stage_quality.cjs --precision --skip-faults --out .local/two-stage/offline-precision
-node scripts/two_stage_quality.cjs --precision-holdout --skip-faults --out .local/two-stage/offline-precision-holdout
-node scripts/two_stage_quality.cjs --coverage --skip-faults --out .local/two-stage/offline-coverage
-node scripts/two_stage_quality.cjs --classification-holdout --skip-faults --out .local/two-stage/offline-classification
-node scripts/two_stage_quality.cjs --live --data-dir <installed-PLUGIN_DATA> --out .local/two-stage/live
-node scripts/two_stage_quality.cjs --live --holdout --data-dir <installed-PLUGIN_DATA> --out .local/two-stage/live-holdout
+npm ci
+npm run tia:collect
+npm test
+npm run test:affected -- --base=main --head=HEAD
+npm run test:full -- --skip-nx-cache
 ```
 
-Live runs use the installed key only in the proxy process memory. The hook uses a synthetic proxy key in an owned temporary directory. Only reviewed dummy output reaches the selected provider. A run stops at 120 HTTP calls or 500,000 returned usage tokens by default. Use `--case <id>` for one case and `--relevance-max <0..100>` for a cutoff trial. Reports separate proposed evidence loss from actual loss and check exact saved originals. The runner also saves a CLI quality audit that replays cutoffs with the real local protection rules. Fault runs assert that invalid answers publish no receipt, partial panel, or replacement. These tests prove application behavior for the fixtures, not universal model accuracy.
+See [test impact analysis](../docs/development/test-impact.md) for coverage collection, precise native identities, baseline validity, and full-suite fallback. Rust function collection requires the active toolchain's `llvm-tools-preview` component. Main collects complete native suites. Pull requests select functions when evidence is valid. Missing, shared, dynamic, or uncertain evidence runs full suites. Browser, native Windows, provider-failure, interruption, publication, and package gates remain complete.
 
-Batching fixtures cover 251–10,000 lines, long target text, Unicode, escaped JSON, ANSI/CRLF, and unpackable context. All emitted requests must fit both conservative API token bounds. The runner checks exactly-once coverage and complete target text. Later-batch fault cases verify rollback after an earlier valid relevance batch. The current panel accepts complete version-6 snapshots up to 10,000 source lines and 8 MiB. It includes earlier batches and protected lines; its row counts must match all recorded totals.
+## Discovery and ownership
 
-The runner requires a debug or verification hook and rejects the production binary before loading a live key. It reconciles proxy calls, persisted attempts, stage counts, receipts, errors, and completion counters. Eligible offline cases must produce their expected decision; local skips need an explicit expectation. Unexpected live errors stop further requests. Use `--case` with a fault ID for a focused failure rerun.
+Node discovers `.test.cjs` entrypoints recursively under `tests/`, including existing `e2e`, `edge`, and `load` directories. New `end2end`, `edgecase`, and `regression` directories are also discovered. Imported `.cases.cjs` modules register once in their existing worker. Activity cases live under `tests/unit/activity/`; extension cases live under `tests/integration/extension/`. Preserve declaration order, shared globals, and the composer's ordered lifecycle. Loader mocks restore the original loader in `finally`.
 
-Every report includes `summary.coverage`. It counts distinct outputs, completed
-line evaluations, classification keeps, previews, and prepared replacements.
-It reports source bytes and skip reasons by tool family and size. Disabled
-controls and injected faults have separate denominators. The `--coverage`
-holdout pairs supported shell/code-mode wrappers and safe missed opportunities
-with privacy, mutation, diagnostic, and exact-content controls. Fixture
-expectations require the reviewed safe opportunities to reach evaluation;
-paired negative cases must remain local. Offline participation
-measures routing with mocked judgments. Live reports also separate proxy
-arrivals from provider forwarding. Delivered context savings remain unknown.
-See the [participation investigation](../docs/development/participation_evaluation_2026-10-18.md)
-for measured causes, acceptance criteria, and the next runtime experiments.
+Rust private tests remain beside private code. Integration targets remain under `rust/decision/tests/`. Provider encoding, models, response parity, and budget tests share the `providers` target. Process, custom-provider, and platform tests retain their boundaries. Python discovery uses `test_*.py` under `tests/`.
 
-The independent `--classification-holdout` split tests all eight reviewed format
-classes through the semantic classifier. Reports include normalized combined
-excerptable probability, confidence bins, gate confusion counts, Brier score,
-and calibration error. Offline replies validate the accounting only. Live
-synthetic replies measure these eight held-out cases; they cannot establish a
-general model error rate. The 95% classification gate and 5% omission cutoff
-stay fixed. Deliberate fixture faults never reach a live provider. The coverage
-split includes a later-batch adapter fault in its offline run to check whole
-batch rollback.
+Advisory tests cover exact original preservation, both provider protocols, Score distributions, structured-input budgets, cache counts, MCP framing, and native Stop continuation. They also cover private Windows fixtures, incomplete/stale evidence, measurement gaps, command cancellation, and Test Explorer publication of original failures. Use synthetic loopback endpoints; no provider key is needed.
 
-The base corpus includes all 34 protocol, timeout, and later-batch faults. Use
-`--skip-faults` for additional corpus splits to avoid repeating that identical
-fault suite. CI runs every reviewed output case and every fault scenario once.
-Publication regressions also verify retries after failed original-pair or
-receipt writes and rollback when hooks overlap in the same session.
+Trace hook, bridge, packaging, generated fragments, dynamic loads, and runtime file reads before narrowing a suite. File-name filters alone are not impact analysis. Keep complete coverage when the dependency boundary is uncertain.
 
-The matrix runner starts at most two independent corpus processes by default.
-Use `--jobs 1` for sequential measurements or up to `--jobs 4` on a larger host.
-Each provider and split has its own log, receipts, and report. The destination
-must be new so an earlier report cannot mask a failed process. Both providers
-run the holdout, batching, and precision splits in CI; the identical fault cases
-run once per provider in the base split. `summary.json` records the complete
-matrix, case count, request count, evidence loss, failures, and wall time.
+## Mandatory boundary checks
 
-The interruption check kills the real debug hook after its first relevance
-snapshot. It verifies that no completed receipt, replacement event, stats, or
-saved original was published. A later invocation must complete with exact
-readable and typed originals and a valid completed panel. It covers both
-providers. CI also runs a short concurrent mixed-fault check for each provider.
+Linux runs standard permissions and repeats telemetry contracts with `umask 077`. Native process tests cover exact originals, incomplete and failed batches, privacy, request bounds, publication/interruption recovery, configuration, trust inspection, and pinned patch lifecycle. Native Windows checks cover installers, bounded reads, credentials, private records, updates, telemetry, and atomic writes. File-link checks can skip when the platform lacks link permission; directory-junction checks remain separate.
 
-```bash
-node scripts/pipeline_interrupt.cjs --hook target/debug/decision-hook \
-  --out .local/quality/pipeline-interrupt
-node scripts/pipeline_stage_interrupt.cjs --hook target/verification/decision-hook \
-  --require-recovered --out .local/quality/pipeline-staged-retry
-node scripts/pipeline_stage_interrupt.cjs --hook target/verification/decision-hook \
-  --concurrent-rollback --out .local/quality/pipeline-staged-rollback
-node scripts/pipeline_commit_interrupt.cjs --hook target/verification/decision-hook \
-  --out .local/quality/pipeline-publication
-```
+Node covers the host/route bridges, settings, per-thread state, panel recovery, private paths, provider transport and TLS, updater verification, publication readers, and log retention. Python covers packaging, installer preservation, documentation links, and TIA fallback boundaries. Chromium renders the real composer, settings, totals, raw inspector, and panel code. Packaging verifies both production runtimes and exact source bytes.
 
-The staged checks verify identical retry and an overlapping original-file lease.
-The publication check uses exact process-kill barriers for both providers before
-and after stats, snapshot, event fsync, and the committed marker, including
-rollback failure and deferred cleanup. Prepared writes must roll back; committed
-writes must remain published. Readers must retain the prior committed view while
-preparation is pending.
+More procedures:
 
-Precision cases cover late exhaustive requirements, extensionless and mixed
-source reads, file-reading tools, heredocs, summary-plus-patch output, stale
-task prevention, duplicate disabled settings, requested passing tests, exact
-aggregates, and provenance. Holdout cases add semantic test names, multiple
-requested tests and values, Unicode facts, timing, retry counts, and sequence
-requirements. Credential sentinels require zero requests. Fault cases also
-cover duplicate JSON fields and response bodies that trickle past the deadline.
+- [Synthetic corpus, stress, and interruption checks](../docs/development/evaluation.md)
+- [CPU, allocation, and concurrency checks](../docs/development/performance.md)
+- [Browser validation and screenshots](../docs/development/browser.md)
+- [Builds and packaged-runtime checks](../docs/development/builds.md)
+- [Read-only usage audit](../docs/operations/measurement.md) and [telemetry audit](../docs/operations/telemetry.md)
 
-Build the optimized synthetic hook with `cargo build --locked -p codex-decision --profile verification`. It retains assertions and the loopback endpoint while using optimized packing. Its binaries live under `target/verification/` (or your selected Cargo target directory). Use it for large concurrent pressure checks; an unoptimized debug build can reach the existing 45-second hook limit on a single CPU. Release packaging always builds a separate production profile with the test endpoint disabled.
+## Native and lab-specific checks
 
-The [processing recovery audit](../docs/development/processing_recovery_2026-10-08.md) records the skip recovery pass. The [request accounting and reliability audit](../docs/development/reliability_audit_2026-10-08.md) records the current counter boundaries, publication recovery, exact reader fixtures, and final acceptance results.
+Lab-Control containers can have a nonexecutable `/tmp`. Keep ordinary data there. Set `CODEX_DECISION_TEST_EXECUTABLE_TMP_ROOT` to an explicit executable user cache or ignored `/workspace/.local/` directory for executable fixtures. The publication barrier accepts `--barrier-build-root` for its shared library.
 
-## Composer and panel quality checks
-
-The offline quality runner validates each hook-produced panel snapshot with the real VS Code parser. It checks the receipt ID, completed status, request totals, and rollback after failed batches. Each successful case exports a normalized `panel.json` beside its synthetic receipt.
-
-The browser quality runner varies toolbar gaps, model heights, permission labels, and pane widths in a 5,000-item synthetic chat. It verifies the toolbar row, button separation, and dot size. An optional hook-produced snapshot is rendered through the real panel script at the same widths. Repeat `--panel` to rotate multiple normalized snapshots. It checks completed bar animations every 100 rounds and records separate composer and panel heap samples plus panel DOM counts. Use `--resident-panels` for endurance with large snapshots: it loads fixtures once and clones a fresh message inside the page for each update. The default sends each complete snapshot through the debugger and includes that driver's overhead. Reports identify the transport; compare runs with the same transport. Use `--reload-every 500` to test repeated panel reloads. Use `--device-scale 2 --reduced-motion reduce` for display scaling and reduced motion checks. Timing reports and screenshots contain only synthetic data.
-
-CI also rotates the historical reviewed panel and a current version-6 protected-row fixture through resident messages. It verifies every completed animation, reloads twice, and checks toolbar fallback. The large-snapshot endurance checks remain separate from this short regression check.
-
-Use `--fallback-every 10` to remove and restore the toolbar neighbours every ten
-rounds. This checks that an incomplete toolbar hides the indicator and that the
-indicator returns when the controls become available.
-
-```bash
-python3 vscode-control/scripts/browser_quality.py --rounds 50 --seed 7 \
-  --out .local/quality/browser
-python3 vscode-control/scripts/browser_quality.py --minutes 110 --seed 17 \
-  --reload-every 500 \
-  --panel .local/two-stage/offline/log-failure-240/panel.json \
-  --out .local/quality/browser-soak
-```
-
-In Lab-Control, keep executable test fixtures in an explicit user cache because
-container data mounts can be `noexec`. Ordinary disposable data remains in `/tmp`.
-The unsupported-host test preflights its fake executable before attempting the
-submission script, so a broken fixture cannot start an unintended production build:
-
-```bash
-mkdir -p "$HOME/.cache/codex-decision/test-executables"
-CODEX_DECISION_TEST_EXECUTABLE_TMP_ROOT="$HOME/.cache/codex-decision/test-executables" \
-  python3 -m unittest discover -s tests -p 'test_*.py'
-# Use the same executable root for the publication barrier shared library:
-node scripts/pipeline_commit_interrupt.cjs --hook <verification-hook> \
-  --barrier-build-root "$HOME/.cache/codex-decision/test-executables" \
-  --out .local/quality/pipeline-publication
-```
-
-Node regressions cover restored threads without composer focus, persisted decisions after reload, readiness ordering, session changes during reads, stale failures, dropped or rejected deliveries, hidden or disposed views, configuration recovery, bounded snapshot reads after file growth, concurrent atomic snapshot replacement, and bounded Windows write retries. Linux checks exercise real file links and private inode permissions. Windows checks use directory junctions; file-link subtests report a skip when Developer Mode or elevation is unavailable.
-
-The optional native Windows test uses the specified WSL distro, creates its own private `/tmp` fixture, and removes that exact fixture. It reads snapshots through WSL UNC paths while a Linux process replaces them. It also checks independent session selections and Linux file permissions. Enable it in a Windows terminal before running the Node suite:
+The noninteractive Windows package check is documented in [builds](../docs/development/builds.md). Optional desktop checks launch isolated VS Code windows:
 
 ```powershell
-$env:CODEX_DECISION_TEST_WSL_DISTRO = 'Ubuntu'
-npm test --prefix vscode-control
+pwsh -NoProfile -File vscode-control/scripts/windows_integrated_smoke.ps1 `
+  -Vsix .local/submission/codex-decision-0.17.0.vsix -Distro Ubuntu
+pwsh -NoProfile -File vscode-control/scripts/windows_panel_smoke.ps1 -Distro Ubuntu
 ```
 
-Run the [native VS Code panel smoke test](../vscode-control/scripts/windows_panel_smoke.ps1)
-from Windows PowerShell 7:
-
-```powershell
-pwsh -NoProfile -File .\vscode-control\scripts\windows_panel_smoke.ps1 -Distro Ubuntu
-```
-
-This check starts an isolated VS Code instance with an empty extension directory
-and synthetic WSL data. It instruments a disposable copy to acknowledge the
-actual rendered rows. It checks CSP resource loading, saved decisions without
-composer focus, three reloads, hiding and reopening, and session switching.
-It removes its private profile and WSL fixture after the instance closes.
-If the instance times out, the script reports its exact paths and preserves
-the fixture until that owned process is stopped. The existing VS Code profile
-and installed extensions are not changed.
+Add `-Native` to the integrated check to select Windows execution. For optional WSL publication tests, set `CODEX_DECISION_TEST_WSL_DISTRO=Ubuntu` before running Node tests from Windows. Use isolated synthetic profiles; preserve installed extensions, keys, chats, and live runtime state.

@@ -1,0 +1,15 @@
+{
+  "name": "codex-decision-workspace",
+  "private": true,
+  "scripts": {
+    "test": "nx run-many -t test-node test-python test-rust",
+    "test:affected": "nx affected -t test-node test-python test-rust test-browser test-quality test-package",
+    "test:full": "nx run-many -t test-node-full test-python-full test-rust-full",
+    "tia:collect": "nx run-many -t collect-node collect-python collect-rust --parallel=1"
+  },
+  "engines": { "node": ">=22" },
+  "overrides": { "minimatch": "11.0.1" },
+  "devDependencies": {
+    "nx": "24.0.6"
+  }
+}

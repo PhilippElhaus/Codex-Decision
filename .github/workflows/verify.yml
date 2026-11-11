@@ -7,6 +7,8 @@ permissions:
   contents: read
 env:
   RUSTUP_TOOLCHAIN: stable
+  NX_DAEMON: false
+  NX_NO_CLOUD: true
 jobs:
   windows:
     runs-on: windows-2025
@@ -19,7 +21,7 @@ jobs:
       - name: Install Rust toolchain
         run: rustup toolchain install stable --profile minimal --component clippy
       - name: Test native Windows runtime
-        run: cargo test --locked -p codex-decision --lib --test ctl_process --test windows_process --test custom_providers
+        run: cargo test --locked -p codex-decision --lib --test ctl_process --test windows_process --test custom_providers --test assistance_process
       - name: Test bounded native CLI file reads
         run: |
           cargo test --locked -p codex-decision --bin decisionctl files::tests
@@ -33,6 +35,7 @@ jobs:
           node --test tests/unit/native_install.test.cjs tests/unit/integrated_install.test.cjs
           tests/unit/session_work.test.cjs tests/unit/updates.test.cjs tests/unit/activity_cache.test.cjs
           tests/unit/telemetry_audit.test.cjs tests/unit/providers.test.cjs tests/unit/custom_provider_tls.test.cjs tests/unit/publication.test.cjs
+          tests/unit/assistance_client.test.cjs tests/unit/delivery_report.test.cjs tests/integration/assistance.test.cjs
           tests/unit/retained_activity.test.cjs tests/unit/windows_write.test.cjs
           tests/integration/integration_repair.test.cjs tests/integration/private_paths.test.cjs
       - name: Build production Windows runtime
@@ -47,23 +50,51 @@ jobs:
           overwrite: true
   offline:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.12'
       - name: Install Rust toolchain
-        run: rustup toolchain install stable --profile minimal --component rustfmt --component clippy
+        run: rustup toolchain install stable --profile minimal --component rustfmt --component clippy --component llvm-tools-preview
+      - name: Restore main-branch function coverage
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            .local/tia/node.json
+            .local/tia/python.json
+            .local/tia/rust.json
+          key: tia-${{ runner.os }}-${{ runner.arch }}-${{ github.event.pull_request.base.sha || github.sha }}
+      - name: Select Git comparison
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          echo "NX_BASE=$BASE_SHA" >> "$GITHUB_ENV"
+          echo "NX_HEAD=$HEAD_SHA" >> "$GITHUB_ENV"
       - name: Check Rust formatting
         run: cargo fmt --all -- --check
-      - name: Test Rust with standard directory permissions
+      - name: Collect complete Rust function evidence on main
+        if: github.event_name != 'pull_request'
         run: |
           umask 022
-          cargo test --locked -p codex-decision
+          npx nx run decision:collect-rust
+      - name: Test affected Rust functions on pull requests
+        if: github.event_name == 'pull_request'
+        run: |
+          umask 022
+          npx nx affected -t test-rust
+      - name: Build native mock runtimes for boundary checks
+        run: cargo test --locked -p codex-decision --no-run
       - name: Test telemetry with private directory permissions
         run: |
           umask 077
@@ -78,11 +109,28 @@ jobs:
       - run: node scripts/pipeline_commit_interrupt.cjs --hook target/verification/decision-hook --out .local/quality/pipeline-ci-publication
       - run: node scripts/pipeline_stress.cjs --hook target/verification/decision-hook --provider openai --concurrency 4 --rounds 6 --lines 256,1024 --faults http,json,oversize,probability,model,timeout --jitter-ms 10 --out .local/quality/pipeline-ci-openai
       - run: node scripts/pipeline_stress.cjs --hook target/verification/decision-hook --provider typesafe --concurrency 4 --rounds 6 --lines 256,1024 --faults http,json,oversize,probability,model,timeout --jitter-ms 10 --out .local/quality/pipeline-ci-typesafe
-      - name: Test Node consumers with the freshly built CLI
+      - name: Collect complete Node function evidence on main
+        if: github.event_name != 'pull_request'
         env:
           DECISIONCTL_TEST: target/verification/decisionctl
-        run: npm test --prefix vscode-control
-      - run: python3 -m unittest discover -s tests -p 'test_*.py'
+        run: npx nx run decision:collect-node
+      - name: Collect complete Python function evidence on main
+        if: github.event_name != 'pull_request'
+        run: npx nx run decision:collect-python
+      - name: Test affected Node and Python functions on pull requests
+        if: github.event_name == 'pull_request'
+        env:
+          DECISIONCTL_TEST: target/verification/decisionctl
+        run: npx nx affected -t test-node test-python
+      - name: Save verified main-branch function coverage
+        if: github.ref == 'refs/heads/main' && success()
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            .local/tia/node.json
+            .local/tia/python.json
+            .local/tia/rust.json
+          key: tia-${{ runner.os }}-${{ runner.arch }}-${{ github.sha }}
       - name: Save offline failure reports
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

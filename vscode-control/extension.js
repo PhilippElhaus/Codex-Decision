@@ -6,6 +6,7 @@ const vscode = require("vscode");
 const { ensureIntegratedInstall } = require("./integrated-install");
 const { activateIntegration } = require("./integration");
 const { activateUpdates } = require("./updates");
+const { activateAssistance } = require("./assistance");
 const EXPECTED_HOOK_VERSION = require("./package.json").codexDecisionHookVersion;
 const { LatestDecisionProvider, VIEW_ID } = require("./panel");
 const { readSessionWorkComplete } = require("./session-work");
@@ -594,6 +595,12 @@ function activate(context) {
     }),
   });
   activateUpdates(vscode, context);
+  activateAssistance(vscode, context, { dataDirectory,
+    ready: () => ensureIntegratedInstall(vscode, context, {
+      dataDirectory: () => settings().get("dataDirectory") || "",
+    }),
+    sessionDirectory: () => active?.state.sessionId ? active.activeDirectory() : null,
+    sessionId: () => active?.state.sessionId || null });
 }
 
 function deactivate() {}

@@ -4,6 +4,8 @@ __pycache__/
 .coverage
 .local/
 /target/
+/node_modules/
+/.nx/
 AGENTS.md
 *.dpapi
 credential-source.json
