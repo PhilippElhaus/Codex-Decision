@@ -320,6 +320,33 @@ class IntegratedInstall(unittest.TestCase):
         self.assertEqual(phases, ["package inspection", "Codex plugin discovery", "package update",
                                   "installed package verification"])
 
+    def test_companion_wait_covers_slow_transactions_and_still_has_a_deadline(self):
+        for elapsed in [16, 91, 659, 660]:
+            with self.subTest(elapsed=elapsed), \
+                    mock.patch.object(INSTALLER.time, "monotonic", side_effect=[0, elapsed]), \
+                    mock.patch.object(INSTALLER.time, "sleep") as sleep, \
+                    mock.patch.object(INSTALLER.fcntl, "flock",
+                                      side_effect=[BlockingIOError(errno.EAGAIN, "busy"), None, None]) as lock:
+                if elapsed == 660:
+                    with self.assertRaises(BlockingIOError):
+                        with INSTALLER.installation_lock(self.codex_home):
+                            self.fail("An owned lock cannot enter the transaction")
+                    self.assertEqual(lock.call_count, 1)
+                    sleep.assert_not_called()
+                else:
+                    with INSTALLER.installation_lock(self.codex_home):
+                        pass
+                    self.assertEqual([call.args[1] for call in lock.call_args_list],
+                                     [INSTALLER.fcntl.LOCK_EX | INSTALLER.fcntl.LOCK_NB] * 2 + [INSTALLER.fcntl.LOCK_UN])
+                    sleep.assert_called_once_with(0.1)
+
+    def test_repeated_lock_interruptions_reach_the_deadline_without_unlocking(self):
+        with mock.patch.object(INSTALLER.fcntl, "flock", side_effect=OSError(errno.EINTR, "private")) as lock:
+            with self.assertRaisesRegex(BlockingIOError, "repeatedly interrupted"):
+                with INSTALLER.installation_lock(self.codex_home, timeout=0):
+                    self.fail("An interrupted lock cannot enter the transaction")
+            self.assertEqual(lock.call_count, 1)
+
     def test_shared_companion_lock_wait_is_bounded_and_kernel_releases_after_exit(self):
         self.codex_home.joinpath("plugins").mkdir(parents=True)
         filename = self.codex_home / "plugins/.companion-install.lock"

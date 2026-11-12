@@ -1,11 +1,11 @@
 # Install and verify
 
-Download the integrated VSIX from the [latest release](https://github.com/PhilippElhaus/Codex-Decision/releases/latest). In **Visual Studio Code** on Windows x86_64, open **Extensions** (`Ctrl+Shift+X`), select **… → Install from VSIX…**, and choose `codex-decision-0.17.0.vsix`.
+Download the integrated VSIX from the [latest release](https://github.com/PhilippElhaus/Codex-Decision/releases/latest). In **Visual Studio Code** on Windows x86_64, open **Extensions** (`Ctrl+Shift+X`), select **… → Install from VSIX…**, and choose `codex-decision-0.17.1.vsix`.
 
 If double-clicking the file opens **Visual Studio VSIX Installer**, close that installer and use the VS Code menu. You can also install from a terminal:
 
 ```bash
-code --install-extension codex-decision-0.17.0.vsix --force
+code --install-extension codex-decision-0.17.1.vsix --force
 ```
 
 This single package contains Windows x86_64 and Linux x86_64 hooks, the skill, session controls, settings, and verified composer patch. It follows Codex’s `chatgpt.runCodexInWindowsSubsystemForLinux` setting. Native Windows needs no WSL or Python. The WSL backend keeps its own registration and data. Automatically discovered data directories follow the selected Codex runtime. Each runtime retains its own settings and credentials. A successful repair adopts an existing canonical data directory for automatic runtime switching. Mismatched overrides stay unchanged. If they point to another runtime, clear `codexDecision.dataDirectory` and run **Decision: Repair Integration**. Activation updates an existing local plugin without changing its identity or data directory. A fresh install registers the bundled local marketplace. The installer preserves credentials, settings, session flags, saved originals, and Codex hook trust records. It rejects ambiguous plugin registrations instead of creating a duplicate hook.
@@ -14,7 +14,7 @@ The extension repairs supported Codex builds at startup and after extension chan
 
 Temporary installation failures retry after 2, 5, and 15 seconds when automatic repair is enabled. Each retry reruns installation instead of reusing a rejected startup result. Timeouts and recognized temporary access failures can retry. Invalid metadata, conflicting registrations, unsupported builds, and other deterministic refusals report immediately. The **Decision Integration** output channel names the failed phase and a safe diagnostic. It does not print private process output. Manual repair starts a fresh attempt after the underlying problem is corrected.
 
-Decision and Chime use the same `CODEX_HOME/plugins/.companion-install.lock` for the selected runtime. A companion waits up to 15 seconds for the other installer, then retries automatically. The kernel releases ownership when the process exits. Keep the retained lock file in place. The installer deadline allows the existing bounded CLI transaction to finish.
+Decision and Chime use the same `CODEX_HOME/plugins/.companion-install.lock` for the selected runtime. A companion waits up to 11 minutes for the other installer, then retries automatically. Acquisition normally completes immediately. This bound covers a complete transaction with several 90-second CLI commands, including failure recovery. The previous 15-second waits could exhaust every retry before one slow command finished. The 24-minute parent deadline allows both the lock wait and the installation transaction to finish. The kernel releases ownership when the process exits. Keep the retained lock file in place.
 
 The Decision installer backs up cached hook versions before a refresh. It restores older cache paths after Codex completes or fails the refresh. Existing threads can keep their recorded paths; new threads load the selected version. Keep the installation rollback files until the update is verified.
 

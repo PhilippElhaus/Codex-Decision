@@ -287,7 +287,7 @@ def installation_failure(error, phase):
 
 
 @contextmanager
-def installation_lock(codex_home, timeout=15):
+def installation_lock(codex_home, timeout=660):
     # Both companions mutate the same Codex registration. Keep one kernel lock
     # per runtime, and retain its inode so waiting processes cannot bypass it.
     root = safe_path(Path(codex_home) / "plugins")
@@ -306,6 +306,8 @@ def installation_lock(codex_home, timeout=15):
                 break
             except OSError as error:
                 if error.errno == errno.EINTR:
+                    if time.monotonic() >= deadline:
+                        raise BlockingIOError(errno.EAGAIN, "installation lock was repeatedly interrupted") from None
                     continue
                 if error.errno not in {errno.EACCES, errno.EAGAIN}:
                     raise

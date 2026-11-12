@@ -59,7 +59,7 @@ The noninteractive Windows package check is documented in [builds](../docs/devel
 
 ```powershell
 pwsh -NoProfile -File vscode-control/scripts/windows_integrated_smoke.ps1 `
-  -Vsix .local/submission/codex-decision-0.17.0.vsix -Distro Ubuntu
+  -Vsix .local/submission/codex-decision-0.17.1.vsix -Distro Ubuntu
 pwsh -NoProfile -File vscode-control/scripts/windows_panel_smoke.ps1 -Distro Ubuntu
 ```
 

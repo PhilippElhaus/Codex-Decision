@@ -134,7 +134,7 @@ async function withLock(stateRoot, operation) {
   if (process.platform === "win32") {
     // Match Python companions' byte range. The kernel releases it on host termination.
     const script = `$ErrorActionPreference='Stop'
-$deadline=[DateTime]::UtcNow.AddSeconds(15)
+$deadline=[DateTime]::UtcNow.AddSeconds(660)
 $lock=$null
 while($null -eq $lock) {
   try {
@@ -173,7 +173,7 @@ finally { $lock.Dispose() }`;
           child.stdout.off("data", received);
           if (error) reject(error); else resolve();
         };
-        const timer = setTimeout(() => finish(Object.assign(refusal("Decision installation lock timed out; retry repair"), { retryable: true })), 20_000);
+        const timer = setTimeout(() => finish(Object.assign(refusal("Decision installation lock timed out; retry repair"), { retryable: true })), 665_000);
         let output = "";
         const failed = () => { ended = true; finish(refusal("Decision installation lock is unavailable; check PowerShell and file access")); };
         const exited = code => finish(code === 2
@@ -199,14 +199,14 @@ finally { $lock.Dispose() }`;
       });
     }
   }
-  const deadline = Date.now() + 15_000;
+  const deadline = Date.now() + 660_000;
   let handle;
   while (!handle) {
     await safePath(filename);
     try { handle = await fs.open(filename, "wx", 0o600); }
     catch (error) {
       if (error.code !== "EEXIST") throw error;
-      if (Date.now() >= deadline) throw refusal("Decision installation is busy; retry repair");
+      if (Date.now() >= deadline) throw Object.assign(refusal("Decision installation is busy; retry repair"), { retryable: true });
       await new Promise(resolve => setTimeout(resolve, 100));
     }
   }

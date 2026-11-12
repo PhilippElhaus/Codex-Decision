@@ -316,5 +316,6 @@ test("Windows lock contention retries; unavailable and interrupted locks keep di
     });
     assert.equal(entered, outcome === "ready" || outcome === "interrupted");
     assert.match(helper, /-notin @\(32,33\)/);
+    assert.match(helper, /AddSeconds\(660\)/);
   }
 });

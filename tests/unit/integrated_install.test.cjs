@@ -38,6 +38,7 @@ test("integrated install discovers storage only when the setting is blank", asyn
   assert.equal(result.status, "ready");
   assert.deepEqual(vscode.updates, [["dataDirectory", installed.dataDirectory, 1]]);
   assert.equal(calls[0][0], "python3");
+  assert.ok(calls[0][2].timeout > (660 + 7 * 90) * 1000);
   assert.ok(calls[0][1].includes(path.join(root, "Codex host with spaces", "bin", "linux-x86_64", "codex")));
   vscode.updates.length = 0;
   await ensureIntegratedInstall(vscode, { extensionPath: root },

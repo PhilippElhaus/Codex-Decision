@@ -120,7 +120,7 @@ async function ensureIntegratedInstall(vscode, context, options = {}) {
     const args = [script, "--payload", linuxPayload, "--codex", codex];
     if (linuxConfigured) args.push("--data-directory", linuxConfigured);
     const reply = await execute("python3", args,
-      { timeout: 720_000, maxBuffer: 16_384 });
+      { timeout: 1_440_000, maxBuffer: 16_384 });
     result = cleanJson(reply.stdout);
   } catch (error) {
     if (error.code === "DECISION_INSTALL_TEMPORARY") throw error;
