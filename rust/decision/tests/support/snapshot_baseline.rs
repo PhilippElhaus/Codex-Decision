@@ -42,8 +42,8 @@ pub(crate) fn line_snapshot(
                 .collect();
             json!({"line":line.number,"excerpt":excerpt,
                 "action":if decision.action == Action::Omit { "omit" } else { "keep" },
-                "reason":decision.reason,"can_omit":decision.p_can_omit,
-                "exact_needed":decision.p_exact_needed,"task_relevant":decision.p_task_relevant,
+                "reason":decision.reason,
+                "task_relevant":decision.p_task_relevant,
                 "protected_reason":decision.protected_reason})
         })
         .collect();

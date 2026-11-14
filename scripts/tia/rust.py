@@ -39,7 +39,7 @@ def llvm_tools():
 
 def collect():
     profdata, cov = llvm_tools()
-    cache = Path.home() / ".cache/codex-decision/tia-target"
+    cache = ROOT / ".cache/cargo-coverage"
     env = dict(os.environ, CARGO_TARGET_DIR=str(cache),
                RUSTFLAGS=os.environ.get("RUSTFLAGS", "") + " -C instrument-coverage")
     with temporary_directory("decision-tia-rust-") as directory:

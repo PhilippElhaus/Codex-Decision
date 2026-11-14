@@ -140,7 +140,7 @@ async function verify(hook, library, provider, phase, concurrent) {
 async function main() {
   assert.equal(process.platform, "linux", "Publication barriers require Linux process signals");
   const temporaryRoot = await fs.realpath(os.tmpdir()); assert.ok(!temporaryRoot.startsWith("/mnt/d"));
-  const hook = path.resolve(arg("--hook", "target/verification/decision-hook"));
+  const hook = path.resolve(arg("--hook", ".cache/cargo/verification/decision-hook"));
   requireProxyHook(await fs.readFile(hook));
   // Lab data /tmp can be noexec; an explicit owned Linux build cache may hold
   // this executable test helper while all synthetic payload fixtures stay /tmp.

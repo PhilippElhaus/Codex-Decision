@@ -1,14 +1,9 @@
 __pycache__/
 *.py[cod]
-.pytest_cache/
-.coverage
 .local/
-/target/
-/node_modules/
-/.nx/
+/.cache/
 AGENTS.md
 *.dpapi
 credential-source.json
 .env
 .env.*
-vscode-control/*.vsix

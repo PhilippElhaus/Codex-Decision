@@ -20,10 +20,6 @@ struct Decision<'a> {
     batch_id: Option<usize>,
     number: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
-    p_can_omit: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    p_exact_needed: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     p_task_relevant: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     protected_reason: Option<&'a str>,
@@ -40,8 +36,6 @@ impl Serialize for Decisions<'_> {
                 action: &row.action,
                 batch_id: row.batch_id,
                 number: row.number,
-                p_can_omit: row.p_can_omit,
-                p_exact_needed: row.p_exact_needed,
                 p_task_relevant: row.p_task_relevant,
                 protected_reason: row.protected_reason.as_deref(),
                 reason: &row.reason,

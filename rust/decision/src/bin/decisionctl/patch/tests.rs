@@ -219,6 +219,7 @@ fn bridge_fragments_publish_routes_and_validate_settings_messages() {
 }
 
 #[test]
+#[cfg(unix)]
 fn wsl_bridges_rewrite_only_owned_paths() {
     let bridges = fixture_bridges();
     let image = bridges.image;
@@ -313,6 +314,7 @@ fn invalid_bridge_paths_never_expand_rewrites() {
 }
 
 #[test]
+#[cfg(unix)]
 fn marketplace_alias_accepts_standard_dotted_wsl_distribution_names() {
     let fragment = marketplace_bridge(
         Path::new("/home/fixture/.agents/plugins/marketplace.json"),

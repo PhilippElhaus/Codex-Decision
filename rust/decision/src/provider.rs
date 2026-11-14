@@ -2,6 +2,10 @@
 use serde_json::{json, Value};
 use std::fmt::Write;
 
+pub fn valid_builtin_key(value: &str) -> bool {
+    (8..=4096).contains(&value.len()) && value.bytes().all(|byte| byte.is_ascii_graphic())
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Provider {
     OpenAi,

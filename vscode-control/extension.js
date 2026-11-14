@@ -422,7 +422,7 @@ function createController(dataDirectory) {
 
   async function bridge(request) {
     await enterView(request?.viewId, request?.sessionId, request?.expectsLocalSession === true);
-    if (["openTypeSafe", "openProvider"].includes(request?.action)) {
+    if (request?.action === "openProvider") {
       try {
         const externalOpen = await vscode.env.openExternal(vscode.Uri.parse((request.provider || state.provider) === "typesafe" ? "https://typesafe.ai/" : "https://platform.openai.com/api-keys"));
         return { ...snapshot(), externalOpen: externalOpen === true };
@@ -474,8 +474,9 @@ function activate(context) {
   let activeSourceId = null;
   let activeSourceVisible = null;
   const settings = () => vscode.workspace.getConfiguration("codexDecision");
+  const configuredDirectory = () => settings().get("dataDirectory") || defaultDataDirectory();
   const dataDirectory = () => {
-    const directory = settings().get("dataDirectory") || defaultDataDirectory();
+    const directory = configuredDirectory();
     if (typeof directory !== "string" || !path.isAbsolute(directory)) {
       throw new Error("Set codexDecision.dataDirectory to the installed plugin's absolute PLUGIN_DATA path.");
     }
@@ -589,15 +590,15 @@ function activate(context) {
   // Keep the panel available during installation and retry a failed bootstrap
   // after configuration repair instead of caching a rejected startup promise.
   activateIntegration(vscode, context, {
-    dataDirectory: () => settings().get("dataDirectory") || "",
+    dataDirectory: configuredDirectory,
     ready: () => ensureIntegratedInstall(vscode, context, {
-      dataDirectory: () => settings().get("dataDirectory") || "",
+      dataDirectory: configuredDirectory,
     }),
   });
   activateUpdates(vscode, context);
   activateAssistance(vscode, context, { dataDirectory,
     ready: () => ensureIntegratedInstall(vscode, context, {
-      dataDirectory: () => settings().get("dataDirectory") || "",
+      dataDirectory: configuredDirectory,
     }),
     sessionDirectory: () => active?.state.sessionId ? active.activeDirectory() : null,
     sessionId: () => active?.state.sessionId || null });

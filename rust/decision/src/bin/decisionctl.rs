@@ -1,8 +1,6 @@
 //! Local configuration and offline inspection for the Rust Decision hook.
 
-use codex_decision::{
-    apply_probabilities, source_lines, Action, LinePolicy, SearchRelevancePolicy,
-};
+use codex_decision::{source_lines, Action};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashSet};
@@ -64,10 +62,7 @@ fn set_key(data_dir: &Path, provider: codex_decision::provider::Provider) -> Res
         .read_to_string(&mut input)
         .map_err(|error| error.to_string())?;
     let key = input.trim();
-    if !(8..=4096).contains(&key.len())
-        || key.chars().any(char::is_whitespace)
-        || key.contains('\0')
-    {
+    if !codex_decision::provider::valid_builtin_key(key) {
         return Err("invalid key".into());
     }
     credentials::save(data_dir, provider, key)
@@ -152,7 +147,9 @@ fn package(root: &Path) -> Result<(), String> {
     fs::create_dir_all(&destination_dir).map_err(|error| error.to_string())?;
     let destination = destination_dir.join(format!("codex-decision-{version}.zip"));
     if destination.exists() {
-        return Err("package archive already exists; change cachebuster before rebuilding".into());
+        return Err(
+            "package archive already exists; advance the release version before rebuilding".into(),
+        );
     }
     let stage_root = destination_dir.join("staging");
     let stage = stage_root.join("codex-decision");
@@ -274,76 +271,6 @@ fn evaluate_case(receipt: &Value, required: &[usize]) -> Result<Value, String> {
     )
 }
 
-fn replay_gate(
-    receipt: &Value,
-    required: &[usize],
-    omit_min: u8,
-    exact_max: u8,
-    guard_enabled: bool,
-) -> Result<Option<Value>, String> {
-    if receipt["version"] == 3 {
-        return Ok(None);
-    }
-    let Some(source) = receipt.get("initial_output").and_then(Value::as_str) else {
-        return Ok(None);
-    };
-    let Some(recorded) = receipt.get("decisions").and_then(Value::as_array) else {
-        return Ok(None);
-    };
-    let mut lines = source_lines(source);
-    if lines.len() != recorded.len() {
-        return Ok(None);
-    }
-    let mut probabilities = BTreeMap::new();
-    for (index, (line, row)) in lines.iter_mut().zip(recorded).enumerate() {
-        if row.get("number").and_then(Value::as_u64) != Some((index + 1) as u64) {
-            return Err("line order mismatch".into());
-        }
-        let protection = row.get("protected_reason").and_then(Value::as_str);
-        line.protected_reason = protection
-            .filter(|reason| !matches!(*reason, "representative" | "last_line"))
-            .map(str::to_owned);
-        line.eligible = protection != Some("jsonl_structure");
-        let Some(omit) = row.get("p_can_omit").and_then(Value::as_f64) else {
-            continue;
-        };
-        let Some(exact) = row.get("p_exact_needed").and_then(Value::as_f64) else {
-            continue;
-        };
-        let relevant = row.get("p_task_relevant").and_then(Value::as_f64);
-        if !omit.is_finite()
-            || !(0.0..=1.0).contains(&omit)
-            || !exact.is_finite()
-            || !(0.0..=1.0).contains(&exact)
-            || relevant.is_some_and(|value| !value.is_finite() || !(0.0..=1.0).contains(&value))
-        {
-            return Err("invalid recorded probability".into());
-        }
-        if guard_enabled && relevant.is_none() {
-            return Ok(None);
-        }
-        probabilities.insert(index + 1, (omit, exact, relevant, 1));
-    }
-    let policy = LinePolicy {
-        omit_min,
-        exact_max,
-    };
-    let relevance = SearchRelevancePolicy {
-        guard_enabled,
-        relevant_max: 5,
-    };
-    let decisions = apply_probabilities(&lines, &probabilities, &policy, &relevance);
-    let omitted: HashSet<usize> = decisions
-        .iter()
-        .filter(|row| row.action == Action::Omit)
-        .map(|row| row.number)
-        .collect();
-    Ok(Some(
-        json!({"omitted":omitted.len(),"false_omissions":required.iter()
-        .filter(|number| omitted.contains(number)).count(),"required":required.len()}),
-    ))
-}
-
 fn replay_relevance(
     receipt: &Value,
     required: &[usize],
@@ -426,21 +353,7 @@ fn evaluate_quality(cases_path: &Path) -> Result<(), String> {
         let mut outcome = evaluate_case(&receipt, &required)?;
         outcome["split"] = json!(split);
         outcome["case"] = json!(row.get("id").and_then(Value::as_str).unwrap_or("unnamed"));
-        let route = outcome["route"].as_str().unwrap_or("output");
         let mut trials = serde_json::Map::new();
-        for (name, omit_min, exact_max, guard) in [
-            ("default_95_5", 95, 5, false),
-            ("strict_98_2", 98, 2, false),
-            ("strict_99_1", 99, 1, false),
-            ("relevance_guard_95_5", 95, 5, true),
-        ] {
-            if guard && route != "search_listing" {
-                continue;
-            }
-            if let Some(trial) = replay_gate(&receipt, &required, omit_min, exact_max, guard)? {
-                trials.insert(name.into(), trial);
-            }
-        }
         for cutoff in [1, 2, 5, 10, 20] {
             if let Some(trial) = replay_relevance(&receipt, &required, cutoff)? {
                 trials.insert(format!("relevance_{cutoff}"), trial);
@@ -638,14 +551,13 @@ fn run() -> Result<(), String> {
         );
     }
     if args.len() != 4 {
-        return Err("usage: decisionctl activity --data-dir <PLUGIN_DATA> --session <thread-id> | set-key --data-dir <PLUGIN_DATA> | package|check-release-versions|cachebust --root <repository> | check-hook-trust --cwd <repository> [--plugin-id <id>] | patch-webview <apply|update|restore|status> --root <repository-or-control> --extension <path> --backup <path> | evaluate-quality --cases <private JSON>".into());
+        return Err("usage: decisionctl activity --data-dir <PLUGIN_DATA> --session <thread-id> | set-key --data-dir <PLUGIN_DATA> | package|check-release-versions --root <repository> | check-hook-trust --cwd <repository> [--plugin-id <id>] | patch-webview <apply|update|restore|status> --root <repository-or-control> --extension <path> --backup <path> | evaluate-quality --cases <private JSON>".into());
     }
     if args[2] == "--root" {
         let root = Path::new(&args[3]);
         return match args[1].as_str() {
             "package" => package(root),
             "check-release-versions" => release::check_versions(root),
-            "cachebust" => release::cachebust(root),
             _ => Err("unknown repository command".into()),
         };
     }
@@ -714,9 +626,6 @@ mod tests {
             evaluate_case(&receipt, &[1, 3, 4]).unwrap()["false_omissions"],
             json!([])
         );
-        assert!(replay_gate(&receipt, &[1, 3, 4], 95, 5, false)
-            .unwrap()
-            .is_none());
         for cutoff in [1, 2, 5, 10, 20] {
             let trial = replay_relevance(&receipt, &[1, 3, 4], cutoff)
                 .unwrap()
@@ -724,19 +633,5 @@ mod tests {
             assert_eq!(trial["false_omissions"], 0);
             assert_eq!(trial["omitted"], 1);
         }
-    }
-
-    #[test]
-    fn offline_gate_trials_show_when_relevance_preserves_required_evidence() {
-        let receipt = json!({"version":2,"initial_output":"src/a:1:important\nsrc/b:2:routine\nfinished\n",
-            "decisions":[
-                {"number":1,"protected_reason":null,"p_can_omit":0.99,"p_exact_needed":0.01,"p_task_relevant":0.91},
-                {"number":2,"protected_reason":null,"p_can_omit":0.99,"p_exact_needed":0.01,"p_task_relevant":0.01},
-                {"number":3,"protected_reason":"last_line","p_can_omit":0.99,"p_exact_needed":0.01,"p_task_relevant":0.01}]});
-        let preview = replay_gate(&receipt, &[1], 95, 5, false).unwrap().unwrap();
-        let guarded = replay_gate(&receipt, &[1], 95, 5, true).unwrap().unwrap();
-        assert_eq!(preview["false_omissions"], 1);
-        assert_eq!(guarded["false_omissions"], 0);
-        assert_eq!(guarded["omitted"], 1);
     }
 }

@@ -129,6 +129,10 @@ class PackageTests(unittest.TestCase):
             # The source and archive agree, but both carry the wrong target.
             binary = root / "hooks/bin/linux-x86_64/decision-hook"
             data = binary.read_bytes()
+            version = json.loads(control.read_text())["codexDecisionHookVersion"].encode()
+            binary.write_bytes(data.replace(version, b"outdated"))
+            with self.assertRaisesRegex(ValueError, "Linux binary version differs"):
+                verify_plugin(archive(), root)
             binary.write_bytes(data + b"CODEX_DECISION_TEST_ENDPOINT")
             with self.assertRaisesRegex(ValueError, "verification hook"):
                 verify_plugin(archive(), root)

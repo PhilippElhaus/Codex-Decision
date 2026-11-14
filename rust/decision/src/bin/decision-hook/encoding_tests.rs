@@ -16,9 +16,11 @@ fn borrowed_receipts_preserve_exact_canonical_bytes_for_all_decision_fields() {
                 _ => Action::KeepUnjudged,
             },
             batch_id: (number & 1 != 0).then_some(number),
-            p_can_omit: (number & 2 != 0).then_some(-0.0),
-            p_exact_needed: (number & 4 != 0).then_some(0.05),
-            p_task_relevant: (number & 8 != 0).then_some(0.05001),
+            p_task_relevant: (number & 8 != 0).then_some(if number & 2 != 0 {
+                -0.0
+            } else {
+                0.05001
+            }),
             protected_reason: (number & 16 != 0).then_some("diagnostic λ".into()),
             reason: "required \"value\" 🌍".into(),
         });

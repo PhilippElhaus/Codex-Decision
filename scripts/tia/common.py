@@ -10,7 +10,7 @@ import sys
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
-STATE = ROOT / ".local/tia"
+STATE = ROOT / ".cache/tia"
 VERSION = 3
 
 
@@ -72,7 +72,7 @@ def baseline_path(family):
 
 def prepare_native_cli():
     if not os.environ.get("DECISIONCTL_TEST"):
-        target = Path(os.environ.get("CARGO_TARGET_DIR", ROOT / "target"))
+        target = Path(os.environ.get("CARGO_TARGET_DIR", ROOT / ".cache/cargo"))
         cli = target / "debug" / ("decisionctl.exe" if os.name == "nt" else "decisionctl")
         if cli.is_file():
             os.environ["DECISIONCTL_TEST"] = str(cli.resolve())

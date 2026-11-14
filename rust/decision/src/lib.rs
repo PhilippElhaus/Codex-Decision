@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(test)]
 use serde_json::json;
 use serde_json::Value;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::fmt::Write as _;
 
 pub fn check_ancestors(path: &std::path::Path) -> Result<(), String> {
@@ -60,46 +60,6 @@ pub fn is_link(metadata: &std::fs::Metadata) -> bool {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(default, deny_unknown_fields)]
-pub struct LinePolicy {
-    pub omit_min: u8,
-    pub exact_max: u8,
-}
-
-impl Default for LinePolicy {
-    fn default() -> Self {
-        Self {
-            omit_min: contract::contract()["thresholds"]["omit_min"]["default"]
-                .as_u64()
-                .unwrap() as u8,
-            exact_max: contract::contract()["thresholds"]["exact_max"]["default"]
-                .as_u64()
-                .unwrap() as u8,
-        }
-    }
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(default, deny_unknown_fields)]
-pub struct SearchRelevancePolicy {
-    pub guard_enabled: bool,
-    pub relevant_max: u8,
-}
-
-impl Default for SearchRelevancePolicy {
-    fn default() -> Self {
-        Self {
-            guard_enabled: contract::contract()["search_relevance"]["guard_enabled"]["default"]
-                .as_bool()
-                .unwrap(),
-            relevant_max: contract::contract()["search_relevance"]["relevant_max"]["default"]
-                .as_u64()
-                .unwrap() as u8,
-        }
-    }
-}
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SourceLine {
     pub number: usize,
@@ -119,10 +79,6 @@ impl SourceLine {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct LineDecision {
     pub number: usize,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub p_can_omit: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub p_exact_needed: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub p_task_relevant: Option<f64>,
     pub action: Action,
@@ -155,57 +111,6 @@ pub struct BatchRecord {
     pub request: Value,
     pub response: Value,
     pub elapsed_ms: u64,
-}
-
-pub type LineProbabilities = (f64, f64, Option<f64>, usize);
-
-pub fn apply_probabilities(
-    lines: &[SourceLine],
-    probabilities: &BTreeMap<usize, LineProbabilities>,
-    policy: &LinePolicy,
-    relevance: &SearchRelevancePolicy,
-) -> Vec<LineDecision> {
-    let mut decisions: Vec<LineDecision> = lines
-        .iter()
-        .map(|line| {
-            let judged = probabilities.get(&line.number);
-            let (omit, exact, relevant, batch) = judged
-                .map(|(omit, exact, relevant, batch)| {
-                    (Some(*omit), Some(*exact), *relevant, Some(*batch))
-                })
-                .unwrap_or((None, None, None, None));
-            let (action, reason) = if line.protected_reason.is_some() || !line.eligible {
-                (Action::KeepUnjudged, "protected")
-            } else if let Some((p_omit, p_exact, p_relevant, _)) = judged {
-                if *p_omit < f64::from(policy.omit_min) / 100.0 {
-                    (Action::Keep, "below_omit_cutoff")
-                } else if *p_exact > f64::from(policy.exact_max) / 100.0 {
-                    (Action::Keep, "exact_text")
-                } else if relevance.guard_enabled
-                    && p_relevant
-                        .is_some_and(|value| value > f64::from(relevance.relevant_max) / 100.0)
-                {
-                    (Action::Keep, "task_relevant")
-                } else {
-                    (Action::Omit, "confident_omission")
-                }
-            } else {
-                (Action::KeepUnjudged, "budget_unjudged")
-            };
-            LineDecision {
-                number: line.number,
-                p_can_omit: omit,
-                p_exact_needed: exact,
-                p_task_relevant: relevant,
-                action,
-                reason: reason.into(),
-                protected_reason: line.protected_reason.clone(),
-                batch_id: batch,
-            }
-        })
-        .collect();
-    preserve_representatives(lines, &mut decisions);
-    decisions
 }
 
 fn preserve_representatives(lines: &[SourceLine], decisions: &mut [LineDecision]) {
@@ -283,6 +188,7 @@ pub fn render(
 mod tests {
     use super::*;
     use crate::semantic::*;
+    use std::collections::BTreeMap;
     #[test]
     fn preserves_unicode_crlf_and_unterminated_line() {
         let source = "α\r\nβ\nlast";
@@ -332,17 +238,8 @@ mod tests {
         let source = "one\r\ntwo\nthree";
         let mut lines = source_lines(source);
         lines[0].protected_reason = Some("fixture_evidence".into());
-        let probs = BTreeMap::from([
-            (1, (0.99, 0.01, None, 1)),
-            (2, (0.99, 0.01, None, 1)),
-            (3, (0.99, 0.01, None, 1)),
-        ]);
-        let decisions = apply_probabilities(
-            &lines,
-            &probs,
-            &LinePolicy::default(),
-            &SearchRelevancePolicy::default(),
-        );
+        let probs = BTreeMap::from([(1, 0.01), (2, 0.01), (3, 0.01)]);
+        let decisions = apply_relevance(&lines, &probs, 5);
         assert!(render(source, &lines, &decisions, "/private/original").contains("one\r\n"));
         assert_eq!(decisions.last().unwrap().action, Action::Keep);
     }
@@ -351,15 +248,8 @@ mod tests {
         let source = "Compiling alpha\r\nerror: expected true\r\n  at src/main.rs:12\r\nCompiling alpha\r\nDone\r\n";
         let mut lines = source_lines(source);
         protect_neighbors(&mut lines);
-        let probabilities = (1..=lines.len())
-            .map(|number| (number, (0.99, 0.01, None, 1)))
-            .collect();
-        let decisions = apply_probabilities(
-            &lines,
-            &probabilities,
-            &LinePolicy::default(),
-            &SearchRelevancePolicy::default(),
-        );
+        let probabilities = (1..=lines.len()).map(|number| (number, 0.01)).collect();
+        let decisions = apply_relevance(&lines, &probabilities, 5);
         let visible = render(source, &lines, &decisions, "/private/original");
         assert!(visible.contains("error: expected true\r\n  at src/main.rs:12\r\n"));
         assert!(visible.contains("Compiling alpha\r\n"));
@@ -417,35 +307,5 @@ mod tests {
             .unwrap()
             .iter()
             .any(|row| row["text"] == "error: build failed" && row["protected"] == true)));
-    }
-
-    #[test]
-    fn search_relevance_is_independent_and_only_guards_when_enabled() {
-        let mut lines = source_lines("src/irrelevant.rs:12:unrelated symbol\nsrc/evidence.rs:8:needed value\nsearch completed\n");
-        lines[2].protected_reason = Some("completion".into());
-        // Legacy receipt replay still uses its recorded omission/exact/relevance fields.
-        let probabilities = BTreeMap::from([
-            (1, (0.99, 0.01, Some(0.01), 1)),
-            (2, (0.99, 0.01, Some(0.91), 1)),
-        ]);
-        let preview = apply_probabilities(
-            &lines,
-            &probabilities,
-            &LinePolicy::default(),
-            &SearchRelevancePolicy::default(),
-        );
-        assert_eq!(preview[1].reason, "confident_omission");
-        let guarded = apply_probabilities(
-            &lines,
-            &probabilities,
-            &LinePolicy::default(),
-            &SearchRelevancePolicy {
-                guard_enabled: true,
-                relevant_max: 5,
-            },
-        );
-        assert_eq!(guarded[0].action, Action::Omit);
-        assert_eq!(guarded[1].action, Action::Keep);
-        assert_eq!(guarded[1].reason, "task_relevant");
     }
 }

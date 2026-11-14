@@ -115,7 +115,7 @@ async function secureExistingWslPath(filename, directory) {
 }
 
 async function atomicWrite(target, content) {
-  const temporary = path.join(path.dirname(target), `.jev-${crypto.randomUUID()}.tmp`);
+  const temporary = path.join(path.dirname(target), `.decision-${crypto.randomUUID()}.tmp`);
   let owned = false;
   try {
     const file = await fs.open(temporary, "wx", 0o600);
@@ -866,7 +866,7 @@ function apiKeyFromSource(source, selected, custom) {
     return value;
   });
   if (!values.length) throw Object.assign(new Error("Decision API key is missing or invalid"), { decisionReason: "DECISION_KEY_MISSING" });
-  if (values.length !== 1 || values[0].length < 8 || Buffer.byteLength(values[0]) > 4096 || /\s|\0/.test(values[0])) {
+  if (values.length !== 1 || !/^[\x21-\x7e]{8,4096}$/.test(values[0])) {
     throw Object.assign(new Error("Decision API key is missing or invalid"), { decisionReason: "DECISION_KEY_INVALID" });
   }
   return values[0];
@@ -985,7 +985,7 @@ async function checkHealth(dataDirectory, send = globalThis.fetch, suppliedKey =
 }
 
 function validateApiKey(key) {
-  if (typeof key !== "string" || key.length < 8 || Buffer.byteLength(key) > 4096 || /\s|\0/.test(key)) {
+  if (typeof key !== "string" || !/^[\x21-\x7e]{8,4096}$/.test(key)) {
     throw new Error("Decision API key is missing or invalid");
   }
   return key;
@@ -1043,18 +1043,7 @@ async function updateCredentials(directory, values) {
   }
   const content = [...lines.filter(Boolean), ...Object.entries(values).filter(([, value]) => value !== null).map(([name, value]) => `${name}=${value}`)].join("\n") + "\n";
   if (Buffer.byteLength(content) > CREDENTIAL_FILE_LIMIT) throw new Error("Decision credential file is too large");
-  const temporary = path.join(directory, `.env-${crypto.randomUUID()}.tmp`);
-  let owned = false;
-  try {
-    const file = await fs.open(temporary, "wx", 0o600);
-    owned = true;
-    try { await file.writeFile(content); await file.sync(); } finally { await file.close(); }
-    await fs.chmod(temporary, 0o600);
-    await restrictWslPath(temporary, false);
-    await fs.rename(temporary, target);
-  } finally {
-    if (owned) await fs.rm(temporary, { force: true });
-  }
+  await atomicWrite(target, content);
 }
 
 module.exports = {

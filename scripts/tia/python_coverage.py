@@ -29,7 +29,7 @@ def collect():
         normalized = prefix.replace("\\", "/")
         if raw.startswith(normalized) and raw.endswith((".py", ".js", ".cjs", ".rs")):
             name = raw[len(normalized):]
-            if not name.startswith(("scripts/tia/", ".local/", "node_modules/")):
+            if not name.startswith(("scripts/tia/", ".local/", ".cache/")):
                 reads.add(name)
 
     sys.addaudithook(audit)

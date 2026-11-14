@@ -2,14 +2,14 @@
 // Run each reviewed corpus once per provider, with one fault suite per provider.
 const fs = require("node:fs/promises");
 const path = require("node:path");
-const os = require("node:os");
 const { spawn } = require("node:child_process");
 const ROOT = path.resolve(__dirname, "..");
 const SPLITS = ["base", "holdout", "batching", "precision", "precision-holdout", "coverage", "classification-holdout"];
 
 async function main() {
   const options = { jobs: 2, providers: ["openai", "typesafe"],
-    hook: path.join(os.homedir(), ".cache/codex-decision/cargo-target/debug/decision-hook"),
+    hook: path.join(process.env.CARGO_TARGET_DIR || path.join(ROOT, ".cache/cargo"), "debug",
+      process.platform === "win32" ? "decision-hook.exe" : "decision-hook"),
     out: path.join(ROOT, ".local/quality/dummy-matrix") };
   const known = new Set(["--jobs", "--providers", "--hook", "--out"]);
   for (let index = 2; index < process.argv.length; index += 2) {

@@ -1,6 +1,6 @@
 {
   "name": "codex-decision",
-  "version": "0.17.1",
+  "version": "0.17.2",
   "description": "Decision output filtering, context ranking, failure triage, and completion evidence review.",
   "author": {
     "name": "Philipp Elhaus",

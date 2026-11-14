@@ -44,8 +44,6 @@ fn every_retained_span_and_gap_marker_matches_the_baseline() {
                     Action::Keep
                 },
                 reason: "synthetic".into(),
-                p_can_omit: None,
-                p_exact_needed: None,
                 p_task_relevant: None,
                 protected_reason: None,
                 batch_id: None,

@@ -1,4 +1,3 @@
-use chrono::Utc;
 use serde_json::Value;
 use std::fs;
 use std::io::Read;
@@ -108,31 +107,6 @@ pub fn check_windows_binary(path: &Path, name: &str, version: &str) -> Result<()
     Ok(())
 }
 
-pub fn cachebust(root: &Path) -> Result<(), String> {
-    let path = root.join(".codex-plugin/plugin.json");
-    if root.is_symlink() || path.is_symlink() {
-        return Err("linked plugin path".into());
-    }
-    let original = fs::read_to_string(&path).map_err(|error| error.to_string())?;
-    if original.len() > 64_000 {
-        return Err("plugin manifest too large".into());
-    }
-    let version = manifest_version(root)?;
-    let old = format!("\"version\": \"{version}\"");
-    if original.matches(&old).count() != 1 {
-        return Err("plugin version field changed".into());
-    }
-    let prefix = version.split('+').next().ok_or("missing plugin version")?;
-    let next = format!("{prefix}+codex.{}", Utc::now().format("%Y%m%d%H%M%S"));
-    if next == version {
-        return Err("cachebuster has not advanced".into());
-    }
-    let updated = original.replacen(&old, &format!("\"version\": \"{next}\""), 1);
-    super::write_private(&path, updated.as_bytes())?;
-    println!("Updated plugin version: {version} -> {next}");
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -141,18 +115,5 @@ mod tests {
     fn release_versions_match_checkout() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         check_versions(&root).unwrap();
-    }
-
-    #[test]
-    fn cachebuster_replaces_only_the_suffix() {
-        let root = tempfile::tempdir().unwrap();
-        fs::create_dir(root.path().join(".codex-plugin")).unwrap();
-        let path = root.path().join(".codex-plugin/plugin.json");
-        fs::write(&path, "{\n  \"name\": \"codex-decision\",\n  \"version\": \"0.8.0+codex.old\",\n  \"description\": \"fixture\"\n}\n").unwrap();
-        cachebust(root.path()).unwrap();
-        let updated = fs::read_to_string(path).unwrap();
-        assert!(updated.contains("\"version\": \"0.8.0+codex."));
-        assert!(!updated.contains("codex.old"));
-        assert!(updated.contains("\"description\": \"fixture\""));
     }
 }

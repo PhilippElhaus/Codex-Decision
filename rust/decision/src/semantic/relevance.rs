@@ -59,8 +59,6 @@ fn decisions_with_relevance(
             };
             LineDecision {
                 number: line.number,
-                p_can_omit: None,
-                p_exact_needed: None,
                 p_task_relevant: p,
                 action,
                 reason: reason.into(),

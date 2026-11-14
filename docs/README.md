@@ -21,7 +21,7 @@ These guides describe the checked-in application. Version authorities are the pl
 | Activity counts and effectiveness limits | [Measurement](operations/measurement.md) |
 | Content-free request records | [Telemetry](operations/telemetry.md) |
 | Native tests, CI, and discovery | [Test entry point](../tests/README.md) |
-| Nx and function-level selection | [Test impact analysis](development/test-impact.md) |
+| Function-level test selection | [Test impact analysis](development/test-impact.md) |
 | Synthetic corpora and interruption checks | [Evaluation](development/evaluation.md) |
 | CPU, allocation, and concurrent hook processes | [Performance](development/performance.md) |
 | Browser validation and screenshots | [Browser checks](development/browser.md) |

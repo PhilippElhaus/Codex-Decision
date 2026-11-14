@@ -2,8 +2,6 @@
 
 use chrono::Utc;
 use codex_decision::semantic::*;
-#[cfg(test)]
-use codex_decision::{apply_probabilities, LinePolicy, SearchRelevancePolicy};
 use codex_decision::{
     check_ancestors, protect_neighbors, render, source_lines, Action, BatchRecord, SourceLine,
 };

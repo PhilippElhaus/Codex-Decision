@@ -158,7 +158,7 @@ test("patched host preserves each provider across key, settings, and external-li
   const bridge = await hostBridge(async (_command, request) => { received.push(request); return {}; });
   let id = 0;
   for (const provider of ["openai", "typesafe"]) {
-    for (const action of ["testApiKey", "saveApiKey", "settingsTest", "settingsSave", "openProvider", "openTypeSafe"]) {
+    for (const action of ["testApiKey", "saveApiKey", "settingsTest", "settingsSave", "openProvider"]) {
       const message = { type: "codex-decision", id: ++id, action, provider, key: "synthetic-key",
         mode: "replace", relevancePolicy: { omit_min: 95, exact_max: 5 },
         logLimitMb: 50, neverDeleteLogs: false, fallbackEnabled: provider === "typesafe" };
@@ -203,8 +203,9 @@ test("patched host rejects invalid fallback consent and forwards explicit false"
 test("patched host carries custom connection drafts and private passwords across login and settings", async () => {
   const received = [];
   const bridge = await hostBridge(async (_command, request) => { received.push(request); return {}; });
-  const customProvider = { name: "Synthetic local", protocol: "jev", endpoint: "http://127.0.0.1:8080/v1/systemone",
-    model: "custom-typed-model", auth: "basic", username: "test-user", header_name: "" };
+  const customProvider = { name: "Synthetic private HTTPS", protocol: "jev", endpoint: "https://provider.example.com/v1/systemone",
+    model: "custom-typed-model", response_model: "resolved-model", auth: "basic", username: "test-user", header_name: "",
+    ca_certificate: await fs.readFile(path.join(__dirname, "../fixtures/custom-provider-ca.pem"), "utf8") };
   let id = 50;
   for (const action of ["testApiKey", "saveApiKey", "settingsTest", "settingsSave"]) {
     const request = { type: "codex-decision", action, id: ++id, provider: "custom", customProvider, key: "", password: "synthetic password",
@@ -216,7 +217,9 @@ test("patched host carries custom connection drafts and private passwords across
     assert.deepEqual(received.at(-1).customProvider, customProvider);
   }
   const before = received.length;
-  for (const customProvider of [null, [], "invalid", { endpoint: 7 }, { endpoint: "x".repeat(2049) }, { password: "must-stay-private" }]) {
+  for (const customProvider of [null, [], "invalid", { endpoint: 7 }, { endpoint: "x".repeat(2049) },
+    { response_model: "x".repeat(129) }, { response_model: null },
+    { ca_certificate: "x".repeat(16385) }, { ca_certificate: {} }, { password: "must-stay-private" }]) {
     await bridge.send({ type: "codex-decision", action: "testApiKey", provider: "custom", customProvider, key: "", password: "" });
   }
   for (const password of [null, 5, {}, "x".repeat(4097)]) await bridge.send({ type: "codex-decision", action: "testApiKey", provider: "custom", customProvider, key: "", password });

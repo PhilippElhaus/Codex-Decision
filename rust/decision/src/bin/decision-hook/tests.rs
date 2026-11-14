@@ -188,16 +188,8 @@ fn failed_record_never_publishes_a_replace_event_or_receipt() {
         )
         .unwrap()
         .remove(0);
-        let probabilities = lines
-            .iter()
-            .map(|line| (line.number, (0.99, 0.01, None, 1)))
-            .collect();
-        let decisions = apply_probabilities(
-            &lines,
-            &probabilities,
-            &LinePolicy::default(),
-            &SearchRelevancePolicy::default(),
-        );
+        let probabilities = lines.iter().map(|line| (line.number, 0.01)).collect();
+        let decisions = apply_relevance(&lines, &probabilities, 5);
         let records = vec![BatchRecord {
             id: 1,
             target_numbers: batch.target_numbers,

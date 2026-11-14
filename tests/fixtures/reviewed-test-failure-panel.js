@@ -1,5 +1,5 @@
 // Recorded Decision 1.13.0 judgments on the synthetic test-failure fixture, 2026-10-01.
-// Trial: omit_min=70, exact_max=25. Not the installed 95/5 defaults.
+// Historical dual-score trial: omit_min=70, exact_max=25.
 // Source SHA-256: 5e8377b2c2b34fd3587b087a75de938cb176c393bef8fb019ba6391ebfebbdde
 window.DECISION_REVIEWED_TEST_FAILURE = {
   "version": 3,

@@ -373,9 +373,6 @@ fn relevance_keeps_uncertainty_protection_unique_bytes_and_representatives() {
     assert_eq!(decisions[1].action, Action::Omit);
     assert!(decisions[2..].iter().all(|row| row.action != Action::Omit));
     assert_eq!(lines[2].source(source), "unique value α=73\r\n");
-    assert!(decisions
-        .iter()
-        .all(|row| row.p_can_omit.is_none() && row.p_exact_needed.is_none()));
     let unknown = apply_relevance(&lines, &BTreeMap::new(), 5);
     assert!(unknown.iter().all(|row| row.action != Action::Omit));
 }

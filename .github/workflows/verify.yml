@@ -7,8 +7,7 @@ permissions:
   contents: read
 env:
   RUSTUP_TOOLCHAIN: stable
-  NX_DAEMON: false
-  NX_NO_CLOUD: true
+  PYTHONPYCACHEPREFIX: .cache/python
 jobs:
   windows:
     runs-on: windows-2025
@@ -22,15 +21,13 @@ jobs:
         run: rustup toolchain install stable --profile minimal --component clippy
       - name: Test native Windows runtime
         run: cargo test --locked -p codex-decision --lib --test ctl_process --test windows_process --test custom_providers --test assistance_process
-      - name: Test bounded native CLI file reads
-        run: |
-          cargo test --locked -p codex-decision --bin decisionctl files::tests
-          cargo test --locked -p codex-decision --bin decisionctl oversized_codex_assets
+      - name: Test native CLI, publication readers, and patch lifecycle
+        run: cargo test --locked -p codex-decision --bin decisionctl
       - name: Lint native Windows runtime and test targets
         run: cargo clippy --locked --all-targets -- -D warnings
       - name: Test native installation, activity, and private records
         env:
-          DECISIONCTL_TEST: target/debug/decisionctl.exe
+          DECISIONCTL_TEST: .cache/cargo/debug/decisionctl.exe
         run: >-
           node --test tests/unit/native_install.test.cjs tests/unit/integrated_install.test.cjs
           tests/unit/session_work.test.cjs tests/unit/updates.test.cjs tests/unit/activity_cache.test.cjs
@@ -58,8 +55,6 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 22
-          cache: npm
-      - run: npm ci --ignore-scripts
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.12'
@@ -69,30 +64,22 @@ jobs:
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: |
-            .local/tia/node.json
-            .local/tia/python.json
-            .local/tia/rust.json
+            .cache/tia/node.json
+            .cache/tia/python.json
+            .cache/tia/rust.json
           key: tia-${{ runner.os }}-${{ runner.arch }}-${{ github.event.pull_request.base.sha || github.sha }}
-      - name: Select Git comparison
-        if: github.event_name == 'pull_request'
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.sha }}
-        run: |
-          echo "NX_BASE=$BASE_SHA" >> "$GITHUB_ENV"
-          echo "NX_HEAD=$HEAD_SHA" >> "$GITHUB_ENV"
       - name: Check Rust formatting
         run: cargo fmt --all -- --check
       - name: Collect complete Rust function evidence on main
         if: github.event_name != 'pull_request'
         run: |
           umask 022
-          npx nx run decision:collect-rust
+          python scripts/tia/run.py rust --collect
       - name: Test affected Rust functions on pull requests
         if: github.event_name == 'pull_request'
         run: |
           umask 022
-          npx nx affected -t test-rust
+          python scripts/tia/run.py rust
       - name: Build native mock runtimes for boundary checks
         run: cargo test --locked -p codex-decision --no-run
       - name: Test telemetry with private directory permissions
@@ -100,36 +87,38 @@ jobs:
           umask 077
           cargo test --locked -p codex-decision --bin decision-hook telemetry::usage::tests
           cargo test --locked -p codex-decision --bin decision-hook api::tests::response::request_failures_and_successes_are_joined_without_counting_requests_as_outputs
-      - run: node scripts/dummy_matrix.cjs --hook target/debug/decision-hook --jobs 2 --out .local/quality/dummy-ci
+      - run: node scripts/dummy_matrix.cjs --hook .cache/cargo/debug/decision-hook --jobs 2 --out .local/quality/dummy-ci
       - run: cargo clippy --locked --all-targets -- -D warnings
       - run: cargo build --locked -p codex-decision --profile verification
-      - run: node scripts/pipeline_interrupt.cjs --hook target/verification/decision-hook --out .local/quality/pipeline-ci-interrupt
-      - run: node scripts/pipeline_stage_interrupt.cjs --hook target/verification/decision-hook --require-recovered --out .local/quality/pipeline-ci-staged-retry
-      - run: node scripts/pipeline_stage_interrupt.cjs --hook target/verification/decision-hook --concurrent-rollback --out .local/quality/pipeline-ci-staged-rollback
-      - run: node scripts/pipeline_commit_interrupt.cjs --hook target/verification/decision-hook --out .local/quality/pipeline-ci-publication
-      - run: node scripts/pipeline_stress.cjs --hook target/verification/decision-hook --provider openai --concurrency 4 --rounds 6 --lines 256,1024 --faults http,json,oversize,probability,model,timeout --jitter-ms 10 --out .local/quality/pipeline-ci-openai
-      - run: node scripts/pipeline_stress.cjs --hook target/verification/decision-hook --provider typesafe --concurrency 4 --rounds 6 --lines 256,1024 --faults http,json,oversize,probability,model,timeout --jitter-ms 10 --out .local/quality/pipeline-ci-typesafe
+      - run: node scripts/pipeline_interrupt.cjs --hook .cache/cargo/verification/decision-hook --out .local/quality/pipeline-ci-interrupt
+      - run: node scripts/pipeline_stage_interrupt.cjs --hook .cache/cargo/verification/decision-hook --require-recovered --out .local/quality/pipeline-ci-staged-retry
+      - run: node scripts/pipeline_stage_interrupt.cjs --hook .cache/cargo/verification/decision-hook --concurrent-rollback --out .local/quality/pipeline-ci-staged-rollback
+      - run: node scripts/pipeline_commit_interrupt.cjs --hook .cache/cargo/verification/decision-hook --out .local/quality/pipeline-ci-publication
+      - run: node scripts/pipeline_stress.cjs --hook .cache/cargo/verification/decision-hook --provider openai --concurrency 4 --rounds 6 --lines 256,1024 --faults http,json,oversize,probability,model,timeout --jitter-ms 10 --out .local/quality/pipeline-ci-openai
+      - run: node scripts/pipeline_stress.cjs --hook .cache/cargo/verification/decision-hook --provider typesafe --concurrency 4 --rounds 6 --lines 256,1024 --faults http,json,oversize,probability,model,timeout --jitter-ms 10 --out .local/quality/pipeline-ci-typesafe
       - name: Collect complete Node function evidence on main
         if: github.event_name != 'pull_request'
         env:
-          DECISIONCTL_TEST: target/verification/decisionctl
-        run: npx nx run decision:collect-node
+          DECISIONCTL_TEST: .cache/cargo/verification/decisionctl
+        run: python scripts/tia/run.py node --collect
       - name: Collect complete Python function evidence on main
         if: github.event_name != 'pull_request'
-        run: npx nx run decision:collect-python
+        run: python scripts/tia/run.py python --collect
       - name: Test affected Node and Python functions on pull requests
         if: github.event_name == 'pull_request'
         env:
-          DECISIONCTL_TEST: target/verification/decisionctl
-        run: npx nx affected -t test-node test-python
+          DECISIONCTL_TEST: .cache/cargo/verification/decisionctl
+        run: |
+          python scripts/tia/run.py node
+          python scripts/tia/run.py python
       - name: Save verified main-branch function coverage
         if: github.ref == 'refs/heads/main' && success()
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: |
-            .local/tia/node.json
-            .local/tia/python.json
-            .local/tia/rust.json
+            .cache/tia/node.json
+            .cache/tia/python.json
+            .cache/tia/rust.json
           key: tia-${{ runner.os }}-${{ runner.arch }}-${{ github.sha }}
       - name: Save offline failure reports
         if: failure()

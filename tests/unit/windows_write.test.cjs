@@ -7,20 +7,22 @@ const path = require("node:path");
 const test = require("node:test");
 const core = require("../../vscode-control/core");
 
-for (const persistent of [false, true]) {
-  test(`Windows atomic writes ${persistent ? "preserve the old file on persistent denial" : "recover transient reader locks"}`, async () => {
+for (const credential of [false, true]) for (const persistent of [false, true]) {
+  test(`Windows ${credential ? "credential" : "settings"} writes ${persistent ? "preserve the old file on persistent denial" : "recover transient reader locks"}`, async () => {
     const directory = await fs.mkdtemp(path.join(os.tmpdir(), "jev-windows-write-"));
     const platform = Object.getOwnPropertyDescriptor(process, "platform");
     const rename = fs.rename;
     try {
-      await core.writeGlobalSettings(directory, { mode: "replace", log_limit_mb: 50 });
-      const previous = await fs.readFile(path.join(directory, "settings.json"));
+      const filename = path.join(directory, credential ? ".env" : "settings.json");
+      const write = credential ? key => core.writeApiKey(directory, key) : mode => core.writeGlobalSettings(directory, { mode });
+      await write(credential ? "synthetic-initial-key" : "replace");
+      const previous = await fs.readFile(filename);
       let attempts = 0;
       Object.defineProperty(process, "platform", { value: "win32" });
       fs.rename = async (...args) => {
         attempts += 1;
         if (persistent || attempts <= 2) {
-          assert.deepEqual(await fs.readFile(path.join(directory, "settings.json")), previous);
+          assert.deepEqual(await fs.readFile(filename), previous);
           const error = new Error("Synthetic Windows sharing denial");
           error.code = attempts % 2 === 1 ? "EPERM" : "EBUSY";
           throw error;
@@ -28,16 +30,17 @@ for (const persistent of [false, true]) {
         return rename(...args);
       };
       if (persistent) {
-        await assert.rejects(core.writeGlobalSettings(directory, { mode: "observe" }),
+        await assert.rejects(write(credential ? "synthetic-replacement-key" : "observe"),
           /Synthetic Windows sharing denial/);
         assert.equal(attempts, 6, "permanent failure must stop after bounded retries");
-        assert.deepEqual(await fs.readFile(path.join(directory, "settings.json")), previous);
+        assert.deepEqual(await fs.readFile(filename), previous);
       } else {
-        await core.writeGlobalSettings(directory, { mode: "observe" });
+        await write(credential ? "synthetic-replacement-key" : "observe");
         assert.equal(attempts, 3);
-        assert.equal((await core.readGlobalSettings(directory)).mode, "observe");
+        assert.equal(credential ? await core.readApiKey(directory) : (await core.readGlobalSettings(directory)).mode,
+          credential ? "synthetic-replacement-key" : "observe");
       }
-      assert.deepEqual(await fs.readdir(directory), ["settings.json"],
+      assert.deepEqual(await fs.readdir(directory), [path.basename(filename)],
         "successful and failed writes must remove their temporary file and lock");
     } finally {
       fs.rename = rename;
@@ -60,7 +63,7 @@ test("credential writes secure the temporary inode through the shared dotted-WSL
   // its process transport stays mocked so this test never launches WSL.
   require.cache[helperPath].exports = { ...helpers, restrictWslPath: async (filename, isDirectory) => {
     if (isDirectory) return helpers.restrictWslPath(filename, true);
-    assert.match(path.basename(filename), /^\.env-[0-9a-f-]+\.tmp$/);
+    assert.match(path.basename(filename), /^\.decision-[0-9a-f-]+\.tmp$/);
     assert.equal((await fs.stat(filename)).isFile(), true);
     calls.push(filename);
     await helpers.restrictWslPath(`\\\\wsl.localhost\\Ubuntu-24.04\\home\\fixture\\${path.basename(filename)}`,

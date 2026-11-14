@@ -10,22 +10,21 @@ From the repository root:
 cargo test --locked -p codex-decision
 cargo clippy --locked --all-targets -- -D warnings
 npm test --prefix vscode-control
-python -m unittest discover -s tests -p 'test_*.py'
+python -B -m unittest discover -s tests -p 'test_*.py'
 ```
 
 Set `DECISIONCTL_TEST` to the freshly built `decisionctl` when the Cargo target directory is nonstandard. This prevents the retained-history differential check from skipping for a missing verification binary.
 
-Use Nx for task and function-level selection:
+Use the dependency-free launcher for function-level selection. No npm installation is required:
 
 ```bash
-npm ci
 npm run tia:collect
 npm test
 npm run test:affected -- --base=main --head=HEAD
-npm run test:full -- --skip-nx-cache
+npm run test:full
 ```
 
-See [test impact analysis](../docs/development/test-impact.md) for coverage collection, precise native identities, baseline validity, and full-suite fallback. Rust function collection requires the active toolchain's `llvm-tools-preview` component. Main collects complete native suites. Pull requests select functions when evidence is valid. Missing, shared, dynamic, or uncertain evidence runs full suites. Browser, native Windows, provider-failure, interruption, publication, and package gates remain complete.
+The launcher builds the native test runtime before Node's differential checks. Cargo output defaults to `.cache/cargo`; coverage and Python bytecode use separate `.cache/` subdirectories. Set `PYTHON` to an explicit interpreter path when needed. See [test impact analysis](../docs/development/test-impact.md) for collection, exact test identities, baseline validity, and fallback. Rust collection requires `llvm-tools-preview`. Main collects complete suites. Pull requests select functions when evidence is valid. Missing, shared, dynamic, or uncertain evidence runs full suites. Browser, native Windows, provider-failure, interruption, publication, and package gates remain complete.
 
 ## Discovery and ownership
 
@@ -59,7 +58,7 @@ The noninteractive Windows package check is documented in [builds](../docs/devel
 
 ```powershell
 pwsh -NoProfile -File vscode-control/scripts/windows_integrated_smoke.ps1 `
-  -Vsix .local/submission/codex-decision-0.17.1.vsix -Distro Ubuntu
+  -Vsix .local/submission/codex-decision-0.17.2.vsix -Distro Ubuntu
 pwsh -NoProfile -File vscode-control/scripts/windows_panel_smoke.ps1 -Distro Ubuntu
 ```
 

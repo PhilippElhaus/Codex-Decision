@@ -25,7 +25,7 @@ Live runs use the installed key only in the proxy process memory. The hook uses 
 
 Batching fixtures cover 251–10,000 lines, long target text, Unicode, escaped JSON, ANSI/CRLF, and unpackable context. All emitted requests must fit both conservative API token bounds. The runner checks exactly-once coverage and complete target text. Later-batch fault cases verify rollback after an earlier valid relevance batch. The current panel accepts complete version-6 snapshots up to 10,000 source lines and 8 MiB. It includes earlier batches and protected lines; its row counts must match all recorded totals.
 
-The runner requires a debug or verification hook and rejects the production binary before loading a live key. It reconciles proxy calls, persisted attempts, stage counts, receipts, errors, and completion counters. Eligible offline cases must produce their expected decision; local skips need an explicit expectation. Unexpected live errors stop further requests. Use `--case` with a fault ID for a focused failure rerun.
+The runner requires a debug or verification hook and rejects the production binary before loading a live key. It reconciles proxy calls, persisted attempts, stage counts, receipts, errors, and completion counters. Eligible offline cases must produce their expected decision; local skips need an explicit expectation. Unexpected live errors stop further requests. Use `--case` with a fault ID for a focused failure rerun. Quality replay tests current relevance cutoffs. Historical receipts retain their recorded evidence-loss report; the retired omission/exact-score engine is no longer executed.
 
 Every report includes `summary.coverage`. It counts distinct outputs, completed
 line evaluations, classification keeps, previews, and prepared replacements.
@@ -70,13 +70,13 @@ readable and typed originals and a valid completed panel. It covers both
 providers. CI also runs a short concurrent mixed-fault check for each provider.
 
 ```bash
-node scripts/pipeline_interrupt.cjs --hook target/debug/decision-hook \
+node scripts/pipeline_interrupt.cjs --hook .cache/cargo/debug/decision-hook \
   --out .local/quality/pipeline-interrupt
-node scripts/pipeline_stage_interrupt.cjs --hook target/verification/decision-hook \
+node scripts/pipeline_stage_interrupt.cjs --hook .cache/cargo/verification/decision-hook \
   --require-recovered --out .local/quality/pipeline-staged-retry
-node scripts/pipeline_stage_interrupt.cjs --hook target/verification/decision-hook \
+node scripts/pipeline_stage_interrupt.cjs --hook .cache/cargo/verification/decision-hook \
   --concurrent-rollback --out .local/quality/pipeline-staged-rollback
-node scripts/pipeline_commit_interrupt.cjs --hook target/verification/decision-hook \
+node scripts/pipeline_commit_interrupt.cjs --hook .cache/cargo/verification/decision-hook \
   --out .local/quality/pipeline-publication
 ```
 
@@ -95,4 +95,4 @@ requested tests and values, Unicode facts, timing, retry counts, and sequence
 requirements. Credential sentinels require zero requests. Fault cases also
 cover duplicate JSON fields and response bodies that trickle past the deadline.
 
-Build the optimized synthetic hook with `cargo build --locked -p codex-decision --profile verification`. It retains assertions and the loopback endpoint while using optimized packing. Its binaries live under `target/verification/` (or your selected Cargo target directory). Use it for large concurrent pressure checks; an unoptimized debug build can reach the existing 45-second hook limit on a single CPU. Release packaging always builds a separate production profile with the test endpoint disabled.
+Build the optimized synthetic hook with `cargo build --locked -p codex-decision --profile verification`. It retains assertions and the loopback endpoint while using optimized packing. Its binaries live under `.cache/cargo/verification/` (or your selected Cargo target directory). Use it for large concurrent pressure checks; an unoptimized debug build can reach the existing 45-second hook limit on a single CPU. Release packaging always builds a separate production profile with the test endpoint disabled.

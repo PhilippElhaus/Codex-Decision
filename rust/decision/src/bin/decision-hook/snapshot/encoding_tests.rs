@@ -42,8 +42,6 @@ fn borrowed_panels_match_every_frozen_row_total_and_canonical_byte() {
                         _ => Action::KeepUnjudged,
                     },
                     batch_id: (next() % 3 != 0).then_some(1 + next() % 9),
-                    p_can_omit: (next() % 2 == 0).then_some(-0.0),
-                    p_exact_needed: (next() % 2 == 0).then_some(0.05001),
                     p_task_relevant: (next() % 2 == 0).then_some(0.95),
                     protected_reason: line.protected_reason.clone(),
                     reason: "required \"value\" λ🌍".into(),

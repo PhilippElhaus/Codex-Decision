@@ -77,7 +77,7 @@ async function verify(hook,provider) {
 }
 
 async function main() {
-  const hook=path.resolve(arg("--hook",path.join(os.homedir(),".cache/codex-decision/pipeline-candidate-20261007/debug/decision-hook")));
+  const hook=path.resolve(arg("--hook",path.join(process.env.CARGO_TARGET_DIR||".cache/cargo","verification",process.platform==="win32"?"decision-hook.exe":"decision-hook")));
   const details=await fs.lstat(hook);
   if(!details.isFile()||details.isSymbolicLink()||details.size>128*1024*1024)throw new Error("Invalid testing hook executable");
   requireProxyHook(await fs.readFile(hook));

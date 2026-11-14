@@ -6,6 +6,18 @@ const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
 const { checkHealth, readApiKey, writeApiKey } = require("../../../vscode-control/core");
+const fixtures = require("../../fixtures/builtin-credentials.json");
+
+test("built-in credentials share the native hook's parsing and duplicate-field contract", async t => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "decision-credential-parity-"));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  for (const provider of ["openai", "typesafe"]) for (const fixture of fixtures) {
+    const source = fixture.env.replaceAll("OPENAI_API_KEY", provider === "openai" ? "OPENAI_API_KEY" : "JEV_API_KEY");
+    await fs.writeFile(path.join(directory, ".env"), source, { mode: 0o600 });
+    if (fixture.key === null) await assert.rejects(readApiKey(directory, provider));
+    else assert.equal(await readApiKey(directory, provider), fixture.key);
+  }
+});
 
 test("settings save private key and test an unsaved key without exposing it", async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "decision-settings-test-"));

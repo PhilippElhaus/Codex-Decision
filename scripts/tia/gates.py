@@ -12,7 +12,7 @@ if args.gate == "quality":
     command(["cargo", "build", "--locked", "-p", "codex-decision", "--profile", "verification"])
     import os
     from pathlib import Path
-    target = Path(os.environ.get("CARGO_TARGET_DIR", ROOT / "target"))
+    target = Path(os.environ.get("CARGO_TARGET_DIR", ROOT / ".cache/cargo"))
     hook = target / "verification" / ("decision-hook.exe" if os.name == "nt" else "decision-hook")
     command(["node", "scripts/dummy_matrix.cjs", "--hook", hook, "--jobs", "2", "--out", output / "matrix"])
     for runner, flags in [("pipeline_interrupt.cjs", []),

@@ -1,6 +1,10 @@
 //! Validated session settings and private credentials.
 use super::*;
 
+#[cfg(test)]
+#[path = "config_tests.rs"]
+mod tests;
+
 #[derive(Clone)]
 pub(super) struct Config {
     pub(super) global_scope: bool,
@@ -141,11 +145,16 @@ pub(super) fn key(
     provider: codex_decision::provider::Provider,
 ) -> Result<String, String> {
     let entered = credential_value(data_dir, provider.key_name())?;
-    let value = entered.trim().trim_matches(['\'', '"']);
-    if !(8..=4096).contains(&value.len())
-        || value.chars().any(char::is_whitespace)
-        || value.contains('\0')
-    {
+    let value = entered.trim();
+    let value = ['\'', '"']
+        .into_iter()
+        .find_map(|quote| {
+            value
+                .strip_prefix(quote)
+                .and_then(|rest| rest.strip_suffix(quote))
+        })
+        .unwrap_or(value);
+    if !codex_decision::provider::valid_builtin_key(value) {
         return Err("invalid credential".into());
     }
     Ok(value.into())
@@ -177,13 +186,22 @@ pub(super) fn credential_values(data_dir: &Path, names: &[&str]) -> Result<Vec<S
     let content =
         String::from_utf8(read_bounded(&path, 16384).map_err(|_| "invalid credential encoding")?)
             .map_err(|_| "invalid credential encoding")?;
+    let content = content.strip_prefix('\u{feff}').unwrap_or(&content);
     names
         .iter()
         .map(|name| {
-            let prefix = format!("{name}=");
+            let builtin = matches!(*name, "OPENAI_API_KEY" | "JEV_API_KEY");
             let values: Vec<&str> = content
                 .lines()
-                .filter_map(|line| line.trim_start().strip_prefix(&prefix))
+                .filter_map(|line| line.split_once('='))
+                .filter(|(field, _)| {
+                    if builtin {
+                        field.trim() == *name
+                    } else {
+                        *field == *name
+                    }
+                })
+                .map(|(_, value)| value)
                 .collect();
             if values.is_empty() {
                 return Err("missing credential".into());

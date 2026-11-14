@@ -8,6 +8,51 @@ const path = require("node:path");
 const test = require("node:test");
 const core = require("../../../vscode-control/core");
 
+test("automatic repair and assistance honor the same environment and editor data-directory overrides", async () => {
+  const environment = process.env.CODEX_DECISION_DATA_DIRECTORY;
+  const selected = path.join(os.tmpdir(), "decision-environment-fixture");
+  let configured = "", integration, assistance;
+  const installed = [];
+  const replacements = {
+    "../../../vscode-control/integrated-install": { ensureIntegratedInstall: async (_vscode, _context, options) => {
+      installed.push(options.dataDirectory()); return { status: "ready" };
+    } },
+    "../../../vscode-control/integration": { activateIntegration: (_vscode, _context, options) => { integration = options; } },
+    "../../../vscode-control/assistance": { activateAssistance: (_vscode, _context, options) => { assistance = options; } },
+  };
+  const previous = [];
+  const context = { subscriptions: [], extensionUri: {} };
+  const fake = {
+    window: { registerWebviewViewProvider: () => ({ dispose() {} }) },
+    commands: { registerCommand: () => ({ dispose() {} }), executeCommand: async () => {} },
+    workspace: { getConfiguration: () => ({ get: () => configured }), onDidChangeConfiguration: () => ({ dispose() {} }) },
+  };
+  try {
+    process.env.CODEX_DECISION_DATA_DIRECTORY = selected;
+    for (const [name, exports] of Object.entries(replacements)) {
+      const filename = require.resolve(name);
+      require(filename);
+      previous.push([filename, require.cache[filename].exports]);
+      require.cache[filename].exports = exports;
+    }
+    loadWithVscode(require.resolve("../../../vscode-control/extension"), fake).activate(context);
+    assert.equal(integration.dataDirectory(), selected);
+    assert.equal(assistance.dataDirectory(), selected);
+    await integration.ready(); await assistance.ready();
+    assert.deepEqual(installed, [selected, selected]);
+    configured = path.join(os.tmpdir(), "decision-editor-fixture");
+    assert.equal(integration.dataDirectory(), configured);
+    assert.equal(assistance.dataDirectory(), configured);
+    await integration.ready(); await assistance.ready();
+    assert.deepEqual(installed.slice(2), [configured, configured]);
+  } finally {
+    for (const [filename, exports] of previous) require.cache[filename].exports = exports;
+    if (environment === undefined) delete process.env.CODEX_DECISION_DATA_DIRECTORY;
+    else process.env.CODEX_DECISION_DATA_DIRECTORY = environment;
+    for (const disposable of context.subscriptions.reverse()) disposable.dispose();
+  }
+});
+
 test("settings save replies reflect the persisted provider, model, and mode in threads and on home", async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "decision-settings-response-"));
   const commands = new Map();

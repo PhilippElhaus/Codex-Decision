@@ -6,8 +6,6 @@ use serde::{Serialize, Serializer};
 #[derive(Serialize)]
 struct Row<'a> {
     action: &'static str,
-    can_omit: Option<f64>,
-    exact_needed: Option<f64>,
     excerpt: &'a str,
     line: usize,
     protected_reason: Option<&'a str>,
@@ -31,8 +29,6 @@ impl Serialize for Rows<'_> {
                 } else {
                     "keep"
                 },
-                can_omit: decision.p_can_omit,
-                exact_needed: decision.p_exact_needed,
                 excerpt: excerpt(&line.model_text),
                 line: line.number,
                 protected_reason: decision.protected_reason.as_deref(),

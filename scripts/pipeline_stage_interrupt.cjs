@@ -165,7 +165,7 @@ async function verify(hook, provider, requireRecovered) {
 }
 
 async function main() {
-  const hook = path.resolve(arg("--hook", "target/verification/decision-hook"));
+  const hook = path.resolve(arg("--hook", ".cache/cargo/verification/decision-hook"));
   const details = await fs.lstat(hook);
   assert.ok(details.isFile() && !details.isSymbolicLink() && details.size <= 128 * 1024 * 1024);
   requireProxyHook(await fs.readFile(hook));

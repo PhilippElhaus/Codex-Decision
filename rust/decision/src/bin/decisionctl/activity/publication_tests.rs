@@ -13,6 +13,8 @@ fn cli_uses_prior_committed_stats_until_marker_and_refuses_unknown_mutation() {
     fs::create_dir(&logs).unwrap();
     let write = |path: &Path, bytes: &[u8]| {
         fs::write(path, bytes).unwrap();
+        #[cfg(windows)]
+        codex_decision::windows::secure(path, false).unwrap();
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;

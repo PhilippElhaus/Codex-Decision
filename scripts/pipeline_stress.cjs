@@ -18,7 +18,7 @@ const hash=text=>crypto.createHash("sha256").update(text).digest("hex");
 async function json(file){return JSON.parse(await fs.readFile(file,"utf8"));}
 
 async function main() {
-  const hook=path.resolve(arg("--hook",path.join(os.homedir(),".cache/codex-decision/pipeline-candidate-20261007/debug/decision-hook")));
+  const hook=path.resolve(arg("--hook",path.join(process.env.CARGO_TARGET_DIR||".cache/cargo","verification",process.platform==="win32"?"decision-hook.exe":"decision-hook")));
   const hookDetails=await fs.lstat(hook);
   if(!hookDetails.isFile()||hookDetails.isSymbolicLink()||hookDetails.size>128*1024*1024)throw new Error("Invalid testing hook executable");
   requireProxyHook(await fs.readFile(hook));
@@ -26,8 +26,6 @@ async function main() {
   const concurrency=Number(arg("--concurrency","4")),rounds=Number(arg("--rounds","32")),minutes=Number(arg("--minutes","0")),limitMb=Number(arg("--log-limit-mb","1"));
   const counts=arg("--lines","64,512,2000,10000").split(",").map(Number);
   const faults=arg("--faults","http").split(","),jitter=Number(arg("--jitter-ms","0"));
-  const allowDeadline=process.argv.includes("--allow-deadline");
-  const allowStorageFaults=process.argv.includes("--allow-storage-faults");
   if(!Number.isInteger(concurrency)||concurrency<1||concurrency>16||!Number.isInteger(rounds)||rounds<1||rounds>100000||!Number.isFinite(minutes)||minutes<0||minutes>480||
     !Number.isInteger(limitMb)||limitMb<1||limitMb>50||counts.length>16||counts.some(n=>!Number.isInteger(n)||n<32||n>10000)||
     !Number.isInteger(jitter)||jitter<0||jitter>250||faults.some(mode=>!Object.hasOwn(faultMessages,mode)))throw new Error("Stress limits are invalid");
@@ -45,10 +43,11 @@ async function main() {
   await fs.writeFile(path.join(data,".env"),`${provider==="openai"?"OPENAI_API_KEY":"JEV_API_KEY"}=synthetic-stress-key\n`,{mode:0o600});
   const transcript=path.join(temporary,"transcript.jsonl");
   await fs.writeFile(transcript,JSON.stringify({type:"response_item",payload:{role:"user",content:[{type:"input_text",text:"Identify the failure cause and final status. Preserve their exact values."}]}})+"\n");
-  let active=new Map(),requests=0,successfulCalls=0,successes=0,failures=0,deadlineFallbacks=0,sourceBytes=0,savedBytes=0,lastCompletedRuns=[];
-  let requestBytes=0,targetQuestions=0,contextOnlyRows=0,statusWriteFailures=0;
+  let active=new Map(),requests=0,successfulCalls=0,successes=0,failures=0,sourceBytes=0,savedBytes=0,lastCompletedRuns=[];
+  let requestBytes=0,targetQuestions=0,contextOnlyRows=0;
   const expectedStages={responses_received:0,responses_validated:0,request_failures:0,request_cancelled:0};
-  let stageCounts,stageAccounting="legacy hook before 0.11.5; outcome assertions unavailable";
+  let stageCounts;
+  const stageAccounting="all outcome counters verified";
   const latencies=new Latencies(),wireDigest=crypto.createHash("sha256");
   const resultDigest=crypto.createHash("sha256");
   const unexpected=[];
@@ -73,7 +72,7 @@ async function main() {
       if(first)run.classified=true;
       res.setHeader("Content-Type","application/json");res.end(JSON.stringify(response(wire,provider)));
     }catch(error){
-      if(!(allowDeadline&&req.aborted&&["ECONNRESET","ERR_STREAM_PREMATURE_CLOSE"].includes(error.code)))unexpected.push(error.message);
+      unexpected.push(error.message);
       res.writeHead(500,{"Content-Type":"application/json"});res.end("{}");
     }
   });
@@ -96,16 +95,13 @@ async function main() {
         expectedStages.responses_validated+=run.calls-Number(run.fault);
         expectedStages.request_failures+=Number(run.fault);
         const storageFaults=(result.stderr.match(/^Codex Decision status write failed: .+$/gm)||[]).length;
-        assert.ok(storageFaults<=1,"Each invocation may report at most one failed error-ledger write");
-        if(storageFaults){assert.ok(allowStorageFaults&&run.fault,"Candidate acceptance requires zero lost telemetry");statusWriteFailures+=storageFaults;}
+        assert.equal(storageFaults,0,"Candidate acceptance requires zero lost telemetry");
         const stableReply={...result.reply};
         if(typeof stableReply.reason==="string")stableReply.reason=stableReply.reason
           .split(file.replace(/\.txt$/,".json")).join("/synthetic/original.json")
           .split(file).join("/synthetic/original.txt");
         resultDigest.update(run.id+"\0").update(JSON.stringify(stableReply)+"\0");
-        const deadline=!run.fault && allowDeadline && ["Codex Decision hook skipped: hook deadline\n","Codex Decision hook skipped: Decision request failed\n"].includes(result.stderr);
-        latencies.add(count,deadline?"deadline":run.fault?"failure":"success",result.elapsedMs);
-        if(deadline){assert.deepEqual(result.reply,{});await assert.rejects(fs.stat(file));deadlineFallbacks++;continue;}
+        latencies.add(count,run.fault?"failure":"success",result.elapsedMs);
         if(run.fault){assert.deepEqual(result.reply,{});assert.ok(result.stderr.includes(faultMessages[run.faultMode]),result.stderr);await assert.rejects(fs.stat(file));failures++;continue;}
         assert.equal(result.stderr,"");assert.equal(result.reply.continue,false);
         const original=await fs.readFile(file,"utf8");assert.ok(original.endsWith(run.source));
@@ -129,13 +125,9 @@ async function main() {
       assert.equal(health.api_requests,requests,"Saved attempts must include successful and deliberately failed requests");
       const version=/^(\d+)\.(\d+)\.(\d+)$/.exec(health.hook_version||"");
       assert.ok(version,"Health metadata must identify its hook version");
-      if(Number(version[1])>0||Number(version[2])>11||Number(version[2])===11&&Number(version[3])>=5){
-        assert.equal(deadlineFallbacks,0,"Stage accounting acceptance requires zero deadline fallbacks");
-        stageCounts=Object.fromEntries(Object.keys(expectedStages).map(key=>[key,health[key]]));
-        assert.deepEqual(stageCounts,expectedStages,"Every request must settle into its exact observed outcome stage");
-        stageAccounting="all outcome counters verified";
-      }
-      assert.equal(health.errors+statusWriteFailures,failures+deadlineFallbacks,"Persisted errors and explicit storage faults must reconcile every failed invocation");
+      stageCounts=Object.fromEntries(Object.keys(expectedStages).map(key=>[key,health[key]]));
+      assert.deepEqual(stageCounts,expectedStages,"Every request must settle into its exact observed outcome stage");
+      assert.equal(health.errors,failures,"Persisted errors must reconcile every failed invocation");
       const files=await fs.readdir(path.join(scoped,"logs"),{recursive:true});let managed=0;
       for(const name of files){assert.ok(!/\.pending$|\.tmp$/.test(name));if(/^(receipt|batch)-/.test(path.basename(name)))managed+=(await fs.stat(path.join(scoped,"logs",name))).size;}
       assert.ok(managed<=limitMb*1000000);
@@ -143,16 +135,16 @@ async function main() {
       // only those closed files to keep multi-hour checks within a fixed budget.
       for(const file of verifiedOriginals){const metadata=await fs.lstat(file);assert.ok(metadata.isFile()&&!metadata.isSymbolicLink());await fs.unlink(file);}
       group++;
-      if(group%8===0||!minutes&&group===rounds){const status={group,provider,invocations:successes+failures+deadlineFallbacks,successes,deliberate_failures:failures,deadline_fallbacks:deadlineFallbacks,mock_requests:requests,
-        source_bytes:sourceBytes,saved_bytes:savedBytes,status_write_failures:statusWriteFailures,request_outcomes:stageCounts||null,outcome_assertions:stageAccounting,managed_log_bytes:managed,elapsed_ms:Date.now()-started};console.log(JSON.stringify(status));await fs.writeFile(path.join(out,"progress.json"),JSON.stringify(status,null,2)+"\n");}
+      if(group%8===0||!minutes&&group===rounds){const status={group,provider,invocations:successes+failures,successes,deliberate_failures:failures,deadline_fallbacks:0,mock_requests:requests,
+        source_bytes:sourceBytes,saved_bytes:savedBytes,status_write_failures:0,request_outcomes:stageCounts,outcome_assertions:stageAccounting,managed_log_bytes:managed,elapsed_ms:Date.now()-started};console.log(JSON.stringify(status));await fs.writeFile(path.join(out,"progress.json"),JSON.stringify(status,null,2)+"\n");}
     }
     const memory=await resources.stop();
     assert.deepEqual(memory.sampling_errors,[],"Owned runtime memory sampling must remain available");
     const snapshot=path.join(scoped,"logs/latest-decision.json");
     if(lastCompletedRuns.length){const metadata=await fs.lstat(snapshot);assert.ok(metadata.isFile()&&!metadata.isSymbolicLink()&&metadata.size<=8*1024*1024);await fs.copyFile(snapshot,path.join(out,"latest-decision.json"));}
-    const summary={provider,groups:group,invocations:successes+failures+deadlineFallbacks,successes,deliberate_failures:failures,deadline_fallbacks:deadlineFallbacks,mock_requests:requests,source_bytes:sourceBytes,saved_bytes:savedBytes,
+    const summary={provider,groups:group,invocations:successes+failures,successes,deliberate_failures:failures,deadline_fallbacks:0,mock_requests:requests,source_bytes:sourceBytes,saved_bytes:savedBytes,
       request_sha256:wireDigest.digest("hex"),result_sha256:resultDigest.digest("hex"),request_bytes:requestBytes,
-      relevance_questions:targetQuestions,context_only_rows:contextOnlyRows,status_write_failures:statusWriteFailures,request_outcomes:stageCounts||null,outcome_assertions:stageAccounting,sampled_memory:memory,latency_ms:latencies.summary(),elapsed_ms:Date.now()-started};
+      relevance_questions:targetQuestions,context_only_rows:contextOnlyRows,status_write_failures:0,request_outcomes:stageCounts,outcome_assertions:stageAccounting,sampled_memory:memory,latency_ms:latencies.summary(),elapsed_ms:Date.now()-started};
     await fs.writeFile(path.join(out,"summary.json"),JSON.stringify(summary,null,2)+"\n");console.log(JSON.stringify(summary));
   }finally{
     if(resources)await resources.stop();

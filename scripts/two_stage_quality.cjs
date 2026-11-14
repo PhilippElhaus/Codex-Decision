@@ -35,7 +35,8 @@ async function main() {
   const spec = providerSpec(provider);
   const providerFaults = provider === "openai" ? ["line-refusal", "line-order", "line-name", "choice-duplicate-option"] : [];
   if (live && !process.argv.includes("--data-dir")) throw new Error("Live mode requires --data-dir; the saved key stays in memory.");
-  const hook = path.resolve(arg("--hook", path.join(os.homedir(), ".cache/codex-decision/cargo-target/debug/decision-hook")));
+  const hook = path.resolve(arg("--hook", path.join(process.env.CARGO_TARGET_DIR || path.join(__dirname, "../.cache/cargo"),
+    "debug", process.platform === "win32" ? "decision-hook.exe" : "decision-hook")));
   const hookDetails = await fs.stat(hook);
   if (!hookDetails.isFile() || hookDetails.size > 128 * 1024 * 1024) throw new Error("Invalid testing hook executable");
   requireProxyHook(await fs.readFile(hook));

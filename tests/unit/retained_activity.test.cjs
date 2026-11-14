@@ -7,7 +7,8 @@ const {validateJournal}=require("../../vscode-control/publication-journal");
 const publication=require("../fixtures/publication-case.json");
 const crypto=require("node:crypto");
 const {spawnSync}=require("node:child_process");
-const cli=process.env.DECISIONCTL_TEST||path.resolve(__dirname,"../../target/verification/decisionctl");
+const cli=process.env.DECISIONCTL_TEST||path.resolve(process.env.CARGO_TARGET_DIR||path.join(__dirname,"../../.cache/cargo"),
+  "debug",process.platform==="win32"?"decisionctl.exe":"decisionctl");
 function bytesFor(case_) {
   let source=case_.source||"";
   if(case_.repeat_reason)source=JSON.stringify({status:"replace",reason:"λ".repeat(case_.repeat_reason),requests:1})+"\n";
