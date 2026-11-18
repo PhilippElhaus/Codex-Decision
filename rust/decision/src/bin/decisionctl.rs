@@ -515,6 +515,14 @@ fn run() -> Result<(), String> {
     if args.len() == 4 && args[1] == "secure-directory" && args[2] == "--path" {
         return codex_decision::windows::secure_tree(Path::new(&args[3]));
     }
+    #[cfg(windows)]
+    if args.len() == 5
+        && args[1] == "secure-directory"
+        && args[2] == "--path"
+        && args[4] == "--directory-only"
+    {
+        return codex_decision::windows::secure_directory(Path::new(&args[3]));
+    }
     if args.len() == 6 && args[1] == "activity" && args[2] == "--data-dir" && args[4] == "--session"
     {
         return activity::run(Path::new(&args[3]), &args[5]);

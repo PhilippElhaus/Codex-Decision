@@ -45,7 +45,22 @@ async function main() {
     const core = require(path.join(control, "core.js"));
     const payload = path.join(control, "plugin");
     const options = { payload, codex, home: path.join(taskRoot, "home"), codexHome: process.env.CODEX_HOME };
-    const first = await install(options);
+    const pluginParent = path.join(options.codexHome, "plugins");
+    const unrelated = path.join(options.home, "unrelated");
+    const junction = path.join(pluginParent, "unrelated-fixture-link");
+    await fs.mkdir(pluginParent, { recursive: true });
+    await fs.mkdir(unrelated);
+    await fs.symlink(unrelated, junction, "junction");
+    let first;
+    try {
+      first = await install(options);
+      assert((await fs.lstat(junction)).isSymbolicLink());
+      assert.equal(await fs.readlink(junction), unrelated);
+    } finally {
+      await fs.unlink(junction);
+      await fs.rmdir(unrelated);
+    }
+    result.checks.push("native installation tolerates an unrelated junction in the shared plugin directory");
     assert.equal(first.status, "installed");
     const controlPackage = JSON.parse(await fs.readFile(path.join(control, "package.json")));
     const version = controlPackage.codexDecisionHookVersion;

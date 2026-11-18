@@ -283,7 +283,7 @@ pub fn secure(path: &Path, directory: bool) -> Result<(), String> {
     private(&file, 1)
 }
 
-pub fn secure_tree(root: &Path) -> Result<(), String> {
+fn validate_private_directory(root: &Path) -> Result<(), String> {
     if !root.is_absolute() || !root.is_dir() {
         return Err("private directory must be an existing absolute path".into());
     }
@@ -292,7 +292,16 @@ pub fn secure_tree(root: &Path) -> Result<(), String> {
     if lower.starts_with("d:\\") || lower.starts_with("\\\\") {
         return Err("Windows Decision state must use a local path off D:".into());
     }
-    crate::check_ancestors(root)?;
+    crate::check_ancestors(root)
+}
+
+pub fn secure_directory(root: &Path) -> Result<(), String> {
+    validate_private_directory(root)?;
+    secure(root, true)
+}
+
+pub fn secure_tree(root: &Path) -> Result<(), String> {
+    validate_private_directory(root)?;
     let mut pending = vec![(root.to_path_buf(), 0)];
     let mut count = 0;
     while let Some((path, depth)) = pending.pop() {

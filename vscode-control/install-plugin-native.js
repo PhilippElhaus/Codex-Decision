@@ -224,7 +224,7 @@ async function install(options) {
     const sourcePayload = await safePath(options.payload);
     offWorkspace(home); offWorkspace(codexHome);
     const stateRoot = path.join(home, ".local/state/codex-decision");
-    const secureDirectory = async directory => {
+    const secureDirectory = async (directory, recursive = true) => {
       await safePath(directory);
       await fs.mkdir(directory, { recursive: true });
       if (process.platform !== "win32" || options.run) return;
@@ -232,11 +232,13 @@ async function install(options) {
         const checker = await safePath(path.join(sourcePayload, "hooks/bin/windows-x86_64/decisionctl.exe"));
         if (!(await info(checker))?.isFile()) throw refusal("The Decision VSIX has an incomplete hook payload");
         await runFile(checker,
-          ["secure-directory", "--path", directory], { timeout: 30_000, maxBuffer: 4096, windowsHide: true });
+          ["secure-directory", "--path", directory, ...(recursive ? [] : ["--directory-only"])],
+          { timeout: 30_000, maxBuffer: 4096, windowsHide: true });
       } catch { throw refusal("Decision could not secure its native installation state"); }
     };
     const lockRoot = path.join(codexHome, "plugins");
-    await secureDirectory(lockRoot);
+    // Other packages may use links inside this shared root. Secure only the lock parent.
+    await secureDirectory(lockRoot, false);
     return await withLock(lockRoot, async () => {
       await secureDirectory(stateRoot);
       const payload = new Map();

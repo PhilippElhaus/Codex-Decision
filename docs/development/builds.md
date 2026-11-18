@@ -27,7 +27,7 @@ Before a Windows release, run the noninteractive packaged-runtime check:
 
 ```powershell
 pwsh -NoProfile -File vscode-control/scripts/windows_background_smoke.ps1 `
-  -Vsix .local/submission/codex-decision-0.17.3.vsix `
+  -Vsix .local/submission/codex-decision-0.17.4.vsix `
   -HostExtension '<absolute-installed-Codex-extension>'
 ```
 
