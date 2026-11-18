@@ -125,6 +125,7 @@ fn bridge_fragments_publish_routes_and_validate_settings_messages() {
         "26.1007.21434",
         "26.1021.22027",
         "26.51021.22027",
+        "26.1111.21308",
     ] {
         let fragment =
             profiles::route_fragment(route.clone(), Spec::production(version).unwrap().1);
@@ -140,6 +141,8 @@ fn bridge_fragments_publish_routes_and_validate_settings_messages() {
         ] {
             let bindings = if version == VERSION {
                 "let ZK={},TK={useContext:()=>({location:{pathname}})},WG=()=>{},_K=()=>true;"
+            } else if version == "26.1111.21308" {
+                "let AY={},iY={useContext:()=>({location:{pathname}})},xJ=()=>{},JJ=()=>true;"
             } else if ["26.1021.22027", "26.51021.22027"].contains(&version) {
                 "let ai={},K={useContext:()=>({location:{pathname}})},c=()=>{},Dt=()=>true;"
             } else if version == "26.1002.51308" {
@@ -159,6 +162,7 @@ fn bridge_fragments_publish_routes_and_validate_settings_messages() {
                 "26.1002.51308" => "UG",
                 "26.1007.21434" => "Wq",
                 "26.1021.22027" | "26.51021.22027" => "W",
+                "26.1111.21308" => "YJ",
                 "26.930.51102" | "26.930.61225" => "nq",
                 _ => "JG",
             };

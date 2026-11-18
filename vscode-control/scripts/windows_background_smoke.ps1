@@ -66,7 +66,7 @@ try {
         if (-not (Test-Path -LiteralPath $filename -PathType Leaf)) { throw 'Background smoke input is missing.' }
     }
     $hostVersion = (Get-Content -LiteralPath (Join-Path $HostExtension 'package.json') -Raw | ConvertFrom-Json).version
-    if ($hostVersion -notin @('26.1007.21434', '26.1021.22027', '26.51021.22027')) { throw 'Background smoke requires a reviewed Codex host.' }
+    if ($hostVersion -notin @('26.1007.21434', '26.1021.22027', '26.51021.22027', '26.1111.21308')) { throw 'Background smoke requires a reviewed Codex host.' }
     $report = Join-Path $repository ('.local\quality\windows-background-smoke-' + $hostVersion + '.json')
     if (-not $HostRollback) { $HostRollback = Join-Path $env:LOCALAPPDATA ('Codex\codex-decision\rollback\' + $hostVersion) }
     $taskRoot = Join-Path $temporary ('decision-background-' + $runId)
@@ -81,7 +81,14 @@ try {
         'out\extension.js' = 'a9cc6736cd2c2d22f6cf43fc5763d5f8a873e4f741f522b44a600b1926f4e627';
         'webview\assets\chunk-KS7C4IRE-c36c021bd659.js' = '10eb7db01b2e65ba9f977a219dfee663fb9ac23fd3dde7c127d0269202ea10e9'
     }
-    if ($hostVersion -eq '26.1007.21434') {
+    if ($hostVersion -eq '26.1111.21308') {
+        $originalHashes = @{
+            'out\extension.js' = 'aa93a1b5aaa79746f3b583133355c659a0f059ff98d1956adf9da0e4afbcf817';
+            'webview\index.html' = '51939fecadbc6d852d35760534f7b189c5c47e0ddf535842015988afe7c5ff70';
+            'webview\assets\app-initial-4f253310bfcc.js' = 'd194a520632b7272edb4e67acc25f0ffa31662b20a99919ccebba09299320fb3';
+            'webview\assets\app-initial-2d019a54be8b.js' = '12dd47f0bd9b7ef49bfba7212a03a37178077124b92bd17a9713c27f01e5cd66'
+        }
+    } elseif ($hostVersion -eq '26.1007.21434') {
         $originalHashes = @{
             'out\extension.js' = 'a8069de80c8f8141481d033f94c3a95e1b59f399143cb2554d3f68469dfbe5b8';
             'webview\index.html' = '0b6cd1d77fb1c374db06014ce82c829f5a58009d007188b1e742b34113d2db1f';

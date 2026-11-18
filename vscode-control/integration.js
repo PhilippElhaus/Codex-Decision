@@ -2,6 +2,7 @@
 
 const fs = require("node:fs/promises");
 const path = require("node:path");
+const os = require("node:os");
 const { execFile } = require("node:child_process");
 const { promisify } = require("node:util");
 const { wslLocation } = require("./private-paths");
@@ -18,17 +19,22 @@ function windowsPath(filename) {
 }
 
 // Windows directory links and reparse points must not redirect patch or rollback writes.
-async function directoryPath(filename, create, io) {
-  const target = windowsPath(filename);
-  const root = path.win32.parse(target).root;
+async function directoryPath(filename, create, io, paths = path.win32) {
+  let target;
+  if (paths === path.win32) target = windowsPath(filename);
+  else if (typeof filename === "string" && paths.isAbsolute(filename) &&
+      paths.normalize(filename) === filename && !/[\r\n\0]/.test(filename) &&
+      !/^\/mnt\/d(?:\/|$)/i.test(filename)) target = filename;
+  else throw new Error("Decision integration needs an absolute Linux path off D:");
+  const root = paths.parse(target).root;
   let current = root;
-  for (const part of target.slice(root.length).split("\\").filter(Boolean)) {
-    current = path.win32.join(current, part);
+  for (const part of target.slice(root.length).split(paths.sep).filter(Boolean)) {
+    current = paths.join(current, part);
     let info;
     try { info = await io.lstat(current); }
     catch (error) {
       if (!create || error.code !== "ENOENT") throw error;
-      try { await io.mkdir(current); }
+      try { await io.mkdir(current, { mode: 0o700 }); }
       catch (mkdirError) { if (mkdirError.code !== "EEXIST") throw mkdirError; }
       info = await io.lstat(current);
     }
@@ -54,8 +60,10 @@ function patchStatus(stdout, version) {
 }
 
 async function runIntegration({ host, controlRoot, dataDirectory, distro, backend, localAppData, marketplacePath,
-  repair = true, platform = process.platform, io = fs, run = runFile }) {
-  if (platform !== "win32") return { status: "unsupported-platform" };
+  repair = true, platform = process.platform, homeDirectory = os.homedir(), io = fs, run = runFile }) {
+  if (platform !== "win32" && platform !== "linux") return { status: "unsupported-platform" };
+  const linuxHost = platform === "linux";
+  const paths = linuxHost ? path.posix : path.win32;
   if (!host) throw new Error("Install the Codex extension to use Decision integration");
   const version = host.packageJSON?.version;
   if (typeof version !== "string" || !/^\d+\.\d+\.\d+$/.test(version)) {
@@ -63,32 +71,34 @@ async function runIntegration({ host, controlRoot, dataDirectory, distro, backen
   }
   const location = wslLocation(dataDirectory || "");
   const distribution = location?.distro || distro;
-  const useWsl = backend ? backend === "wsl" : Boolean(distribution);
+  const useWsl = !linuxHost && (backend ? backend === "wsl" : Boolean(distribution));
   if (useWsl && (typeof distribution !== "string" || !/^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$/.test(distribution))) {
     throw new Error("Decision integration needs an installed WSL distribution");
   }
   if (marketplacePath != null && (typeof marketplacePath !== "string" ||
-      /[\r\n\0]/.test(marketplacePath) || (useWsl
+      /[\r\n\0]/.test(marketplacePath) || (useWsl || linuxHost
         ? !path.posix.isAbsolute(marketplacePath) || path.posix.normalize(marketplacePath) !== marketplacePath
         : !/^[A-Za-z]:[\\/]/.test(marketplacePath) || path.win32.normalize(marketplacePath) !== marketplacePath))) {
     throw new Error("Decision integration marketplace path is invalid");
   }
-  const extension = await directoryPath(host.extensionPath, false, io);
-  const source = await directoryPath(controlRoot, false, io);
-  const binary = path.win32.join(source, "plugin", "hooks", "bin",
-    useWsl ? "linux-x86_64" : "windows-x86_64", useWsl ? "decisionctl" : "decisionctl.exe");
-  await directoryPath(path.win32.dirname(binary), false, io);
+  const extension = await directoryPath(host.extensionPath, false, io, paths);
+  const source = await directoryPath(controlRoot, false, io, paths);
+  const linuxBinary = useWsl || linuxHost;
+  const binary = paths.join(source, "plugin", "hooks", "bin",
+    linuxBinary ? "linux-x86_64" : "windows-x86_64", linuxBinary ? "decisionctl" : "decisionctl.exe");
+  await directoryPath(paths.dirname(binary), false, io, paths);
   const binaryInfo = await io.lstat(binary);
   if (!binaryInfo.isFile() || binaryInfo.isSymbolicLink()) {
     throw new Error("Decision integration checker is missing or linked");
   }
-  const base = await directoryPath(localAppData, false, io);
-  if (base === path.win32.parse(base).root) {
+  const base = await directoryPath(linuxHost ? homeDirectory : localAppData, false, io, paths);
+  if (base === paths.parse(base).root) {
     throw new Error("Decision rollback needs the user-local application data directory");
   }
-  const parent = await directoryPath(path.win32.join(base, "Codex", "codex-decision", "rollback"), true, io);
-  const backup = path.win32.join(parent, version);
-  try { await directoryPath(backup, false, io); }
+  const stateDirectory = linuxHost ? paths.join(base, ".local", "state") : paths.join(base, "Codex");
+  const parent = await directoryPath(paths.join(stateDirectory, "codex-decision", "rollback"), true, io, paths);
+  const backup = paths.join(parent, version);
+  try { await directoryPath(backup, false, io, paths); }
   catch (error) { if (error.code !== "ENOENT") throw error; }
   const execute = async (program, args) => {
     try {
@@ -96,7 +106,10 @@ async function runIntegration({ host, controlRoot, dataDirectory, distro, backen
         ? run("wsl.exe", ["-d", distribution, "-e", program, ...args],
           { timeout: 30_000, maxBuffer: 16_384, windowsHide: true })
         : run(program, args, { timeout: 30_000, maxBuffer: 16_384, windowsHide: true,
-          ...(marketplacePath ? { env: { ...process.env, CODEX_DECISION_MARKETPLACE_PATH: marketplacePath } } : {}) }));
+          ...(marketplacePath || linuxHost ? { env: { ...process.env,
+            ...(marketplacePath ? { CODEX_DECISION_MARKETPLACE_PATH: marketplacePath } : {}),
+            ...(linuxHost ? { CODEX_DECISION_REMOTE_EXTENSION_HOST: "1" } : {}),
+          } } : {}) }));
     } catch (error) {
       if (["EAGAIN", "EBUSY", "EINTR", "EIO", "ETIMEDOUT"].includes(error.code) ||
           error.killed === true && error.signal === "SIGTERM" && error.code == null) {
@@ -250,6 +263,7 @@ function activateIntegration(vscode, context, { dataDirectory, ready = Promise.r
           : "";
         output.appendLine(`Decision integration unavailable: ${message}`);
         if (recovery) output.appendLine(recovery);
+        if (recovery && !manual) return { status: "hook-only", message };
         if (!manual && error.retryable === true && retryCount < retryDelaysMs.length &&
             configuration().get("autoRepairIntegration", true) !== false) {
           const delay = retryDelaysMs[retryCount++];

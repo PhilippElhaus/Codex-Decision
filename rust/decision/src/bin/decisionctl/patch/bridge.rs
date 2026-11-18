@@ -92,7 +92,11 @@ pub(super) fn marketplace_bridge(
 pub(super) fn bridges(repo: &Path) -> Result<Bridges, String> {
     // Only WSL needs host-side image and marketplace path conversion.
     // Native Windows and Unix installations use their own paths directly.
-    if cfg!(windows) || std::env::var_os("WSL_DISTRO_NAME").is_none() {
+    if cfg!(windows)
+        || std::env::var_os("WSL_DISTRO_NAME").is_none()
+        || std::env::var_os("CODEX_DECISION_REMOTE_EXTENSION_HOST").as_deref()
+            == Some(std::ffi::OsStr::new("1"))
+    {
         return Ok(Bridges {
             image: String::new(),
             marketplace: String::new(),
@@ -154,6 +158,7 @@ pub(super) fn changed(
         "if(s.markMessageReceived()",
         &format!("{}if(s.markMessageReceived()", bridges.marketplace),
     )?;
+    let (host_anchor, fragment) = profiles::host_fragment(fragment, spec.1)?;
     let route_fragment = profiles::route_fragment(
         as_text(&exact(&assets, "patch-assets/route-bridge.jsfrag")?)?.to_owned(),
         spec.1,
@@ -161,7 +166,7 @@ pub(super) fn changed(
     let mut result = BTreeMap::new();
     result.insert(
         HOST,
-        replace_once(host, HOST_ANCHOR, &fragment)?.into_bytes(),
+        replace_once(host, host_anchor, &fragment)?.into_bytes(),
     );
     result.insert(INDEX, replace_once(index, spec.1.index_anchor,
         &format!("<script src=\"./assets/decision-control.js\"></script>\n<script src=\"./assets/decision-settings.js\"></script>\n{}", spec.1.index_anchor))?.into_bytes());

@@ -2,8 +2,8 @@
   "name": "codex-decision-control",
   "displayName": "Codex Decision",
   "description": "Integrated Decision hook, session controls, and automatic Codex UI repair",
-  "version": "0.17.2",
-  "codexDecisionHookVersion": "0.17.2",
+  "version": "0.17.3",
+  "codexDecisionHookVersion": "0.17.3",
   "publisher": "elhaus-labs",
   "license": "MIT",
   "icon": "icon.png",
@@ -17,7 +17,7 @@
     "vscode": "^1.96.2"
   },
   "extensionKind": [
-    "ui"
+    "workspace"
   ],
   "activationEvents": [
     "onStartupFinished",

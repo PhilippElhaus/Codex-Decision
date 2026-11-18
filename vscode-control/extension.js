@@ -3,7 +3,8 @@
 const path = require("node:path");
 const fs = require("node:fs/promises");
 const vscode = require("vscode");
-const { ensureIntegratedInstall } = require("./integrated-install");
+const { ensureIntegratedInstall, remoteDataKey } = require("./integrated-install");
+const { decisionDirectoryForHost } = require("./private-paths");
 const { activateIntegration } = require("./integration");
 const { activateUpdates } = require("./updates");
 const { activateAssistance } = require("./assistance");
@@ -474,9 +475,11 @@ function activate(context) {
   let activeSourceId = null;
   let activeSourceVisible = null;
   const settings = () => vscode.workspace.getConfiguration("codexDecision");
-  const configuredDirectory = () => settings().get("dataDirectory") || defaultDataDirectory();
+  const configuredDirectory = () => decisionDirectoryForHost(
+    settings().get("dataDirectory") || defaultDataDirectory(), vscode.env?.remoteName);
   const dataDirectory = () => {
-    const directory = configuredDirectory();
+    const directory = configuredDirectory() || (vscode.env?.remoteName === "wsl"
+      ? context.globalState?.get?.(remoteDataKey()) : undefined);
     if (typeof directory !== "string" || !path.isAbsolute(directory)) {
       throw new Error("Set codexDecision.dataDirectory to the installed plugin's absolute PLUGIN_DATA path.");
     }

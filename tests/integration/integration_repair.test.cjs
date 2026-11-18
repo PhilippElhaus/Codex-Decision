@@ -114,6 +114,30 @@ test("unknown versions, changed hosts, and malformed checker output cannot trigg
   await assert.rejects(runIntegration(incomplete.options), /did not pass verification/);
 });
 
+test("Remote WSL uses the Linux checker and a Linux rollback directory", async () => {
+  const home = "/home/fixture";
+  const controlRoot = `${home}/.vscode-server/extensions/decision`;
+  const extensionPath = `${home}/.vscode-server/extensions/openai.chatgpt`;
+  const binary = `${controlRoot}/plugin/hooks/bin/linux-x86_64/decisionctl`;
+  const actions = [];
+  const result = await runIntegration({
+    platform: "linux", homeDirectory: home, controlRoot, backend: "linux",
+    host: { extensionPath, packageJSON: { version: "26.1111.21308" } },
+    io: { lstat: async filename => ({ isDirectory: () => filename !== binary,
+      isFile: () => filename === binary, isSymbolicLink: () => false }) },
+    run: async (command, args, options) => {
+      assert.equal(command, binary);
+      assert.equal(options.env.CODEX_DECISION_REMOTE_EXTENSION_HOST, "1");
+      assert.deepEqual(args.slice(2), ["--root", controlRoot, "--extension", extensionPath,
+        "--backup", `${home}/.local/state/codex-decision/rollback/26.1111.21308`]);
+      actions.push(args[1]);
+      return { stdout: JSON.stringify({ version: "26.1111.21308", status: actions.length === 1 ? "unpatched" : "ready" }) };
+    },
+  });
+  assert.equal(result.changed, true);
+  assert.deepEqual(actions, ["status", "apply", "status"]);
+});
+
 test("integration rejects drive D and linked patch or rollback ancestors", async () => {
   for (const changes of [{ controlRoot: "D:\\Tools\\Decision" }, { localAppData: "D:\\Users\\Fixture" },
     { host: { packageJSON: { version: "26.1007.21434" }, extensionPath: "D:\\extensions\\Codex" } }]) {
@@ -537,7 +561,7 @@ test("fresh installs can use the bootstrap distribution without a configured WSL
   const setup = fixture(["ready"]);
   assert.equal((await runIntegration({ ...setup.options, dataDirectory: "", distro: "Ubuntu" })).status, "ready");
   await assert.rejects(runIntegration({ ...setup.options, dataDirectory: "", distro: "Ubuntu;bad" }), /WSL distribution/);
-  assert.deepEqual(await runIntegration({ ...setup.options, platform: "linux" }), { status: "unsupported-platform" });
+  assert.deepEqual(await runIntegration({ ...setup.options, platform: "darwin" }), { status: "unsupported-platform" });
   const dotted = fixture(["ready"]);
   const run = dotted.options.run;
   assert.equal((await runIntegration({ ...dotted.options, dataDirectory: "", distro: "Ubuntu-24.04",
@@ -581,9 +605,9 @@ test("diagnostics expose bounded errors without child process output or private 
   const setup = fixture([error, error]);
   const extension = extensionFixture(setup, Promise.resolve());
   try {
-    assert.equal((await extension.integration.inspect(true, false)).status, "failed");
+    assert.equal((await extension.integration.inspect(true, false)).status, "hook-only");
     await extension.integration.inspect(true, false);
-    assert.equal(extension.notifications.length, 1, "the same automatic failure is reported once");
+    assert.equal(extension.notifications.length, 0, "unreviewed UI assets do not interrupt startup");
     assert.equal(JSON.stringify(extension.log).includes("private-value"), false);
     assert.equal(JSON.stringify(extension.log).includes("private-env"), false);
     assert.deepEqual(setup.actions(), ["status", "status"]);
@@ -601,7 +625,7 @@ test("unsupported-host diagnostics identify the loaded control and explain VSIX 
     return "Check for Updates";
   };
   try {
-    const result = await extension.integration.inspect(true, false);
+    const result = await extension.integration.inspect(true, true);
     assert.equal(result.status, "failed");
     const metadata = require("../../vscode-control/package.json");
     assert.equal(extension.log[0], `Decision control ${metadata.version}; bundled hook ${metadata.codexDecisionHookVersion}.`);

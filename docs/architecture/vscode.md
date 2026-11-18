@@ -26,6 +26,6 @@ The hook appends a small `classifying` event immediately before the first Decisi
 
 ## Supported patch profiles
 
-The reviewed profiles cover `26.928.31416`, `26.930.21537`, `26.930.31730`, `26.930.41038`, `26.930.51102`, `26.930.61225`, `26.1002.51308`, `26.1007.21434`, `26.1021.22027`, and preview `26.51021.22027`. A different version can reuse a profile only when all four original assets match its reviewed hashes. The source of truth is [patch profiles](../../rust/decision/src/bin/decisionctl/patch/profiles.rs) and the base profile in [patch.rs](../../rust/decision/src/bin/decisionctl/patch.rs).
+The reviewed profiles cover `26.928.31416`, `26.930.21537`, `26.930.31730`, `26.930.41038`, `26.930.51102`, `26.930.61225`, `26.1002.51308`, `26.1007.21434`, `26.1021.22027`, `26.1111.21308`, and preview `26.51021.22027`. A different version can reuse a profile only when all four original assets match its reviewed hashes. Builds with unreviewed assets keep the hook and leave a composer diagnostic. The source of truth is [patch profiles](../../rust/decision/src/bin/decisionctl/patch/profiles.rs) and the base profile in [patch.rs](../../rust/decision/src/bin/decisionctl/patch.rs).
 
 Patch rollback copies and retained plugin caches are active runtime safeguards. Keep them outside the repository. They are required to restore reviewed host assets and preserve recorded hook paths in existing threads.

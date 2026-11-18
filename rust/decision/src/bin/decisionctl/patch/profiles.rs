@@ -103,6 +103,35 @@ const OCTOBER_21_PREVIEW: Profile = Profile {
     ..OCTOBER_21
 };
 
+const NOVEMBER_11: Profile = Profile {
+    version: "26.1111.21308",
+    image: "webview/assets/app-initial-4f253310bfcc.js",
+    route: "webview/assets/app-initial-2d019a54be8b.js",
+    index_anchor: "<script type=\"module\" crossorigin src=\"./assets/index-7e2959f2dcfe.js\"></script>",
+    image_anchor: "let o=mT(e);if(o==null)return null;try{let e={path:o,hostId:t,conversationId:i,environmentId:a}",
+    route_anchor: "function YJ(){return xJ(JJ(),`useLocation() may be used only in the context of a <Router> component.`),iY.useContext(AY).location}",
+};
+
+pub(super) fn host_fragment(
+    fragment: String,
+    profile: Profile,
+) -> Result<(&'static str, String), String> {
+    if profile.version != NOVEMBER_11.version {
+        return Ok((HOST_ANCHOR, fragment));
+    }
+    let fragment = replace_once(
+        &fragment,
+        "onDidReceiveMessage(u=>{",
+        "onDidReceiveMessage(l=>{{const u=l;",
+    )?;
+    let fragment = replace_once(
+        &fragment,
+        "if(s.markMessageReceived(),u.type===\"chunked-message-ack\")",
+        "}if(s.markMessageReceived(),l.type===\"chunked-message-ack\")",
+    )?;
+    Ok(("let a=e.onDidReceiveMessage(l=>{if(s.markMessageReceived(),l.type===\"chunked-message-ack\")", fragment))
+}
+
 pub(super) const VERSIONS: &[&str] = &[
     VERSION,
     CURRENT.version,
@@ -114,11 +143,33 @@ pub(super) const VERSIONS: &[&str] = &[
     OCTOBER_9.version,
     OCTOBER_21.version,
     OCTOBER_21_PREVIEW.version,
+    NOVEMBER_11.version,
 ];
 
 pub(super) fn spec(version: &str) -> Result<Spec, String> {
     let (profile, hashes) = match version {
         VERSION => (LEGACY, ORIGINAL),
+        "26.1111.21308" => (
+            NOVEMBER_11,
+            [
+                (
+                    HOST,
+                    "aa93a1b5aaa79746f3b583133355c659a0f059ff98d1956adf9da0e4afbcf817",
+                ),
+                (
+                    INDEX,
+                    "51939fecadbc6d852d35760534f7b189c5c47e0ddf535842015988afe7c5ff70",
+                ),
+                (
+                    IMAGE,
+                    "d194a520632b7272edb4e67acc25f0ffa31662b20a99919ccebba09299320fb3",
+                ),
+                (
+                    ROUTE,
+                    "12dd47f0bd9b7ef49bfba7212a03a37178077124b92bd17a9713c27f01e5cd66",
+                ),
+            ],
+        ),
         "26.51021.22027" => (
             OCTOBER_21_PREVIEW,
             [
@@ -326,20 +377,21 @@ pub(super) fn route_fragment(source: String, profile: Profile) -> String {
         return source;
     }
     // Rebind only the pinned fragment, never search and replace Codex source.
-    let (router, assert, in_router, react, context) =
-        if [OCTOBER_21.version, OCTOBER_21_PREVIEW.version].contains(&profile.version) {
-            ("W", "c", "Dt", "K", "ai")
-        } else if profile.version == OCTOBER_9.version {
-            ("Wq", "gq", "Uq", "Qq", "wJ")
-        } else if profile.version == OCTOBER_7.version {
-            ("UG", "hG", "HG", "ZG", "CK")
-        } else if [OCTOBER_5.version, OCTOBER_6.version].contains(&profile.version) {
-            ("nq", "OK", "tq", "lq", "Fq")
-        } else if [LATEST.version, OCTOBER_4.version].contains(&profile.version) {
-            ("JG", "bG", "qG", "tK", "DK")
-        } else {
-            ("KG", "vG", "GG", "$G", "TK")
-        };
+    let (router, assert, in_router, react, context) = if profile.version == NOVEMBER_11.version {
+        ("YJ", "xJ", "JJ", "iY", "AY")
+    } else if [OCTOBER_21.version, OCTOBER_21_PREVIEW.version].contains(&profile.version) {
+        ("W", "c", "Dt", "K", "ai")
+    } else if profile.version == OCTOBER_9.version {
+        ("Wq", "gq", "Uq", "Qq", "wJ")
+    } else if profile.version == OCTOBER_7.version {
+        ("UG", "hG", "HG", "ZG", "CK")
+    } else if [OCTOBER_5.version, OCTOBER_6.version].contains(&profile.version) {
+        ("nq", "OK", "tq", "lq", "Fq")
+    } else if [LATEST.version, OCTOBER_4.version].contains(&profile.version) {
+        ("JG", "bG", "qG", "tK", "DK")
+    } else {
+        ("KG", "vG", "GG", "$G", "TK")
+    };
     source
         .replace("vK", router)
         .replace("WG", assert)

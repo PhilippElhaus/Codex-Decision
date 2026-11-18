@@ -27,13 +27,13 @@ Before a Windows release, run the noninteractive packaged-runtime check:
 
 ```powershell
 pwsh -NoProfile -File vscode-control/scripts/windows_background_smoke.ps1 `
-  -Vsix .local/submission/codex-decision-0.17.2.vsix `
+  -Vsix .local/submission/codex-decision-0.17.3.vsix `
   -HostExtension '<absolute-installed-Codex-extension>'
 ```
 
 Optional desktop checks launch isolated VS Code windows. Run them when an interactive check is authorized. Use [browser checks](browser.md) for background rendering validation. See [installation](../setup/installation.md) for trust and installed-hook verification.
 
-The background check supports reviewed host profiles `26.1007.21434`, `26.1021.22027`, and `26.51021.22027`. It copies verified originals into an isolated temporary profile. It checks native installation, restart and concurrent reuse, both PowerShell hook launchers, panel readers, MCP discovery, completion settings, measurement reporting, and exact patch apply/restore. It leaves the installed host and user credentials unchanged.
+The background check supports reviewed host profiles `26.1007.21434`, `26.1021.22027`, `26.51021.22027`, and `26.1111.21308`. It copies verified originals into an isolated temporary profile. It checks native installation, restart and concurrent reuse, both PowerShell hook launchers, panel readers, MCP discovery, completion settings, measurement reporting, and exact patch apply/restore.
 
 ## Publish and deploy
 

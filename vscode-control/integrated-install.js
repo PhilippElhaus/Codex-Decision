@@ -4,9 +4,14 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { execFile } = require("node:child_process");
 const { promisify } = require("node:util");
-const { wslLocation } = require("./private-paths");
+const { wslLocation, decisionDirectoryForHost } = require("./private-paths");
 const runFile = promisify(execFile);
 const MANAGED_DATA_KEY = "codexDecision.installation.managedDataDirectory";
+const REMOTE_DATA_KEY = "codexDecision.installation.remoteDataDirectory";
+
+function remoteDataKey(distro = process.env.WSL_DISTRO_NAME) {
+  return `${REMOTE_DATA_KEY}.${(distro || "").toLowerCase()}`;
+}
 
 function cleanJson(stdout) {
   try { return JSON.parse(stdout.trim()); }
@@ -43,7 +48,10 @@ async function ensureIntegratedInstall(vscode, context, options = {}) {
   catch { return { status: "not-packaged" }; }
   const host = vscode.extensions?.getExtension("openai.chatgpt");
   if (!host?.extensionPath) throw new Error("Install the Codex VS Code extension before repairing Decision");
-  const selectedDirectory = typeof options.dataDirectory === "function" ? options.dataDirectory() : options.dataDirectory;
+  const requestedDirectory = typeof options.dataDirectory === "function" ? options.dataDirectory() : options.dataDirectory;
+  const remoteWsl = platform === "linux" && vscode.env?.remoteName === "wsl";
+  const selectedDirectory = remoteWsl
+    ? decisionDirectoryForHost(requestedDirectory, "wsl", options.wslDistro) : requestedDirectory;
   const useWsl = platform === "win32" &&
     vscode.env?.remoteName !== "wsl" &&
     vscode.workspace.getConfiguration("chatgpt")?.get?.("runCodexInWindowsSubsystemForLinux", false) === true;
@@ -55,6 +63,10 @@ async function ensureIntegratedInstall(vscode, context, options = {}) {
   // runtimes selects that runtime's store; each installation keeps its own data.
   const configured = ownsDirectory && managed.backend !== backend ? undefined : selectedDirectory;
   const saveDirectory = async (directory, verifiedCanonical = false) => {
+    if (remoteWsl) {
+      await context.globalState?.update?.(remoteDataKey(options.wslDistro), directory);
+      return;
+    }
     if (directory !== selectedDirectory) await vscode.workspace.getConfiguration("codexDecision").update("dataDirectory", directory,
       vscode.ConfigurationTarget.Global);
     if (!selectedDirectory || ownsDirectory || verifiedCanonical) await context.globalState?.update?.(MANAGED_DATA_KEY,
@@ -149,4 +161,4 @@ async function ensureIntegratedInstall(vscode, context, options = {}) {
     backend: platform === "win32" ? "wsl" : "linux", distro, execute, convert };
 }
 
-module.exports = { ensureIntegratedInstall };
+module.exports = { ensureIntegratedInstall, remoteDataKey };

@@ -14,6 +14,13 @@ function wslLocation(filename) {
   return { distro: match[1], filename: `/${parts.join("/")}` };
 }
 
+function decisionDirectoryForHost(directory, remoteName, distro = process.env.WSL_DISTRO_NAME) {
+  if (remoteName !== "wsl" || !distro || typeof directory !== "string") return directory;
+  const location = wslLocation(directory);
+  if (location) return location.distro.toLowerCase() === distro.toLowerCase() ? location.filename : "";
+  return /^[A-Za-z]:[\\/]/.test(directory) ? "" : directory;
+}
+
 // Windows mkdir/write mode flags do not reach the WSL filesystem through UNC.
 // Open each Linux component without following links, then restrict the owned inode.
 const restrictScript = `import os, stat, sys
@@ -51,4 +58,4 @@ async function restrictWslPath(filename, directory, run = runFile, platform = pr
   }
 }
 
-module.exports = { wslLocation, restrictWslPath };
+module.exports = { wslLocation, restrictWslPath, decisionDirectoryForHost };

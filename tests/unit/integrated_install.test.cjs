@@ -5,7 +5,7 @@ const fs = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
-const { ensureIntegratedInstall } = require("../../vscode-control/integrated-install");
+const { ensureIntegratedInstall, remoteDataKey } = require("../../vscode-control/integrated-install");
 
 async function fixture(operation) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "decision-integrated-test-"));
@@ -63,6 +63,22 @@ test("Windows bootstrap selects the configured WSL distribution and passes each 
   assert.ok(calls.every(({ binary, args }) => binary === "wsl.exe" && args[0] === "-d" && args[1] === "Ubuntu-24.04"));
   const install = calls.find(({ args }) => args[3] === "python3");
   assert.deepEqual(install.args.slice(-2), ["--data-directory", installed.dataDirectory]);
+  assert.deepEqual(vscode.updates, []);
+}));
+
+test("Remote WSL can reuse a legacy UNC override without changing Windows settings", async () => fixture(async (root) => {
+  const vscode = { ...vscodeStub(root), env: { remoteName: "wsl" } };
+  const saved = [];
+  const run = async (binary, args) => {
+    assert.equal(binary, "python3");
+    assert.deepEqual(args.slice(-2), ["--data-directory", installed.dataDirectory]);
+    return { stdout: JSON.stringify(installed) };
+  };
+  const context = { extensionPath: root, globalState: { update: async (...args) => saved.push(args) } };
+  const dataDirectory = "\\\\wsl.localhost\\Ubuntu" + installed.dataDirectory.replaceAll("/", "\\");
+  const result = await ensureIntegratedInstall(vscode, context, { platform: "linux", wslDistro: "Ubuntu", run, dataDirectory });
+  assert.equal(result.dataDirectory, installed.dataDirectory);
+  assert.deepEqual(saved, [[remoteDataKey("Ubuntu"), installed.dataDirectory]]);
   assert.deepEqual(vscode.updates, []);
 }));
 

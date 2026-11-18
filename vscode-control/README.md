@@ -1,12 +1,12 @@
 # Codex Decision for VS Code
 
-The integrated extension contains the native Decision hook, skill, composer control, settings, and bottom panel. Windows runs the native x86_64 hook by default. Codex's WSL execution setting selects the Linux x86_64 runtime and its own data store.
+The integrated extension contains the native Decision hook, skill, composer control, settings, and bottom panel. Install it alongside Codex in each workspace host. Remote WSL runs the Linux x86_64 hook and uses its own data store. The older Windows-to-WSL Codex launcher remains supported where the installed Codex release provides it.
 
 Install the release VSIX through **Extensions → … → Install from VSIX…** in Visual Studio Code. Reload after integration repair. Review the current hook in `/hooks` when Codex requires trust. Use **Decision: Check Integration** for diagnostics and **Decision: Repair Integration** to retry or reopen the panel.
 
 Connect through OpenAI Decisions, TypeSafe Jev, or a compatible custom endpoint. Saved secrets stay private. Click **decision** to change the selected thread. Settings apply to the installation. The panel provides Latest, Totals, and optional local skipped-output capture.
 
-Unknown or changed Codex assets are refused before patching. Repairs preserve runtime rollback copies and cached paths needed by existing threads. Start a new thread to load an updated hook. Automatic stable-release updates verify size and SHA-256, then offer a reload. Disable `codexDecision.autoUpdate` for manual checks.
+Composer integration applies to reviewed Codex assets. Other builds keep the hook and report composer availability in Decision Integration and in the manual integration check. Repairs preserve runtime rollback copies and cached paths needed by existing threads. Start a new thread to load an updated hook. Automatic stable-release updates verify size and SHA-256, then offer a reload. Disable `codexDecision.autoUpdate` for manual checks.
 
 Prepared hook output does not establish delivered context or token savings. Code-mode wrappers can still print original nested results.
 

@@ -128,9 +128,12 @@ async function main() {
     result.controlVersion = controlPackage.version;
     result.version = version;
     const imageModules = (await fs.readdir(path.join(host, "webview/assets"))).filter(name => /^use-plugins-[a-f0-9]+\.js$/.test(name));
-    const assets = hostManifest.version === "26.1007.21434"
-      ? ["out/extension.js", "webview/index.html", "webview/assets/app-initial-c014f9ee4429.js", "webview/assets/app-initial-97d3534ad35f.js"]
-      : ["out/extension.js", "webview/index.html", `webview/assets/${imageModules[0]}`, "webview/assets/chunk-KS7C4IRE-c36c021bd659.js"];
+    const appModules = {
+      "26.1007.21434": ["app-initial-c014f9ee4429.js", "app-initial-97d3534ad35f.js"],
+      "26.1111.21308": ["app-initial-4f253310bfcc.js", "app-initial-2d019a54be8b.js"],
+    };
+    const modules = appModules[hostManifest.version] || [imageModules[0], "chunk-KS7C4IRE-c36c021bd659.js"];
+    const assets = ["out/extension.js", "webview/index.html", ...modules.map(name => `webview/assets/${name}`)];
     const hostFiles = assets.map(filename => path.join(host, filename));
     const original = await fingerprint(hostFiles);
     const rollbackParent = path.join(process.env.LOCALAPPDATA, "Codex/codex-decision/rollback");
