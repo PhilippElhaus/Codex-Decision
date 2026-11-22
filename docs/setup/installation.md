@@ -1,16 +1,16 @@
 # Install and verify
 
-Download the integrated VSIX from the [latest release](https://github.com/PhilippElhaus/Codex-Decision/releases/latest). Open the local Windows workspace or Remote WSL workspace that runs Codex. In **Extensions** (`Ctrl+Shift+X`), select **… → Install from VSIX…**, and choose `codex-decision-0.17.4.vsix`.
+Download the integrated VSIX from the [latest release](https://github.com/PhilippElhaus/Codex-Decision/releases/latest). Open the local Windows workspace or Remote WSL workspace that runs Codex. In **Extensions** (`Ctrl+Shift+X`), select **… → Install from VSIX…**, and choose `codex-decision-0.17.5.vsix`.
 
 If double-clicking the file opens **Visual Studio VSIX Installer**, close that installer and use the VS Code menu. You can also install from a terminal:
 
 ```bash
-code --install-extension codex-decision-0.17.4.vsix --force
+code --install-extension codex-decision-0.17.5.vsix --force
 ```
 
 This single package contains Windows x86_64 and Linux x86_64 hooks, the skill, session controls, settings, and verified composer patch. Native Windows needs no WSL or Python. Install in each workspace host where you use Codex. Remote WSL reuses an existing UNC data path for its own distribution and remembers automatic discovery separately from the Windows setting. Older Windows extension versions that use the former WSL launcher continue to follow that launcher setting. Activation updates an existing local plugin without changing its identity or data directory. A fresh install registers the bundled local marketplace. The installer preserves credentials, settings, session flags, saved originals, and Codex hook trust records. It rejects ambiguous plugin registrations instead of creating a duplicate hook.
 
-The extension repairs supported Codex builds at startup and after extension changes. Repairs verify the build's exact files and keep rollback copies outside the repository. A different package version can reuse a reviewed profile only when all four original assets match. Unknown or changed assets show a diagnostic. Run **Decision: Check Integration** to inspect the installation. Run **Decision: Repair Integration** to retry and reopen the panel. Run **Developer: Reload Window** after a repair.
+The extension repairs supported Codex builds at startup and after extension changes. Repairs verify the build's exact files and keep rollback copies outside the repository. A different package version can reuse a reviewed profile only when all four original assets match. Unknown or changed assets show a diagnostic. **Decision: Check Integration** verifies the UI patch without applying it, but can bootstrap the bundled hook. Do not use it for a read-only audit. **Decision: Repair Integration** retries and reopens the panel. Run **Developer: Reload Window** after a repair.
 
 Temporary installation failures retry after 2, 5, and 15 seconds when automatic repair is enabled. Each retry reruns installation instead of reusing a rejected startup result. Timeouts and recognized temporary access failures can retry. Invalid metadata, conflicting registrations, unsupported builds, and other deterministic refusals report immediately. The **Decision Integration** output channel names the failed phase and a safe diagnostic. It does not print private process output. Manual repair starts a fresh attempt after the underlying problem is corrected.
 

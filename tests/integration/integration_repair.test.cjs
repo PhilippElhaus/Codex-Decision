@@ -5,6 +5,10 @@ const path = require("node:path");
 const test = require("node:test");
 const { runIntegration, activateIntegration, failureMessage } = require("../../vscode-control/integration");
 
+function patchError(diagnostic) {
+  return Object.assign(new Error("synthetic child failure"), { code: 1, stderr: `decisionctl: ${diagnostic}\n` });
+}
+
 function fixture(states = ["unpatched", "ready"]) {
   const controlRoot = "C:\\Users\\Fixture User\\.vscode\\extensions\\decision-$(`quoted`)";
   const localAppData = "C:\\Users\\Fixture User\\AppData\\Local";
@@ -97,10 +101,12 @@ test("native Windows patches with the native checker and literal Windows paths w
 });
 
 test("unknown versions, changed hosts, and malformed checker output cannot trigger a mutation", async () => {
-  for (const error of ["unsupported Codex extension version; revalidate the composer patch",
-    "patched file changed: out/extension.js"]) {
-    const setup = fixture([Object.assign(new Error("checker failed"), { stderr: error })]);
-    await assert.rejects(runIntegration(setup.options), /checker failed/);
+  for (const [diagnostic, message] of [
+    ["unsupported Codex extension version; revalidate the composer patch", /unsupported Codex extension version/],
+    ["patched file changed: out/extension.js", /did not match the verified patch/],
+  ]) {
+    const setup = fixture([patchError(diagnostic)]);
+    await assert.rejects(runIntegration(setup.options), message);
     assert.deepEqual(setup.actions(), ["status"]);
   }
   for (const stdout of ["garbage", "{}", '{"status":"ready","version":"another-version"}']) {
@@ -153,22 +159,20 @@ test("integration rejects drive D and linked patch or rollback ancestors", async
 });
 
 test("concurrent windows retry busy checks and accept only a verified completed patch", async () => {
-  const busy = Object.assign(new Error("busy"), { stderr: "Decision patch is busy; retry later" });
+  const busy = patchError("Decision patch is busy; retry later");
   const setup = fixture([busy, "ready"]);
   assert.equal((await runIntegration(setup.options)).changed, false);
   assert.deepEqual(setup.actions(), ["status", "status"]);
-  const concurrent = fixture(["unpatched",
-    Object.assign(new Error("concurrent apply"), { stderr: "Codex asset already exists: webview/assets/decision-control.js" }), "ready"]);
+  const conflict = patchError("Codex asset already exists: webview/assets/decision-control.js");
+  const concurrent = fixture(["unpatched", conflict, "ready"]);
   assert.equal((await runIntegration(concurrent.options)).status, "ready");
   assert.deepEqual(concurrent.actions(), ["status", "apply", "status"]);
-  const foreign = fixture(["unpatched",
-    Object.assign(new Error("concurrent apply"), { stderr: "Codex asset already exists: webview/assets/decision-control.js" }),
-    Object.assign(new Error("changed host"), { stderr: "patched file changed: out/extension.js" })]);
-  await assert.rejects(runIntegration(foreign.options), /changed host/);
+  const foreign = fixture(["unpatched", conflict, patchError("patched file changed: out/extension.js")]);
+  await assert.rejects(runIntegration(foreign.options), /did not match the verified patch/);
 });
 
 test("persistent patch contention remains retryable after the immediate retries", async () => {
-  const busy = Object.assign(new Error("private process details"), { stderr: "Decision patch is busy; retry later" });
+  const busy = patchError("Decision patch is busy; retry later");
   const setup = fixture([busy, busy, busy, busy]);
   await assert.rejects(runIntegration(setup.options), (error) => {
     assert.equal(error.retryable, true);
@@ -599,25 +603,38 @@ test("the installed marketplace reaches the patcher as a literal scoped environm
 });
 
 test("diagnostics expose bounded errors without child process output or private environment", async () => {
-  const error = Object.assign(new Error("process failed"), { stderr: "decisionctl: unsupported Codex extension version",
-    stdout: "private-value-must-not-appear", env: { TOKEN: "private-env-must-not-appear" } });
-  assert.equal(failureMessage(error), "unsupported Codex extension version");
+  const error = Object.assign(patchError("unsupported Codex extension version; revalidate the composer patch"),
+    { stdout: "synthetic-value", env: { FIXTURE: "synthetic-env" } });
   const setup = fixture([error, error]);
   const extension = extensionFixture(setup, Promise.resolve());
   try {
     assert.equal((await extension.integration.inspect(true, false)).status, "hook-only");
     await extension.integration.inspect(true, false);
     assert.equal(extension.notifications.length, 0, "unreviewed UI assets do not interrupt startup");
-    assert.equal(JSON.stringify(extension.log).includes("private-value"), false);
-    assert.equal(JSON.stringify(extension.log).includes("private-env"), false);
+    assert.doesNotMatch(JSON.stringify(extension.log), /synthetic/);
     assert.deepEqual(setup.actions(), ["status", "status"]);
   } finally { extension.dispose(); }
 });
 
+test("unrecognized checker failures report the phase without retaining child details", async () => {
+  const setup = fixture(["unpatched", patchError("synthetic process error from the test fixture")]);
+  const extension = extensionFixture(setup, Promise.resolve());
+  try {
+    const result = await extension.integration.inspect(true, false);
+    assert.equal(result.status, "failed");
+    assert.match(result.message, /Decision patch apply failed/);
+    assert.doesNotMatch(JSON.stringify([result, extension.log, extension.notifications]), /synthetic/);
+    assert.deepEqual(setup.actions(), ["status", "apply"]);
+  } finally { extension.dispose(); }
+});
+
+test("filesystem diagnostics give actionable fixed text instead of reporting local paths", () => {
+  const error = Object.assign(new Error("fixture path"), { code: "EACCES", syscall: "lstat" });
+  assert.equal(failureMessage(error), "Decision integration could not access a required file or directory");
+});
+
 test("unsupported-host diagnostics identify the loaded control and explain VSIX recovery without patching", async () => {
-  const setup = fixture([Object.assign(new Error("checker refused"), {
-    stderr: "decisionctl: unsupported Codex assets; revalidate the composer patch",
-  })]);
+  const setup = fixture([patchError("unsupported Codex assets; revalidate the composer patch")]);
   setup.options.host.packageJSON.version = "26.1021.22027";
   const extension = extensionFixture(setup, Promise.resolve({ status: "ready", distro: "Ubuntu" }));
   extension.vscode.window.showWarningMessage = async (...args) => {

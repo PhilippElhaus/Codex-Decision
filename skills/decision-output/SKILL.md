@@ -20,7 +20,7 @@ Identify the installed plugin, selected Codex runtime, plugin data directory, an
 - Clear a mismatched `codexDecision.dataDirectory` override before repairing automatic discovery. Preserve each runtime's data and credentials.
 - Preserve active plugin caches and patch recovery files. Existing threads can retain recorded hook paths. Do not delete a settings lock until its owner has stopped.
 
-Temporary installation failures retry within bounded limits. Read the safe phase diagnostic in **Decision Integration**. Deterministic registration, metadata, or host-build refusals need their underlying cause corrected.
+Temporary installation failures retry within bounded limits. Read the phase and fixed patch diagnostic in **Decision Integration** rather than collecting raw subprocess output. **Check Integration** does not apply the UI patch, but it can bootstrap the bundled hook. Do not run either command during a read-only audit of installed state. Deterministic registration, metadata, or host-build refusals need their underlying cause corrected.
 
 Use the [installation guide](https://github.com/PhilippElhaus/Codex-Decision/blob/main/docs/setup/installation.md) for exact commands, recovery, and supported-platform behavior.
 

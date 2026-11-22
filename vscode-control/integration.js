@@ -9,6 +9,12 @@ const { wslLocation } = require("./private-paths");
 const runFile = promisify(execFile);
 const { version: CONTROL_VERSION, codexDecisionHookVersion: HOOK_VERSION } = require("./package.json");
 const PANEL_VERSION_KEY = "codexDecision.integration.panelControlVersion";
+const PATCH_BUSY = "Decision patch is busy; retry later";
+const PATCH_CONFLICTS = new Set([
+  "Codex asset already exists: webview/assets/decision-control.js",
+  "Codex asset already exists: webview/assets/decision-settings.js",
+  "Codex asset already exists: webview/assets/decision-icon.png",
+]);
 
 function windowsPath(filename) {
   if (typeof filename !== "string" || !/^[A-Za-z]:[\\/]/.test(filename) ||
@@ -59,6 +65,26 @@ function patchStatus(stdout, version) {
   return { version: result.version, status: result.status };
 }
 
+function patchCommandFailure(error, action) {
+  const stderr = error?.stderr;
+  const text = error?.code === 1 && typeof stderr === "string" && stderr.length <= 4096 ? stderr.trim() : "";
+  const diagnostic = text.startsWith("decisionctl: ") ? text.slice("decisionctl: ".length) : "";
+  if (diagnostic === PATCH_BUSY) return Object.assign(new Error(PATCH_BUSY), { patchFailure: "busy" });
+  if (PATCH_CONFLICTS.has(diagnostic)) {
+    return Object.assign(new Error("A Decision patch asset already exists; check integration before repairing"),
+      { patchFailure: "asset-exists" });
+  }
+  if (diagnostic === "unsupported Codex extension version; revalidate the composer patch" ||
+      diagnostic === "unsupported Codex assets; revalidate the composer patch" ||
+      diagnostic === "Decision patch paths must not contain links" || diagnostic === "rollback metadata changed") {
+    return new Error(diagnostic);
+  }
+  if (/^(?:Codex extension file changed|patched file changed|rollback file changed): [^\r\n]+$/.test(diagnostic)) {
+    return new Error("Codex or rollback files did not match the verified patch; preserve them for review");
+  }
+  return new Error(`Decision patch ${action} failed; check the bundled runtime and file access`);
+}
+
 async function runIntegration({ host, controlRoot, dataDirectory, distro, backend, localAppData, marketplacePath,
   repair = true, platform = process.platform, homeDirectory = os.homedir(), io = fs, run = runFile }) {
   if (platform !== "win32" && platform !== "linux") return { status: "unsupported-platform" };
@@ -100,7 +126,7 @@ async function runIntegration({ host, controlRoot, dataDirectory, distro, backen
   const backup = paths.join(parent, version);
   try { await directoryPath(backup, false, io, paths); }
   catch (error) { if (error.code !== "ENOENT") throw error; }
-  const execute = async (program, args) => {
+  const execute = async (program, args, action) => {
     try {
       return await (useWsl
         ? run("wsl.exe", ["-d", distribution, "-e", program, ...args],
@@ -111,13 +137,14 @@ async function runIntegration({ host, controlRoot, dataDirectory, distro, backen
             ...(linuxHost ? { CODEX_DECISION_REMOTE_EXTENSION_HOST: "1" } : {}),
           } } : {}) }));
     } catch (error) {
-      if (["EAGAIN", "EBUSY", "EINTR", "EIO", "ETIMEDOUT"].includes(error.code) ||
-          error.killed === true && error.signal === "SIGTERM" && error.code == null) {
+      if (["EAGAIN", "EBUSY", "EINTR", "EIO", "ETIMEDOUT"].includes(error?.code) ||
+          error?.killed === true && error.signal === "SIGTERM" && error.code == null) {
         const phase = program === "wslpath" ? "WSL path conversion" : "patch verification";
         throw Object.assign(new Error(`Decision integration is temporarily unavailable during ${phase}; retry repair`),
           { retryable: true });
       }
-      throw error;
+      if (action) throw patchCommandFailure(error, action);
+      throw new Error("Decision integration failed during WSL path conversion; check WSL availability");
     }
   };
   // Pass each path as an argument. Never interpolate a shell program.
@@ -139,12 +166,12 @@ async function runIntegration({ host, controlRoot, dataDirectory, distro, backen
       try {
         return await execute(useWsl && marketplacePath ? "env" : converted[0], useWsl && marketplacePath
           ? [`CODEX_DECISION_MARKETPLACE_PATH=${marketplacePath}`, converted[0], ...argumentsFor(action)]
-          : argumentsFor(action));
+          : argumentsFor(action), action);
       }
       catch (error) {
-        if (!/Decision patch is busy; retry later/.test(error.stderr || error.message || "")) throw error;
+        if (error.patchFailure !== "busy") throw error;
         if (attempt >= 3) {
-          throw Object.assign(new Error("Decision patch is busy; retry later"), { retryable: true });
+          throw Object.assign(new Error(PATCH_BUSY), { retryable: true });
         }
         await new Promise((resolve) => setTimeout(resolve, 250 * 2 ** attempt));
       }
@@ -157,7 +184,7 @@ async function runIntegration({ host, controlRoot, dataDirectory, distro, backen
   try { await invoke(action); }
   catch (error) {
     // Another VS Code window can complete the same verified patch between status and apply.
-    if (action !== "apply" || !/Codex asset already exists:/.test(error.stderr || "")) throw error;
+    if (action !== "apply" || error.patchFailure !== "asset-exists") throw error;
     const concurrent = await status();
     if (concurrent.status !== "ready") throw error;
     return { ...concurrent, changed: false };
@@ -168,10 +195,10 @@ async function runIntegration({ host, controlRoot, dataDirectory, distro, backen
 }
 
 function failureMessage(error) {
-  // Only surface a bounded patcher diagnostic. Do not log child-process objects or environment.
-  const diagnostic = typeof error?.stderr === "string" ? error.stderr.trim().split(/\r?\n/).at(-1) : "";
-  const message = diagnostic || error?.message || "Decision integration could not be verified";
-  return message.replace(/^decisionctl:\s*/, "").slice(0, 350);
+  if (error?.code === "ENOENT") return "A Decision integration file or directory is missing; check the installation";
+  if (["EACCES", "EPERM"].includes(error?.code)) return "Decision integration could not access a required file or directory";
+  if (typeof error?.syscall === "string") return "Decision integration failed while accessing local files";
+  return (typeof error?.message === "string" && error.message || "Decision integration could not be verified").slice(0, 350);
 }
 
 function activateIntegration(vscode, context, { dataDirectory, ready = Promise.resolve(),
