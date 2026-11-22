@@ -35,7 +35,7 @@ pub(super) fn safe_hook_error(error: &str) -> &'static str {
     match error {
         "missing plugin data" => "missing plugin data",
         "unsafe plugin data" => "unsafe plugin data",
-        "unsafe directory" => "unsafe directory",
+        "unsafe directory" | "unsafe directory path" => "unsafe directory",
         "invalid hook JSON" => "invalid hook JSON",
         "hook input too large" => "hook input too large",
         "missing session id" => "missing session id",
