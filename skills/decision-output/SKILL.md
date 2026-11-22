@@ -16,11 +16,11 @@ Identify the installed plugin, selected Codex runtime, plugin data directory, an
 - Click **decision** to change the selected thread's enabled flag. Shared settings control Monitor/Filter mode, relevance cutoff, provider, and retention.
 - Configure the connection through **Connect Decision** or **Codex settings → Decision**. Never ask for a key in chat or print a saved credential.
 - Review changed hooks in `/hooks` when Codex requests trust. API reachability does not establish hook activity or trust. The integrated installer preserves Codex's trust database.
-- Run **Decision: Check Integration** or **Decision: Repair Integration** for missing controls. Unknown or modified Codex builds require a reviewed patch profile. Do not bypass asset verification.
+- Run **Decision: Check Integration (May Install Hook)** to verify the UI patch. Run **Decision: Repair Integration** to apply the verified patch or reopen the panel. Unknown or modified Codex builds require a reviewed patch profile. Do not bypass asset verification.
 - Clear a mismatched `codexDecision.dataDirectory` override before repairing automatic discovery. Preserve each runtime's data and credentials.
 - Preserve active plugin caches and patch recovery files. Existing threads can retain recorded hook paths. Do not delete a settings lock until its owner has stopped.
 
-Temporary installation failures retry within bounded limits. Read the phase and fixed patch diagnostic in **Decision Integration** rather than collecting raw subprocess output. **Check Integration** does not apply the UI patch, but it can bootstrap the bundled hook. Do not run either command during a read-only audit of installed state. Deterministic registration, metadata, or host-build refusals need their underlying cause corrected.
+Automatic repair retries temporary installation failures within bounded limits. Read the phase and fixed diagnostic in **Decision Integration** rather than collecting raw subprocess output. **Check Integration (May Install Hook)** can bootstrap the bundled hook. It does not apply the UI patch or open the panel. Do not run either command during a read-only audit. Automatic repair, if enabled, runs separately at startup or after extension or settings changes. Deterministic registration, metadata, or host-build refusals need their underlying cause corrected.
 
 Use the [installation guide](https://github.com/PhilippElhaus/Codex-Decision/blob/main/docs/setup/installation.md) for exact commands, recovery, and supported-platform behavior.
 

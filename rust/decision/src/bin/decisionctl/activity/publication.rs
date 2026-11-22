@@ -131,7 +131,35 @@ fn same(before: &Option<Pending>, after: &Option<Pending>) -> bool {
     }
 }
 
+fn unjournaled_stats(directory: &Path, current: Option<Record>) -> Result<Value, String> {
+    if let Some(record) = current {
+        return parse_stats(&record.bytes);
+    }
+    let event_path = directory.join("logs/events.jsonl");
+    let size = match fs::symlink_metadata(&event_path) {
+        Ok(metadata) => metadata.len(),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(json!({})),
+        Err(_) => return Err("activity retained event stat".into()),
+    };
+    if size == 0 {
+        return Ok(json!({}));
+    }
+    let start = size.saturating_sub(1_048_576);
+    let events = load(
+        &event_path,
+        1_048_576,
+        false,
+        Some((start, (size - start) as usize)),
+    )?
+    .ok_or("activity retained events missing")?;
+    codex_decision::activity_counters::retained_stats_from_events(&events.bytes, start > 0)
+}
+
 pub(super) fn read_stats(directory: &Path) -> Result<Value, String> {
+    read_stats_with(directory, || {})
+}
+
+fn read_stats_with(directory: &Path, after_sample: impl Fn()) -> Result<Value, String> {
     for _ in 0..2 {
         let before = pending(directory)?;
         let result = (|| -> Result<Value, String> {
@@ -160,30 +188,7 @@ pub(super) fn read_stats(directory: &Path) -> Result<Value, String> {
             }
             let current = load(&directory.join("stats.json"), 8192, journal.is_some(), None)?;
             let Some(journal) = journal else {
-                if let Some(record) = current {
-                    return parse_stats(&record.bytes);
-                }
-                let event_path = directory.join("logs/events.jsonl");
-                let size = match fs::symlink_metadata(&event_path) {
-                    Ok(metadata) => metadata.len(),
-                    Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(json!({})),
-                    Err(_) => return Err("activity retained event stat".into()),
-                };
-                if size == 0 {
-                    return Ok(json!({}));
-                }
-                let start = size.saturating_sub(1_048_576);
-                let events = load(
-                    &event_path,
-                    1_048_576,
-                    false,
-                    Some((start, (size - start) as usize)),
-                )?
-                .ok_or("activity retained events missing")?;
-                return codex_decision::activity_counters::retained_stats_from_events(
-                    &events.bytes,
-                    start > 0,
-                );
+                return unjournaled_stats(directory, current);
             };
             let post = current
                 .as_ref()
@@ -205,8 +210,16 @@ pub(super) fn read_stats(directory: &Path) -> Result<Value, String> {
             }
             prior.map_or(Ok(json!({})), parse_stats)
         })();
+        after_sample();
         let after = pending(directory)?;
         if same(&before, &after) {
+            if before.is_none() && result.is_ok() {
+                let current = load(&directory.join("stats.json"), 8192, false, None)?;
+                let second = unjournaled_stats(directory, current);
+                if second != result || pending(directory)?.is_some() {
+                    continue;
+                }
+            }
             return result;
         }
     }

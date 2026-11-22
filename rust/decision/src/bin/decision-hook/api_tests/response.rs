@@ -1,5 +1,25 @@
 use super::*;
 
+fn accept_request(listener: &TcpListener) -> std::net::TcpStream {
+    let deadline = Instant::now() + Duration::from_secs(3);
+    let mut stream = loop {
+        match listener.accept() {
+            Ok((stream, _)) => break stream,
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                assert!(Instant::now() < deadline, "request was not sent");
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            Err(error) => panic!("{error}"),
+        }
+    };
+    stream.set_nonblocking(false).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .unwrap();
+    read_request(&mut stream);
+    stream
+}
+
 #[test]
 fn request_outcomes_distinguish_headers_from_valid_typed_answers() {
     let valid = r#"{"model":"gpt-6-luna","answers":[{"name":"line_1","type":"predicate","probability":0.01}]}"#;
@@ -43,18 +63,7 @@ fn request_outcomes_distinguish_headers_from_valid_typed_answers() {
         let endpoint = format!("http://{}/", listener.local_addr().unwrap());
         let body = body.to_owned();
         let server = std::thread::spawn(move || {
-            let deadline = Instant::now() + Duration::from_secs(3);
-            let mut stream = loop {
-                match listener.accept() {
-                    Ok((stream, _)) => break stream,
-                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                        assert!(Instant::now() < deadline, "request was not sent");
-                        std::thread::sleep(Duration::from_millis(5));
-                    }
-                    Err(error) => panic!("{error}"),
-                }
-            };
-            read_request(&mut stream);
+            let mut stream = accept_request(&listener);
             if !status.is_empty() {
                 // Empty 200 deliberately ends before its declared body length.
                 write!(
@@ -90,6 +99,44 @@ fn request_outcomes_distinguish_headers_from_valid_typed_answers() {
         assert_eq!(health["request_failures"], u64::from(!validated));
         assert_eq!(health["errors"], 0);
     }
+}
+
+#[test]
+fn validated_result_survives_a_health_outcome_write_failure() {
+    let root = tempfile::tempdir().unwrap();
+    let data = root.path().join("data");
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let endpoint = format!("http://{}/", listener.local_addr().unwrap());
+    let server = std::thread::spawn(move || {
+        let mut stream = accept_request(&listener);
+        let body = r#"{"model":"gpt-6-luna","answers":[{"name":"line_1","type":"predicate","probability":0.01}]}"#;
+        write!(
+            stream,
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        )
+        .unwrap();
+    });
+    let request = request();
+    let encoded = codex_decision::provider::encode_request(&request).unwrap();
+    let health = data.join("logs/hook-health.json");
+    let result = evaluate_prepared(
+        &data,
+        &decision_agent(),
+        &request,
+        &encoded,
+        "synthetic-key",
+        2.0,
+        &endpoint,
+        |response| {
+            fs::write(&health, b"not-json").unwrap();
+            parse_answer(response)
+        },
+    );
+    server.join().unwrap();
+    assert_eq!(result.unwrap().1[&1], 0.01);
+    assert_eq!(fs::read(health).unwrap(), b"not-json");
 }
 
 #[test]
@@ -160,7 +207,7 @@ fn request_failures_and_successes_are_joined_without_counting_requests_as_output
         |_| Ok(())
     )
     .is_err());
-    usage::fallback();
+    usage::fallback("Decision request failed");
     assert!(evaluate(
         root.as_path(),
         &agent,

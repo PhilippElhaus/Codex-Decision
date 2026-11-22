@@ -2,7 +2,7 @@
 
 The integrated extension contains the native Decision hook, skill, composer control, settings, and bottom panel. Install it alongside Codex in each workspace host. Remote WSL runs the Linux x86_64 hook and uses its own data store. The older Windows-to-WSL Codex launcher remains supported where the installed Codex release provides it.
 
-Install the release VSIX through **Extensions → … → Install from VSIX…** in Visual Studio Code. Reload after integration repair. Review the current hook in `/hooks` when Codex requires trust. Use **Decision: Check Integration** for diagnostics and **Decision: Repair Integration** to retry or reopen the panel.
+Install the release VSIX through **Extensions → … → Install from VSIX…** in Visual Studio Code. Reload after integration repair. Review the current hook in `/hooks` when Codex requires trust. **Decision: Check Integration (May Install Hook)** verifies the UI patch after hook bootstrap. It is not a read-only audit command. Use **Decision: Repair Integration** to apply the verified UI patch or reopen the panel.
 
 Connect through OpenAI Decisions, TypeSafe Jev, or a compatible custom endpoint. Saved secrets stay private. Click **decision** to change the selected thread. Settings apply to the installation. The panel provides Latest, Totals, and optional local skipped-output capture.
 

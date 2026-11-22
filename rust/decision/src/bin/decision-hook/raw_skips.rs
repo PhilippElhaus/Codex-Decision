@@ -34,11 +34,11 @@ struct Payload {
 }
 
 pub(super) fn skip_event(data_dir: &Path, event: &Value, reason: &str) -> Result<Value, String> {
-    let answer = skip(data_dir, reason)?;
-    usage::skipped(reason);
+    usage::skipped(reason, None);
+    report_health(skip(data_dir, reason));
     // Optional inspection must not alter filtering, the original response, or skip accounting.
     let _ = capture(data_dir, event, reason, None);
-    Ok(answer)
+    Ok(json!({}))
 }
 
 pub(super) fn skip_event_with_detail(
@@ -47,10 +47,10 @@ pub(super) fn skip_event_with_detail(
     reason: &str,
     detail: &str,
 ) -> Result<Value, String> {
-    let answer = skip_with_detail(data_dir, reason, detail)?;
-    usage::skipped(reason);
+    usage::skipped(reason, Some(detail));
+    report_health(skip_with_detail(data_dir, reason, detail));
     let _ = capture(data_dir, event, reason, Some(detail));
-    Ok(answer)
+    Ok(json!({}))
 }
 
 fn read_optional_private(path: &Path, limit: usize) -> Result<Option<Vec<u8>>, String> {

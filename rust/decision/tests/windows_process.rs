@@ -34,6 +34,71 @@ fn invoke(data: &Path, session: &str) -> std::process::Child {
 }
 
 #[test]
+fn disabled_session_overrides_global_and_does_not_access_shared_settings() {
+    let root = tempfile::tempdir().unwrap();
+    let session = "disabled-session";
+    let scoped = root
+        .path()
+        .join("sessions")
+        .join(format!("{:x}", Sha256::digest(session)));
+    fs::create_dir_all(&scoped).unwrap();
+    let mut config: Value =
+        serde_json::from_slice(include_bytes!("../../../config.example.json")).unwrap();
+    fs::write(scoped.join("config.json"), config.to_string()).unwrap();
+    config["enabled"] = json!(true);
+    config["scope"] = json!("global");
+    fs::write(root.path().join("config.json"), config.to_string()).unwrap();
+    fs::write(root.path().join("settings.json"), b"{invalid").unwrap();
+    codex_decision::windows::secure_tree(root.path()).unwrap();
+    let output = invoke(root.path(), session).wait_with_output().unwrap();
+    assert!(output.status.success());
+    assert_eq!(
+        serde_json::from_slice::<Value>(&output.stdout).unwrap(),
+        json!({})
+    );
+    assert!(output.stderr.is_empty());
+    assert!(!scoped.join("logs").exists());
+}
+
+#[test]
+fn invalid_health_is_preserved_but_enabled_invocation_reports_a_safe_failure() {
+    let root = tempfile::tempdir().unwrap();
+    let session = "invalid-health-session";
+    let scoped = root
+        .path()
+        .join("sessions")
+        .join(format!("{:x}", Sha256::digest(session)));
+    let logs = scoped.join("logs");
+    fs::create_dir_all(&logs).unwrap();
+    let mut config: Value =
+        serde_json::from_slice(include_bytes!("../../../config.example.json")).unwrap();
+    config["enabled"] = json!(true);
+    fs::write(scoped.join("config.json"), config.to_string()).unwrap();
+    let private = b"not-json synthetic-health-sentinel";
+    fs::write(logs.join("hook-health.json"), private).unwrap();
+    codex_decision::windows::secure_tree(root.path()).unwrap();
+    let output = invoke(root.path(), session).wait_with_output().unwrap();
+    assert!(output.status.success());
+    assert_eq!(
+        serde_json::from_slice::<Value>(&output.stdout).unwrap(),
+        json!({})
+    );
+    assert!(!String::from_utf8_lossy(&output.stderr).contains("synthetic-health-sentinel"));
+    assert_eq!(fs::read(logs.join("hook-health.json")).unwrap(), private);
+    let text = fs::read_to_string(logs.join("telemetry.jsonl")).unwrap();
+    let rows: Vec<Value> = text
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0]["invocation_id"], rows[1]["invocation_id"]);
+    assert_eq!(rows[1]["reason"], "health_unavailable");
+    assert_eq!(rows[1]["request_count"], 0);
+    assert_eq!(rows[1]["health_write_failed"], true);
+    assert!(!text.contains("synthetic-health-sentinel"));
+}
+
+#[test]
 fn native_hook_reads_private_configuration_and_serializes_activity() {
     let root = tempfile::tempdir().unwrap();
     let session = "native-windows-offline";

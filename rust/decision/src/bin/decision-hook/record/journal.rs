@@ -110,8 +110,9 @@ impl Publication {
     // retention must wait until all journal/backup cleanup has completed.
     pub(crate) fn committed(&self) -> bool {
         let result = recovery::finalize(&self.logs);
-        if let Err(error) = result {
-            eprintln!("Codex Decision publication cleanup deferred: {error}");
+        if result.is_err() {
+            usage::publication_cleanup_deferred();
+            warn(format_args!("Codex Decision publication cleanup deferred"));
         }
         matches!(fs::symlink_metadata(self.logs.join(JOURNAL_NAME)), Err(error) if error.kind() == std::io::ErrorKind::NotFound)
     }

@@ -73,3 +73,17 @@ fn cli_events_only_history_is_partial_and_keeps_known_retained_minima() {
         .iter()
         .any(|name| name == "completed"));
 }
+
+#[test]
+fn cli_resamples_when_an_unjournaled_image_changes_before_the_second_probe() {
+    let root = tempfile::tempdir().unwrap();
+    let stats = root.path().join("stats.json");
+    fs::write(&stats, b"{\"completed\":2}").unwrap();
+    let first = std::cell::Cell::new(true);
+    let read = read_stats_with(root.path(), || {
+        if first.replace(false) {
+            fs::write(&stats, b"{\"completed\":1}").unwrap();
+        }
+    });
+    assert_eq!(read.unwrap()["completed"], 1);
+}

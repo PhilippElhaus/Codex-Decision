@@ -23,7 +23,7 @@ The `min_chars` and `max_chars` names are historical identifiers. Their units ar
 
 The integrated control creates an enabled configuration once for a new local thread. It then preserves that thread's choice. This differs from the disabled standalone example. Records live under `PLUGIN_DATA/sessions/<session-hash>/`. Provider settings, mode, relevance cutoff, and retention are installation-wide in `PLUGIN_DATA/settings.json`. Shared behavior fields override corresponding session fields. They do not replace the session's enabled choice.
 
-For standalone use, `"scope": "global"` in `PLUGIN_DATA/config.json` enables an installation-wide configuration. A session configuration overrides that choice. Use the settings form when available.
+For standalone use, `"scope": "global"` in `PLUGIN_DATA/config.json` selects an installation-wide configuration. A session configuration takes precedence. A valid disabled selection returns without reading shared settings, contacting a provider, or writing session activity. An invalid selected session configuration fails open; it does not fall back to the global configuration. Use the settings form when available.
 
 `codexDecision.dataDirectory` is an optional absolute override. `CODEX_DECISION_DATA_DIRECTORY` supplies the environment equivalent. Automatic discovery follows the selected native or WSL runtime. A mismatched explicit override is preserved and reported. Clear the override and run **Decision: Repair Integration** to return to automatic discovery.
 

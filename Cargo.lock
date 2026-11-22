@@ -75,7 +75,7 @@ dependencies = [
 
 [[package]]
 name = "codex-decision"
-version = "0.17.5"
+version = "0.17.6"
 dependencies = [
  "chrono",
  "libc",

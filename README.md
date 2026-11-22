@@ -4,14 +4,14 @@
 
 Codex Decision selects repetitive lines for removal from supported local tool output. Local safeguards keep diagnostics, exact source, exhaustive results, and completion evidence. Every shortened result links to its complete original.
 
-**Codex Decision 0.17.5** — [Download the integrated VSIX](https://github.com/PhilippElhaus/Codex-Decision/releases/latest).
+**Codex Decision 0.17.6** — [Download the integrated VSIX](https://github.com/PhilippElhaus/Codex-Decision/releases/latest).
 
 ## Get started
 
 Install the VSIX in **Visual Studio Code** through **Extensions → … → Install from VSIX…**, or run:
 
 ```bash
-code --install-extension codex-decision-0.17.5.vsix --force
+code --install-extension codex-decision-0.17.6.vsix --force
 ```
 
 The package contains Windows and Linux x86_64 runtimes, session controls, settings, a panel, and a verified Codex UI patch. Native Windows needs no WSL or Python. Install the extension in the same workspace host as Codex, including Ubuntu for Remote WSL. Each runtime retains its own plugin data and credentials.
@@ -22,7 +22,7 @@ Click **decision** in the composer to change the current thread's enabled state.
 
 <img src="docs/images/decision-panel.png" width="1000" alt="Decision panel with synthetic line judgments and thread activity">
 
-Use **Decision: Check Integration** for status and **Decision: Repair Integration** to retry installation or restore the panel. Unknown or modified Codex builds produce a diagnostic. Automatic updates check this repository's stable GitHub releases daily and verify package size and SHA-256 before installation.
+Use **Decision: Check Integration (May Install Hook)** to verify the UI patch. This command can install or refresh the bundled hook, but it does not apply the UI patch or open the panel. Use **Decision: Repair Integration** to apply a verified patch or reopen the panel. Unknown or modified Codex builds produce a diagnostic. Automatic updates check this repository's stable GitHub releases daily and verify package size and SHA-256 before installation.
 
 A prepared replacement does not prove downstream context reduction or billed-token savings. Code-mode wrappers can still print an original nested tool result. See [measurement limits](docs/operations/measurement.md).
 

@@ -82,15 +82,31 @@ pub(crate) fn source(source: &str) {
     });
 }
 
-pub(crate) fn skipped(reason: &str) {
+pub(crate) fn skipped(reason: &str, detail: Option<&str>) {
     update(|invocation| {
         invocation.summary["outcome"] = json!("skip");
         invocation.summary["reason"] = json!(reason_code(reason));
+        if let Some(detail @ ("protected_output" | "protected_command" | "protected_input")) =
+            detail
+        {
+            invocation.summary["skip_detail"] = json!(detail);
+        }
     });
 }
 
-pub(crate) fn fallback() {
-    update(|invocation| invocation.summary["fallback_used"] = json!(true));
+pub(crate) fn fallback(error: &str) {
+    update(|invocation| {
+        invocation.summary["fallback_used"] = json!(true);
+        invocation.summary["fallback_reason"] = json!(error_code(error));
+    });
+}
+
+pub(crate) fn health_write_failed() {
+    update(|invocation| invocation.summary["health_write_failed"] = json!(true));
+}
+
+pub(crate) fn publication_cleanup_deferred() {
+    update(|invocation| invocation.summary["publication_cleanup_deferred"] = json!(true));
 }
 
 pub(crate) fn completed(status: &str, reason: &str, judged: usize, omitted: usize, saved: usize) {
@@ -255,6 +271,15 @@ fn error_code(error: &str) -> &'static str {
         "Decision response read failed" => "response_read_failed",
         "Decision response too large" => "response_too_large",
         "invalid decision response" => "invalid_json",
+        "invalid config"
+        | "unsupported config version"
+        | "invalid shared settings"
+        | "unsafe shared settings" => "invalid_configuration",
+        "unsafe hook health"
+        | "invalid hook health"
+        | "hook health read"
+        | "hook health stat"
+        | "hook health too large" => "health_unavailable",
         "Decision context budget" => "request_budget",
         "log lock timeout" => "log_lock_timeout",
         // This branch deliberately does not persist free-form validation or filesystem errors.

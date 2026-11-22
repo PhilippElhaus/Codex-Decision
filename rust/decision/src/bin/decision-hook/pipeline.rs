@@ -44,14 +44,16 @@ pub(super) fn execute() -> Result<Value, String> {
         let Some(mut config) = selected else {
             return Ok(None);
         };
-        apply_shared_settings(&data_dir, &mut config)?;
+        if config.enabled {
+            apply_shared_settings(&data_dir, &mut config)?;
+        }
         Ok::<_, String>(Some(config))
     })();
     let selected = match selected {
         Ok(selected) => selected,
         Err(error) => {
             ensure_dir(&data_dir.join("sessions"))?;
-            hook_health(&scoped, "error", &error)?;
+            report_health(hook_health(&scoped, "error", &error));
             return Err(error);
         }
     };
@@ -68,14 +70,7 @@ pub(super) fn execute() -> Result<Value, String> {
         return lifecycle::process(&data_dir, &scoped, &event, &config);
     }
     ensure_dir(&data_dir.join("sessions"))?;
-    hook_health(&scoped, "seen", "")?;
-    let result = process_event(&data_dir, &scoped, &event, &config);
-    if let Err(error) = &result {
-        if let Err(status_error) = hook_health(&scoped, "error", error) {
-            eprintln!("Codex Decision status write failed: {status_error}");
-        }
-    }
-    result
+    process_event(&data_dir, &scoped, &event, &config)
 }
 
 pub(super) fn process_event(
@@ -85,7 +80,11 @@ pub(super) fn process_event(
     config: &Config,
 ) -> Result<Value, String> {
     usage::start(scoped, event, config);
-    let result = process_event_inner(data_dir, scoped, event, config);
+    let result = hook_health(scoped, "seen", "")
+        .and_then(|()| process_event_inner(data_dir, scoped, event, config));
+    if let Err(error) = &result {
+        report_health(hook_health(scoped, "error", error));
+    }
     usage::finish(&result);
     lifecycle::output(scoped, event, config, &result);
     result
@@ -118,7 +117,7 @@ fn process_event_inner(
     alternate.fallback_from = Some((config.provider, config.model.clone()));
     alternate.provider = config.provider.alternate();
     alternate.model = alternate.provider.default_model().into();
-    usage::fallback();
+    usage::fallback(result.as_ref().unwrap_err());
     process_event_once(data_dir, scoped, event, &prepared, &alternate, &mut false)
 }
 
@@ -442,9 +441,7 @@ fn process_event_once(
     );
     usage::line_outcomes(&lines, &decisions, config.policy.relevant_max, replace);
     // The committed output must survive a later telemetry failure.
-    if let Err(error) = hook_health(scoped, "success", "") {
-        eprintln!("Codex Decision status write failed: {error}");
-    }
+    report_health(hook_health(scoped, "success", ""));
     if replace {
         Ok(
             json!({"continue":false,"stopReason":"Line-filtered tool output stored by Codex Decision","reason":feedback}),

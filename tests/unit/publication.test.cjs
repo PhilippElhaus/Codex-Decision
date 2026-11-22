@@ -103,6 +103,33 @@ test("same-content atomic journal replacement retries the reader generation",asy
   finally { fs.open = open; }
 });
 
+test("a completed rollback between journal probes cannot expose tentative stats", async t => {
+  const {directory,write} = await create(t);
+  await fs.rm(path.join(directory,"logs/.decision-publication.json"));
+  const open = fs.open;
+  let rolledBack = false;
+  fs.open = async function(filename,...args) {
+    const handle = await open.call(this,filename,...args);
+    if (!rolledBack && filename === path.join(directory,"stats.json")) {
+      const close = handle.close.bind(handle);
+      handle.close = async () => {
+        await close();
+        rolledBack = true;
+        await write("logs/.decision-publication.json",JSON.stringify(fixture.prepared));
+        await write("stats.json", fixture.stats_before);
+        await write("logs/events.jsonl", fixture.events_before);
+        await fs.rm(path.join(directory,"logs/.decision-publication.json"));
+        await fs.utimes(path.join(directory,"logs"), 1_700_000_000, 1_700_000_000);
+      };
+    }
+    return handle;
+  };
+  try {
+    assert.equal((await core.readLifetimeStats(directory)).completed,1);
+    assert.equal(rolledBack,true);
+  } finally { fs.open = open; }
+});
+
 test("counter and journal codecs reject lossy UTF8, BOM and non-integer tokens while probabilities stay valid",async t => {
   const {directory,write} = await create(t);
   await fs.rm(path.join(directory,"logs/.decision-publication.json"));

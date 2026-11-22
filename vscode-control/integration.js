@@ -96,7 +96,7 @@ async function runIntegration({ host, controlRoot, dataDirectory, distro, backen
     throw new Error("Codex extension version could not be identified");
   }
   const location = wslLocation(dataDirectory || "");
-  const distribution = location?.distro || distro;
+  const distribution = distro || location?.distro;
   const useWsl = !linuxHost && (backend ? backend === "wsl" : Boolean(distribution));
   if (useWsl && (typeof distribution !== "string" || !/^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$/.test(distribution))) {
     throw new Error("Decision integration needs an installed WSL distribution");
@@ -198,15 +198,46 @@ function failureMessage(error) {
   if (error?.code === "ENOENT") return "A Decision integration file or directory is missing; check the installation";
   if (["EACCES", "EPERM"].includes(error?.code)) return "Decision integration could not access a required file or directory";
   if (typeof error?.syscall === "string") return "Decision integration failed while accessing local files";
-  return (typeof error?.message === "string" && error.message || "Decision integration could not be verified").slice(0, 350);
+  const text = typeof error?.message === "string" ? error.message : "";
+  if (text.length <= 350 && !/[\r\n\0]/.test(text) &&
+      SAFE_FAILURES.some((rule) => typeof rule === "string" ? rule === text : rule.test(text))) return text;
+  return "Decision integration could not be verified; check the selected runtime and installation";
 }
+
+const SAFE_FAILURES = [
+  PATCH_BUSY,
+  "unsupported Codex extension version; revalidate the composer patch",
+  "unsupported Codex assets; revalidate the composer patch",
+  "Decision patch paths must not contain links", "rollback metadata changed",
+  "Codex or rollback files did not match the verified patch; preserve them for review",
+  "A Decision patch asset already exists; check integration before repairing",
+  "Codex extension version could not be identified", "Install the Codex extension to use Decision integration",
+  "Install the Codex VS Code extension before repairing Decision",
+  "This Decision package requires Linux x86_64 or Windows with WSL",
+  /^Decision patch (?:status|apply|update) failed; check the bundled runtime and file access$/,
+  /^Decision integration is temporarily unavailable during (?:WSL path conversion|patch verification); retry repair$/,
+  /^Decision integration (?:paths must be absolute and outside D:|needs an absolute Linux path off D:|path contains a linked or invalid directory|checker returned invalid status|needs an installed WSL distribution|marketplace path is invalid|checker is missing or linked|failed during WSL path conversion; check WSL availability|path could not be converted for WSL|repair did not pass verification)$/,
+  "Decision rollback needs the user-local application data directory",
+  "Decision dataDirectory does not match the active Codex plugin; correct it before repair",
+  "Codex runs in Windows, but Decision dataDirectory is not a local Windows path; clear the Decision dataDirectory setting or enable Codex WSL integration",
+  "Multiple Decision registrations need an explicit selection",
+  "Decision is disabled in Codex; enable its existing registration before repair",
+  "Installed Decision hook is newer than this VSIX",
+  "This Decision registration needs a local marketplace for integrated updates",
+  "Decision requires an available WSL Linux distribution",
+  "Decision and Codex must use the same WSL distribution",
+  "The Decision VSIX has an incomplete hook payload",
+  /^Decision installation (?:is temporarily unavailable during (?:WSL discovery|WSL path conversion|hook installer); check WSL availability|failed during (?:WSL discovery|WSL path conversion|hook installer); check WSL availability and file access|returned (?:invalid|incomplete) metadata)$/,
+  /^Decision installation (?:lock timed out|lock was interrupted|is busy); retry repair$/,
+];
 
 function activateIntegration(vscode, context, { dataDirectory, ready = Promise.resolve(),
   platform = process.platform, localAppData = process.env.LOCALAPPDATA, run = runFile, io = fs,
   retryDelaysMs = [2000, 5000, 15000] } = {}) {
   if (!vscode.extensions?.getExtension || !context.extensionUri?.fsPath) return null;
   const output = vscode.window.createOutputChannel("Decision Integration");
-  output.appendLine(`Decision control ${CONTROL_VERSION}; bundled hook ${HOOK_VERSION}.`);
+  const report = (line) => { try { output.appendLine(line); } catch {} };
+  report(`Decision control ${CONTROL_VERSION}; bundled hook ${HOOK_VERSION}.`);
   let inFlight = null;
   let disposed = false;
   let timer = null;
@@ -220,9 +251,9 @@ function activateIntegration(vscode, context, { dataDirectory, ready = Promise.r
       const reply = vscode.window[method](message, ...actions);
       void Promise.resolve(reply).then((choice) => {
         if (!disposed) return selected(choice);
-      }).catch(() => { if (!disposed) output.appendLine("Decision integration notification action failed."); });
+      }).catch(() => { if (!disposed) report("Decision integration notification action failed."); });
     } catch {
-      output.appendLine("Decision integration notification could not be displayed.");
+      report("Decision integration notification could not be displayed.");
     }
   }
   const restorePanel = async (force = false) => {
@@ -245,28 +276,35 @@ function activateIntegration(vscode, context, { dataDirectory, ready = Promise.r
       try {
         const installation = await (typeof ready === "function" ? ready() : ready);
         if (disposed) return;
+        if (installation?.status === "installed") report("Bundled Decision hook installed and verified.");
         const host = vscode.extensions.getExtension("openai.chatgpt");
         if (/^\d+\.\d+\.\d+$/.test(host?.packageJSON?.version || "")) hostVersion = host.packageJSON.version;
         const result = await runIntegration({
           host,
           controlRoot: context.extensionUri.fsPath,
-          dataDirectory: dataDirectory?.() || installation?.dataDirectory,
+          dataDirectory: installation?.dataDirectory || dataDirectory?.(),
           distro: installation?.distro,
           backend: installation?.backend,
           marketplacePath: installation?.marketplacePath,
           localAppData, repair, platform, run, io,
         });
         if (disposed || result.status === "unsupported-platform") return result;
-        output.appendLine(`Codex ${result.version}: Decision integration ${result.status}${result.changed ? ` (${result.action})` : ""}.`);
+        report(`Codex ${result.version}: Decision integration ${result.status}${result.changed ? ` (${result.action})` : ""}.`);
         clearTimeout(retryTimer);
         retryCount = 0;
         reportedFailure = null;
-        const migratePanel = result.status === "ready" && typeof context.globalState?.get === "function" &&
-          typeof context.globalState?.update === "function" && context.globalState.get(PANEL_VERSION_KEY) !== CONTROL_VERSION;
-        if (result.changed || manual || installation?.status === "installed" || migratePanel) {
-          await restorePanel(manual && repair);
+        let panelRecoveryFailed = false;
+        if (repair) {
+          try {
+            const migratePanel = result.status === "ready" && typeof context.globalState?.get === "function" &&
+              typeof context.globalState?.update === "function" && context.globalState.get(PANEL_VERSION_KEY) !== CONTROL_VERSION;
+            if (result.changed || manual || installation?.status === "installed" || migratePanel) await restorePanel(manual);
+            if (migratePanel) await context.globalState.update(PANEL_VERSION_KEY, CONTROL_VERSION);
+          } catch {
+            panelRecoveryFailed = true;
+            report("Decision patch verification succeeded, but panel recovery failed; run Decision: Show Latest Decision.");
+          }
         }
-        if (migratePanel) await context.globalState.update(PANEL_VERSION_KEY, CONTROL_VERSION);
         if (result.changed) {
           notify("showInformationMessage",
             "Decision integration was repaired and verified. Reload VS Code to activate the composer and settings.",
@@ -274,13 +312,14 @@ function activateIntegration(vscode, context, { dataDirectory, ready = Promise.r
               if (selected === "Reload Window") return vscode.commands.executeCommand("workbench.action.reloadWindow");
             });
         } else if (manual) {
-          const text = result.status === "ready" ? "Decision integration is verified for the installed Codex extension." :
-            "Decision integration needs repair for the installed Codex extension.";
+          const hookNotice = installation?.status === "installed" ? "Bundled hook installed. " : "";
+          const text = hookNotice + (result.status === "ready" ? "Decision integration is verified for the installed Codex extension." :
+            "Decision integration needs repair for the installed Codex extension.");
           notify("showInformationMessage", text, result.status === "ready" ? [] : ["Repair Integration"], (selected) => {
             if (selected === "Repair Integration") schedule(true);
           });
         }
-        return result;
+        return panelRecoveryFailed ? { ...result, panelRecoveryFailed } : result;
       } catch (error) {
         if (disposed) return;
         const diagnostic = failureMessage(error);
@@ -288,13 +327,13 @@ function activateIntegration(vscode, context, { dataDirectory, ready = Promise.r
         const recovery = /^unsupported Codex (?:extension version|assets)/.test(diagnostic)
           ? "Run Decision: Check for Updates or install the latest Codex Decision VSIX through VS Code's Extensions menu (Install from VSIX), reload the window, then run Decision: Repair Integration."
           : "";
-        output.appendLine(`Decision integration unavailable: ${message}`);
-        if (recovery) output.appendLine(recovery);
+        report(`Decision integration unavailable: ${message}`);
+        if (recovery) report(recovery);
         if (recovery && !manual) return { status: "hook-only", message };
         if (!manual && error.retryable === true && retryCount < retryDelaysMs.length &&
             configuration().get("autoRepairIntegration", true) !== false) {
           const delay = retryDelaysMs[retryCount++];
-          output.appendLine(`Decision will retry the temporary integration failure (${retryCount}/${retryDelaysMs.length}).`);
+          report(`Decision will retry the temporary integration failure (${retryCount}/${retryDelaysMs.length}).`);
           clearTimeout(retryTimer);
           retryTimer = setTimeout(() => {
             if (!disposed && configuration().get("autoRepairIntegration", true) !== false) void inspect(true, false);

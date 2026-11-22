@@ -85,6 +85,26 @@ test("current relevance counters retain their own measurement coverage", () => {
   assert.equal(summary.measured_fields.prepared_omitted_lines, 1);
 });
 
+test("terminal reporting faults and cache fields are bounded and keep missing separate from zero", () => {
+  const summary = emptySummary();
+  consume(encode([row("invocation", { outcome:"skip", reason:"sensitive", skip_detail:"protected_input",
+    health_write_failed:true }),
+  row("invocation", { invocation_id:"b".repeat(32), outcome:"replace", fallback_used:true,
+    fallback_reason:"missing_credential", publication_cleanup_deferred:true }),
+  row("request", { request_index:1, cached_tokens:8, cache_write_tokens:0 }),
+  row("request", { request_index:2, cached_tokens:null }),
+  row("request", { request_index:3, cached_tokens:1.25 })]), summary);
+  assert.equal(summary.health_write_failures, 1);
+  assert.equal(summary.deferred_publication_cleanups, 1);
+  assert.deepEqual(summary.fallback_reasons, { missing_credential:1 });
+  assert.deepEqual(summary.skip_details, { protected_input:1 });
+  assert.equal(summary.reported_cached_tokens, 8);
+  assert.equal(summary.reported_cache_write_tokens, 0);
+  assert.equal(summary.measured_fields.cached_tokens, 1);
+  assert.equal(summary.measured_fields.cache_write_tokens, 1);
+  assert.equal(summary.malformed_rows, 1);
+});
+
 test("invalid UTF-8 and rounded fractional counters cannot enter exact measurements", () => {
   const summary = emptySummary(), valid = encode([row("request", { request_index: 1, elapsed_ms: 1 })]);
   const fractional = valid.replace('"elapsed_ms":1', '"elapsed_ms":9007199254740990.9');

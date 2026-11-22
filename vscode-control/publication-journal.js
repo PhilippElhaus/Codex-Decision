@@ -1,6 +1,7 @@
 "use strict";
 
 const crypto = require("node:crypto");
+const fs = require("node:fs/promises");
 const path = require("node:path");
 const {readFileRecord,parseUniqueJson,parseUnsignedJson,validateStatsRecord,validateDirectoryPath,validateSessionPath} = require("./private-records");
 const JOURNAL_NAME = ".decision-publication.json";
@@ -58,10 +59,23 @@ async function readJournal(directory) {
   return record ? {record,value:validateJournal(record.bytes),hash:digest(record.bytes)} : null;
 }
 
-async function withPublication(directory, action) {
+async function directoryGeneration(directory) {
+  try {
+    const details = await fs.lstat(directory, { bigint: true });
+    if (!details.isDirectory() || details.isSymbolicLink()) throw new Error("Unsafe Decision publication directory");
+    return `${details.dev}:${details.ino}:${details.mtimeNs}:${details.ctimeNs}`;
+  } catch (error) {
+    if (error.code === "ENOENT") return null;
+    throw error;
+  }
+}
+
+async function withPublication(directory, action, checkGeneration = false) {
   await validateSessionPath(directory);
-  await validateDirectoryPath(path.join(directory,"logs"));
+  const logs = path.join(directory,"logs");
+  await validateDirectoryPath(logs);
   for (let attempt = 0; attempt < 2; attempt += 1) {
+    const generation = checkGeneration ? await directoryGeneration(logs) : null;
     const before = await readJournal(directory);
     let result, failure;
     try {
@@ -82,6 +96,7 @@ async function withPublication(directory, action) {
     const after = await readJournal(directory);
     if (before?.hash === after?.hash && before?.record.fingerprint === after?.record.fingerprint) {
       if (failure) throw failure;
+      if (!before && checkGeneration && generation !== await directoryGeneration(logs)) continue;
       return result;
     }
   }
@@ -110,7 +125,7 @@ async function readPublishedRecord(directory, kind, readCurrent) {
       SNAPSHOT_LIMIT,{strict:true});
     if (!matches(before,backup)) throw new Error("Decision publication snapshot backup changed");
     return backup;
-  });
+  }, kind === "stats");
 }
 
 module.exports = {validateJournal,withPublication,readPublishedRecord,JOURNAL_NAME,JOURNAL_LIMIT};

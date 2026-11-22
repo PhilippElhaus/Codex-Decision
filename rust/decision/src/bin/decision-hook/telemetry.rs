@@ -20,6 +20,47 @@ pub(super) fn hook_health(data_dir: &Path, outcome: &str, reason: &str) -> Resul
     hook_health_detail(data_dir, outcome, reason, None)
 }
 
+pub(super) fn report_health(result: Result<(), String>) {
+    if result.is_err() {
+        usage::health_write_failed();
+        warn(format_args!("Codex Decision could not record hook health"));
+    }
+}
+
+pub(super) fn warn(message: std::fmt::Arguments<'_>) {
+    let _ = writeln!(std::io::stderr().lock(), "{message}");
+}
+
+pub(super) fn safe_hook_error(error: &str) -> &'static str {
+    match error {
+        "missing plugin data" => "missing plugin data",
+        "unsafe plugin data" => "unsafe plugin data",
+        "unsafe directory" => "unsafe directory",
+        "invalid hook JSON" => "invalid hook JSON",
+        "hook input too large" => "hook input too large",
+        "missing session id" => "missing session id",
+        "invalid config" => "invalid config",
+        "unsupported config version" => "unsupported config version",
+        "invalid shared settings" => "invalid shared settings",
+        "unsafe shared settings" => "unsafe shared settings",
+        "missing credential" => "missing credential",
+        "hook deadline" => "hook deadline",
+        "Decision request failed" => "Decision request failed",
+        "Decision response read failed" => "Decision response read failed",
+        "Decision response too large" => "Decision response too large",
+        "invalid decision response" | "invalid Decision response" => "invalid Decision response",
+        "Decision context budget" => "Decision context budget",
+        "log lock timeout" => "log lock timeout",
+        "linked log lock" | "unsafe log lock" | "log lock open" | "log lock stat" => {
+            "log lock unavailable"
+        }
+        "unsafe event retention" | "event retention stat" | "event retention read" => {
+            "event retention unavailable"
+        }
+        _ => "local or validation error",
+    }
+}
+
 fn hook_health_detail(
     data_dir: &Path,
     outcome: &str,
@@ -137,7 +178,7 @@ fn hook_health_detail(
         }
         "error" => {
             health["last_error_ms"] = json!(now);
-            health["last_error"] = json!(reason);
+            health["last_error"] = json!(safe_hook_error(reason));
             health["errors"] = json!(checked_counter_add(
                 health["errors"].as_u64().unwrap_or(0),
                 1
@@ -211,24 +252,18 @@ pub(super) fn request_result(
 #[path = "telemetry_tests.rs"]
 mod tests;
 
-pub(super) fn skip(data_dir: &Path, reason: &str) -> Result<Value, String> {
-    hook_health(data_dir, "skip", reason)?;
-    Ok(json!({}))
+pub(super) fn skip(data_dir: &Path, reason: &str) -> Result<(), String> {
+    hook_health(data_dir, "skip", reason)
 }
 
-pub(super) fn skip_with_detail(
-    data_dir: &Path,
-    reason: &str,
-    detail: &str,
-) -> Result<Value, String> {
+pub(super) fn skip_with_detail(data_dir: &Path, reason: &str, detail: &str) -> Result<(), String> {
     if !matches!(
         detail,
         "protected_output" | "protected_command" | "protected_input"
     ) {
         return Err("invalid skip detail".into());
     }
-    hook_health_detail(data_dir, "skip", reason, Some(detail))?;
-    Ok(json!({}))
+    hook_health_detail(data_dir, "skip", reason, Some(detail))
 }
 
 // Only the classification stage signals composer activity. Relevance batches

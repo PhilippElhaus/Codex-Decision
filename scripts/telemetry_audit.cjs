@@ -12,9 +12,10 @@ const PROVIDERS = ["openai", "typesafe", "custom"];
 const OUTCOMES = ["skip", "replace", "candidate", "keep", "error"];
 const REQUEST_OUTCOMES = ["validated", "invalid_response", "transport_error", "http_error", "cancelled", "local_error"];
 const ERRORS = ["hook_deadline", "missing_credential", "request_failed", "response_read_failed", "response_too_large",
-  "invalid_json", "request_budget", "log_lock_timeout", "local_or_validation_error"];
+  "invalid_json", "invalid_configuration", "health_unavailable", "request_budget", "log_lock_timeout", "local_or_validation_error"];
+const SKIP_DETAILS = ["protected_output", "protected_command", "protected_input"];
 const COUNTS = new Set(["version", "request_index", "elapsed_ms", "request_bytes", "response_bytes", "http_status",
-  "input_tokens", "output_tokens", "source_bytes", "source_chars", "source_lines", "request_count", "lines_judged",
+  "input_tokens", "output_tokens", "cached_tokens", "cache_write_tokens", "source_bytes", "source_chars", "source_lines", "request_count", "lines_judged",
   "proposed_omitted", "prepared_saved_chars", "min_chars", "max_chars", "lines_relevance_below_cutoff",
   "lines_restored_by_guards", "prepared_omitted_lines"]);
 const countPath = keys => keys.length === 1 && COUNTS.has(keys[0]);
@@ -57,9 +58,11 @@ function emptySummary() {
     configured_providers: {}, modes: {}, relevance_cutoffs: {}, source_size_bands: {}, request_providers: {},
     request_stages: {}, request_outcomes: {}, request_errors: {}, http_statuses: {},
     starts: 0, completions: 0, requests: 0, outputs_with_requests: 0, fallback_invocations: 0,
+    health_write_failures: 0, deferred_publication_cleanups: 0, fallback_reasons: {}, skip_details: {},
     completions_without_start: 0, starts_without_completion: 0, requests_without_completion: 0, duplicate_records: 0,
     completions_with_missing_request_rows: 0, request_rows_missing_at_least: 0, request_rows_exceeding_completion_count: 0,
     request_bytes: 0, response_bytes: 0, reported_input_tokens: 0, reported_output_tokens: 0,
+    reported_cached_tokens: 0, reported_cache_write_tokens: 0,
     usage_records: 0, measured_fields: {}, source_bytes: 0, prepared_saved_chars: 0, proposed_omitted_lines: 0,
     lines_relevance_below_cutoff: 0, lines_restored_by_guards: 0, prepared_omitted_lines: 0,
     invocation_latency: distribution(), request_latency: distribution(), request_latency_by_stage: {}, request_latency_by_outcome: {},
@@ -126,12 +129,21 @@ function consume(text, summary, since = -Infinity) {
       if (uint(row.input_tokens) && uint(row.output_tokens)) {
         add(summary, "usage_records"); add(summary, "reported_input_tokens", row.input_tokens); add(summary, "reported_output_tokens", row.output_tokens);
       }
+      for (const name of ["cached_tokens", "cache_write_tokens"]) if (uint(row[name])) {
+        add(summary, `reported_${name}`, row[name]); add(summary.measured_fields, name);
+      }
     } else {
       state.completion = true; add(summary, "completions");
       state.expected = uint(row.request_count) ? row.request_count : null;
       add(summary.outcomes, safe(row.outcome, OUTCOMES)); add(summary.reasons, safe(row.reason, REASONS));
       observe(summary.invocation_latency, row.elapsed_ms);
-      if (row.fallback_used === true) add(summary, "fallback_invocations");
+      if (row.fallback_used === true) {
+        add(summary, "fallback_invocations");
+        add(summary.fallback_reasons, safe(row.fallback_reason, ERRORS));
+      }
+      if (row.reason === "sensitive") add(summary.skip_details, safe(row.skip_detail, SKIP_DETAILS));
+      if (row.health_write_failed === true) add(summary, "health_write_failures");
+      if (row.publication_cleanup_deferred === true) add(summary, "deferred_publication_cleanups");
       if (uint(row.request_count) && row.request_count > 0) add(summary, "outputs_with_requests");
       for (const name of ["source_bytes", "prepared_saved_chars", "lines_relevance_below_cutoff",
         "lines_restored_by_guards", "prepared_omitted_lines"]) if (uint(row[name])) {

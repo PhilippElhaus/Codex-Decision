@@ -212,7 +212,7 @@ function extensionFixture(setup, bootstrap, globalState, options = {}) {
   const context = { extensionUri: { fsPath: setup.options.controlRoot }, subscriptions: [], globalState };
   const vscode = {
     window: {
-      createOutputChannel: () => ({ appendLine: (line) => log.push(line), show: () => {}, dispose() {} }),
+      createOutputChannel: () => ({ appendLine: options.appendLine || ((line) => log.push(line)), show: () => {}, dispose() {} }),
       showInformationMessage: async (...args) => { notifications.push(args); },
       showWarningMessage: async (...args) => { notifications.push(args); },
     },
@@ -370,12 +370,27 @@ test("the panel migration is saved only after the public focus command succeeds"
   const execute = extension.vscode.commands.executeCommand;
   extension.vscode.commands.executeCommand = async () => { throw new Error("view unavailable"); };
   try {
-    assert.equal((await extension.integration.inspect(true, false)).status, "failed");
+    const verified = await extension.integration.inspect(true, false);
+    assert.equal(verified.status, "ready");
+    assert.equal(verified.panelRecoveryFailed, true);
     assert.deepEqual(state.updates, []);
     extension.vscode.commands.executeCommand = execute;
     assert.equal((await extension.integration.inspect(true, false)).status, "ready");
     assert.deepEqual(extension.executed, ["codexDecision.showLatestDecision"]);
     assert.equal(state.updates.length, 1);
+  } finally { extension.dispose(); }
+});
+
+test("an unavailable diagnostics channel cannot undo a verified patch or suppress its reload notice", async () => {
+  const setup = fixture(["unpatched", "applied", "ready"]);
+  const extension = extensionFixture(setup, Promise.resolve({ status: "installed", distro: "Ubuntu" }),
+    undefined, { appendLine() { throw new Error("unavailable private synthetic output channel"); } });
+  try {
+    const verified = await extension.commands.get("codexDecision.repairIntegration")();
+    assert.equal(verified.status, "ready");
+    assert.equal(verified.changed, true);
+    assert.deepEqual(setup.actions(), ["status", "apply", "status"]);
+    assert.match(extension.notifications[0][0], /Reload VS Code/);
   } finally { extension.dispose(); }
 });
 
@@ -546,6 +561,29 @@ test("changing Codex's WSL runtime setting reruns installation and selects the n
     assert.equal(installations, 2, "runtime changes must rerun the installation factory");
     assert.deepEqual(setup.actions(), ["status"], "the new runtime must not reuse the WSL checker");
     assert.deepEqual(extension.notifications, []);
+  } finally { extension.dispose(); }
+});
+
+test("manual check bootstraps once, uses verified runtime data, and only probes the patch", async () => {
+  const setup = fixture(["unpatched"]);
+  setup.options.dataDirectory = "\\\\wsl.localhost\\StaleDistro\\home\\fixture\\.codex\\data";
+  const state = panelMigrationState();
+  let bootstraps = 0;
+  const extension = extensionFixture(setup, async () => {
+    bootstraps += 1;
+    return { status: "installed", backend: "wsl", distro: "Ubuntu",
+      dataDirectory: "\\\\wsl.localhost\\Ubuntu\\home\\fixture\\.codex\\data" };
+  }, state);
+  extension.settings.autoRepairIntegration = false;
+  try {
+    const result = await extension.commands.get("codexDecision.checkIntegration")();
+    assert.equal(result.status, "unpatched");
+    assert.equal(bootstraps, 1);
+    assert.deepEqual(setup.actions(), ["status"]);
+    assert.ok(setup.calls.every(({ args }) => args[1] === "Ubuntu"));
+    assert.deepEqual(extension.executed, []);
+    assert.deepEqual(state.updates, []);
+    assert.match(extension.notifications[0][0], /Bundled hook installed/);
   } finally { extension.dispose(); }
 });
 

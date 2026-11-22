@@ -20,7 +20,8 @@ fn error_count_persists_independently_of_requests_skips_and_successes() {
     assert_eq!(record["api_requests"], 1);
     assert_eq!(record["seen"], 2);
     assert_eq!(record["skipped"], 1);
-    assert_eq!(record["last_error"], "synthetic publication failure");
+    assert_eq!(record["last_error"], "local or validation error");
+    assert!(!record.to_string().contains("synthetic publication failure"));
 }
 
 #[cfg(unix)]
@@ -294,17 +295,14 @@ fn optional_health_metadata_is_validated_before_and_after_mutation() {
     }
     let bytes = serde_json::to_vec(&initial).unwrap();
     fs::write(&path, &bytes).unwrap();
-    for (outcome, reason) in [
-        ("skip", "Invalid reason"),
-        ("error", "x".repeat(81).as_str()),
-    ] {
-        assert!(hook_health(&data, outcome, reason).is_err());
-        assert_eq!(
-            fs::read(&path).unwrap(),
-            bytes,
-            "invalid new metadata is not published"
-        );
-    }
+    assert!(hook_health(&data, "skip", "Invalid reason").is_err());
+    assert_eq!(
+        fs::read(&path).unwrap(),
+        bytes,
+        "invalid new skip is not published"
+    );
+    hook_health(&data, "error", &"x".repeat(81)).unwrap();
+    assert_eq!(health(&data)["last_error"], "local or validation error");
 }
 
 #[test]

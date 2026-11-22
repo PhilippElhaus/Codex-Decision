@@ -122,7 +122,10 @@ fn main() {
         return;
     }
     let answer = execute().unwrap_or_else(|error| {
-        eprintln!("Codex Decision hook skipped: {error}");
+        warn(format_args!(
+            "Codex Decision hook skipped: {}",
+            safe_hook_error(&error)
+        ));
         // Errors after session parsing are recorded in that session by execute().
         json!({})
     });

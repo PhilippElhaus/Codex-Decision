@@ -2,8 +2,8 @@
   "name": "codex-decision-control",
   "displayName": "Codex Decision",
   "description": "Integrated Decision hook, session controls, and automatic Codex UI repair",
-  "version": "0.17.5",
-  "codexDecisionHookVersion": "0.17.5",
+  "version": "0.17.6",
+  "codexDecisionHookVersion": "0.17.6",
   "publisher": "elhaus-labs",
   "license": "MIT",
   "icon": "icon.png",
@@ -42,7 +42,7 @@
       },
       {
         "command": "codexDecision.checkIntegration",
-        "title": "Decision: Check Integration"
+        "title": "Decision: Check Integration (May Install Hook)"
       },
       {
         "command": "codexDecision.repairIntegration",

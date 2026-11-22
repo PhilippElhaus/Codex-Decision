@@ -189,7 +189,7 @@ fn evaluate_prepared_inner<T>(
             .and_then(|(response, _)| response.get("usage")),
     );
     if !outcome.cancelled {
-        request_result(scoped, outcome.received, result.is_ok())?;
+        report_health(request_result(scoped, outcome.received, result.is_ok()));
     }
     result
 }
@@ -217,7 +217,11 @@ fn send_request(
         Ok(remaining) => remaining,
         Err(error) => {
             outcome.cancelled = true;
-            hook_health(scoped, "request_cancelled", "hook deadline before send")?;
+            report_health(hook_health(
+                scoped,
+                "request_cancelled",
+                "hook deadline before send",
+            ));
             return Err(error);
         }
     };
