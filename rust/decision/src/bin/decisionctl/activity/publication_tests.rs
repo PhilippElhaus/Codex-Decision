@@ -87,3 +87,29 @@ fn cli_resamples_when_an_unjournaled_image_changes_before_the_second_probe() {
     });
     assert_eq!(read.unwrap()["completed"], 1);
 }
+
+#[test]
+fn cli_resamples_when_a_persisted_generation_changes_without_a_visible_journal() {
+    let root = tempfile::tempdir().unwrap();
+    let logs = root.path().join("logs");
+    fs::create_dir(&logs).unwrap();
+    let stats = root.path().join("stats.json");
+    let generation = logs.join(GENERATION_NAME);
+    fs::write(&stats, b"{\"completed\":2}").unwrap();
+    fs::write(&generation, "a".repeat(GENERATION_BYTES)).unwrap();
+    #[cfg(windows)]
+    codex_decision::windows::secure(&generation, false).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&generation, fs::Permissions::from_mode(0o600)).unwrap();
+    }
+    let first = std::cell::Cell::new(true);
+    let read = read_stats_with(root.path(), || {
+        if first.replace(false) {
+            fs::write(&stats, b"{\"completed\":1}").unwrap();
+            fs::write(&generation, "b".repeat(GENERATION_BYTES)).unwrap();
+        }
+    });
+    assert_eq!(read.unwrap()["completed"], 1);
+}

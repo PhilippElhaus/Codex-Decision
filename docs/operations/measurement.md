@@ -37,9 +37,9 @@ Run **Decision: Show Usage Measurements** for the selected chat. The equivalent 
 node scripts/delivery_audit.cjs --session-dir /absolute/plugin-data/sessions/session-hash
 ```
 
-The report joins retained tool-output observations and model-request attempts by a hashed turn-and-agent key. It counts retries, failed attempts, cancellations, missing usage, prepared replacements, reported input/output tokens, and cache reads. A turn whose mode changes is unattributed. Missing turn IDs remain unattributed. Missing files, invalid rows, partial writes, and numeric overflow are reported as gaps.
+The report joins retained tool-output observations and model-request attempts by a hashed turn-and-agent key. It counts retries, failed attempts, cancellations, missing usage, prepared replacements, reported input/output tokens, and cache reads. A turn whose mode changes is unattributed. Missing turn IDs remain unattributed. The report identifies missing or unstable files, invalid rows, partial writes, numeric overflow, and minimum counts of unmatched request starts and terminal observations. Equal per-turn counts do not prove exact pairing or full coverage. The report also totals fixed Stop capture and coverage statuses without exporting turn keys, tool text, or completion claims.
 
-Monitor and Filter have separate cohorts. Their difference in mean reported input tokens per observed attempt is an observational comparison. Use equivalent tasks, models, settings, and evidence for controlled comparisons. The report does not infer causality from dissimilar tasks or claim that every prepared replacement reached a model request.
+Monitor and Filter have separate cohorts. Their difference in mean input tokens uses only attempts with reported usage. It is an observational comparison. Use equivalent tasks, models, settings, and evidence for controlled comparisons. The report does not infer causality from dissimilar tasks or claim that every prepared replacement reached a model request.
 
 Provider cache-read and cache-write counts are subsets of reported input tokens; they are never added to the input total. Missing cache measurements remain unknown. Advisory accounting stays separate from filtering activity. Dollar cost and causal savings remain null: the report does not assume prices, billing tiers, or a causal counterfactual.
 

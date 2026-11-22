@@ -1,5 +1,6 @@
 //! Validate every known image before recovering a killed locked producer.
 use super::*;
+use codex_decision::publication_contract::GENERATION_NAME;
 use files::Lease;
 
 pub(crate) fn recover(logs: &Path) -> Result<(), String> {
@@ -128,10 +129,10 @@ fn resolve(
         None
     } else {
         match (&journal.prior_snapshot, &snapshot) {
-            (Some(image), Some(state)) => {
+            (Some(image), Some(_)) => {
                 if let Some(lease) = &mut backup {
                     Some(lease.bytes(PANEL_SNAPSHOT_MAX_BYTES)?)
-                } else if !state.post {
+                } else {
                     let mut lease = Lease::open(&snapshot_path, false, 1)?
                         .ok_or("publication snapshot missing")?;
                     let bytes = lease.bytes(PANEL_SNAPSHOT_MAX_BYTES)?;
@@ -139,8 +140,6 @@ fn resolve(
                         return Err("publication snapshot changed".into());
                     }
                     Some(bytes)
-                } else {
-                    return Err("publication backup missing".into());
                 }
             }
             _ => None,
@@ -189,6 +188,8 @@ fn resolve(
             lease.remove()?;
         }
     }
+    let generation = Uuid::new_v4().simple().to_string();
+    write_private(&logs.join(GENERATION_NAME), generation.as_bytes(), true)?;
     if let Some(lease) = backup {
         lease.remove()?;
     }

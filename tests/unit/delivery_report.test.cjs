@@ -53,3 +53,32 @@ test("invalid, partial, unsafe, and inexact metadata cannot become zero-cost suc
     await assert.rejects(readDeliveryReport(directory), /Unsafe Decision private record/);
   }
 });
+
+test("retained coverage and capture gaps are aggregate and do not echo metadata values", () => {
+  const start = {event:"model_request_start",turn_key:key(1),mode:"replace"};
+  const result = summarize([start, start, model(1,"replace"), model(2,"observe"), {...start,turn_key:null},
+    {event:"tool_output",completion_capture:"unavailable"}, {event:"tool_output"},
+    {event:"completion_review",evidence_coverage:"incomplete",continuation_status:"synthetic non-enum value"},
+    {...start,at:"2026-11-11T12:00:00.123456Z"}, {...start,at:"11 Nov 2026 (synthetic note)"}]);
+  assert.equal(result.coverage,"retained_only");
+  assert.equal(result.gaps.model_starts_without_terminal_at_least,3);
+  assert.equal(result.gaps.model_terminals_without_start_at_least,1);
+  assert.equal(result.gaps.uncorrelated_model_starts,1);
+  assert.deepEqual(result.completion_review,{capture:{unavailable:1,unrecorded:1},evidence:{incomplete:1},continuation:{unrecorded:1}});
+  assert.equal(result.first_at,"2026-11-11T12:00:00.123Z");
+  assert.equal(result.decision.input_tokens,null);
+  assert.doesNotMatch(JSON.stringify(result),/synthetic|"turn_key"/);
+});
+
+test("a malformed retained row does not hide the remaining delivery observations", async t => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(),"decision-delivery-"));
+  t.after(() => fs.rm(directory,{recursive:true,force:true}));
+  await fs.mkdir(path.join(directory,"logs"),{mode:0o700});
+  const row = JSON.stringify({...model(1,"observe"),version:1,at:"2026-11-11T12:00:00+00:00"});
+  await fs.writeFile(path.join(directory,"logs/model-requests.jsonl"),Buffer.concat([
+    Buffer.from([0xff,10]), Buffer.from(row.replace('"input_tokens":100','"input_tokens":100.0')+'\n'+row+'\n'),
+  ]),{mode:0o600});
+  const report = await readDeliveryReport(directory);
+  assert.equal(report.gaps.invalid_rows,2);
+  assert.equal(report.modes.observe.attempts,1);
+});

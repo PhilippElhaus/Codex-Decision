@@ -24,15 +24,31 @@ fn emit(scoped: &Path, event: &Value, config: &Config, mut row: Value) {
     usage::observation(scoped, row, config.never_delete_logs);
 }
 
+pub(super) fn capture_output(
+    data_dir: &Path,
+    scoped: &Path,
+    event: &Value,
+) -> Option<&'static str> {
+    if event["hook_event_name"] != "PostToolUse" {
+        return None;
+    }
+    Some(match assistance_runtime::completion_mode(data_dir) {
+        Ok(mode) if mode == "off" => "off",
+        Ok(_) => evidence::capture(scoped, event).unwrap_or("unavailable"),
+        Err(_) => "unavailable",
+    })
+}
+
 pub(super) fn output(
     scoped: &Path,
     event: &Value,
     config: &Config,
     result: &Result<Value, String>,
+    capture: Option<&'static str>,
 ) {
-    if event["hook_event_name"] != "PostToolUse" {
+    let Some(capture) = capture else {
         return;
-    }
+    };
     let prepared = PreparedResponse::new(event);
     emit(
         scoped,
@@ -40,15 +56,9 @@ pub(super) fn output(
         config,
         json!({"event":"tool_output","source_bytes":prepared.source().map(str::len),
         "prepared_replacement":result.as_ref().ok().is_some_and(|v|v["continue"]==false),
-        "outcome":if result.is_ok(){"completed"}else{"failed"},"delivery":"unverified"}),
+        "outcome":if result.is_ok(){"completed"}else{"failed"},"delivery":"unverified",
+        "completion_capture":capture}),
     );
-    let parent = scoped.parent().and_then(Path::parent);
-    if parent
-        .and_then(|p| assistance_runtime::completion_mode(p).ok())
-        .is_some_and(|m| m != "off")
-    {
-        let _ = evidence::capture(scoped, event);
-    }
 }
 
 pub(super) fn process(
@@ -104,17 +114,36 @@ fn review(data_dir: &Path, scoped: &Path, event: &Value, config: &Config) -> Res
     else {
         return Ok(json!({}));
     };
-    let Some(snapshot) = evidence::load(scoped, &turn)? else {
+    let snapshot = match evidence::load(scoped, &turn) {
+        Ok(Some(snapshot)) => snapshot,
+        result => {
+            emit(
+                scoped,
+                event,
+                config,
+                json!({"event":"completion_review",
+                "outcome":if result.is_ok(){"missing_evidence"}else{"evidence_unavailable"},
+                "evidence_coverage":"unknown", "continued":false}),
+            );
+            return Ok(json!({}));
+        }
+    };
+    if snapshot["continued"] == true {
+        return Ok(json!({}));
+    }
+    let coverage = if snapshot["incomplete"] == false {
+        "observed_window"
+    } else {
+        "incomplete"
+    };
+    if snapshot["evidence"].as_array().is_none_or(Vec::is_empty) {
         emit(
             scoped,
             event,
             config,
-            json!({"event":"completion_review","outcome":"missing_evidence"}),
+            json!({"event":"completion_review","outcome":"missing_evidence",
+            "evidence_coverage":coverage, "continued":false}),
         );
-        return Ok(json!({}));
-    };
-    if snapshot["continued"] == true || snapshot["evidence"].as_array().is_none_or(|a| a.is_empty())
-    {
         return Ok(json!({}));
     }
     let input = json!({"workflow":"verify_completion","session_id":event["session_id"],
@@ -126,27 +155,37 @@ fn review(data_dir: &Path, scoped: &Path, event: &Value, config: &Config) -> Res
                 scoped,
                 event,
                 config,
-                json!({"event":"completion_review","outcome":"unavailable"}),
+                json!({"event":"completion_review","outcome":"unavailable",
+                    "evidence_coverage":coverage, "continued":false}),
             );
             return Ok(json!({}));
         }
     };
     // A tool result can arrive during the request. A stale snapshot cannot
     // continue a turn. The private marker also bounds repeated Stop callbacks.
-    let continuation = mode == "enforce"
-        && snapshot["incomplete"] == false
-        && reviewed["continuation_recommended"] == true
-        && evidence::mark_continued(scoped, &turn, &snapshot)?;
+    let disposition = if mode != "enforce" || reviewed["continuation_recommended"] != true {
+        "not_requested"
+    } else if snapshot["incomplete"] != false {
+        "incomplete_evidence"
+    } else {
+        match evidence::mark_continued(scoped, &turn, &snapshot) {
+            Ok(true) => "requested",
+            Ok(false) => "evidence_changed",
+            Err(_) => "state_unavailable",
+        }
+    };
+    let continuation = disposition == "requested";
     emit(
         scoped,
         event,
         config,
         json!({"event":"completion_review","outcome":"reviewed",
+        "evidence_coverage":coverage,"continuation_status":disposition,
         "needs_review":reviewed["needs_review"],"continued":continuation,"usage":reviewed["usage"]}),
     );
     if continuation {
         Ok(
-            json!({"decision":"block","reason":"Decision found a contradiction between the completion report and the recorded tool observations. Recheck those observations, run any necessary focused verification, and correct unsupported completion or validation claims. This is Decision's only continuation for this turn."}),
+            json!({"decision":"block","reason":"Decision found a contradiction between the completion report and the recorded tool observations. Recheck those observations, run any necessary focused verification, and correct unsupported completion or validation claims."}),
         )
     } else if reviewed["needs_review"] == true {
         Ok(

@@ -8,7 +8,7 @@ const test = require("node:test");
 const fixture = require("../fixtures/publication-case.json");
 const core = require("../../vscode-control/core");
 const { readLatestPanelDecision } = require("../../vscode-control/panel-state");
-const { validateJournal } = require("../../vscode-control/publication-journal");
+const { validateJournal, GENERATION_NAME } = require("../../vscode-control/publication-journal");
 const { parseUniqueJson, parseUnsignedJson } = require("../../vscode-control/private-records");
 
 async function create(t) {
@@ -127,6 +127,31 @@ test("a completed rollback between journal probes cannot expose tentative stats"
   try {
     assert.equal((await core.readLifetimeStats(directory)).completed,1);
     assert.equal(rolledBack,true);
+  } finally { fs.open = open; }
+});
+
+test("a generation change without a visible journal invalidates a snapshot read", async t => {
+  const {directory,write} = await create(t);
+  await fs.rm(path.join(directory,"logs/.decision-publication.json"));
+  const generation = `logs/${GENERATION_NAME}`;
+  await write(generation,"a".repeat(32));
+  const open = fs.open;
+  let reads = 0;
+  fs.open = async function(filename,...args) {
+    const handle = await open.call(this,filename,...args);
+    if (filename === path.join(directory,"logs/latest-decision.json") && ++reads === 1) {
+      const close = handle.close.bind(handle);
+      handle.close = async () => {
+        await close();
+        await write("logs/latest-decision.json",fixture.snapshot_before);
+        await write(generation,"b".repeat(32));
+      };
+    }
+    return handle;
+  };
+  try {
+    assert.equal((await readLatestPanelDecision(directory)).status,"processing");
+    assert.equal(reads,2);
   } finally { fs.open = open; }
 });
 

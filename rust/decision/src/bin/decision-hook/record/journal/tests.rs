@@ -117,6 +117,46 @@ fn explicit_marker_is_finalized_without_counter_rollback() {
     assert!(!f.logs.join(JOURNAL_NAME).exists());
 }
 
+#[test]
+fn rollback_and_same_receipt_retry_each_change_the_reader_generation() {
+    use codex_decision::publication_contract::{GENERATION_BYTES, GENERATION_NAME};
+    let fixture = Fixture::new();
+    let generation = fixture.logs.join(GENERATION_NAME);
+    let _transaction = fixture.begin();
+    fixture.stage(3);
+    assert!(!generation.exists());
+    recover(&fixture.logs).unwrap();
+    let rolled_back = fs::read(&generation).unwrap();
+    assert_eq!(rolled_back.len(), GENERATION_BYTES);
+    let retry = fixture.begin();
+    fixture.stage(3);
+    retry.commit().unwrap();
+    assert_eq!(fs::read(&generation).unwrap(), rolled_back);
+    recover(&fixture.logs).unwrap();
+    assert_ne!(fs::read(&generation).unwrap(), rolled_back);
+}
+
+#[test]
+fn a_failed_generation_write_does_not_discard_the_committed_journal() {
+    use codex_decision::publication_contract::GENERATION_NAME;
+    let fixture = Fixture::new();
+    let generation = fixture.logs.join(GENERATION_NAME);
+    fs::create_dir(&generation).unwrap();
+    let transaction = fixture.begin();
+    fixture.stage(3);
+    transaction.commit().unwrap();
+    assert!(recover(&fixture.logs).is_err());
+    assert!(fixture.logs.join(JOURNAL_NAME).exists());
+    assert_eq!(
+        fs::read(fixture.root.path().join("stats.json")).unwrap(),
+        NEW_STATS
+    );
+    fs::remove_dir(&generation).unwrap();
+    recover(&fixture.logs).unwrap();
+    assert!(!fixture.logs.join(JOURNAL_NAME).exists());
+    assert!(generation.is_file());
+}
+
 #[cfg(unix)]
 #[test]
 fn deferred_cleanup_blocks_retention_until_a_later_locked_recovery() {

@@ -64,6 +64,79 @@ fn skipped_later_observations_invalidate_enforcement_of_older_failures() {
 }
 
 #[test]
+fn failed_capture_writes_fence_stale_evidence_and_keep_later_captures_incomplete() {
+    for failed_file in [".completion-generation", "completion-evidence.json"] {
+        let root = private_fixture();
+        let mut event = json!({"turn_id":"turn-one","tool_name":"Bash","tool_input":{"command":"cargo test"},"tool_response":"test failed"});
+        assert_eq!(evidence::capture(root.path(), &event).unwrap(), "stored");
+        let turn = turn_key(&event).unwrap();
+        let original = evidence::load(root.path(), &turn).unwrap().unwrap();
+        event["tool_response"] = json!("tests passed");
+        assert!(evidence::capture_with(root.path(), &event, |path, bytes| {
+            if path.file_name().unwrap() == failed_file {
+                return Err("synthetic write failure".into());
+            }
+            write_private(path, bytes, true)
+        })
+        .is_err());
+        let retained = evidence::load(root.path(), &turn).unwrap().unwrap();
+        assert_eq!(retained["evidence"], original["evidence"]);
+        assert_eq!(retained["incomplete"], true);
+        assert!(!evidence::mark_continued(root.path(), &turn, &original).unwrap());
+        assert!(!evidence::mark_continued(root.path(), &turn, &retained).unwrap());
+        assert_eq!(
+            evidence::capture(root.path(), &event).unwrap(),
+            "incomplete"
+        );
+        assert_eq!(
+            evidence::load(root.path(), &turn).unwrap().unwrap()["incomplete"],
+            true
+        );
+    }
+}
+
+#[test]
+fn a_failed_first_capture_cannot_be_hidden_by_a_later_capture() {
+    for failed_file in [".completion-generation", "completion-evidence.json"] {
+        let root = private_fixture();
+        let event = json!({"turn_id":"turn-one","tool_name":"Bash","tool_input":{"command":"cargo test"},"tool_response":"tests passed"});
+        assert!(evidence::capture_with(root.path(), &event, |path, bytes| {
+            if path.file_name().unwrap() == failed_file {
+                return Err("synthetic capture write failure".into());
+            }
+            write_private(path, bytes, true)
+        })
+        .is_err());
+        assert_eq!(
+            evidence::capture(root.path(), &event).unwrap(),
+            "incomplete"
+        );
+        let turn = turn_key(&event).unwrap();
+        let snapshot = evidence::load(root.path(), &turn).unwrap().unwrap();
+        assert!(!evidence::mark_continued(root.path(), &turn, &snapshot).unwrap());
+    }
+}
+
+#[test]
+fn old_evidence_without_a_generation_is_advisory_only() {
+    let root = private_fixture();
+    let event = json!({"turn_id":"older-turn"});
+    let turn = turn_key(&event).unwrap();
+    ensure_dir(&root.path().join("logs")).unwrap();
+    let old =
+        json!({"version":1,"turn_key":turn,"continued":false,"incomplete":false,"evidence":[]});
+    write_private(
+        &root.path().join("logs/completion-evidence.json"),
+        &serde_json::to_vec(&old).unwrap(),
+        false,
+    )
+    .unwrap();
+    let snapshot = evidence::load(root.path(), &turn).unwrap().unwrap();
+    assert_eq!(snapshot["incomplete"], true);
+    assert!(!evidence::mark_continued(root.path(), &turn, &old).unwrap());
+}
+
+#[test]
 fn secret_or_oversized_evidence_is_never_retained_and_no_evidence_never_contacts_a_provider() {
     let root = private_fixture();
     ensure_dir(root.path()).unwrap();
@@ -92,4 +165,10 @@ fn secret_or_oversized_evidence_is_never_retained_and_no_evidence_never_contacts
         json!({})
     );
     assert!(!root.path().join("assistance").exists());
+    let text = fs::read_to_string(root.path().join("logs/model-requests.jsonl")).unwrap();
+    let row: Value = serde_json::from_str(text.trim()).unwrap();
+    assert_eq!(row["outcome"], "missing_evidence");
+    assert_eq!(row["evidence_coverage"], "incomplete");
+    assert_eq!(row["continued"], false);
+    assert!(!text.contains("All tests passed"));
 }

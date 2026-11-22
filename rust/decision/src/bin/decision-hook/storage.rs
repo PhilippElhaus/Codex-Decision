@@ -132,6 +132,10 @@ pub(super) fn try_telemetry_lock(logs: &Path) -> Result<File, String> {
     lock_file_with_timeout(&logs.join(".telemetry.lock"), Duration::ZERO)
 }
 
+pub(super) fn lock_completion(logs: &Path) -> Result<File, String> {
+    lock_file_with_timeout(&logs.join(".completion.lock"), Duration::from_secs(2))
+}
+
 fn lock_logs_with_timeout(logs: &Path, timeout: Duration) -> Result<File, String> {
     let file = lock_file_with_timeout(&logs.join(".lock"), timeout)?;
     // The permanent log inode serializes recovery and every producer write.

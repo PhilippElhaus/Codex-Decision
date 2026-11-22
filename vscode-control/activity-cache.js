@@ -37,15 +37,15 @@ function createActivityReader(read, limit = 128) {
     const touched = new Set();
     try {
       // Keep publication and directory checks on every caller, including hits.
-      const result = await withPublication(directory, async journal => {
+      const result = await withPublication(directory, async (journal, generation) => {
         if (journal) {
           entries.delete(directory);
           return { value: await read(directory) };
         }
         const fingerprint = await dependencyFingerprint(directory);
         let entry = entries.get(directory);
-        if (!entry || entry.fingerprint !== fingerprint) {
-          entry = { fingerprint, result: null, pending: null };
+        if (!entry || entry.generation !== generation || entry.fingerprint !== fingerprint) {
+          entry = { generation, fingerprint, result: null, pending: null };
           entry.pending = Promise.resolve().then(async () => {
             const value = await read(directory);
             return { value, stable: fingerprint === await dependencyFingerprint(directory) };

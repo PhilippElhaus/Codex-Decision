@@ -5,6 +5,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const {readFileRecord,parseUniqueJson,parseUnsignedJson,validateStatsRecord,validateDirectoryPath,validateSessionPath} = require("./private-records");
 const JOURNAL_NAME = ".decision-publication.json";
+const GENERATION_NAME = ".decision-publication-generation";
 const JOURNAL_LIMIT = 128 * 1024;
 const EVENT_LIMIT = 32 * 1024;
 const SNAPSHOT_LIMIT = 8 * 1024 * 1024;
@@ -59,6 +60,16 @@ async function readJournal(directory) {
   return record ? {record,value:validateJournal(record.bytes),hash:digest(record.bytes)} : null;
 }
 
+async function readGeneration(directory) {
+  const marker = await readFileRecord(path.join(directory,GENERATION_NAME),32,{strict:true});
+  if (marker) {
+    const generation = marker.bytes.toString("utf8");
+    if (!/^[a-f0-9]{32}$/.test(generation)) throw new Error("Invalid Decision publication generation");
+    return generation;
+  }
+  return null;
+}
+
 async function directoryGeneration(directory) {
   try {
     const details = await fs.lstat(directory, { bigint: true });
@@ -70,12 +81,13 @@ async function directoryGeneration(directory) {
   }
 }
 
-async function withPublication(directory, action, checkGeneration = false) {
+async function withPublication(directory, action, checkLegacyDirectory = false) {
   await validateSessionPath(directory);
   const logs = path.join(directory,"logs");
   await validateDirectoryPath(logs);
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    const generation = checkGeneration ? await directoryGeneration(logs) : null;
+    const legacy = checkLegacyDirectory ? await directoryGeneration(logs) : null;
+    const generation = await readGeneration(logs);
     const before = await readJournal(directory);
     let result, failure;
     try {
@@ -91,12 +103,13 @@ async function withPublication(directory, action, checkGeneration = false) {
           throw new Error("Decision publication event changed");
         }
       }
-      result = await action(before?.value || null);
+      result = await action(before?.value || null,generation);
     } catch (error) {failure = error;}
     const after = await readJournal(directory);
-    if (before?.hash === after?.hash && before?.record.fingerprint === after?.record.fingerprint) {
+    if (before?.hash === after?.hash && before?.record.fingerprint === after?.record.fingerprint &&
+        generation === await readGeneration(logs)) {
       if (failure) throw failure;
-      if (!before && checkGeneration && generation !== await directoryGeneration(logs)) continue;
+      if (!before && checkLegacyDirectory && legacy !== await directoryGeneration(logs)) continue;
       return result;
     }
   }
@@ -128,4 +141,4 @@ async function readPublishedRecord(directory, kind, readCurrent) {
   }, kind === "stats");
 }
 
-module.exports = {validateJournal,withPublication,readPublishedRecord,JOURNAL_NAME,JOURNAL_LIMIT};
+module.exports = {validateJournal,withPublication,readPublishedRecord,JOURNAL_NAME,JOURNAL_LIMIT,GENERATION_NAME};

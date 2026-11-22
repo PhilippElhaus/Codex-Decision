@@ -80,13 +80,14 @@ pub(super) fn process_event(
     config: &Config,
 ) -> Result<Value, String> {
     usage::start(scoped, event, config);
+    let capture = lifecycle::capture_output(data_dir, scoped, event);
     let result = hook_health(scoped, "seen", "")
         .and_then(|()| process_event_inner(data_dir, scoped, event, config));
     if let Err(error) = &result {
         report_health(hook_health(scoped, "error", error));
     }
     usage::finish(&result);
-    lifecycle::output(scoped, event, config, &result);
+    lifecycle::output(scoped, event, config, &result, capture);
     result
 }
 

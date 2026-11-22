@@ -1,7 +1,8 @@
 //! Read a committed counter image without modifying pending transactions.
 use super::*;
 use codex_decision::publication_contract::{
-    parse_stats, Image, PublicationJournal, EVENT_LIMIT, JOURNAL_LIMIT, JOURNAL_NAME,
+    parse_stats, Image, PublicationJournal, EVENT_LIMIT, GENERATION_BYTES, GENERATION_NAME,
+    JOURNAL_LIMIT, JOURNAL_NAME,
 };
 use std::io::{Seek, SeekFrom};
 
@@ -131,6 +132,27 @@ fn same(before: &Option<Pending>, after: &Option<Pending>) -> bool {
     }
 }
 
+fn generation(directory: &Path) -> Result<Option<Vec<u8>>, String> {
+    let Some(record) = load(
+        &directory.join("logs").join(GENERATION_NAME),
+        GENERATION_BYTES,
+        true,
+        None,
+    )?
+    else {
+        return Ok(None);
+    };
+    if record.bytes.len() != GENERATION_BYTES
+        || !record
+            .bytes
+            .iter()
+            .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+    {
+        return Err("invalid activity publication generation".into());
+    }
+    Ok(Some(record.bytes))
+}
+
 fn unjournaled_stats(directory: &Path, current: Option<Record>) -> Result<Value, String> {
     if let Some(record) = current {
         return parse_stats(&record.bytes);
@@ -161,6 +183,7 @@ pub(super) fn read_stats(directory: &Path) -> Result<Value, String> {
 
 fn read_stats_with(directory: &Path, after_sample: impl Fn()) -> Result<Value, String> {
     for _ in 0..2 {
+        let epoch = generation(directory)?;
         let before = pending(directory)?;
         let result = (|| -> Result<Value, String> {
             let journal = before.as_ref().map(|value| &value.journal);
@@ -212,11 +235,14 @@ fn read_stats_with(directory: &Path, after_sample: impl Fn()) -> Result<Value, S
         })();
         after_sample();
         let after = pending(directory)?;
-        if same(&before, &after) {
+        if same(&before, &after) && generation(directory)? == epoch {
             if before.is_none() && result.is_ok() {
                 let current = load(&directory.join("stats.json"), 8192, false, None)?;
                 let second = unjournaled_stats(directory, current);
-                if second != result || pending(directory)?.is_some() {
+                if second != result
+                    || pending(directory)?.is_some()
+                    || generation(directory)? != epoch
+                {
                     continue;
                 }
             }

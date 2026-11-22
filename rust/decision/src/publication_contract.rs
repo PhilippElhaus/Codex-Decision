@@ -5,6 +5,8 @@ use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 
 pub const JOURNAL_NAME: &str = ".decision-publication.json";
+pub const GENERATION_NAME: &str = ".decision-publication-generation";
+pub const GENERATION_BYTES: usize = 32;
 pub const JOURNAL_LIMIT: usize = 128 * 1024;
 pub const EVENT_LIMIT: usize = 32 * 1024;
 pub const STATS_LIMIT: usize = 8192;
