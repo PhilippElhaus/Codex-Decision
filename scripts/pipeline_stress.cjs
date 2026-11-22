@@ -94,7 +94,7 @@ async function main() {
         expectedStages.responses_received+=run.calls-Number(run.fault&&run.faultMode==="timeout");
         expectedStages.responses_validated+=run.calls-Number(run.fault);
         expectedStages.request_failures+=Number(run.fault);
-        const storageFaults=(result.stderr.match(/^Codex Decision status write failed: .+$/gm)||[]).length;
+        const storageFaults=(result.stderr.match(/^Codex Decision could not record hook health$/gm)||[]).length;
         assert.equal(storageFaults,0,"Candidate acceptance requires zero lost telemetry");
         const stableReply={...result.reply};
         if(typeof stableReply.reason==="string")stableReply.reason=stableReply.reason

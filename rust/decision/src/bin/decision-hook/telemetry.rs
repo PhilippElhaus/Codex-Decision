@@ -48,7 +48,11 @@ pub(super) fn safe_hook_error(error: &str) -> &'static str {
         "Decision request failed" => "Decision request failed",
         "Decision response read failed" => "Decision response read failed",
         "Decision response too large" => "Decision response too large",
-        "invalid decision response" | "invalid Decision response" => "invalid Decision response",
+        "invalid decision response" => "invalid decision response",
+        "invalid Decision response" => "invalid Decision response",
+        "Decision probability out of range" => "Decision probability out of range",
+        "response provider mismatch" => "response provider mismatch",
+        "original already exists" => "original already exists",
         "Decision context budget" => "Decision context budget",
         "log lock timeout" => "log lock timeout",
         "linked log lock" | "unsafe log lock" | "log lock open" | "log lock stat" => {
