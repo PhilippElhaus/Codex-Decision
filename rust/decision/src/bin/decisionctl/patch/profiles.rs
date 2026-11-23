@@ -112,24 +112,37 @@ const NOVEMBER_11: Profile = Profile {
     route_anchor: "function YJ(){return xJ(JJ(),`useLocation() may be used only in the context of a <Router> component.`),iY.useContext(AY).location}",
 };
 
+const NOVEMBER_17: Profile = Profile {
+    version: "26.1117.31558",
+    image: "webview/assets/app-initial-b186ce0fe373.js",
+    route: "webview/assets/app-initial-9b030145acd1.js",
+    index_anchor: "<script type=\"module\" crossorigin src=\"./assets/index-54f713a6d081.js\"></script>",
+    image_anchor: "let o=cm(e);if(o==null)return null;try{let e={path:o,hostId:t,conversationId:i,environmentId:a}",
+    route_anchor: "function xJ(){return qq(bJ(),`useLocation() may be used only in the context of a <Router> component.`),AJ.useContext(rY).location}",
+};
+
 pub(super) fn host_fragment(
     fragment: String,
     profile: Profile,
 ) -> Result<(&'static str, String), String> {
-    if profile.version != NOVEMBER_11.version {
-        return Ok((HOST_ANCHOR, fragment));
-    }
-    let fragment = replace_once(
-        &fragment,
-        "onDidReceiveMessage(u=>{",
-        "onDidReceiveMessage(l=>{{const u=l;",
-    )?;
+    let (anchor, receiver) = match profile.version {
+        "26.1111.21308" => (
+            "let a=e.onDidReceiveMessage(l=>{if(s.markMessageReceived(),l.type===\"chunked-message-ack\")",
+            "let a=e.onDidReceiveMessage(l=>{{const u=l;",
+        ),
+        "26.1117.31558" => (
+            "let a=t.onDidReceiveMessage(l=>{if(s.markMessageReceived(),l.type===\"chunked-message-ack\")",
+            "let a=t.onDidReceiveMessage(l=>{{const u=l,e=t;",
+        ),
+        _ => return Ok((HOST_ANCHOR, fragment)),
+    };
+    let fragment = replace_once(&fragment, "let a=e.onDidReceiveMessage(u=>{", receiver)?;
     let fragment = replace_once(
         &fragment,
         "if(s.markMessageReceived(),u.type===\"chunked-message-ack\")",
         "}if(s.markMessageReceived(),l.type===\"chunked-message-ack\")",
     )?;
-    Ok(("let a=e.onDidReceiveMessage(l=>{if(s.markMessageReceived(),l.type===\"chunked-message-ack\")", fragment))
+    Ok((anchor, fragment))
 }
 
 pub(super) const VERSIONS: &[&str] = &[
@@ -144,11 +157,33 @@ pub(super) const VERSIONS: &[&str] = &[
     OCTOBER_21.version,
     OCTOBER_21_PREVIEW.version,
     NOVEMBER_11.version,
+    NOVEMBER_17.version,
 ];
 
 pub(super) fn spec(version: &str) -> Result<Spec, String> {
     let (profile, hashes) = match version {
         VERSION => (LEGACY, ORIGINAL),
+        "26.1117.31558" => (
+            NOVEMBER_17,
+            [
+                (
+                    HOST,
+                    "5ca585366d43ce982a2782424a5508d44ef713bf9176631ce5914ae2a1a0b347",
+                ),
+                (
+                    INDEX,
+                    "e01c8d7fc77a383621687b53041b24ea8081a3b6887a6e43ac687ad0fdc9e683",
+                ),
+                (
+                    IMAGE,
+                    "466ac02169c0e70deefcb6a65ebfcdb2ac1bb670f9ef66cf1b59e9194d2d72e9",
+                ),
+                (
+                    ROUTE,
+                    "a61bbbae6c0f2a2cb132f6c14b46df432f15afe77bef6a2a923fd2c6c98324fa",
+                ),
+            ],
+        ),
         "26.1111.21308" => (
             NOVEMBER_11,
             [
@@ -377,7 +412,9 @@ pub(super) fn route_fragment(source: String, profile: Profile) -> String {
         return source;
     }
     // Rebind only the pinned fragment, never search and replace Codex source.
-    let (router, assert, in_router, react, context) = if profile.version == NOVEMBER_11.version {
+    let (router, assert, in_router, react, context) = if profile.version == NOVEMBER_17.version {
+        ("xJ", "qq", "bJ", "AJ", "rY")
+    } else if profile.version == NOVEMBER_11.version {
         ("YJ", "xJ", "JJ", "iY", "AY")
     } else if [OCTOBER_21.version, OCTOBER_21_PREVIEW.version].contains(&profile.version) {
         ("W", "c", "Dt", "K", "ai")

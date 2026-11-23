@@ -126,6 +126,7 @@ fn bridge_fragments_publish_routes_and_validate_settings_messages() {
         "26.1021.22027",
         "26.51021.22027",
         "26.1111.21308",
+        "26.1117.31558",
     ] {
         let fragment =
             profiles::route_fragment(route.clone(), Spec::production(version).unwrap().1);
@@ -143,6 +144,8 @@ fn bridge_fragments_publish_routes_and_validate_settings_messages() {
                 "let ZK={},TK={useContext:()=>({location:{pathname}})},WG=()=>{},_K=()=>true;"
             } else if version == "26.1111.21308" {
                 "let AY={},iY={useContext:()=>({location:{pathname}})},xJ=()=>{},JJ=()=>true;"
+            } else if version == "26.1117.31558" {
+                "let rY={},AJ={useContext:()=>({location:{pathname}})},qq=()=>{},bJ=()=>true;"
             } else if ["26.1021.22027", "26.51021.22027"].contains(&version) {
                 "let ai={},K={useContext:()=>({location:{pathname}})},c=()=>{},Dt=()=>true;"
             } else if version == "26.1002.51308" {
@@ -163,6 +166,7 @@ fn bridge_fragments_publish_routes_and_validate_settings_messages() {
                 "26.1007.21434" => "Wq",
                 "26.1021.22027" | "26.51021.22027" => "W",
                 "26.1111.21308" => "YJ",
+                "26.1117.31558" => "xJ",
                 "26.930.51102" | "26.930.61225" => "nq",
                 _ => "JG",
             };
@@ -173,7 +177,9 @@ fn bridge_fragments_publish_routes_and_validate_settings_messages() {
                 "{}",
                 String::from_utf8_lossy(&output.stderr)
             );
-            let result: Value = serde_json::from_slice(&output.stdout).unwrap();
+            let result: Value = serde_json::from_slice(&output.stdout).unwrap_or_else(|error| {
+                panic!("route for Codex {version} returned invalid JSON: {error}")
+            });
             assert_eq!(result["codexDecisionRouteKind"], kind);
             assert_eq!(result["codexDecisionSessionId"].as_str(), session);
         }
@@ -220,6 +226,38 @@ fn bridge_fragments_publish_routes_and_validate_settings_messages() {
             );
         }
     }
+}
+
+#[test]
+fn november_17_host_bridge_replies_to_the_bound_webview() {
+    let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let bytes = exact(&repo, "vscode-control/patch-assets/host-bridge.jsfrag").unwrap();
+    let profile = Spec::production("26.1117.31558").unwrap().1;
+    let (_, host) = profiles::host_fragment(as_text(&bytes).unwrap().to_owned(), profile).unwrap();
+    let script = format!(
+        r#"
+let parentMessages = 0, receive;
+const t = {{ onDidReceiveMessage(fn) {{ receive = fn; }}, postMessage(reply) {{ replies.push(reply); }} }};
+const s = {{ markMessageReceived() {{ parentMessages++; }} }};
+const replies = [];
+const originalRequire = require;
+require = name => name === 'vscode' ? {{ commands: {{ executeCommand: () => ({{ enabled: true }}) }} }} : originalRequire(name);
+{host} {{}} }});
+receive({{ type: 'chunked-message-ack' }});
+receive({{ type: 'codex-decision', action: 'status', id: 'request' }});
+setImmediate(() => {{
+  const assert = originalRequire('node:assert/strict');
+  assert.equal(parentMessages, 1);
+  assert.deepEqual(replies, [{{ type: 'codex-decision-reply', id: 'request', status: {{ enabled: true }} }}]);
+}});
+"#
+    );
+    let output = Command::new("node").arg("-e").arg(script).output().unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 #[test]

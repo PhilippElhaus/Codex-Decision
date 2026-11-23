@@ -146,6 +146,7 @@ async function main() {
     const appModules = {
       "26.1007.21434": ["app-initial-c014f9ee4429.js", "app-initial-97d3534ad35f.js"],
       "26.1111.21308": ["app-initial-4f253310bfcc.js", "app-initial-2d019a54be8b.js"],
+      "26.1117.31558": ["app-initial-b186ce0fe373.js", "app-initial-9b030145acd1.js"],
     };
     const modules = appModules[hostManifest.version] || [imageModules[0], "chunk-KS7C4IRE-c36c021bd659.js"];
     const assets = ["out/extension.js", "webview/index.html", ...modules.map(name => `webview/assets/${name}`)];

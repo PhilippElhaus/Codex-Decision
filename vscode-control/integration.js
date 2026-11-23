@@ -67,7 +67,7 @@ function patchStatus(stdout, version) {
 
 function patchCommandFailure(error, action) {
   const stderr = error?.stderr;
-  const text = error?.code === 1 && typeof stderr === "string" && stderr.length <= 4096 ? stderr.trim() : "";
+  const text = [1, 2].includes(error?.code) && typeof stderr === "string" && stderr.length <= 4096 ? stderr.trim() : "";
   const diagnostic = text.startsWith("decisionctl: ") ? text.slice("decisionctl: ".length) : "";
   if (diagnostic === PATCH_BUSY) return Object.assign(new Error(PATCH_BUSY), { patchFailure: "busy" });
   if (PATCH_CONFLICTS.has(diagnostic)) {

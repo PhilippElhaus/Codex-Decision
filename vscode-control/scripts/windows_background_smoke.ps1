@@ -66,7 +66,7 @@ try {
         if (-not (Test-Path -LiteralPath $filename -PathType Leaf)) { throw 'Background smoke input is missing.' }
     }
     $hostVersion = (Get-Content -LiteralPath (Join-Path $HostExtension 'package.json') -Raw | ConvertFrom-Json).version
-    if ($hostVersion -notin @('26.1007.21434', '26.1021.22027', '26.51021.22027', '26.1111.21308')) { throw 'Background smoke requires a reviewed Codex host.' }
+    if ($hostVersion -notin @('26.1007.21434', '26.1021.22027', '26.51021.22027', '26.1111.21308', '26.1117.31558')) { throw 'Background smoke requires a reviewed Codex host.' }
     $report = Join-Path $repository ('.local\quality\windows-background-smoke-' + $hostVersion + '.json')
     if (-not $HostRollback) { $HostRollback = Join-Path $env:LOCALAPPDATA ('Codex\codex-decision\rollback\' + $hostVersion) }
     $taskRoot = Join-Path $temporary ('decision-background-' + $runId)
@@ -81,7 +81,14 @@ try {
         'out\extension.js' = 'a9cc6736cd2c2d22f6cf43fc5763d5f8a873e4f741f522b44a600b1926f4e627';
         'webview\assets\chunk-KS7C4IRE-c36c021bd659.js' = '10eb7db01b2e65ba9f977a219dfee663fb9ac23fd3dde7c127d0269202ea10e9'
     }
-    if ($hostVersion -eq '26.1111.21308') {
+    if ($hostVersion -eq '26.1117.31558') {
+        $originalHashes = @{
+            'out\extension.js' = '5ca585366d43ce982a2782424a5508d44ef713bf9176631ce5914ae2a1a0b347';
+            'webview\index.html' = 'e01c8d7fc77a383621687b53041b24ea8081a3b6887a6e43ac687ad0fdc9e683';
+            'webview\assets\app-initial-b186ce0fe373.js' = '466ac02169c0e70deefcb6a65ebfcdb2ac1bb670f9ef66cf1b59e9194d2d72e9';
+            'webview\assets\app-initial-9b030145acd1.js' = 'a61bbbae6c0f2a2cb132f6c14b46df432f15afe77bef6a2a923fd2c6c98324fa'
+        }
+    } elseif ($hostVersion -eq '26.1111.21308') {
         $originalHashes = @{
             'out\extension.js' = 'aa93a1b5aaa79746f3b583133355c659a0f059ff98d1956adf9da0e4afbcf817';
             'webview\index.html' = '51939fecadbc6d852d35760534f7b189c5c47e0ddf535842015988afe7c5ff70';

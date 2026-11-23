@@ -5,8 +5,8 @@ const path = require("node:path");
 const test = require("node:test");
 const { runIntegration, activateIntegration, failureMessage } = require("../../vscode-control/integration");
 
-function patchError(diagnostic) {
-  return Object.assign(new Error("synthetic child failure"), { code: 1, stderr: `decisionctl: ${diagnostic}\n` });
+function patchError(diagnostic, code = 1) {
+  return Object.assign(new Error("synthetic child failure"), { code, stderr: `decisionctl: ${diagnostic}\n` });
 }
 
 function fixture(states = ["unpatched", "ready"]) {
@@ -672,7 +672,7 @@ test("filesystem diagnostics give actionable fixed text instead of reporting loc
 });
 
 test("unsupported-host diagnostics identify the loaded control and explain VSIX recovery without patching", async () => {
-  const setup = fixture([patchError("unsupported Codex assets; revalidate the composer patch")]);
+  const setup = fixture([patchError("unsupported Codex assets; revalidate the composer patch", 2)]);
   setup.options.host.packageJSON.version = "26.1021.22027";
   const extension = extensionFixture(setup, Promise.resolve({ status: "ready", distro: "Ubuntu" }));
   extension.vscode.window.showWarningMessage = async (...args) => {
