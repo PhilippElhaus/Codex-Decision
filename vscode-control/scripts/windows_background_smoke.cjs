@@ -69,6 +69,9 @@ async function main() {
     const controlPackage = JSON.parse(await fs.readFile(path.join(control, "package.json")));
     const version = controlPackage.codexDecisionHookVersion;
     assert.equal(first.version, version);
+    for (const key of ["marketplacePath", "dataDirectory", "pluginRoot", "decisionctl"]) {
+      assert.equal(first[key], path.win32.normalize(first[key]), key);
+    }
     for (const filename of FILES) assert.deepEqual(await fs.readFile(path.join(first.pluginRoot, filename)),
       await fs.readFile(path.join(payload, filename)), `cache exactness: ${filename}`);
     const watched = FILES.map(filename => path.join(first.pluginRoot, filename));

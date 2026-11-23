@@ -100,7 +100,7 @@ pub(super) fn discover(
         let marketplace_path = match registered.as_slice() {
             [item] => item["root"]
                 .as_str()
-                .map(|root| storage::safe(Path::new(root)).map(|root| root.join(MARKETPLACE_FILE)))
+                .map(|root| storage::safe(&Path::new(root).join(MARKETPLACE_FILE)))
                 .transpose()?,
             _ => None,
         };
@@ -119,7 +119,7 @@ pub(super) fn discover(
                     .into(),
             ),
         }
-        let marketplace_path = root.join(MARKETPLACE_FILE);
+        let marketplace_path = storage::safe(&root.join(MARKETPLACE_FILE))?;
         let content = json!({"name": marketplace, "interface": {"displayName": "Codex Decision"},
             "plugins": [{"name": PLUGIN, "source": {"source": "local", "path": "./plugins/codex-decision"},
                 "policy": {"installation": "AVAILABLE", "authentication": "ON_INSTALL"}, "category": "Productivity"}]});
@@ -176,6 +176,9 @@ impl Selection {
 pub(super) fn run(binary: &Path, codex_home: &Path, args: &[&OsStr]) -> Result<Value, String> {
     let mut command = Command::new(binary);
     command
+        // Local updates only need local marketplace state. Remote discovery
+        // must not delay reading or refreshing the local registration.
+        .args(["-c", "features.remote_plugin=false"])
         .arg("plugin")
         .args(args)
         .arg("--json")

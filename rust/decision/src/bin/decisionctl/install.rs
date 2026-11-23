@@ -211,9 +211,11 @@ fn install(
     storage::secure_directory(&state, true)?;
     let package = Package::load(payload)?;
     let selection = codex::discover(&mut run, &home, &codex_home, &package.version)?;
-    let data = codex_home
-        .join("plugins/data")
-        .join(format!("{PLUGIN}-{}", selection.marketplace));
+    let data = storage::safe(
+        &codex_home
+            .join("plugins/data")
+            .join(format!("{PLUGIN}-{}", selection.marketplace)),
+    )?;
     if let Some(configured) = configured {
         if !same_path(&storage::safe(configured)?, &data) {
             return Err("Decision dataDirectory does not match the active Codex plugin; correct it before repair".into());
@@ -225,14 +227,15 @@ fn install(
         .join("plugins/cache")
         .join(&selection.marketplace)
         .join(PLUGIN);
-    let installed = cache_root.join(&package.version);
+    let installed = storage::safe(&cache_root.join(&package.version))?;
     let binary = if cfg!(windows) {
         "hooks/bin/windows-x86_64/decisionctl.exe"
     } else {
         "hooks/bin/linux-x86_64/decisionctl"
     };
+    let decisionctl = storage::safe(&installed.join(binary))?;
     let mut result = json!({"pluginId": selection.id, "version": package.version, "pluginRoot": installed,
-        "dataDirectory": data, "decisionctl": installed.join(binary), "marketplacePath": selection.marketplace_path,
+        "dataDirectory": data, "decisionctl": decisionctl, "marketplacePath": selection.marketplace_path,
         "status": "ready", "rollback": null, "cacheRollback": null});
     let changed = package.changes(&selection.source)?;
     if selection.current && changed.is_empty() && package.changes(&installed)?.is_empty() {

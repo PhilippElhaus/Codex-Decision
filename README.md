@@ -4,14 +4,14 @@
 
 Codex Decision selects repetitive lines for removal from supported local tool output. Local safeguards keep diagnostics, exact source, exhaustive results, and completion evidence. Every shortened result links to its complete original.
 
-**Codex Decision 0.17.9** — [Download the integrated VSIX](https://github.com/PhilippElhaus/Codex-Decision/releases/latest).
+**Codex Decision 0.17.10** — [Download the integrated VSIX](https://github.com/PhilippElhaus/Codex-Decision/releases/latest).
 
 ## Get started
 
 Install the VSIX in **Visual Studio Code** through **Extensions → … → Install from VSIX…**, or run:
 
 ```bash
-code --install-extension codex-decision-0.17.9.vsix --force
+code --install-extension codex-decision-0.17.10.vsix --force
 ```
 
 The package contains Windows and Linux x86_64 runtimes, session controls, settings, a panel, and a verified Codex UI patch. Native Windows needs no WSL or Python. Install the extension in the same workspace host as Codex, including Ubuntu for Remote WSL. Each runtime retains its own plugin data and credentials.

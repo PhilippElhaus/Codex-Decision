@@ -1,11 +1,11 @@
 # Install and verify
 
-Download the integrated VSIX from the [latest release](https://github.com/PhilippElhaus/Codex-Decision/releases/latest). Open the local Windows workspace or Remote WSL workspace that runs Codex. In **Extensions** (`Ctrl+Shift+X`), select **… → Install from VSIX…**, and choose `codex-decision-0.17.9.vsix`.
+Download the integrated VSIX from the [latest release](https://github.com/PhilippElhaus/Codex-Decision/releases/latest). Open the local Windows workspace or Remote WSL workspace that runs Codex. In **Extensions** (`Ctrl+Shift+X`), select **… → Install from VSIX…**, and choose `codex-decision-0.17.10.vsix`.
 
 If double-clicking the file opens **Visual Studio VSIX Installer**, close that installer and use the VS Code menu. You can also install from a terminal:
 
 ```bash
-code --install-extension codex-decision-0.17.9.vsix --force
+code --install-extension codex-decision-0.17.10.vsix --force
 ```
 
 This package contains Windows x86_64 and Linux x86_64 hooks, the skill, session controls, settings, and verified composer patch. Install in each workspace host where you use Codex. The bundled CLI installs the hook in each runtime. Remote WSL reuses an existing UNC data path for its own distribution and remembers automatic discovery separately from the Windows setting. Older Windows extension versions that use the former WSL launcher continue to follow that launcher setting. Activation updates an existing local plugin without changing its identity or data directory. A fresh install registers the bundled local marketplace. The installer preserves credentials, settings, session flags, saved originals, and Codex hook trust records. It rejects ambiguous plugin registrations instead of creating a duplicate hook.
