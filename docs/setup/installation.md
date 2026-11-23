@@ -1,14 +1,14 @@
 # Install and verify
 
-Download the integrated VSIX from the [latest release](https://github.com/PhilippElhaus/Codex-Decision/releases/latest). Open the local Windows workspace or Remote WSL workspace that runs Codex. In **Extensions** (`Ctrl+Shift+X`), select **… → Install from VSIX…**, and choose `codex-decision-0.17.8.vsix`.
+Download the integrated VSIX from the [latest release](https://github.com/PhilippElhaus/Codex-Decision/releases/latest). Open the local Windows workspace or Remote WSL workspace that runs Codex. In **Extensions** (`Ctrl+Shift+X`), select **… → Install from VSIX…**, and choose `codex-decision-0.17.9.vsix`.
 
 If double-clicking the file opens **Visual Studio VSIX Installer**, close that installer and use the VS Code menu. You can also install from a terminal:
 
 ```bash
-code --install-extension codex-decision-0.17.8.vsix --force
+code --install-extension codex-decision-0.17.9.vsix --force
 ```
 
-This single package contains Windows x86_64 and Linux x86_64 hooks, the skill, session controls, settings, and verified composer patch. Native Windows needs no WSL or Python. Install in each workspace host where you use Codex. Remote WSL reuses an existing UNC data path for its own distribution and remembers automatic discovery separately from the Windows setting. Older Windows extension versions that use the former WSL launcher continue to follow that launcher setting. Activation updates an existing local plugin without changing its identity or data directory. A fresh install registers the bundled local marketplace. The installer preserves credentials, settings, session flags, saved originals, and Codex hook trust records. It rejects ambiguous plugin registrations instead of creating a duplicate hook.
+This package contains Windows x86_64 and Linux x86_64 hooks, the skill, session controls, settings, and verified composer patch. Install in each workspace host where you use Codex. The bundled CLI installs the hook in each runtime. Remote WSL reuses an existing UNC data path for its own distribution and remembers automatic discovery separately from the Windows setting. Older Windows extension versions that use the former WSL launcher continue to follow that launcher setting. Activation updates an existing local plugin without changing its identity or data directory. A fresh install registers the bundled local marketplace. The installer preserves credentials, settings, session flags, saved originals, and Codex hook trust records. It rejects ambiguous plugin registrations instead of creating a duplicate hook.
 
 By default the extension repairs supported Codex builds at startup and after extension or settings changes. Repairs verify the build's exact files and keep rollback copies outside the repository. A different package version can reuse a reviewed profile only when all four original assets match. Unknown or changed assets show a diagnostic. **Decision: Check Integration (May Install Hook)** can install or refresh the hook and save its runtime location. The command verifies the UI patch without applying it and does not open the panel. Automatic repair runs separately if enabled. Do not use either integration command for a read-only audit. **Decision: Repair Integration** retries the bootstrap, repairs the verified UI patch, and opens the panel. Run **Developer: Reload Window** after the UI patch changes. If only panel recovery failed, run **Decision: Show Latest Decision**.
 

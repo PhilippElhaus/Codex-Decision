@@ -4,6 +4,8 @@ use super::*;
 mod publication;
 #[path = "activity/snapshot.rs"]
 mod snapshot;
+#[path = "activity/view.rs"]
+pub(super) mod view;
 
 pub(super) fn summarize(data: &Path, session: &str) -> Result<Value, String> {
     summarize_with_loader(data, session, snapshot::load)

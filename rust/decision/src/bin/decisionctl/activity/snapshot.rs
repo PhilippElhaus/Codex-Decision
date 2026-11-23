@@ -15,7 +15,7 @@ pub(super) fn load(path: &Path, limit: u64) -> Result<Value, String> {
         Err(_) => return Err("activity stat failed".into()),
         Ok(metadata) => metadata,
     };
-    if !metadata.is_file() || metadata.file_type().is_symlink() || metadata.len() > limit {
+    if !metadata.is_file() || codex_decision::is_link(&metadata) || metadata.len() > limit {
         return Err("unsafe activity file".into());
     }
     let mut options = OpenOptions::new();
@@ -25,9 +25,14 @@ pub(super) fn load(path: &Path, limit: u64) -> Result<Value, String> {
         use std::os::unix::fs::OpenOptionsExt;
         options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
     }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        options.custom_flags(0x0020_0000);
+    }
     let file = options.open(path).map_err(|_| "activity open failed")?;
     let opened = file.metadata().map_err(|_| "activity stat failed")?;
-    if !opened.is_file() || opened.len() > limit {
+    if !opened.is_file() || codex_decision::is_link(&opened) || opened.len() > limit {
         return Err("unsafe activity file".into());
     }
     let mut bytes = Vec::new();
@@ -162,7 +167,7 @@ pub(super) fn metrics(stats: &Value, health: &Value) -> Result<Value, String> {
     Ok(Value::Object(result))
 }
 
-fn rounded_average(elapsed: u64, timed: u64) -> u64 {
+pub(super) fn rounded_average(elapsed: u64, timed: u64) -> u64 {
     if timed == 0 {
         return 0;
     }

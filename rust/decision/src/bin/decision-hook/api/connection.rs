@@ -1,6 +1,6 @@
 //! Resolve credentials only for the selected connection.
 use super::*;
-use codex_decision::provider::Provider;
+use codex_decision::provider::{CustomProvider, Provider};
 
 pub(crate) struct Connection {
     pub(super) protocol: Provider,
@@ -18,18 +18,11 @@ impl Connection {
     }
     pub(crate) fn load(data_dir: &Path, config: &Config) -> Result<Self, String> {
         if config.provider != Provider::Custom {
-            return Ok(Self {
-                protocol: config.provider,
-                endpoint: endpoint::endpoint(config.provider)?,
-                model: config.model.clone(),
-                response_model: String::new(),
-                tls_config: None,
-                header: Some((
-                    "Authorization".into(),
-                    format!("Bearer {}", key(data_dir, config.provider)?),
-                )),
-                custom: false,
-            });
+            return Self::builtin(
+                config.provider,
+                &config.model,
+                &key(data_dir, config.provider)?,
+            );
         }
         let custom = config
             .custom_provider
@@ -60,13 +53,33 @@ impl Connection {
                 api_key = credentials[1].clone();
             }
         }
+        Self::custom(custom, &api_key, &password)
+    }
+
+    pub(super) fn builtin(protocol: Provider, model: &str, key: &str) -> Result<Self, String> {
+        Ok(Self {
+            protocol,
+            endpoint: endpoint::endpoint(protocol)?,
+            model: model.into(),
+            response_model: String::new(),
+            tls_config: None,
+            header: Some(("Authorization".into(), format!("Bearer {key}"))),
+            custom: false,
+        })
+    }
+
+    pub(super) fn custom(
+        custom: &CustomProvider,
+        api_key: &str,
+        password: &str,
+    ) -> Result<Self, String> {
         Ok(Self {
             protocol: custom.protocol()?,
             endpoint: custom.endpoint.clone(),
             model: custom.model.clone(),
             response_model: custom.response_model.clone(),
             tls_config: custom.tls_config()?,
-            header: custom.authorization(&api_key, &password)?,
+            header: custom.authorization(api_key, password)?,
             custom: true,
         })
     }
@@ -77,5 +90,16 @@ impl Connection {
             Some(config) => builder.tls_config(config.clone()).build(),
             None => builder.build(),
         }
+    }
+
+    pub(super) fn normalize(&self, request: &Value, response: Value) -> Result<Value, String> {
+        if !self.custom {
+            return codex_decision::provider::normalize_response(request, response);
+        }
+        let mut expected = std::borrow::Cow::Borrowed(request);
+        if !self.response_model.is_empty() {
+            expected.to_mut()["model"] = Value::from(self.response_model.as_str());
+        }
+        codex_decision::provider::normalize_custom_response(&expected, response, self.protocol)
     }
 }

@@ -15,6 +15,8 @@ mod activity;
 mod credentials;
 #[path = "decisionctl/files.rs"]
 mod files;
+#[path = "decisionctl/install.rs"]
+mod install;
 #[path = "decisionctl/patch.rs"]
 mod patch;
 #[path = "decisionctl/release.rs"]
@@ -73,20 +75,8 @@ fn package(root: &Path) -> Result<(), String> {
         return Err("package root must be an absolute checkout directory".into());
     }
     codex_decision::check_ancestors(root)?;
-    let files = [
-        ".codex-plugin/plugin.json",
-        "skills/decision-output/SKILL.md",
-        "hooks/hooks.json",
-        "hooks/bin/linux-x86_64/decision-hook",
-        "hooks/bin/linux-x86_64/decisionctl",
-        "hooks/bin/windows-x86_64/decision-hook.exe",
-        "hooks/bin/windows-x86_64/decisionctl.exe",
-        "assets/logo.png",
-        "assets/icon.png",
-        "config.example.json",
-        "LICENSE",
-    ];
-    for relative in files {
+    let files = install::FILES;
+    for &relative in files {
         let mut path = root.to_path_buf();
         for component in Path::new(relative).components() {
             path.push(component);
@@ -159,7 +149,7 @@ fn package(root: &Path) -> Result<(), String> {
         }
         fs::create_dir_all(directory).map_err(|error| error.to_string())?;
     }
-    for relative in files {
+    for &relative in files {
         let mut target = stage.clone();
         for component in Path::new(relative).components() {
             target.push(component);
@@ -510,6 +500,12 @@ fn run() -> Result<(), String> {
     if args.len() == 2 && args[1] == "--version" {
         println!("decisionctl {}", env!("CARGO_PKG_VERSION"));
         return Ok(());
+    }
+    if args.get(1).is_some_and(|arg| arg == "install") {
+        return install::run(&args);
+    }
+    if args.len() == 4 && args[1] == "activity-view" {
+        return activity::view::run(&args[2], Path::new(&args[3]));
     }
     #[cfg(windows)]
     if args.len() == 4 && args[1] == "secure-directory" && args[2] == "--path" {

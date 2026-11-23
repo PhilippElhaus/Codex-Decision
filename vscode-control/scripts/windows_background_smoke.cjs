@@ -41,9 +41,13 @@ async function main() {
     runId: process.env.DECISION_BACKGROUND_RUN_ID, checks: [] };
   const checkpoint = () => fs.writeFile(report, JSON.stringify(result, null, 2) + "\n");
   try {
-    const { install, FILES } = require(path.join(control, "install-plugin-native.js"));
+    const { runInstaller } = require(path.join(control, "integrated-install.js"));
     const core = require(path.join(control, "core.js"));
     const payload = path.join(control, "plugin");
+    const bundledCli = path.join(payload, "hooks/bin/windows-x86_64/decisionctl.exe");
+    const FILES = (await fs.readdir(payload, { withFileTypes: true, recursive: true }))
+      .filter(entry => entry.isFile()).map(entry => path.relative(payload, path.join(entry.parentPath, entry.name)));
+    const install = options => runInstaller(run, bundledCli, options);
     const options = { payload, codex, home: path.join(taskRoot, "home"), codexHome: process.env.CODEX_HOME };
     const pluginParent = path.join(options.codexHome, "plugins");
     const unrelated = path.join(options.home, "unrelated");

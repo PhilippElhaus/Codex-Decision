@@ -18,6 +18,25 @@ function cleanJson(stdout) {
   catch { throw new Error("Decision installation returned invalid metadata"); }
 }
 
+async function runInstaller(execute, binary, { payload, codex, dataDirectory, home }) {
+  const args = ["install", "--payload", payload, "--codex", codex];
+  if (dataDirectory) args.push("--data-directory", dataDirectory);
+  if (home) args.push("--home", home);
+  try {
+    const reply = await execute(binary, args, { timeout: 1_440_000, maxBuffer: 16_384, windowsHide: true });
+    return cleanJson(reply.stdout);
+  } catch (error) {
+    if (error.code === "DECISION_INSTALL_TEMPORARY") throw error;
+    if (typeof error.stdout === "string") {
+      const failure = cleanJson(error.stdout);
+      if (failure.status === "error" && typeof failure.error === "string") {
+        throw Object.assign(new Error(failure.error), { retryable: failure.retryable === true });
+      }
+    }
+    throw new Error("Decision could not install its bundled hook in the Codex environment");
+  }
+}
+
 function linuxPath(filename) {
   return typeof filename === "string" && filename.startsWith("/") &&
     !/[\r\n\0]/.test(filename) && path.posix.normalize(filename) === filename;
@@ -35,8 +54,11 @@ async function ensureIntegratedInstall(vscode, context, options = {}) {
         throw Object.assign(new Error(`Decision installation is temporarily unavailable during ${phase}; check WSL availability`),
           { code: "DECISION_INSTALL_TEMPORARY", retryable: true });
       }
-      // Only Python's fixed JSON protocol can reach the installer error parser.
-      if (target !== "python3") throw new Error(`Decision installation failed during ${phase}; check WSL availability and file access`);
+      // Only the bundled installer's fixed JSON protocol can reach the parser.
+      const action = args[0] === "wsl.exe" ? args[1][args[1].indexOf("-e") + 2] : args[1][0];
+      if (action !== "install") {
+        throw new Error(`Decision installation failed during ${phase}; check WSL availability and file access`);
+      }
       throw error;
     }
   };
@@ -76,7 +98,8 @@ async function ensureIntegratedInstall(vscode, context, options = {}) {
     if (configured && (!path.win32.isAbsolute(configured) || /^[\\/]/.test(configured))) {
       throw new Error("Codex runs in Windows, but Decision dataDirectory is not a local Windows path; clear the Decision dataDirectory setting or enable Codex WSL integration");
     }
-    const installNative = options.installNative || require("./install-plugin-native").install;
+    const installNative = options.installNative || (values => runInstaller(run,
+      path.join(payload, "hooks", "bin", "windows-x86_64", "decisionctl.exe"), values));
     const result = await installNative({ payload,
       codex: path.join(host.extensionPath, "bin", "windows-x86_64", "codex.exe"),
       dataDirectory: configured });
@@ -122,28 +145,12 @@ async function ensureIntegratedInstall(vscode, context, options = {}) {
   } else {
     throw new Error("This Decision package requires Linux x86_64 or Windows with WSL");
   }
-  const [script, linuxPayload, codex, linuxConfigured] = await Promise.all([
-    convert(path.join(extensionRoot, "install-plugin.py")),
+  const [installer, linuxPayload, codex, linuxConfigured] = await Promise.all([
+    convert(path.join(payload, "hooks", "bin", "linux-x86_64", "decisionctl")),
     convert(payload), convert(path.join(host.extensionPath, "bin", "linux-x86_64", "codex")),
     configured ? convert(configured) : null,
   ]);
-  let result;
-  try {
-    const args = [script, "--payload", linuxPayload, "--codex", codex];
-    if (linuxConfigured) args.push("--data-directory", linuxConfigured);
-    const reply = await execute("python3", args,
-      { timeout: 1_440_000, maxBuffer: 16_384 });
-    result = cleanJson(reply.stdout);
-  } catch (error) {
-    if (error.code === "DECISION_INSTALL_TEMPORARY") throw error;
-    if (typeof error.stdout === "string") {
-      const failure = cleanJson(error.stdout);
-      if (failure.status === "error" && typeof failure.error === "string") {
-        throw Object.assign(new Error(failure.error), { retryable: failure.retryable === true });
-      }
-    }
-    throw new Error("Decision could not install its bundled hook in the Codex environment");
-  }
+  const result = await runInstaller(execute, installer, { payload: linuxPayload, codex, dataDirectory: linuxConfigured });
   if (!["ready", "installed"].includes(result.status) || typeof result.dataDirectory !== "string" ||
       !linuxPath(result.dataDirectory) || !linuxPath(result.decisionctl)) {
     throw new Error("Decision installation returned incomplete metadata");
@@ -161,4 +168,4 @@ async function ensureIntegratedInstall(vscode, context, options = {}) {
     backend: platform === "win32" ? "wsl" : "linux", distro, execute, convert };
 }
 
-module.exports = { ensureIntegratedInstall, remoteDataKey };
+module.exports = { ensureIntegratedInstall, remoteDataKey, runInstaller };

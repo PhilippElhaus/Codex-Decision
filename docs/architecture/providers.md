@@ -49,4 +49,4 @@ The packer includes complete targets and nearby context. It adapts batch sizes w
 Window fitting measures borrowed source rows once and uses exact prefix costs for later probes. It builds only the selected requests. A separate final serialized-size check remains active. OpenAI size measurement counts the second JSON escaping layer without constructing a wire buffer. Execution serializes borrowed OpenAI question and choice views directly into the outgoing buffer. TypeSafe serializes its existing request. These changes preserve the emitted request bytes, question wording, complete targets, and context.
 
 
-Implementations: [Rust adapters](../../rust/decision/src/provider.rs), [control providers](../../vscode-control/providers.js), and [transport](../../vscode-control/provider-transport.js).
+Implementations are in the [Rust adapters](../../rust/decision/src/provider.rs), [native connection test](../../rust/decision/src/bin/decision-hook/api/probe.rs), and [control provider settings](../../vscode-control/providers.js).

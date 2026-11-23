@@ -49,7 +49,7 @@ async function main() {
   }
   if (flags.has("--affected") && !flags.has("--plan")) {
     for (const gate of ["browser", "quality"]) await run(python, ["scripts/tia/gates.py", gate]);
-    await run(python, ["-m", "unittest", "tests.smoke.test_packages", "tests.smoke.test_integrated_install"]);
+    await run(python, ["-m", "unittest", "tests.smoke.test_packages"]);
   }
 }
 

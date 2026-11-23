@@ -14,4 +14,6 @@ Retention reads at most the last 1 MiB of the event log through one regular, no-
 
 Private health records count durable invocation, request-intent, received-response, validated-answer, failure, cancellation, and named skip entries. Registration does not establish provider receipt. Classification completion and its later health skip entry have separate commit points. Stats distinguish committed evaluations, previews, replacements, proposed omissions, and actual omissions. `decisionctl activity --data-dir <PLUGIN_DATA> --session <thread-id>` reads aggregate records and, when needed, bounded retained activity. It does not read a key, task, or raw receipt. Fresh scheme-1 history starts at exact zero; legacy and unresolved request outcomes retain explicit lower bounds or unknown values. Overflow and ambiguous records are rejected before publication. See [measurement](../operations/measurement.md) for counter boundaries.
 
+The companion uses the same native reader for session and installation totals. It caches session results while record identities and the publication generation remain stable. The reader preserves retained-history lower bounds and the companion's exact numeric range.
+
 See [telemetry](../operations/telemetry.md) for content-free request records.

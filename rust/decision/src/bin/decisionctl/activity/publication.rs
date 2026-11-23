@@ -30,7 +30,7 @@ fn load(
     };
     let check = |metadata: &fs::Metadata| -> Result<(), String> {
         if !metadata.is_file()
-            || metadata.file_type().is_symlink()
+            || codex_decision::is_link(metadata)
             || range.is_none() && metadata.len() > limit as u64
         {
             return Err("unsafe activity publication file".into());
@@ -56,6 +56,11 @@ fn load(
     {
         use std::os::unix::fs::OpenOptionsExt;
         options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        options.custom_flags(0x0020_0000);
     }
     let mut file = options
         .open(path)
@@ -153,13 +158,13 @@ fn generation(directory: &Path) -> Result<Option<Vec<u8>>, String> {
     Ok(Some(record.bytes))
 }
 
-fn unjournaled_stats(directory: &Path, current: Option<Record>) -> Result<Value, String> {
-    if let Some(record) = current {
-        return parse_stats(&record.bytes);
-    }
+fn retained_stats(directory: &Path, cutoff: Option<u64>) -> Result<Value, String> {
     let event_path = directory.join("logs/events.jsonl");
     let size = match fs::symlink_metadata(&event_path) {
-        Ok(metadata) => metadata.len(),
+        Ok(metadata) if metadata.is_file() && !codex_decision::is_link(&metadata) => {
+            cutoff.map_or(metadata.len(), |cutoff| cutoff.min(metadata.len()))
+        }
+        Ok(_) => return Err("unsafe retained event file".into()),
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(json!({})),
         Err(_) => return Err("activity retained event stat".into()),
     };
@@ -177,15 +182,35 @@ fn unjournaled_stats(directory: &Path, current: Option<Record>) -> Result<Value,
     codex_decision::activity_counters::retained_stats_from_events(&events.bytes, start > 0)
 }
 
+fn unjournaled_stats(directory: &Path, current: Option<Record>) -> Result<(Value, bool), String> {
+    if let Some(record) = current {
+        Ok((parse_stats(&record.bytes)?, true))
+    } else {
+        Ok((retained_stats(directory, None)?, false))
+    }
+}
+
 pub(super) fn read_stats(directory: &Path) -> Result<Value, String> {
     read_stats_with(directory, || {})
 }
 
 fn read_stats_with(directory: &Path, after_sample: impl Fn()) -> Result<Value, String> {
+    read_ledger_with(directory, false, after_sample).map(|(value, _)| value)
+}
+
+pub(super) fn read_view_stats(directory: &Path) -> Result<(Value, bool), String> {
+    read_ledger_with(directory, true, || {})
+}
+
+fn read_ledger_with(
+    directory: &Path,
+    view: bool,
+    after_sample: impl Fn(),
+) -> Result<(Value, bool), String> {
     for _ in 0..2 {
         let epoch = generation(directory)?;
         let before = pending(directory)?;
-        let result = (|| -> Result<Value, String> {
+        let result = (|| -> Result<(Value, bool), String> {
             let journal = before.as_ref().map(|value| &value.journal);
             if let Some(journal) = journal {
                 let bytes = journal.commit_event.as_bytes();
@@ -220,7 +245,7 @@ fn read_stats_with(directory: &Path, after_sample: impl Fn()) -> Result<Value, S
                 if !post {
                     return Err("activity committed stats changed".into());
                 }
-                return parse_stats(&current.unwrap().bytes);
+                return Ok((parse_stats(&current.unwrap().bytes)?, true));
             }
             let prior = journal.prior_stats.as_deref().map(str::as_bytes);
             let pre = match (&current, prior) {
@@ -231,7 +256,14 @@ fn read_stats_with(directory: &Path, after_sample: impl Fn()) -> Result<Value, S
             if !pre && !post {
                 return Err("activity pending stats changed".into());
             }
-            prior.map_or(Ok(json!({})), parse_stats)
+            match prior {
+                Some(bytes) => Ok((parse_stats(bytes)?, true)),
+                None if view => Ok((
+                    retained_stats(directory, Some(journal.event_offset))?,
+                    false,
+                )),
+                None => Ok((json!({}), false)),
+            }
         })();
         after_sample();
         let after = pending(directory)?;

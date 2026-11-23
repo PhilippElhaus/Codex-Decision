@@ -83,22 +83,6 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Linux native fixture initialization failed.' }
     & wsl.exe -d $Distro -e python3 -c 'import pathlib,sys;pathlib.Path(sys.argv[1]).write_text(sys.argv[2])' ($linuxRoot + '/owner') $runId
     if ($LASTEXITCODE -ne 0) { throw 'Linux native fixture ownership record failed.' }
-    # Some managed sandboxes expose an empty /tmp/.git marker.
-    # It is not a repository. Verify it before adjusting only this disposable installer.
-    $markerCheck = @'
-import pathlib
-p = pathlib.Path("/tmp/.git")
-assert not p.is_symlink(), "Linked temporary-root Git marker"
-if p.exists():
-    assert p.is_dir() and not any(p.iterdir()), "Unexpected temporary-root Git content"
-    print("empty-marker")
-else:
-    print("absent")
-'@
-    $temporaryGitMarker = ((& wsl.exe -d $Distro -e python3 -c $markerCheck) -join '').Trim()
-    if ($LASTEXITCODE -ne 0 -or $temporaryGitMarker -notin @('absent', 'empty-marker')) {
-        throw 'Native installer fixture cannot use the temporary-root Git marker safely.'
-    }
     }
     $unpacked = Join-Path $taskRoot 'package'
     Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -163,49 +147,8 @@ else:
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot $file) -Destination (Join-Path $taskRoot $file)
     }
     # Keep production files unchanged. These exact replacements affect only the disposable copy.
-    $processFiles = @('integrated-install.js', 'integration.js')
-    if ($Native) { $processFiles += 'install-plugin-native.js' }
-    foreach ($file in $processFiles) {
+    foreach ($file in @('integrated-install.js', 'integration.js')) {
         Replace-One (Join-Path $control $file) 'const runFile = promisify(execFile);' 'const runFile = require(process.env.DECISION_INTEGRATED_TEST_WRAPPER).run;'
-    }
-    if ($Native) {
-        # Force fixture ownership at the native installer boundary in this disposable copy.
-        # The process wrapper also refuses every WSL invocation in this mode.
-        $nativeFixture = @'
-;(() => {
-  const installOwnedFixture = module.exports.install;
-  module.exports.install = async (options) => {
-    const fixtureFs = require("node:fs/promises");
-    const fixturePath = require("node:path");
-    const fixtureHome = process.env.DECISION_INTEGRATED_TEST_HOME;
-    const marker = fixturePath.join(fixtureHome, "startup-retry-verified");
-    try { await fixtureFs.access(marker); }
-    catch (error) {
-      if (error.code !== "ENOENT") throw error;
-      await fixtureFs.writeFile(marker, "owned native startup failure fixture");
-      throw Object.assign(new Error("Synthetic temporary native installer access failure"), { retryable: true });
-    }
-    return installOwnedFixture({ ...options, home: fixtureHome, codexHome: process.env.CODEX_HOME });
-  };
-})();
-'@
-        [IO.File]::AppendAllText((Join-Path $control 'install-plugin-native.js'), $nativeFixture, $utf8)
-    } else {
-    Replace-One (Join-Path $control 'install-plugin.py') 'root = safe_path(Path.home() / ".local/state/codex-decision")' 'root = safe_path(Path(os.environ["DECISION_TEST_HOME"]) / ".local/state/codex-decision")'
-    Replace-One (Join-Path $control 'install-plugin.py') 'install(args.payload, args.codex, data_directory=args.data_directory,' 'install(args.payload, args.codex, home=Path(os.environ["DECISION_TEST_HOME"]), codex_home=Path(os.environ["CODEX_HOME"]), data_directory=args.data_directory,'
-    if ($temporaryGitMarker -eq 'empty-marker') {
-        # Keep every repository check inside and below the owned fixture.
-        # Production package code retains its complete ancestor guard.
-        Replace-One (Join-Path $control 'install-plugin.py') 'any((root / ".git").exists() for root in (source, *source.parents))' 'any((root / ".git").exists() for root in (source, *source.parents) if root != Path("/tmp"))'
-    }
-    $temporaryFailure = @'
-fcntl.flock(stream, fcntl.LOCK_EX)
-            marker = Path(os.environ["DECISION_TEST_HOME"]) / "startup-retry-verified"
-            if not marker.exists():
-                marker.write_text("owned native startup failure fixture")
-                raise BlockingIOError(errno.EAGAIN, "synthetic temporary startup access failure")
-'@
-    Replace-One (Join-Path $control 'install-plugin.py') 'fcntl.flock(stream, fcntl.LOCK_EX)' $temporaryFailure
     }
     Replace-One (Join-Path $control 'extension.js') '    ready: () => ensureIntegratedInstall(vscode, context, {' '    ready: () => globalThis.__decisionIntegratedInstallation = ensureIntegratedInstall(vscode, context, {'
     Replace-One (Join-Path $control 'extension.js') '  activateIntegration(vscode, context, {' '  globalThis.__decisionIntegratedIntegration = activateIntegration(vscode, context, {'

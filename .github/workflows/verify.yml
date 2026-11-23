@@ -34,7 +34,7 @@ jobs:
         env:
           DECISIONCTL_TEST: .cache/cargo/debug/decisionctl.exe
         run: >-
-          node --test tests/unit/native_install.test.cjs tests/unit/integrated_install.test.cjs
+          node --test tests/unit/integrated_install.test.cjs
           tests/unit/session_work.test.cjs tests/unit/updates.test.cjs tests/unit/activity_cache.test.cjs
           tests/unit/telemetry_audit.test.cjs tests/unit/providers.test.cjs tests/unit/custom_provider_tls.test.cjs tests/unit/publication.test.cjs
           tests/unit/assistance_client.test.cjs tests/unit/delivery_report.test.cjs tests/integration/assistance.test.cjs

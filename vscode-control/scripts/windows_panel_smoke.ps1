@@ -27,7 +27,8 @@ try {
     if ($LASTEXITCODE -ne 0 -or $linuxRoot -notmatch '^/tmp/decision-vscode-panel-[A-Za-z0-9]{8}$') { throw 'Unexpected Linux fixture root.' }
     $data = '\\wsl.localhost\' + $Distro + $linuxRoot.Replace('/', '\')
     $files = @('package.json', 'config-contract.json', 'core.js', 'extension.js', 'panel.js', 'panel-state.js',
-        'integration.js', 'integrated-install.js', 'install-plugin.py',
+        'integration.js', 'integrated-install.js', 'native-command.js', 'activity-reference.js',
+        'activity-cache.js', 'probe-reference.js', 'assistance-client.js', 'assistance.js', 'updates.js', 'delivery-report.js',
         'raw-skip-state.js', 'session-work.js', 'private-paths.js', 'private-records.js', 'publication-journal.js', 'schema.js', 'providers.js', 'provider-transport.js', 'icon.png', 'LICENSE', 'README.md', 'media\decision-panel.svg',
         'webview\decision-control.js', 'webview\decision-settings.js', 'webview\decision-totals.js', 'webview\decision-panel.js', 'webview\decision-panel.css')
     foreach ($file in $files) {

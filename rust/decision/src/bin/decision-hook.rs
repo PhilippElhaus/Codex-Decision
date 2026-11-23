@@ -112,6 +112,7 @@ fn main() {
     if let Some(argument) = std::env::args().nth(1) {
         let result = match argument.as_str() {
             "--mcp" => assistance_runtime::mcp(),
+            "--probe-provider" => return api::probe::run(),
             "--assist" | "--assistance-settings" => assistance_runtime::command(&argument),
             _ => Err("unsupported hook argument".into()),
         };

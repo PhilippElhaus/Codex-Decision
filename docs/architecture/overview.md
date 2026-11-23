@@ -11,7 +11,7 @@ Decision is a local Codex plugin with an integrated VS Code companion. It evalua
 | Extension host | Bootstrap, runtime selection, settings, polling, panel, and updates | [extension](../../vscode-control/extension.js) |
 | Host and route bridges | Connect the reviewed Codex host to Decision commands and thread state | [patch assets](../../vscode-control/patch-assets) |
 | Webviews | Composer, settings, latest decision, and totals | [webview scripts](../../vscode-control/webview) |
-| Installers | Preserve registration identity, plugin data, and recorded hook paths | [native installer](../../vscode-control/install-plugin-native.js), [WSL installer](../../vscode-control/install-plugin.py) |
+| Installer | Preserve registration identity, plugin data, and recorded hook paths | [native installer](../../rust/decision/src/bin/decisionctl/install.rs) |
 | Packaging | Stage an exact allowlist and verify bytes, versions, and binary targets | [package verifier](../../scripts/verify_packages.py) |
 
 The hook selects the thread data directory and reads shared settings. Local guards reject unsafe or unsuitable input. Known independent-line formats proceed to relevance evaluation. Unknown formats first pass a classification gate. The packer sends complete targets in bounded batches. Answers must pass schema, identity, model, and probability checks.
@@ -20,6 +20,6 @@ Monitor records a preview. Filter can publish shortened feedback only after the 
 
 The companion selects the same thread through a reviewed internal route bridge. It reads private thread records and sends settings and toggle commands. This integration depends on hash-pinned Codex assets. See [VS Code integration](vscode.md).
 
-Windows and WSL are separate runtimes. Each has its own registration, data, settings, and credentials. The VSIX contains both x86_64 runtimes. Native Windows uses the VS Code Node host. WSL installation uses Python.
+Windows and WSL are separate runtimes. Each has its own registration, data, settings, and credentials. The VSIX contains both x86_64 runtimes. The extension starts the bundled installer for the selected runtime. The native activity reader supplies composer, panel, and installation totals. Connection tests use the hook's provider transport with a synthetic request and an unsaved draft on stdin.
 
 <img src="../images/decision-architecture.svg" width="1000" alt="Local tool output through the hook, format validation, relevance judgments, and retention guards">

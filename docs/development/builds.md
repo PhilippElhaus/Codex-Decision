@@ -17,7 +17,7 @@ Build from the repository root. Production packages need fresh Windows x86_64 an
 
 Production Linux builds use the user-local Cargo build directory unless `CARGO_TARGET_DIR` is set. Native development builds use `.cache/cargo`. Dependency download caches stay in their normal user locations. Archives go to `.local/submission/`. Existing same-version archives are retained. Advance the release version before rebuilding an existing archive.
 
-The ZIP contains the standalone hook, CLI, skill, and assets. The VSIX also contains the control, webviews, installers, and patch fragments. The control build pins VSCE 4.0.0. Both paths call [verify_packages.py](../../scripts/verify_packages.py). It checks exact entries, source bytes, manifest versions, ELF/PE headers, and compiled versions.
+The ZIP contains the standalone hook, CLI, skill, and assets. The VSIX also contains the control, webviews, and patch fragments. The bundled CLI installs the hook on Windows and Linux. The control build pins VSCE 4.0.0. Both paths call [verify_packages.py](../../scripts/verify_packages.py). It checks exact entries, source bytes, manifest versions, ELF/PE headers, and compiled versions.
 
 The `verification` Cargo profile uses optimized packing with debug assertions and synthetic loopback support. Release packaging builds a separate production profile with the test endpoint disabled.
 
@@ -27,7 +27,7 @@ Before a Windows release, run the noninteractive packaged-runtime check:
 
 ```powershell
 pwsh -NoProfile -File vscode-control/scripts/windows_background_smoke.ps1 `
-  -Vsix .local/submission/codex-decision-0.17.8.vsix `
+  -Vsix .local/submission/codex-decision-0.17.9.vsix `
   -HostExtension '<absolute-installed-Codex-extension>'
 ```
 

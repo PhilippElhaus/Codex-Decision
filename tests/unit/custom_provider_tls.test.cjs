@@ -7,6 +7,7 @@ const https = require("node:https");
 const os = require("node:os");
 const path = require("node:path");
 const { validateCustomProvider } = require("../../vscode-control/providers");
+const { runProcess } = require("../../vscode-control/assistance-client");
 const { checkHealth, customCredentialIdentity, saveProviderSettings, readGlobalSettings, readApiKey } = require("../../vscode-control/core");
 const readFixture = name => fs.readFileSync(path.join(__dirname, "../fixtures", name), "utf8");
 const certificate = readFixture("custom-provider-server.pem");
@@ -17,6 +18,8 @@ const custom = (changes = {}) => ({ name: "Synthetic TLS provider", protocol: "o
   endpoint: "https://127.0.0.1/v1/decisions", model: "team/decision-alias", response_model: "resolved-model-v2",
   auth: "none", ca_certificate: certificate, ...changes });
 const healthBody = model => JSON.stringify({ model, answers: [{ name: "ready", type: "predicate", probability: .95 }] });
+const nativeHook = path.join(process.env.CARGO_TARGET_DIR || path.join(__dirname, "../../.cache/cargo"),
+  "debug", process.platform === "win32" ? "decision-hook.exe" : "decision-hook");
 
 async function serve(t, handler, cert = certificate) {
   const server = https.createServer({ key, cert }, handler);
@@ -78,6 +81,34 @@ test("custom trust still rejects a valid certificate for another hostname", asyn
   const result = await checkHealth(os.tmpdir(), undefined, null, "custom", { customProvider: custom({ endpoint, ca_certificate: wrongName }) });
   assert.equal(result.reason, "DECISION_NETWORK_ERROR");
   assert.equal(requests, 0);
+});
+
+test("the native draft probe uses hook trust and keeps the draft ephemeral", { skip: !fs.existsSync(nativeHook) }, async t => {
+  let requests = 0;
+  let status = 200;
+  const endpoint = await serve(t, async (request, response) => {
+    requests += 1;
+    assert.equal(request.headers["x-api-key"], "synthetic-draft-key");
+    let body = "";
+    for await (const chunk of request) body += chunk;
+    assert.equal(JSON.parse(body).model, "team/decision-alias");
+    response.writeHead(status, { "Content-Type": "application/json" });
+    response.end(status === 200 ? healthBody("resolved-model-v2") : '{"error":{"code":"expired"}}');
+  });
+  const data = await fsp.mkdtemp(path.join(os.tmpdir(), "decision-native-probe-"));
+  t.after(() => fsp.rmdir(data));
+  const invoke = async changes => JSON.parse(await runProcess(nativeHook, ["--probe-provider"], {
+    env: { ...process.env, PLUGIN_DATA: data },
+    input: JSON.stringify({ provider: "custom", credential: "synthetic-draft-key", timeout_ms: 1000,
+      custom_provider: custom({ endpoint, auth: "header", header_name: "X-API-Key", ...changes }) }),
+  }));
+  assert.deepEqual(await invoke(), { ok: true, model: "resolved-model-v2" });
+  assert.equal((await invoke({ ca_certificate: otherCA })).reason, "DECISION_NETWORK_ERROR");
+  assert.equal(requests, 1);
+  assert.equal((await invoke({ response_model: "" })).reason, "DECISION_INVALID_RESPONSE");
+  status = 401;
+  assert.equal((await invoke()).reason, "DECISION_KEY_EXPIRED");
+  assert.deepEqual(await fsp.readdir(data), []);
 });
 
 test("custom TLS requests reject redirects and bound streamed responses", async t => {

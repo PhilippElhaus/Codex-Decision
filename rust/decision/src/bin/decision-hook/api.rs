@@ -5,6 +5,8 @@ use super::*;
 mod connection;
 #[path = "api/endpoint.rs"]
 mod endpoint;
+#[path = "api/probe.rs"]
+pub(super) mod probe;
 pub(super) use connection::Connection;
 
 #[cfg(test)]
@@ -142,21 +144,9 @@ fn evaluate_prepared_inner<T>(
         })?;
         let response = strict_json::parse(&body)
             .map_err(|_| EvaluationFailure::provider("invalid decision response".into()))?;
-        let mut response = if connection.custom {
-            let mut expected_request = std::borrow::Cow::Borrowed(wire_source);
-            if !connection.response_model.is_empty() {
-                expected_request.to_mut()["model"] =
-                    Value::from(connection.response_model.as_str());
-            }
-            codex_decision::provider::normalize_custom_response(
-                &expected_request,
-                response,
-                connection.protocol,
-            )
-        } else {
-            codex_decision::provider::normalize_response(request, response)
-        }
-        .map_err(EvaluationFailure::provider)?;
+        let mut response = connection
+            .normalize(wire_source, response)
+            .map_err(EvaluationFailure::provider)?;
         // Typed evidence validation keeps its established model contract. The
         // custom identity was checked against the actual wire model above.
         let actual_model = connection
@@ -225,14 +215,13 @@ fn send_request(
             return Err(error);
         }
     };
-    let mut outgoing = agent
-        .post(endpoint)
-        .timeout(Duration::from_secs_f64(timeout).min(remaining))
-        .set("Content-Type", "application/json");
-    if let Some((name, value)) = header {
-        outgoing = outgoing.set(name, value);
-    }
-    let response = match outgoing.send_bytes(encoded) {
+    let response = match post(
+        agent,
+        endpoint,
+        header,
+        Duration::from_secs_f64(timeout).min(remaining),
+        encoded,
+    ) {
         Ok(response) => {
             outcome.received = true;
             outcome.http_status = Some(response.status());
@@ -240,11 +229,6 @@ fn send_request(
                 return Err("Decision request failed".into());
             }
             response
-        }
-        Err(ureq::Error::Status(status, _)) => {
-            outcome.received = true;
-            outcome.http_status = Some(status);
-            return Err("Decision request failed".into());
         }
         Err(_) => return Err("Decision request failed".into()),
     };
@@ -259,6 +243,26 @@ fn send_request(
         return Err("Decision response too large".into());
     }
     Ok(body)
+}
+
+fn post(
+    agent: &ureq::Agent,
+    endpoint: &str,
+    header: Option<&(String, String)>,
+    timeout: Duration,
+    encoded: &[u8],
+) -> Result<ureq::Response, Box<ureq::Transport>> {
+    let mut outgoing = agent
+        .post(endpoint)
+        .timeout(timeout)
+        .set("Content-Type", "application/json");
+    if let Some((name, value)) = header {
+        outgoing = outgoing.set(name, value);
+    }
+    match outgoing.send_bytes(encoded) {
+        Ok(response) | Err(ureq::Error::Status(_, response)) => Ok(response),
+        Err(ureq::Error::Transport(error)) => Err(Box::new(error)),
+    }
 }
 
 #[cfg(test)]

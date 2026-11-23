@@ -37,7 +37,8 @@ test("integrated install discovers storage only when the setting is blank", asyn
   const result = await ensureIntegratedInstall(vscode, { extensionPath: root }, { platform: "linux", run });
   assert.equal(result.status, "ready");
   assert.deepEqual(vscode.updates, [["dataDirectory", installed.dataDirectory, 1]]);
-  assert.equal(calls[0][0], "python3");
+  assert.equal(calls[0][0], path.join(root, "plugin", "hooks", "bin", "linux-x86_64", "decisionctl"));
+  assert.equal(calls[0][1][0], "install");
   assert.ok(calls[0][2].timeout > (660 + 7 * 90) * 1000);
   assert.ok(calls[0][1].includes(path.join(root, "Codex host with spaces", "bin", "linux-x86_64", "codex")));
   vscode.updates.length = 0;
@@ -61,7 +62,7 @@ test("Windows bootstrap selects the configured WSL distribution and passes each 
   assert.equal(result.distro, "Ubuntu-24.04");
   assert.equal(result.dataDirectory, configured);
   assert.ok(calls.every(({ binary, args }) => binary === "wsl.exe" && args[0] === "-d" && args[1] === "Ubuntu-24.04"));
-  const install = calls.find(({ args }) => args[3] === "python3");
+  const install = calls.find(({ args }) => args[4] === "install");
   assert.deepEqual(install.args.slice(-2), ["--data-directory", installed.dataDirectory]);
   assert.deepEqual(vscode.updates, []);
 }));
@@ -70,7 +71,7 @@ test("Remote WSL can reuse a legacy UNC override without changing Windows settin
   const vscode = { ...vscodeStub(root), env: { remoteName: "wsl" } };
   const saved = [];
   const run = async (binary, args) => {
-    assert.equal(binary, "python3");
+    assert.equal(binary, path.join(root, "plugin", "hooks", "bin", "linux-x86_64", "decisionctl"));
     assert.deepEqual(args.slice(-2), ["--data-directory", installed.dataDirectory]);
     return { stdout: JSON.stringify(installed) };
   };
@@ -258,7 +259,7 @@ test("WSL rejects malformed path conversion results before running the installer
     await assert.rejects(ensureIntegratedInstall(vscodeStub(root), { extensionPath: root }, {
       platform: "win32", dataDirectory: "\\\\wsl.localhost\\Ubuntu\\home\\alex\\decision",
       run: async (_binary, args) => {
-        if (args[3] === "python3") installations += 1;
+        if (args[4] === "install") installations += 1;
         return { stdout: output };
       },
     }), /could not be converted/);

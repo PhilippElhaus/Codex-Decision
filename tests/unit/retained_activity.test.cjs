@@ -1,7 +1,7 @@
 "use strict";
 const assert=require("node:assert/strict"),fs=require("node:fs/promises"),os=require("node:os"),path=require("node:path"),test=require("node:test");
 const cases=require("../fixtures/retained-activity.json");
-const {retainedStatsFromEvents,readLifetimeStats}=require("../../vscode-control/core");
+const {retainedStatsFromEvents,readLifetimeStats,readSessionActivity,readInstallationStats}=require("../../vscode-control/core");
 const {parseUniqueJson}=require("../../vscode-control/private-records");
 const {validateJournal}=require("../../vscode-control/publication-journal");
 const publication=require("../fixtures/publication-case.json");
@@ -63,11 +63,20 @@ test("Rust CLI and Node retained views agree on shared adversarial fixtures",{sk
     const rust=spawnSync(cli,["activity","--data-dir",directory,"--session",session],{encoding:"utf8"});
     assert.equal(rust.status,0,`${case_.id}: ${rust.stderr}`);
     const result=JSON.parse(rust.stdout).metrics;
+    const view=spawnSync(cli,["activity-view","--session-directory",scoped],{encoding:"utf8"});
     if(case_.node_error) {
       await assert.rejects(readLifetimeStats(scoped),new RegExp(case_.node_error));
+      assert.notEqual(view.status,0,case_.id);
       assert.ok(rust.stdout.includes('"savedChars":9007199254740992'));continue;
     }
     const node=await readLifetimeStats(scoped);
     for(const name of ["calls","completed","replaced","savedChars","timed","elapsedMs"])assert.equal(node[name],result[name],`${case_.id}: ${name}`);
+    assert.equal(view.status,0,`${case_.id}: ${view.stderr}`);
+    assert.deepEqual(JSON.parse(view.stdout).activity,await readSessionActivity(scoped),case_.id);
   }
+  await fs.writeFile(path.join(scoped,"logs/events.jsonl"),bytesFor(cases[0]),{mode:0o600});
+  const totals=spawnSync(cli,["activity-view","--installation",directory],{encoding:"utf8"});
+  const expected=await readInstallationStats(directory);
+  assert.equal(totals.status,0,totals.stderr);
+  assert.deepEqual(JSON.parse(totals.stdout).activity,expected);
 });
